@@ -1,0 +1,61 @@
+[package]
+name = "ladybug"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "Apache-2.0"
+description = "Unified cognitive database: SQL + Cypher + Vector + Hamming + NARS + Counterfactuals"
+repository = "https://github.com/AdaWorldAPI/ladybug-rs"
+keywords = ["database", "graph", "vector", "reasoning", "agi", "lance"]
+categories = ["database", "science", "algorithms"]
+
+[lib]
+name = "ladybug"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["simd", "parallel"]
+simd = []
+parallel = ["rayon"]
+python = ["pyo3"]
+full = ["simd", "parallel", "python"]
+
+[dependencies]
+# Storage
+lance = "0.9"
+arrow = { version = "50", features = ["ffi"] }
+arrow-array = "50"
+arrow-schema = "50"
+
+# Query
+datafusion = "35"
+sqlparser = "0.43"
+
+# Parallelism
+rayon = { version = "1.8", optional = true }
+parking_lot = "0.12"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Utilities
+thiserror = "1.0"
+uuid = { version = "1.6", features = ["v4"] }
+hashbrown = "0.14"
+smallvec = "1.11"
+
+# Python
+pyo3 = { version = "0.20", optional = true, features = ["extension-module"] }
+
+[dev-dependencies]
+criterion = "0.5"
+tempfile = "3.9"
+
+[[bench]]
+name = "hamming"
+harness = false
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
