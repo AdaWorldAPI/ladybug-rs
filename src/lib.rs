@@ -49,6 +49,7 @@ pub mod graph;
 pub mod world;
 pub mod query;
 pub mod storage;
+pub mod fabric;
 
 #[cfg(feature = "python")]
 pub mod python;
