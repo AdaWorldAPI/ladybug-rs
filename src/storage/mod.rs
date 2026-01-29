@@ -1,13 +1,12 @@
-//! Storage layer - LanceDB integration
+//! Storage Layer
+//!
+//! Provides persistent storage via LanceDB with:
+//! - Columnar storage for thoughts, edges, fingerprints
+//! - Vector ANN index for embeddings
+//! - Batch scan for Hamming similarity
 
 mod database;
+mod lance;
 
 pub use database::Database;
-
-#[derive(thiserror::Error, Debug)]
-pub enum StorageError {
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("Not found: {0}")]
-    NotFound(String),
-}
+pub use lance::{LanceStore, ThoughtRow, EdgeRow, FINGERPRINT_BYTES};
