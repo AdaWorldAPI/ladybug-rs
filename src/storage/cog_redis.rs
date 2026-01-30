@@ -72,6 +72,7 @@ use crate::core::Fingerprint;
 use crate::search::cognitive::{QualiaVector, CognitiveAtom, CognitiveSearch, SpoTriple};
 use crate::search::causal::CausalSearch;
 use crate::learning::cognitive_frameworks::TruthValue;
+use super::bind_space::{BindSpace, BindNode, Addr, FINGERPRINT_WORDS};
 
 // =============================================================================
 // ADDRESS SPACE CONSTANTS (8-bit prefix : 8-bit slot)
@@ -444,6 +445,18 @@ impl CogEdge {
 /// - Pure AVX scan: O(n/512) but no caching
 /// - Hot cache: O(1) for repeated queries, O(n/512) fallback
 pub struct CogRedis {
+    // =========================================================================
+    // BIND SPACE - The universal DTO (array-based O(1) storage)
+    // =========================================================================
+
+    /// Universal bind space - all query languages hit this
+    /// Pure array indexing. No HashMap. 3-5 cycles per lookup.
+    bind_space: BindSpace,
+
+    // =========================================================================
+    // LEGACY HASH MAPS (for backward compatibility during transition)
+    // =========================================================================
+
     /// Surface tier: CAM operations (fixed)
     surface: HashMap<CogAddr, CogValue>,
     /// Fluid zone: working memory
@@ -466,18 +479,18 @@ pub struct CogRedis {
     demotion_threshold: Duration,
     /// Default TTL for fluid zone
     default_ttl: Duration,
-    
+
     // =========================================================================
     // HOT CACHE (Redis-style caching for fingerprint CSR)
     // =========================================================================
-    
+
     /// Hot edge cache: query pattern → edge indices
     /// Key = from_fingerprint XOR verb_fingerprint (the ABBA query pattern)
     /// Value = indices into self.edges that match
     hot_cache: HashMap<[u64; 156], Vec<usize>>,
     /// Fanout cache: source address → edge indices
     fanout_cache: HashMap<CogAddr, Vec<usize>>,
-    /// Fanin cache: target address → edge indices  
+    /// Fanin cache: target address → edge indices
     fanin_cache: HashMap<CogAddr, Vec<usize>>,
     /// Cache statistics
     cache_hits: u64,
@@ -487,6 +500,9 @@ pub struct CogRedis {
 impl CogRedis {
     pub fn new() -> Self {
         Self {
+            // Universal bind space - O(1) array indexing
+            bind_space: BindSpace::new(),
+            // Legacy HashMaps (kept for backward compatibility during transition)
             surface: HashMap::new(),
             fluid: HashMap::new(),
             nodes: HashMap::new(),
@@ -505,6 +521,67 @@ impl CogRedis {
             cache_hits: 0,
             cache_misses: 0,
         }
+    }
+
+    /// Get reference to the underlying bind space
+    pub fn bind_space(&self) -> &BindSpace {
+        &self.bind_space
+    }
+
+    /// Get mutable reference to the underlying bind space
+    pub fn bind_space_mut(&mut self) -> &mut BindSpace {
+        &mut self.bind_space
+    }
+
+    /// Resolve key to bind space address
+    ///
+    /// Maps string keys to 16-bit addresses:
+    /// - Hash key to get deterministic address
+    /// - Check if exists in bind space
+    pub fn resolve_key(&self, key: &str) -> Option<Addr> {
+        use std::hash::{Hash, Hasher};
+        use std::collections::hash_map::DefaultHasher;
+
+        let mut hasher = DefaultHasher::new();
+        key.hash(&mut hasher);
+        let hash = hasher.finish();
+
+        // Map to node address space (0x80-0xFF:XX)
+        let prefix = 0x80 + ((hash >> 8) as u8 & 0x7F);  // 0x80-0xFF
+        let slot = (hash & 0xFF) as u8;
+        let addr = Addr::new(prefix, slot);
+
+        // Check if occupied
+        if self.bind_space.read(addr).is_some() {
+            Some(addr)
+        } else {
+            None
+        }
+    }
+
+    /// Allocate address for key in bind space
+    ///
+    /// Returns address where key's value should be stored.
+    pub fn resolve_or_allocate(&mut self, key: &str, fingerprint: [u64; FINGERPRINT_WORDS]) -> Addr {
+        // Check if already exists
+        if let Some(addr) = self.resolve_key(key) {
+            return addr;
+        }
+
+        // Allocate new address in node space
+        let addr = self.bind_space.write_labeled(fingerprint, key);
+        addr
+    }
+
+    /// Read from bind space using key
+    pub fn bind_get(&self, key: &str) -> Option<&BindNode> {
+        let addr = self.resolve_key(key)?;
+        self.bind_space.read(addr)
+    }
+
+    /// Write to bind space using key
+    pub fn bind_set(&mut self, key: &str, fingerprint: [u64; FINGERPRINT_WORDS]) -> Addr {
+        self.resolve_or_allocate(key, fingerprint)
     }
     
     /// Allocate next fluid address
