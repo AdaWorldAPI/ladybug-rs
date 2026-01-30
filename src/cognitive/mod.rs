@@ -7,6 +7,9 @@
 //! - Collapse Gate (FLOW/HOLD/BLOCK)
 //! - Rung System (0-9 meaning depth levels)
 //! - Integrated Cognitive Fabric
+//! - Unified Cognitive Substrate
+//! - Grammar-aware Cognitive Engine
+//! - Unified Fabric (multi-style coordination)
 
 mod thought;
 mod style;
@@ -15,6 +18,9 @@ mod collapse_gate;
 mod seven_layer;
 mod rung;
 mod fabric;
+mod substrate;
+mod grammar_engine;
+mod unified_fabric;
 
 pub use thought::{Thought, Concept, Belief};
 pub use style::*;
@@ -23,3 +29,6 @@ pub use collapse_gate::*;
 pub use seven_layer::*;
 pub use rung::*;
 pub use fabric::*;
+pub use substrate::*;
+pub use grammar_engine::*;
+pub use unified_fabric::*;
