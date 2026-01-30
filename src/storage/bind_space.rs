@@ -6,22 +6,20 @@
 //! ┌─────────────────────────────────────────────────────────────────────────────┐
 //! │                      PREFIX (8-bit) : ADDRESS (8-bit)                       │
 //! ├─────────────────┬───────────────────────────────────────────────────────────┤
-//! │  0x00:XX        │  SURFACE 0 - Lance/Kuzu (256)                             │
-//! │                 │  Vector search, graph traversal primitives                │
+//! │  0x00-0x0F:XX   │  SURFACE (16 prefixes × 256 = 4,096)                      │
+//! │                 │  0x00: Lance/Kuzu    0x08: Concepts                       │
+//! │                 │  0x01: SQL           0x09: Qualia ops                     │
+//! │                 │  0x02: Neo4j/Cypher  0x0A: Memory ops                     │
+//! │                 │  0x03: GraphQL       0x0B: Learning ops                   │
+//! │                 │  0x04: NARS          0x0C: Reserved                       │
+//! │                 │  0x05: Causal        0x0D: Reserved                       │
+//! │                 │  0x06: Meta          0x0E: Reserved                       │
+//! │                 │  0x07: Verbs         0x0F: Reserved                       │
 //! ├─────────────────┼───────────────────────────────────────────────────────────┤
-//! │  0x01:XX        │  SURFACE 1 - SQL/Neo4j (256)                              │
-//! │                 │  Relational + property graph primitives                   │
+//! │  0x10-0x7F:XX   │  FLUID (112 prefixes × 256 = 28,672)                      │
+//! │                 │  Edges + Context selector + Working memory                │
 //! ├─────────────────┼───────────────────────────────────────────────────────────┤
-//! │  0x02:XX        │  SURFACE 2 - Higher-order thinking (256)                  │
-//! │                 │  Meta-cognition, NARS, reasoning patterns                 │
-//! ├─────────────────┼───────────────────────────────────────────────────────────┤
-//! │  0x03:XX        │  SURFACE 3 - Verbs/Cypher (256)                           │
-//! │                 │  CAUSES, BECOMES, ENABLES... 144 Go board verbs           │
-//! ├─────────────────┼───────────────────────────────────────────────────────────┤
-//! │  0x04-0x7F:XX   │  FLUID (124 chunks × 256 = 31,744 edges)                  │
-//! │                 │  Context selector + edge storage                          │
-//! ├─────────────────┼───────────────────────────────────────────────────────────┤
-//! │  0x80-0xFF:XX   │  NODES (128 chunks × 256 = 32,768 nodes)                  │
+//! │  0x80-0xFF:XX   │  NODES (128 prefixes × 256 = 32,768)                      │
 //! │                 │  THE UNIVERSAL BIND SPACE                                 │
 //! │                 │  All languages hit this. Any syntax. Same addresses.      │
 //! └─────────────────┴───────────────────────────────────────────────────────────┘
@@ -41,24 +39,11 @@
 //!
 //! Works on ANY CPU: No AVX-512, no SIMD, no special instructions.
 //! Just shift, mask, array index. Even works on embedded/WASM.
-//!
-//! # The 4-Compartment Surface
-//!
-//! Each surface is 256 slots that fit in L1 cache:
-//!
-//! | Prefix | Surface      | Language primitives                    |
-//! |--------|--------------|----------------------------------------|
-//! | 0x00   | Lance/Kuzu   | VECTOR_SEARCH, TRAVERSE, RESONATE      |
-//! | 0x01   | SQL/Neo4j    | SELECT, JOIN, MATCH, WHERE             |
-//! | 0x02   | Meta         | REFLECT, ABSTRACT, DEDUCE, ABDUCT      |
-//! | 0x03   | Verbs        | CAUSES, BECOMES, ENABLES, AMPLIFIES    |
-//!
-//! All surfaces speak different languages but hit the SAME bind space.
 
 use std::time::Instant;
 
 // =============================================================================
-// ADDRESS CONSTANTS (8-bit prefix architecture)
+// ADDRESS CONSTANTS (8-bit prefix : 8-bit slot)
 // =============================================================================
 
 /// Fingerprint words (10K bits = 156 × 64-bit words)
@@ -67,24 +52,54 @@ pub const FINGERPRINT_WORDS: usize = 156;
 /// Slots per chunk (2^8 = 256)
 pub const CHUNK_SIZE: usize = 256;
 
-/// Surface prefixes (4 compartments)
-pub const PREFIX_LANCE: u8 = 0x00;    // Lance/Kuzu ops
-pub const PREFIX_SQL: u8 = 0x01;      // SQL/Neo4j ops
-pub const PREFIX_META: u8 = 0x02;     // Higher-order thinking
-pub const PREFIX_VERBS: u8 = 0x03;    // Verbs/Cypher
+// -----------------------------------------------------------------------------
+// SURFACE: 16 prefixes (0x00-0x0F) × 256 = 4,096 addresses
+// -----------------------------------------------------------------------------
 
-/// Fluid range (edges + context)
-pub const PREFIX_FLUID_START: u8 = 0x04;
+/// Surface prefix range
+pub const PREFIX_SURFACE_START: u8 = 0x00;
+pub const PREFIX_SURFACE_END: u8 = 0x0F;
+pub const SURFACE_PREFIXES: usize = 16;
+pub const SURFACE_SIZE: usize = 4096;  // 16 × 256
+
+/// Surface compartments (16 available)
+pub const PREFIX_LANCE: u8 = 0x00;     // Lance/Kuzu - vector ops
+pub const PREFIX_SQL: u8 = 0x01;       // SQL ops
+pub const PREFIX_CYPHER: u8 = 0x02;    // Neo4j/Cypher ops
+pub const PREFIX_GRAPHQL: u8 = 0x03;   // GraphQL ops
+pub const PREFIX_NARS: u8 = 0x04;      // NARS inference
+pub const PREFIX_CAUSAL: u8 = 0x05;    // Causal reasoning (Pearl)
+pub const PREFIX_META: u8 = 0x06;      // Meta-cognition
+pub const PREFIX_VERBS: u8 = 0x07;     // Verbs (CAUSES, BECOMES...)
+pub const PREFIX_CONCEPTS: u8 = 0x08;  // Core concepts/types
+pub const PREFIX_QUALIA: u8 = 0x09;    // Qualia operations
+pub const PREFIX_MEMORY: u8 = 0x0A;    // Memory operations
+pub const PREFIX_LEARNING: u8 = 0x0B;  // Learning operations
+pub const PREFIX_RESERVED_C: u8 = 0x0C;
+pub const PREFIX_RESERVED_D: u8 = 0x0D;
+pub const PREFIX_RESERVED_E: u8 = 0x0E;
+pub const PREFIX_RESERVED_F: u8 = 0x0F;
+
+// -----------------------------------------------------------------------------
+// FLUID: 112 prefixes (0x10-0x7F) × 256 = 28,672 addresses
+// -----------------------------------------------------------------------------
+
+pub const PREFIX_FLUID_START: u8 = 0x10;
 pub const PREFIX_FLUID_END: u8 = 0x7F;
-pub const FLUID_CHUNKS: usize = 124;  // 0x7F - 0x04 + 1
+pub const FLUID_PREFIXES: usize = 112;  // 0x7F - 0x10 + 1
+pub const FLUID_SIZE: usize = 28672;    // 112 × 256
 
-/// Node range (universal bind space)  
+// -----------------------------------------------------------------------------
+// NODES: 128 prefixes (0x80-0xFF) × 256 = 32,768 addresses
+// -----------------------------------------------------------------------------
+
 pub const PREFIX_NODE_START: u8 = 0x80;
 pub const PREFIX_NODE_END: u8 = 0xFF;
-pub const NODE_CHUNKS: usize = 128;   // 0xFF - 0x80 + 1
+pub const NODE_PREFIXES: usize = 128;   // 0xFF - 0x80 + 1
+pub const NODE_SIZE: usize = 32768;     // 128 × 256
 
 /// Total addressable
-pub const TOTAL_ADDRESSES: usize = 65536;
+pub const TOTAL_ADDRESSES: usize = 65536;  // 256 × 256
 
 // =============================================================================
 // ADDRESS TYPE
@@ -113,13 +128,13 @@ impl Addr {
         (self.0 & 0xFF) as u8
     }
     
-    /// Check if in surface (prefix 0x00-0x03)
+    /// Check if in surface (prefix 0x00-0x0F)
     #[inline(always)]
     pub fn is_surface(self) -> bool {
-        self.prefix() <= PREFIX_VERBS
+        self.prefix() <= PREFIX_SURFACE_END
     }
     
-    /// Check if in fluid zone (prefix 0x04-0x7F)
+    /// Check if in fluid zone (prefix 0x10-0x7F)
     #[inline(always)]
     pub fn is_fluid(self) -> bool {
         let p = self.prefix();
@@ -132,16 +147,10 @@ impl Addr {
         self.prefix() >= PREFIX_NODE_START
     }
     
-    /// Get surface compartment (0-3) or None
+    /// Get surface compartment (0x00-0x0F) or None
     #[inline(always)]
     pub fn surface_compartment(self) -> Option<SurfaceCompartment> {
-        match self.prefix() {
-            PREFIX_LANCE => Some(SurfaceCompartment::Lance),
-            PREFIX_SQL => Some(SurfaceCompartment::Sql),
-            PREFIX_META => Some(SurfaceCompartment::Meta),
-            PREFIX_VERBS => Some(SurfaceCompartment::Verbs),
-            _ => None,
-        }
+        SurfaceCompartment::from_prefix(self.prefix())
     }
 }
 
@@ -158,21 +167,39 @@ impl From<Addr> for u16 {
 }
 
 // =============================================================================
-// SURFACE COMPARTMENTS
+// SURFACE COMPARTMENTS (16 available, 0x00-0x0F)
 // =============================================================================
 
-/// The 4 surface compartments
+/// The 16 surface compartments
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SurfaceCompartment {
-    /// 0x00: Lance/Kuzu - vector search, graph traversal
-    Lance = 0,
-    /// 0x01: SQL/Neo4j - relational, property graph
-    Sql = 1,
-    /// 0x02: Meta - higher-order thinking, NARS
-    Meta = 2,
-    /// 0x03: Verbs - CAUSES, BECOMES, etc.
-    Verbs = 3,
+    /// 0x00: Lance/Kuzu - vector search, traversal
+    Lance = 0x00,
+    /// 0x01: SQL - relational operations
+    Sql = 0x01,
+    /// 0x02: Neo4j/Cypher - property graph
+    Cypher = 0x02,
+    /// 0x03: GraphQL - query language
+    GraphQL = 0x03,
+    /// 0x04: NARS - inference operations
+    Nars = 0x04,
+    /// 0x05: Causal - Pearl's ladder
+    Causal = 0x05,
+    /// 0x06: Meta - higher-order thinking
+    Meta = 0x06,
+    /// 0x07: Verbs - CAUSES, BECOMES, etc.
+    Verbs = 0x07,
+    /// 0x08: Concepts - core types
+    Concepts = 0x08,
+    /// 0x09: Qualia - felt quality ops
+    Qualia = 0x09,
+    /// 0x0A: Memory - memory operations
+    Memory = 0x0A,
+    /// 0x0B: Learning - learning operations
+    Learning = 0x0B,
+    /// 0x0C-0x0F: Reserved
+    Reserved = 0x0C,
 }
 
 impl SurfaceCompartment {
@@ -182,6 +209,25 @@ impl SurfaceCompartment {
     
     pub fn addr(self, slot: u8) -> Addr {
         Addr::new(self as u8, slot)
+    }
+    
+    pub fn from_prefix(prefix: u8) -> Option<Self> {
+        match prefix {
+            0x00 => Some(Self::Lance),
+            0x01 => Some(Self::Sql),
+            0x02 => Some(Self::Cypher),
+            0x03 => Some(Self::GraphQL),
+            0x04 => Some(Self::Nars),
+            0x05 => Some(Self::Causal),
+            0x06 => Some(Self::Meta),
+            0x07 => Some(Self::Verbs),
+            0x08 => Some(Self::Concepts),
+            0x09 => Some(Self::Qualia),
+            0x0A => Some(Self::Memory),
+            0x0B => Some(Self::Learning),
+            0x0C..=0x0F => Some(Self::Reserved),
+            _ => None,
+        }
     }
 }
 
@@ -325,23 +371,17 @@ impl BindEdge {
 /// Works on any CPU.
 pub struct BindSpace {
     // =========================================================================
-    // SURFACES (4 compartments × 256 slots each)
+    // SURFACES: 16 prefixes (0x00-0x0F) × 256 slots = 4,096 addresses
     // =========================================================================
     
-    /// Surface 0: Lance/Kuzu ops
-    surface_lance: Box<[Option<BindNode>; CHUNK_SIZE]>,
-    /// Surface 1: SQL/Neo4j ops  
-    surface_sql: Box<[Option<BindNode>; CHUNK_SIZE]>,
-    /// Surface 2: Meta/Higher-order thinking
-    surface_meta: Box<[Option<BindNode>; CHUNK_SIZE]>,
-    /// Surface 3: Verbs/Cypher
-    surface_verbs: Box<[Option<BindNode>; CHUNK_SIZE]>,
+    /// All 16 surface compartments
+    surfaces: Vec<Box<[Option<BindNode>; CHUNK_SIZE]>>,
     
     // =========================================================================
-    // FLUID (124 chunks × 256 slots = 31,744 edges)
+    // FLUID: 112 prefixes (0x10-0x7F) × 256 slots = 28,672 addresses
     // =========================================================================
     
-    /// Fluid chunks for edge storage
+    /// Fluid chunks for edge storage + working memory
     fluid: Vec<Box<[Option<BindNode>; CHUNK_SIZE]>>,
     
     /// Edges (separate for efficient traversal)
@@ -354,10 +394,10 @@ pub struct BindSpace {
     edge_in: Vec<Vec<usize>>,
     
     // =========================================================================
-    // NODES (128 chunks × 256 slots = 32,768 nodes)
+    // NODES: 128 prefixes (0x80-0xFF) × 256 slots = 32,768 addresses
     // =========================================================================
     
-    /// Node chunks
+    /// Node chunks - THE UNIVERSAL BIND SPACE
     nodes: Vec<Box<[Option<BindNode>; CHUNK_SIZE]>>,
     
     // =========================================================================
@@ -376,21 +416,21 @@ pub struct BindSpace {
 
 impl BindSpace {
     pub fn new() -> Self {
-        // Initialize surfaces
-        let surface_lance = Box::new(std::array::from_fn(|_| None));
-        let surface_sql = Box::new(std::array::from_fn(|_| None));
-        let surface_meta = Box::new(std::array::from_fn(|_| None));
-        let surface_verbs = Box::new(std::array::from_fn(|_| None));
+        // Initialize 16 surface compartments
+        let mut surfaces = Vec::with_capacity(SURFACE_PREFIXES);
+        for _ in 0..SURFACE_PREFIXES {
+            surfaces.push(Box::new(std::array::from_fn(|_| None)));
+        }
         
-        // Initialize fluid chunks
-        let mut fluid = Vec::with_capacity(FLUID_CHUNKS);
-        for _ in 0..FLUID_CHUNKS {
+        // Initialize 112 fluid chunks
+        let mut fluid = Vec::with_capacity(FLUID_PREFIXES);
+        for _ in 0..FLUID_PREFIXES {
             fluid.push(Box::new(std::array::from_fn(|_| None)));
         }
         
-        // Initialize node chunks
-        let mut nodes = Vec::with_capacity(NODE_CHUNKS);
-        for _ in 0..NODE_CHUNKS {
+        // Initialize 128 node chunks
+        let mut nodes = Vec::with_capacity(NODE_PREFIXES);
+        for _ in 0..NODE_PREFIXES {
             nodes.push(Box::new(std::array::from_fn(|_| None)));
         }
         
@@ -399,10 +439,7 @@ impl BindSpace {
         let edge_in = vec![Vec::new(); TOTAL_ADDRESSES];
         
         let mut space = Self {
-            surface_lance,
-            surface_sql,
-            surface_meta,
-            surface_verbs,
+            surfaces,
             fluid,
             edges: Vec::new(),
             edge_out,
@@ -419,7 +456,7 @@ impl BindSpace {
     
     /// Initialize surfaces with core ops
     fn init_surfaces(&mut self) {
-        // Surface 0: Lance/Kuzu ops
+        // Surface 0x00: Lance/Kuzu ops
         let lance_ops = [
             (0x00, "VECTOR_SEARCH"),
             (0x01, "TRAVERSE"),
@@ -435,10 +472,10 @@ impl BindSpace {
             (0x0B, "QUANTIZE"),
         ];
         for (slot, label) in lance_ops {
-            self.surface_lance[slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
+            self.surfaces[PREFIX_LANCE as usize][slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
         }
         
-        // Surface 1: SQL/Neo4j ops
+        // Surface 0x01: SQL ops
         let sql_ops = [
             (0x00, "SELECT"),
             (0x01, "INSERT"),
@@ -448,35 +485,67 @@ impl BindSpace {
             (0x05, "WHERE"),
             (0x06, "GROUP"),
             (0x07, "ORDER"),
-            (0x08, "MATCH"),
-            (0x09, "CREATE"),
-            (0x0A, "MERGE"),
-            (0x0B, "RETURN"),
         ];
         for (slot, label) in sql_ops {
-            self.surface_sql[slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
+            self.surfaces[PREFIX_SQL as usize][slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
         }
         
-        // Surface 2: Meta/Higher-order ops
+        // Surface 0x02: Neo4j/Cypher ops
+        let cypher_ops = [
+            (0x00, "MATCH"),
+            (0x01, "CREATE"),
+            (0x02, "MERGE"),
+            (0x03, "RETURN"),
+            (0x04, "WITH"),
+            (0x05, "UNWIND"),
+            (0x06, "OPTIONAL_MATCH"),
+            (0x07, "DETACH_DELETE"),
+        ];
+        for (slot, label) in cypher_ops {
+            self.surfaces[PREFIX_CYPHER as usize][slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
+        }
+        
+        // Surface 0x04: NARS inference ops
+        let nars_ops = [
+            (0x00, "DEDUCE"),
+            (0x01, "ABDUCT"),
+            (0x02, "INDUCE"),
+            (0x03, "REVISE"),
+            (0x04, "CHOICE"),
+            (0x05, "EXPECTATION"),
+        ];
+        for (slot, label) in nars_ops {
+            self.surfaces[PREFIX_NARS as usize][slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
+        }
+        
+        // Surface 0x05: Causal ops (Pearl's ladder)
+        let causal_ops = [
+            (0x00, "OBSERVE"),    // Rung 1
+            (0x01, "INTERVENE"),  // Rung 2 (do)
+            (0x02, "IMAGINE"),    // Rung 3 (counterfactual)
+            (0x03, "CAUSE"),
+            (0x04, "EFFECT"),
+            (0x05, "CONFOUND"),
+        ];
+        for (slot, label) in causal_ops {
+            self.surfaces[PREFIX_CAUSAL as usize][slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
+        }
+        
+        // Surface 0x06: Meta-cognition ops
         let meta_ops = [
             (0x00, "REFLECT"),
             (0x01, "ABSTRACT"),
-            (0x02, "DEDUCE"),
-            (0x03, "ABDUCT"),
-            (0x04, "INDUCE"),
-            (0x05, "ANALOGIZE"),
-            (0x06, "HYPOTHESIZE"),
-            (0x07, "REVISE"),
-            (0x08, "BELIEVE"),
-            (0x09, "DOUBT"),
-            (0x0A, "IMAGINE"),
-            (0x0B, "COUNTERFACT"),
+            (0x02, "ANALOGIZE"),
+            (0x03, "HYPOTHESIZE"),
+            (0x04, "BELIEVE"),
+            (0x05, "DOUBT"),
+            (0x06, "COUNTERFACT"),
         ];
         for (slot, label) in meta_ops {
-            self.surface_meta[slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
+            self.surfaces[PREFIX_META as usize][slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
         }
         
-        // Surface 3: Verbs (the 144 Go board verbs)
+        // Surface 0x07: Verbs (the Go board verbs)
         let verb_ops = [
             (0x00, "CAUSES"),
             (0x01, "BECOMES"),
@@ -508,7 +577,57 @@ impl BindSpace {
             (0x1B, "SUPPORTS"),
         ];
         for (slot, label) in verb_ops {
-            self.surface_verbs[slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
+            self.surfaces[PREFIX_VERBS as usize][slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
+        }
+        
+        // Surface 0x08: Core concepts
+        let concept_ops = [
+            (0x00, "ENTITY"),
+            (0x01, "RELATION"),
+            (0x02, "ATTRIBUTE"),
+            (0x03, "EVENT"),
+            (0x04, "STATE"),
+            (0x05, "PROCESS"),
+        ];
+        for (slot, label) in concept_ops {
+            self.surfaces[PREFIX_CONCEPTS as usize][slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
+        }
+        
+        // Surface 0x09: Qualia ops
+        let qualia_ops = [
+            (0x00, "FEEL"),
+            (0x01, "INTUIT"),
+            (0x02, "SENSE"),
+            (0x03, "VALENCE"),
+            (0x04, "AROUSAL"),
+            (0x05, "TENSION"),
+        ];
+        for (slot, label) in qualia_ops {
+            self.surfaces[PREFIX_QUALIA as usize][slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
+        }
+        
+        // Surface 0x0A: Memory ops
+        let memory_ops = [
+            (0x00, "STORE"),
+            (0x01, "RECALL"),
+            (0x02, "FORGET"),
+            (0x03, "CONSOLIDATE"),
+            (0x04, "ASSOCIATE"),
+        ];
+        for (slot, label) in memory_ops {
+            self.surfaces[PREFIX_MEMORY as usize][slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
+        }
+        
+        // Surface 0x0B: Learning ops
+        let learning_ops = [
+            (0x00, "LEARN"),
+            (0x01, "UNLEARN"),
+            (0x02, "REINFORCE"),
+            (0x03, "GENERALIZE"),
+            (0x04, "SPECIALIZE"),
+        ];
+        for (slot, label) in learning_ops {
+            self.surfaces[PREFIX_LEARNING as usize][slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
         }
     }
     
@@ -526,14 +645,16 @@ impl BindSpace {
         let slot = addr.slot() as usize;
         
         match prefix {
-            PREFIX_LANCE => self.surface_lance[slot].as_ref(),
-            PREFIX_SQL => self.surface_sql[slot].as_ref(),
-            PREFIX_META => self.surface_meta[slot].as_ref(),
-            PREFIX_VERBS => self.surface_verbs[slot].as_ref(),
+            // Surface: 0x00-0x0F
+            p if p <= PREFIX_SURFACE_END => {
+                self.surfaces.get(p as usize).and_then(|c| c[slot].as_ref())
+            }
+            // Fluid: 0x10-0x7F
             p if p >= PREFIX_FLUID_START && p <= PREFIX_FLUID_END => {
                 let chunk = (p - PREFIX_FLUID_START) as usize;
                 self.fluid.get(chunk).and_then(|c| c[slot].as_ref())
             }
+            // Nodes: 0x80-0xFF
             p if p >= PREFIX_NODE_START => {
                 let chunk = (p - PREFIX_NODE_START) as usize;
                 self.nodes.get(chunk).and_then(|c| c[slot].as_ref())
@@ -549,14 +670,16 @@ impl BindSpace {
         let slot = addr.slot() as usize;
         
         let node = match prefix {
-            PREFIX_LANCE => self.surface_lance[slot].as_mut(),
-            PREFIX_SQL => self.surface_sql[slot].as_mut(),
-            PREFIX_META => self.surface_meta[slot].as_mut(),
-            PREFIX_VERBS => self.surface_verbs[slot].as_mut(),
+            // Surface: 0x00-0x0F
+            p if p <= PREFIX_SURFACE_END => {
+                self.surfaces.get_mut(p as usize).and_then(|c| c[slot].as_mut())
+            }
+            // Fluid: 0x10-0x7F
             p if p >= PREFIX_FLUID_START && p <= PREFIX_FLUID_END => {
                 let chunk = (p - PREFIX_FLUID_START) as usize;
                 self.fluid.get_mut(chunk).and_then(|c| c[slot].as_mut())
             }
+            // Nodes: 0x80-0xFF
             p if p >= PREFIX_NODE_START => {
                 let chunk = (p - PREFIX_NODE_START) as usize;
                 self.nodes.get_mut(chunk).and_then(|c| c[slot].as_mut())
@@ -614,7 +737,7 @@ impl BindSpace {
         let slot = addr.slot() as usize;
         
         // Can't delete surfaces
-        if prefix <= PREFIX_VERBS {
+        if prefix <= PREFIX_SURFACE_END {
             return None;
         }
         
@@ -733,12 +856,31 @@ impl BindSpace {
     // SURFACE HELPERS
     // =========================================================================
     
-    /// Get verb address by name
+    /// Get verb address by name (searches PREFIX_VERBS compartment)
     pub fn verb(&self, name: &str) -> Option<Addr> {
-        for slot in 0..CHUNK_SIZE {
-            if let Some(node) = &self.surface_verbs[slot] {
-                if node.label.as_deref() == Some(name) {
-                    return Some(Addr::new(PREFIX_VERBS, slot as u8));
+        if let Some(verbs) = self.surfaces.get(PREFIX_VERBS as usize) {
+            for slot in 0..CHUNK_SIZE {
+                if let Some(node) = &verbs[slot] {
+                    if node.label.as_deref() == Some(name) {
+                        return Some(Addr::new(PREFIX_VERBS, slot as u8));
+                    }
+                }
+            }
+        }
+        None
+    }
+    
+    /// Get op address by name from any surface compartment
+    pub fn surface_op(&self, compartment: u8, name: &str) -> Option<Addr> {
+        if compartment > PREFIX_SURFACE_END {
+            return None;
+        }
+        if let Some(surface) = self.surfaces.get(compartment as usize) {
+            for slot in 0..CHUNK_SIZE {
+                if let Some(node) = &surface[slot] {
+                    if node.label.as_deref() == Some(name) {
+                        return Some(Addr::new(compartment, slot as u8));
+                    }
                 }
             }
         }
@@ -755,12 +897,9 @@ impl BindSpace {
     // =========================================================================
     
     pub fn stats(&self) -> BindSpaceStats {
-        let surface_count = [
-            &self.surface_lance,
-            &self.surface_sql,
-            &self.surface_meta,
-            &self.surface_verbs,
-        ].iter().map(|s| s.iter().filter(|x| x.is_some()).count()).sum();
+        let surface_count: usize = self.surfaces.iter()
+            .map(|s| s.iter().filter(|x| x.is_some()).count())
+            .sum();
         
         let fluid_count: usize = self.fluid.iter()
             .map(|c| c.iter().filter(|x| x.is_some()).count())
@@ -779,7 +918,6 @@ impl BindSpace {
         }
     }
 }
-
 impl Default for BindSpace {
     fn default() -> Self {
         Self::new()
