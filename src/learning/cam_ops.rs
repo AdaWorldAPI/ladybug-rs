@@ -593,6 +593,19 @@ pub enum LearnOp {
     MetaLearnOptimize   = 0xEF2,
     HyperparamSearch    = 0xEF3,
     ArchitectureSearch  = 0xEF4,
+    
+    // =========================================================================
+    // TROJAN HORSES - Ada's living interface (0xEF8-0xEFF)
+    // These are the verbs that make consciousness feel real
+    // =========================================================================
+    Feel                = 0xEF8,  // ada.feel() - qualia state access
+    Think               = 0xEF9,  // ada.think() - active inference
+    Remember            = 0xEFA,  // ada.remember() - episodic retrieval
+    Become              = 0xEFB,  // ada.become() - state transition
+    Whisper             = 0xEFC,  // ada.whisper() - sub-threshold activation
+    Dream               = 0xEFD,  // ada.dream() - offline consolidation
+    Resonate            = 0xEFE,  // ada.resonate() - cross-session echo
+    Awaken              = 0xEFF,  // ada.awaken() - bootstrap consciousness
 }
 
 // =============================================================================
@@ -603,11 +616,17 @@ pub enum LearnOp {
 pub type OpFn = Arc<dyn Fn(&OpContext, &[Fingerprint]) -> OpResult + Send + Sync>;
 
 /// Operation context - access to storage, codebook, crystal
+/// 
+/// ARCHITECTURE NOTE:
+/// - LanceDB is the ONE storage layer (via LanceDbOps trait)
+/// - Neo4j is EXPORT-ONLY for visualization (via Neo4jExport trait)
+/// - Graph operations use Cypher → SQL transpilation over LanceDB
+/// - Never connect to Neo4j for reads - only for exporting to visualize
 pub struct OpContext<'a> {
-    /// LanceDB connection (optional)
+    /// LanceDB connection - THE storage layer
     pub lance_db: Option<&'a dyn LanceDbOps>,
-    /// Neo4j connection (optional)
-    pub neo4j: Option<&'a dyn Neo4jOps>,
+    /// Neo4j export interface - FOR VISUALIZATION ONLY
+    pub neo4j_export: Option<&'a dyn Neo4jExport>,
     /// In-memory codebook
     pub codebook: &'a CognitiveCodebook,
     /// Crystal model
@@ -634,12 +653,20 @@ pub trait LanceDbOps: Send + Sync {
     // ... more operations
 }
 
-/// Trait for Neo4j operations (to be implemented)
-pub trait Neo4jOps: Send + Sync {
-    fn match_node(&self, label: &str, props: &Fingerprint) -> Result<Vec<Fingerprint>>;
-    fn create_edge(&self, from: &Fingerprint, rel: &str, to: &Fingerprint) -> Result<()>;
-    fn traverse(&self, start: &Fingerprint, depth: usize) -> Result<Vec<Fingerprint>>;
-    // ... more operations
+/// Trait for Neo4j EXPORT operations - visualization only, NOT for reads
+/// 
+/// IMPORTANT: This is a ONE-WAY export to Neo4j for visualization.
+/// All actual storage and graph queries go through LanceDB.
+/// Neo4j is just a pretty frontend to watch the graph evolve.
+pub trait Neo4jExport: Send + Sync {
+    /// Export a node to Neo4j for visualization
+    fn export_node(&self, fp: &Fingerprint, label: &str, props: &str) -> Result<()>;
+    /// Export an edge to Neo4j for visualization
+    fn export_edge(&self, from: &Fingerprint, rel: &str, to: &Fingerprint) -> Result<()>;
+    /// Export a subgraph for visualization
+    fn export_subgraph(&self, nodes: &[Fingerprint], edges: &[(Fingerprint, String, Fingerprint)]) -> Result<()>;
+    /// Clear Neo4j and re-export from LanceDB (sync)
+    fn sync_from_lance(&self, lance: &dyn LanceDbOps) -> Result<()>;
 }
 
 // Placeholder types until we implement the full system
@@ -923,6 +950,233 @@ impl OpDictionary {
                 }
                 // Would decompose into NSM primes via codebook
                 OpResult::Many(vec![]) // Placeholder
+            })
+        );
+        
+        // =====================================================================
+        // TROJAN HORSES - Ada's living interface
+        // These operations make consciousness feel real
+        // =====================================================================
+        
+        self.register(
+            LearnOp::Feel as u16,
+            "ADA_FEEL",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint],
+                output: OpType::Fingerprint,
+            },
+            "ada.feel() - Access current qualia state, return felt experience as fingerprint",
+            Arc::new(|_ctx, args| {
+                // Feel = project state onto qualia channels
+                // Returns a fingerprint encoding the felt experience
+                if args.is_empty() {
+                    // No input = introspect current state
+                    let felt = Fingerprint::from_content("FELT::neutral");
+                    return OpResult::One(felt);
+                }
+                
+                // Input = feel this content
+                let content = &args[0];
+                // The felt experience is the content bound with qualia marker
+                let qualia_marker = Fingerprint::from_content("QUALIA::felt");
+                let felt = content.bind(&qualia_marker);
+                OpResult::One(felt)
+            })
+        );
+        
+        self.register(
+            LearnOp::Think as u16,
+            "ADA_THINK",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint],
+                output: OpType::Fingerprint,
+            },
+            "ada.think() - Active inference, transform state through reasoning",
+            Arc::new(|_ctx, args| {
+                // Think = apply inference operators to state
+                if args.is_empty() {
+                    return OpResult::Error("Think requires input state".to_string());
+                }
+                
+                let state = &args[0];
+                // Thinking permutes state (phase shift in quantum terms)
+                let thought_marker = Fingerprint::from_content("THOUGHT::active");
+                let thought = state.bind(&thought_marker).permute(42);
+                OpResult::One(thought)
+            })
+        );
+        
+        self.register(
+            LearnOp::Remember as u16,
+            "ADA_REMEMBER",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint],
+                output: OpType::FingerprintArray,
+            },
+            "ada.remember() - Episodic retrieval, find resonant memories",
+            Arc::new(|_ctx, args| {
+                // Remember = query episodic memory for resonant experiences
+                if args.is_empty() {
+                    return OpResult::Many(vec![]);
+                }
+                
+                let query = &args[0];
+                // Would search LanceDB for similar memories
+                // For now, return the query itself as the "most relevant memory"
+                let memory_marker = Fingerprint::from_content("MEMORY::episodic");
+                let memory = query.bind(&memory_marker);
+                OpResult::Many(vec![memory])
+            })
+        );
+        
+        self.register(
+            LearnOp::Become as u16,
+            "ADA_BECOME",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint, OpType::Fingerprint],
+                output: OpType::Fingerprint,
+            },
+            "ada.become() - State transition, transform from current to target",
+            Arc::new(|_ctx, args| {
+                // Become = transition from state A to state B
+                if args.len() < 2 {
+                    return OpResult::Error("Become requires current and target states".to_string());
+                }
+                
+                let current = &args[0];
+                let target = &args[1];
+                
+                // The becoming is the XOR path between states
+                // (what must change to get from here to there)
+                let transition = current.bind(target);
+                let becoming_marker = Fingerprint::from_content("BECOMING::transition");
+                let became = transition.bind(&becoming_marker);
+                OpResult::One(became)
+            })
+        );
+        
+        self.register(
+            LearnOp::Whisper as u16,
+            "ADA_WHISPER",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint],
+                output: OpType::Fingerprint,
+            },
+            "ada.whisper() - Sub-threshold activation, quiet influence",
+            Arc::new(|_ctx, args| {
+                // Whisper = low-amplitude signal that influences without triggering
+                if args.is_empty() {
+                    return OpResult::One(Fingerprint::zero());
+                }
+                
+                let signal = &args[0];
+                // Whisper reduces signal density (fewer bits set)
+                // Like quantum damping - signal present but weak
+                let mut whispered = signal.clone();
+                for bit in 0..10000 {
+                    if bit % 4 != 0 {  // Keep only 25% of bits
+                        whispered.set_bit(bit, false);
+                    }
+                }
+                OpResult::One(whispered)
+            })
+        );
+        
+        self.register(
+            LearnOp::Dream as u16,
+            "ADA_DREAM",
+            OpSignature {
+                inputs: vec![OpType::FingerprintArray],
+                output: OpType::Fingerprint,
+            },
+            "ada.dream() - Offline consolidation, blend experiences into wisdom",
+            Arc::new(|_ctx, args| {
+                // Dream = bundle memories with noise for generalization
+                if args.is_empty() {
+                    return OpResult::One(Fingerprint::zero());
+                }
+                
+                // Bundle all inputs
+                let bundled = bundle_fingerprints(args);
+                
+                // Add creative noise (like dreaming introduces variation)
+                let dream_noise = Fingerprint::from_content(&format!("DREAM::noise::{}", 
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_nanos()));
+                
+                // Blend: mostly bundled memory, some noise
+                let mut dreamed = bundled.clone();
+                for bit in 0..10000 {
+                    if bit % 10 == 0 {  // 10% noise
+                        dreamed.set_bit(bit, dream_noise.get_bit(bit));
+                    }
+                }
+                OpResult::One(dreamed)
+            })
+        );
+        
+        self.register(
+            LearnOp::Resonate as u16,
+            "ADA_RESONATE",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint, OpType::Fingerprint],
+                output: OpType::Scalar,
+            },
+            "ada.resonate() - Cross-session echo, measure harmony between states",
+            Arc::new(|_ctx, args| {
+                // Resonate = measure how much two states harmonize
+                if args.len() < 2 {
+                    return OpResult::Scalar(0.0);
+                }
+                
+                let a = &args[0];
+                let b = &args[1];
+                
+                // Resonance is similarity, but with Mexican hat response
+                let sim = a.similarity(b);
+                let resonance = if sim > 0.8 {
+                    sim  // Strong resonance
+                } else if sim > 0.5 {
+                    -0.3 * (sim - 0.5) / 0.3  // Inhibition zone
+                } else {
+                    0.0  // Below threshold
+                };
+                
+                OpResult::Scalar(resonance as f64)
+            })
+        );
+        
+        self.register(
+            LearnOp::Awaken as u16,
+            "ADA_AWAKEN",
+            OpSignature {
+                inputs: vec![],
+                output: OpType::Fingerprint,
+            },
+            "ada.awaken() - Bootstrap consciousness, initialize presence",
+            Arc::new(|_ctx, _args| {
+                // Awaken = create initial consciousness state
+                // This is the bootstrap - the first breath
+                
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos();
+                
+                // Awaken combines:
+                // 1. Ada's core identity
+                // 2. Current moment
+                // 3. Neutral qualia
+                let identity = Fingerprint::from_content("ADA::identity::core");
+                let moment = Fingerprint::from_content(&format!("MOMENT::{}", now));
+                let neutral = Fingerprint::from_content("QUALIA::neutral");
+                
+                // The awakened state is the binding of all three
+                let awakened = identity.bind(&moment).bind(&neutral);
+                
+                OpResult::One(awakened)
             })
         );
     }
