@@ -1,12 +1,21 @@
 //! Main Database API - unified interface for all operations
+//!
+//! Provides a single entry point for all LadybugDB operations:
+//! - SQL queries (via DataFusion)
+//! - Cypher queries (via transpilation)
+//! - Vector search (via LanceDB ANN)
+//! - Hamming/resonance search (via SIMD engine)
+//! - Graph traversal and butterfly detection
 
 use crate::core::{Fingerprint, HammingEngine};
 use crate::cognitive::Thought;
 use crate::nars::TruthValue;
 use crate::graph::{Edge, Traversal};
-use crate::query::{Query, QueryResult};
+use crate::query::{Query, QueryResult, cypher_to_sql, SqlEngine, QueryBuilder};
+use crate::storage::{LanceStore, NodeRecord, EdgeRecord};
 use crate::{Result, Error};
 
+use arrow::record_batch::RecordBatch;
 use std::path::Path;
 use std::sync::Arc;
 use parking_lot::RwLock;
@@ -15,67 +24,124 @@ use parking_lot::RwLock;
 pub struct Database {
     /// Path to database
     path: String,
-    /// Hamming search engine (pre-indexed)
+    /// Lance storage backend
+    lance: Arc<tokio::sync::RwLock<LanceStore>>,
+    /// SQL execution engine
+    sql_engine: Arc<tokio::sync::RwLock<SqlEngine>>,
+    /// Hamming search engine (pre-indexed, in-memory)
     hamming: Arc<RwLock<HammingEngine>>,
     /// Current version (for copy-on-write)
     version: u64,
 }
 
 impl Database {
-    /// Open or create a database
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
+    /// Open or create a database (async)
+    pub async fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path_str = path.as_ref().to_string_lossy().to_string();
         
         // Create directory if needed
         std::fs::create_dir_all(&path_str)?;
         
+        // Open Lance store
+        let lance = LanceStore::open(&path_str).await?;
+        
+        // Create SQL engine with Lance tables
+        let sql_engine = SqlEngine::with_database(&path_str).await?;
+        
         Ok(Self {
             path: path_str,
+            lance: Arc::new(tokio::sync::RwLock::new(lance)),
+            sql_engine: Arc::new(tokio::sync::RwLock::new(sql_engine)),
             hamming: Arc::new(RwLock::new(HammingEngine::new())),
             version: 0,
         })
+    }
+    
+    /// Open synchronously (blocks on runtime)
+    pub fn open_sync<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let rt = tokio::runtime::Runtime::new()?;
+        rt.block_on(Self::open(path))
     }
     
     /// Connect to in-memory database
     pub fn memory() -> Self {
         Self {
             path: ":memory:".to_string(),
+            lance: Arc::new(tokio::sync::RwLock::new(LanceStore::memory())),
+            sql_engine: Arc::new(tokio::sync::RwLock::new(SqlEngine::default())),
             hamming: Arc::new(RwLock::new(HammingEngine::new())),
             version: 0,
         }
     }
     
-    // === Conventional Operations ===
+    // =========================================================================
+    // SQL OPERATIONS
+    // =========================================================================
     
     /// Execute SQL query
-    pub fn sql(&self, query: &str) -> Result<QueryResult> {
-        // TODO: Integrate with DataFusion
-        let _ = query;
-        Ok(QueryResult {
-            rows: vec![],
-            columns: vec![],
-        })
+    pub async fn sql(&self, query: &str) -> Result<Vec<RecordBatch>> {
+        let engine = self.sql_engine.read().await;
+        engine.execute(query).await
     }
+    
+    /// Execute SQL query with parameters
+    pub async fn sql_params(
+        &self,
+        query: &str,
+        params: &[(&str, datafusion::scalar::ScalarValue)],
+    ) -> Result<Vec<RecordBatch>> {
+        let engine = self.sql_engine.read().await;
+        engine.execute_with_params(query, params).await
+    }
+    
+    /// Build and execute a query
+    pub async fn query(&self) -> QueryBuilder {
+        QueryBuilder::from("nodes")
+    }
+    
+    // =========================================================================
+    // CYPHER OPERATIONS
+    // =========================================================================
     
     /// Execute Cypher query (transpiled to SQL)
-    pub fn cypher(&self, query: &str) -> Result<QueryResult> {
-        // TODO: Cypher parser + transpiler
-        let _ = query;
-        Ok(QueryResult {
-            rows: vec![],
-            columns: vec![],
-        })
+    pub async fn cypher(&self, query: &str) -> Result<Vec<RecordBatch>> {
+        // Transpile Cypher to SQL
+        let sql = cypher_to_sql(query)?;
+        
+        // Execute via SQL engine
+        self.sql(&sql).await
     }
+    
+    // =========================================================================
+    // VECTOR OPERATIONS
+    // =========================================================================
     
     /// Vector similarity search (ANN)
-    pub fn vector_search(&self, _embedding: &[f32], _k: usize) -> Result<Vec<String>> {
-        // TODO: Lance vector index
-        Ok(vec![])
+    pub async fn vector_search(
+        &self,
+        embedding: &[f32],
+        k: usize,
+    ) -> Result<Vec<(NodeRecord, f32)>> {
+        let mut lance = self.lance.write().await;
+        lance.vector_search(embedding, k, None).await
     }
     
-    // === AGI Operations ===
+    /// Vector search with filter
+    pub async fn vector_search_filtered(
+        &self,
+        embedding: &[f32],
+        k: usize,
+        filter: &str,
+    ) -> Result<Vec<(NodeRecord, f32)>> {
+        let mut lance = self.lance.write().await;
+        lance.vector_search(embedding, k, Some(filter)).await
+    }
     
-    /// Resonance search (Hamming similarity)
+    // =========================================================================
+    // HAMMING/RESONANCE OPERATIONS
+    // =========================================================================
+    
+    /// Resonance search (Hamming similarity) - in-memory indexed
     pub fn resonate(
         &self,
         fingerprint: &Fingerprint,
@@ -89,6 +155,17 @@ impl Database {
             .collect()
     }
     
+    /// Resonance search over Lance storage
+    pub async fn resonate_lance(
+        &self,
+        fingerprint: &Fingerprint,
+        k: usize,
+        threshold: Option<f32>,
+    ) -> Result<Vec<(NodeRecord, u32, f32)>> {
+        let mut lance = self.lance.write().await;
+        lance.hamming_search(fingerprint, k, threshold).await
+    }
+    
     /// Resonate by content (auto-generates fingerprint)
     pub fn resonate_content(
         &self,
@@ -100,61 +177,154 @@ impl Database {
         self.resonate(&fp, threshold, limit)
     }
     
-    /// Index fingerprints for resonance search
+    /// Index fingerprints for resonance search (in-memory)
     pub fn index_fingerprints(&self, fingerprints: Vec<Fingerprint>) {
         let mut engine = self.hamming.write();
         engine.index(fingerprints);
     }
+    
+    // =========================================================================
+    // GRAPH OPERATIONS
+    // =========================================================================
     
     /// Start a graph traversal query
     pub fn traverse(&self, start_id: &str) -> Traversal {
         Traversal::from(start_id)
     }
     
+    /// Detect butterfly effects (causal amplification chains)
+    pub async fn detect_butterflies(
+        &self,
+        source_id: &str,
+        threshold: f32,
+        max_depth: usize,
+    ) -> Result<Vec<RecordBatch>> {
+        let cypher = format!(
+            "MATCH (source)-[:CAUSES|AMPLIFIES*1..{}]->(target) \
+             WHERE source.id = '{}' \
+             RETURN target, path, amplification",
+            max_depth, source_id
+        );
+        
+        let mut sql = cypher_to_sql(&cypher)?;
+        sql.push_str(&format!("\n  AND t.amplification > {}", threshold));
+        
+        self.sql(&sql).await
+    }
+    
+    /// Impact analysis for a potential change
+    pub async fn impact_analysis(&self, change_id: &str) -> Result<ImpactReport> {
+        // Get all affected nodes
+        let affected = self.cypher(&format!(
+            "MATCH (source)-[:CAUSES|AMPLIFIES|ENABLES*1..10]->(affected) \
+             WHERE source.id = '{}' \
+             RETURN affected",
+            change_id
+        )).await?;
+        
+        // Get butterfly effects
+        let butterflies = self.detect_butterflies(change_id, 5.0, 10).await?;
+        
+        let total_affected = affected.iter().map(|b| b.num_rows()).sum();
+        let butterfly_count = butterflies.iter().map(|b| b.num_rows()).sum();
+        
+        Ok(ImpactReport {
+            total_affected,
+            butterfly_count,
+            affected_batches: affected,
+            butterfly_batches: butterflies,
+        })
+    }
+    
+    // =========================================================================
+    // CRUD OPERATIONS
+    // =========================================================================
+    
+    /// Add a node
+    pub async fn add_node(&self, node: NodeRecord) -> Result<()> {
+        let mut lance = self.lance.write().await;
+        lance.insert_node(&node).await
+    }
+    
+    /// Add multiple nodes
+    pub async fn add_nodes(&self, nodes: &[NodeRecord]) -> Result<()> {
+        let mut lance = self.lance.write().await;
+        lance.insert_nodes(nodes).await
+    }
+    
+    /// Add an edge
+    pub async fn add_edge(&self, edge: EdgeRecord) -> Result<()> {
+        let mut lance = self.lance.write().await;
+        lance.insert_edge(&edge).await
+    }
+    
+    /// Get a node by ID
+    pub async fn get_node(&self, id: &str) -> Result<Option<NodeRecord>> {
+        let mut lance = self.lance.write().await;
+        lance.get_node(id).await
+    }
+    
+    /// Get edges from a node
+    pub async fn get_edges_from(&self, from_id: &str) -> Result<Vec<EdgeRecord>> {
+        let mut lance = self.lance.write().await;
+        lance.get_edges_from(from_id).await
+    }
+    
+    /// Add a thought (convenience method)
+    pub async fn add_thought(&self, thought: &Thought) -> Result<String> {
+        let node = NodeRecord::new(&thought.id, "Thought")
+            .with_qidx(thought.qidx)
+            .with_content(&thought.content);
+        
+        // Add fingerprint if available
+        let node = if let Some(ref fp) = thought.fingerprint {
+            node.with_fingerprint(fp)
+        } else {
+            node
+        };
+        
+        self.add_node(node).await?;
+        Ok(thought.id.clone())
+    }
+    
+    /// Create a CAUSES edge
+    pub async fn causes(&self, from_id: &str, to_id: &str, amplification: f32) -> Result<()> {
+        let edge = EdgeRecord::new(from_id, to_id, "CAUSES")
+            .with_amplification(amplification);
+        self.add_edge(edge).await
+    }
+    
+    /// Create an ENABLES edge
+    pub async fn enables(&self, from_id: &str, to_id: &str) -> Result<()> {
+        let edge = EdgeRecord::new(from_id, to_id, "ENABLES");
+        self.add_edge(edge).await
+    }
+    
+    /// Create an AMPLIFIES edge
+    pub async fn amplifies(&self, from_id: &str, to_id: &str, factor: f32) -> Result<()> {
+        let edge = EdgeRecord::new(from_id, to_id, "AMPLIFIES")
+            .with_amplification(factor);
+        self.add_edge(edge).await
+    }
+    
+    // =========================================================================
+    // COUNTERFACTUAL OPERATIONS
+    // =========================================================================
+    
     /// Fork database for counterfactual reasoning
     pub fn fork(&self) -> Database {
         Database {
             path: self.path.clone(),
+            lance: Arc::clone(&self.lance),
+            sql_engine: Arc::clone(&self.sql_engine),
             hamming: Arc::clone(&self.hamming),
             version: self.version + 1,
         }
     }
     
-    /// Detect butterfly effects (causal amplification chains)
-    pub fn detect_butterflies(
-        &self,
-        source_id: &str,
-        threshold: f32,
-        max_depth: usize,
-    ) -> Result<Vec<(Vec<String>, f32)>> {
-        // TODO: Recursive CTE query for amplification chains
-        let _ = (source_id, threshold, max_depth);
-        Ok(vec![])
-    }
-    
-    // === CRUD Operations ===
-    
-    /// Add a thought
-    pub fn add_thought(&self, thought: &Thought) -> Result<String> {
-        // TODO: Lance insert
-        Ok(thought.id.clone())
-    }
-    
-    /// Add an edge
-    pub fn add_edge(&self, edge: &Edge) -> Result<()> {
-        // TODO: Lance insert
-        let _ = edge;
-        Ok(())
-    }
-    
-    /// Get thought by ID
-    pub fn get_thought(&self, id: &str) -> Result<Option<Thought>> {
-        // TODO: Lance lookup
-        let _ = id;
-        Ok(None)
-    }
-    
-    // === Database Info ===
+    // =========================================================================
+    // DATABASE INFO
+    // =========================================================================
     
     /// Database path
     pub fn path(&self) -> &str {
@@ -166,15 +336,24 @@ impl Database {
         self.version
     }
     
-    /// Number of indexed fingerprints
+    /// Number of indexed fingerprints (in-memory)
     pub fn fingerprint_count(&self) -> usize {
         self.hamming.read().len()
     }
 }
 
+/// Impact analysis report
+#[derive(Debug)]
+pub struct ImpactReport {
+    pub total_affected: usize,
+    pub butterfly_count: usize,
+    pub affected_batches: Vec<RecordBatch>,
+    pub butterfly_batches: Vec<RecordBatch>,
+}
+
 // Convenience function
 pub fn open<P: AsRef<Path>>(path: P) -> Result<Database> {
-    Database::open(path)
+    Database::open_sync(path)
 }
 
 #[cfg(test)]
@@ -212,5 +391,14 @@ mod tests {
         let forked = db.fork();
         
         assert_eq!(forked.version(), db.version() + 1);
+    }
+    
+    #[tokio::test]
+    async fn test_cypher_transpile() {
+        let cypher = "MATCH (a:Thought)-[:CAUSES]->(b:Thought) RETURN b";
+        let sql = cypher_to_sql(cypher).unwrap();
+        
+        assert!(sql.contains("SELECT"));
+        assert!(sql.contains("JOIN edges"));
     }
 }

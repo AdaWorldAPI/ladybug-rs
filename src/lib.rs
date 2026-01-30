@@ -6,37 +6,48 @@
 //! 
 //! ## Quick Start
 //! 
-//! ```rust
-//! use ladybug::{Database, Thought};
+//! ```rust,ignore
+//! use ladybug::{Database, Thought, NodeRecord, cypher_to_sql};
 //! 
 //! // Open database
-//! let db = Database::open("./mydb")?;
+//! let db = Database::open("./mydb").await?;
 //! 
-//! // Conventional: SQL
-//! let results = db.sql("SELECT * FROM thoughts WHERE confidence > 0.7")?;
+//! // SQL queries (via DataFusion)
+//! let results = db.sql("SELECT * FROM nodes WHERE label = 'Thought'").await?;
 //! 
-//! // Conventional: Vector search
-//! let similar = db.vector_search(&embedding, 10)?;
+//! // Cypher queries (auto-transpiled to recursive CTEs)
+//! let paths = db.cypher("MATCH (a)-[:CAUSES*1..5]->(b) RETURN b").await?;
 //! 
-//! // AGI: Resonance (Hamming similarity on 10K-bit fingerprints)
-//! let resonant = db.resonate(&fingerprint, 0.7)?;
+//! // Vector search (via LanceDB ANN)
+//! let similar = db.vector_search(&embedding, 10).await?;
 //! 
-//! // AGI: Graph traversal with amplification
-//! let chains = db.query()
-//!     .from("config_change")
-//!     .causes()
-//!     .amplifies(2.0)
-//!     .depth(1..=5)
-//!     .execute()?;
+//! // Resonance search (Hamming similarity on 10K-bit fingerprints)
+//! let resonant = db.resonate(&fingerprint, 0.7, 10);
 //! 
-//! // AGI: Counterfactual reasoning
-//! let what_if = db.fork()
-//!     .apply(|w| w.remove("feature_flag"))
-//!     .propagate()
-//!     .diff()?;
+//! // Butterfly detection (causal amplification chains)
+//! let butterflies = db.detect_butterflies("change_id", 5.0, 10).await?;
 //! 
-//! // AGI: NARS inference
-//! let conclusion = premise1.infer::<Deduction>(&premise2)?;
+//! // Counterfactual reasoning
+//! let forked = db.fork();
+//! ```
+//! 
+//! ## Architecture
+//! 
+//! ```text
+//! ┌─────────────────────────────────────────────────────────────────┐
+//! │                        LADYBUGDB                                 │
+//! ├─────────────────────────────────────────────────────────────────┤
+//! │                                                                  │
+//! │   SQL      → DataFusion + Custom UDFs (hamming, similarity)     │
+//! │   Cypher   → Parser + Transpiler → Recursive CTEs               │
+//! │   Vector   → LanceDB native ANN indices                         │
+//! │   Hamming  → AVX-512 SIMD (65M comparisons/sec)                 │
+//! │   NARS     → Non-Axiomatic Reasoning System                     │
+//! │                                                                  │
+//! │   Storage: Lance columnar format, zero-copy Arrow               │
+//! │   Indices: IVF-PQ (vector), scalar (labels), Hamming (custom)   │
+//! │                                                                  │
+//! └─────────────────────────────────────────────────────────────────┘
 //! ```
 
 #![cfg_attr(feature = "simd", feature(portable_simd))]
@@ -55,22 +66,22 @@ pub mod fabric;
 pub mod python;
 
 // Re-exports for convenience
-pub use crate::core::{Fingerprint, Embedding, VsaOps};
+pub use crate::core::{Fingerprint, Embedding, VsaOps, DIM, DIM_U64};
 pub use crate::cognitive::{Thought, Concept, Belief, ThinkingStyle};
 pub use crate::nars::{TruthValue, Evidence, Deduction, Induction, Abduction};
 pub use crate::graph::{Edge, EdgeType, Traversal};
 pub use crate::world::{World, Counterfactual, Change};
-pub use crate::query::{Query, QueryResult};
-pub use crate::storage::Database;
+pub use crate::query::{Query, QueryResult, cypher_to_sql, SqlEngine, QueryBuilder};
+pub use crate::storage::{Database, LanceStore, NodeRecord, EdgeRecord};
 
 /// Crate-level error type
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("Storage error: {0}")]
-    Storage(#[from] storage::StorageError),
+    Storage(String),
     
     #[error("Query error: {0}")]
-    Query(#[from] query::QueryError),
+    Query(String),
     
     #[error("Invalid fingerprint: expected {expected} bytes, got {got}")]
     InvalidFingerprint { expected: usize, got: usize },
@@ -83,6 +94,30 @@ pub enum Error {
     
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+    
+    #[error("Lance error: {0}")]
+    Lance(#[from] lance::Error),
+    
+    #[error("Arrow error: {0}")]
+    Arrow(#[from] arrow::error::ArrowError),
+    
+    #[error("DataFusion error: {0}")]
+    DataFusion(#[from] datafusion::error::DataFusionError),
+    
+    #[error("Tokio error: {0}")]
+    Tokio(#[from] tokio::io::Error),
+}
+
+impl From<storage::StorageError> for Error {
+    fn from(e: storage::StorageError) -> Self {
+        Error::Storage(e.to_string())
+    }
+}
+
+impl From<query::QueryError> for Error {
+    fn from(e: query::QueryError) -> Self {
+        Error::Query(e.to_string())
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -94,6 +129,3 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const FINGERPRINT_BITS: usize = 10_000;
 pub const FINGERPRINT_U64: usize = 157;  // ceil(10000/64)
 pub const FINGERPRINT_BYTES: usize = FINGERPRINT_U64 * 8;
-
-/// Default embedding dimension (for dense vectors)
-pub const EMBEDDING_DIM: usize = 1024;
