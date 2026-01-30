@@ -72,6 +72,7 @@ use crate::core::Fingerprint;
 use crate::search::cognitive::{QualiaVector, CognitiveAtom, CognitiveSearch, SpoTriple};
 use crate::search::causal::CausalSearch;
 use crate::learning::cognitive_frameworks::TruthValue;
+use crate::learning::cam_ops::{OpCategory, OpDictionary, OpResult, LanceOp, SqlOp, HammingOp};
 use super::bind_space::{BindSpace, BindNode, Addr, FINGERPRINT_WORDS};
 
 // =============================================================================
@@ -1267,6 +1268,392 @@ fn hamming_distance(a: &[u64; 156], b: &[u64; 156]) -> u32 {
         dist += (a[i] ^ b[i]).count_ones();
     }
     dist
+}
+
+// =============================================================================
+// CAM EXECUTION BRIDGE
+// =============================================================================
+
+/// CAM operation execution result with cognitive metadata
+#[derive(Clone, Debug)]
+pub enum CamResult {
+    /// Single fingerprint result
+    Fingerprint(Fingerprint),
+    /// Multiple fingerprint results with addresses
+    Fingerprints(Vec<(Addr, Fingerprint)>),
+    /// Scalar value (similarity, distance, etc.)
+    Scalar(f64),
+    /// Boolean result
+    Bool(bool),
+    /// Address in bind space
+    Addr(Addr),
+    /// No result (side effect only)
+    Unit,
+    /// Error
+    Error(String),
+}
+
+impl CogRedis {
+    /// Execute a CAM operation by operation ID
+    ///
+    /// This is the bridge between CAM operation codes (0x000-0xFFF)
+    /// and actual execution over BindSpace.
+    ///
+    /// # Arguments
+    /// * `op_id` - 12-bit operation ID (prefix 4-bit : slot 8-bit)
+    /// * `args` - Fingerprint arguments for the operation
+    ///
+    /// # Returns
+    /// * `CamResult` - Result of the operation
+    pub fn execute_cam(&mut self, op_id: u16, args: &[Fingerprint]) -> CamResult {
+        let category = OpCategory::from_id(op_id);
+        let slot = (op_id & 0xFF) as u8;
+
+        match category {
+            OpCategory::LanceDb => self.execute_lance_op(slot, args),
+            OpCategory::Sql => self.execute_sql_op(slot, args),
+            OpCategory::Cypher => self.execute_cypher_op(slot, args),
+            OpCategory::Hamming => self.execute_hamming_op(slot, args),
+            OpCategory::Nars => self.execute_nars_op(slot, args),
+            OpCategory::Causality => self.execute_causal_op(slot, args),
+            OpCategory::Meta => self.execute_meta_op(slot, args),
+            OpCategory::Qualia => self.execute_qualia_op(slot, args),
+            OpCategory::Learning => self.execute_learning_op(slot, args),
+            _ => CamResult::Error(format!("Unimplemented category: {:?}", category)),
+        }
+    }
+
+    /// Execute LanceDB operations (0x000-0x0FF)
+    fn execute_lance_op(&mut self, slot: u8, args: &[Fingerprint]) -> CamResult {
+        match slot {
+            // VectorSearch (0x60)
+            0x60 => {
+                if args.is_empty() {
+                    return CamResult::Error("VectorSearch requires query fingerprint".to_string());
+                }
+                let query = &args[0];
+                let k = 10; // Default k=10
+
+                // Search BindSpace for similar fingerprints using resonate
+                let qualia = QualiaVector::default();
+                let results = self.resonate(&fp_to_words(query), &qualia, k);
+                let fps: Vec<(Addr, Fingerprint)> = results.into_iter()
+                    .map(|r| {
+                        let addr = Addr::new(0x80, 0); // Placeholder address
+                        (addr, words_to_fp(&r.fingerprint))
+                    })
+                    .collect();
+                CamResult::Fingerprints(fps)
+            }
+            // Insert (0x30)
+            0x30 => {
+                if args.is_empty() {
+                    return CamResult::Error("Insert requires at least one fingerprint".to_string());
+                }
+                let addr = self.bind_space.write(fp_to_words(&args[0]));
+                CamResult::Addr(addr)
+            }
+            // Scan (0x40)
+            0x40 => {
+                let mut results = Vec::new();
+                // Scan node space
+                for prefix in 0x80..=0xFF_u8 {
+                    for slot in 0..=255_u8 {
+                        let addr = Addr::new(prefix, slot);
+                        if let Some(node) = self.bind_space.read(addr) {
+                            results.push((addr, words_to_fp(&node.fingerprint)));
+                            if results.len() >= 100 { // Limit scan
+                                return CamResult::Fingerprints(results);
+                            }
+                        }
+                    }
+                }
+                CamResult::Fingerprints(results)
+            }
+            _ => CamResult::Error(format!("Unknown Lance op: 0x{:02X}", slot)),
+        }
+    }
+
+    /// Execute SQL operations (0x100-0x1FF)
+    fn execute_sql_op(&mut self, slot: u8, args: &[Fingerprint]) -> CamResult {
+        match slot {
+            // SelectSimilar (0x10)
+            0x10 => {
+                if args.is_empty() {
+                    return CamResult::Error("SelectSimilar requires query".to_string());
+                }
+                let query = &args[0];
+                let qualia = QualiaVector::default();
+                let results = self.resonate(&fp_to_words(query), &qualia, 10);
+                let fps: Vec<(Addr, Fingerprint)> = results.into_iter()
+                    .map(|r| {
+                        let addr = Addr::new(0x80, 0);
+                        (addr, words_to_fp(&r.fingerprint))
+                    })
+                    .collect();
+                CamResult::Fingerprints(fps)
+            }
+            _ => CamResult::Error(format!("Unknown SQL op: 0x{:02X}", slot)),
+        }
+    }
+
+    /// Execute Cypher operations (0x200-0x2FF)
+    fn execute_cypher_op(&mut self, slot: u8, args: &[Fingerprint]) -> CamResult {
+        match slot {
+            // MatchSimilar (0x40)
+            0x40 => {
+                if args.is_empty() {
+                    return CamResult::Error("MatchSimilar requires query".to_string());
+                }
+                // Same as vector search
+                let qualia = QualiaVector::default();
+                let results = self.resonate(&fp_to_words(&args[0]), &qualia, 10);
+                let fps: Vec<(Addr, Fingerprint)> = results.into_iter()
+                    .map(|r| {
+                        let addr = Addr::new(0x80, 0);
+                        (addr, words_to_fp(&r.fingerprint))
+                    })
+                    .collect();
+                CamResult::Fingerprints(fps)
+            }
+            // TraverseOut (0x60)
+            0x60 => {
+                if args.is_empty() {
+                    return CamResult::Error("TraverseOut requires source".to_string());
+                }
+                // For now, return empty - graph traversal needs proper edge storage
+                // This would require querying edges by source fingerprint
+                CamResult::Fingerprints(Vec::new())
+            }
+            _ => CamResult::Error(format!("Unknown Cypher op: 0x{:02X}", slot)),
+        }
+    }
+
+    /// Execute Hamming/VSA operations (0x300-0x3FF)
+    fn execute_hamming_op(&mut self, slot: u8, args: &[Fingerprint]) -> CamResult {
+        match slot {
+            // Bind (0x00)
+            0x00 => {
+                if args.len() < 2 {
+                    return CamResult::Error("Bind requires two fingerprints".to_string());
+                }
+                let bound = args[0].bind(&args[1]);
+                CamResult::Fingerprint(bound)
+            }
+            // Unbind (0x01)
+            0x01 => {
+                if args.len() < 2 {
+                    return CamResult::Error("Unbind requires two fingerprints".to_string());
+                }
+                let unbound = args[0].unbind(&args[1]);
+                CamResult::Fingerprint(unbound)
+            }
+            // Distance (0x10)
+            0x10 => {
+                if args.len() < 2 {
+                    return CamResult::Error("Distance requires two fingerprints".to_string());
+                }
+                let dist = args[0].hamming(&args[1]);
+                CamResult::Scalar(dist as f64)
+            }
+            // Similarity (0x11)
+            0x11 => {
+                if args.len() < 2 {
+                    return CamResult::Error("Similarity requires two fingerprints".to_string());
+                }
+                let sim = args[0].similarity(&args[1]);
+                CamResult::Scalar(sim as f64)
+            }
+            // Bundle (0x08)
+            0x08 => {
+                if args.is_empty() {
+                    return CamResult::Fingerprint(Fingerprint::zero());
+                }
+                // Majority vote bundle
+                let bundled = crate::learning::cam_ops::bundle_fingerprints(args);
+                CamResult::Fingerprint(bundled)
+            }
+            // Permute (0x20)
+            0x20 => {
+                if args.is_empty() {
+                    return CamResult::Error("Permute requires fingerprint".to_string());
+                }
+                let permuted = args[0].permute(1);
+                CamResult::Fingerprint(permuted)
+            }
+            _ => CamResult::Error(format!("Unknown Hamming op: 0x{:02X}", slot)),
+        }
+    }
+
+    /// Execute NARS operations (0x400-0x4FF)
+    fn execute_nars_op(&mut self, slot: u8, args: &[Fingerprint]) -> CamResult {
+        match slot {
+            // Deduction (0x00)
+            0x00 => {
+                if args.len() < 2 {
+                    return CamResult::Error("Deduction requires premise and rule".to_string());
+                }
+                // NARS deduction: (A→B, B→C) ⊢ (A→C)
+                // Simplified: bind premises
+                let conclusion = args[0].bind(&args[1]);
+                CamResult::Fingerprint(conclusion)
+            }
+            // Abduction (0x10)
+            0x10 => {
+                if args.len() < 2 {
+                    return CamResult::Error("Abduction requires effect and rule".to_string());
+                }
+                // Abduction: observe effect, infer cause
+                let hypothesis = args[0].bind(&args[1]);
+                CamResult::Fingerprint(hypothesis)
+            }
+            // Revision (0x40)
+            0x40 => {
+                if args.len() < 2 {
+                    return CamResult::Error("Revision requires two beliefs".to_string());
+                }
+                // Revision: combine evidence
+                let revised = args[0].or(&args[1]);
+                CamResult::Fingerprint(revised)
+            }
+            _ => CamResult::Error(format!("Unknown NARS op: 0x{:02X}", slot)),
+        }
+    }
+
+    /// Execute Causal operations (0xA00-0xAFF)
+    fn execute_causal_op(&mut self, slot: u8, args: &[Fingerprint]) -> CamResult {
+        match slot {
+            // DoIntervene (0x20) - Rung 2
+            0x20 => {
+                if args.is_empty() {
+                    return CamResult::Error("DoIntervene requires intervention".to_string());
+                }
+                // Store intervention as causal operation
+                let addr = self.bind_space.write_labeled(fp_to_words(&args[0]), "causal:intervention");
+                CamResult::Addr(addr)
+            }
+            // Counterfactual (0x30) - Rung 3
+            0x30 => {
+                if args.len() < 2 {
+                    return CamResult::Error("Counterfactual requires world and change".to_string());
+                }
+                // Counterfactual: what if A had been B?
+                let counterfactual = args[0].bind(&args[1].not());
+                CamResult::Fingerprint(counterfactual)
+            }
+            _ => CamResult::Error(format!("Unknown Causal op: 0x{:02X}", slot)),
+        }
+    }
+
+    /// Execute Meta operations (0xD00-0xDFF)
+    fn execute_meta_op(&mut self, slot: u8, args: &[Fingerprint]) -> CamResult {
+        match slot {
+            // Reflect (0x00)
+            0x00 => {
+                // Reflection: create fingerprint of current state
+                let state_fp = Fingerprint::from_content(&format!("meta:state:{}",
+                    self.bind_space.stats().node_count));
+                CamResult::Fingerprint(state_fp)
+            }
+            // Monitor (0x20)
+            0x20 => {
+                // Monitor: return stats as fingerprint
+                let stats = self.bind_space.stats();
+                let monitor_fp = Fingerprint::from_content(&format!("meta:monitor:{}:{}:{}",
+                    stats.surface_count, stats.fluid_count, stats.node_count));
+                CamResult::Fingerprint(monitor_fp)
+            }
+            _ => CamResult::Error(format!("Unknown Meta op: 0x{:02X}", slot)),
+        }
+    }
+
+    /// Execute Qualia operations (0xB00-0xBFF)
+    fn execute_qualia_op(&mut self, slot: u8, args: &[Fingerprint]) -> CamResult {
+        match slot {
+            // Valence (0x00)
+            0x00 => {
+                if args.is_empty() {
+                    return CamResult::Error("Valence requires fingerprint".to_string());
+                }
+                // Compute valence from fingerprint density
+                let density = args[0].density();
+                let valence = (density - 0.5) * 2.0; // Map [0,1] to [-1,1]
+                CamResult::Scalar(valence as f64)
+            }
+            // Arousal (0x01)
+            0x01 => {
+                if args.is_empty() {
+                    return CamResult::Error("Arousal requires fingerprint".to_string());
+                }
+                // Arousal from entropy (how mixed are the bits)
+                let density = args[0].density();
+                let arousal = 1.0 - (density - 0.5).abs() * 2.0; // Peak at 50% density
+                CamResult::Scalar(arousal as f64)
+            }
+            _ => CamResult::Error(format!("Unknown Qualia op: 0x{:02X}", slot)),
+        }
+    }
+
+    /// Execute Learning operations (0xE00-0xEFF)
+    fn execute_learning_op(&mut self, slot: u8, args: &[Fingerprint]) -> CamResult {
+        match slot {
+            // MomentCapture (0x00)
+            0x00 => {
+                if args.len() < 2 {
+                    return CamResult::Error("MomentCapture requires input and output".to_string());
+                }
+                // Capture learning moment: bind input → output
+                let moment = args[0].bind(&args[1]);
+                let addr = self.bind_space.write_labeled(fp_to_words(&moment), "learning:moment");
+                CamResult::Addr(addr)
+            }
+            // Hebbian (0x10)
+            0x10 => {
+                if args.len() < 2 {
+                    return CamResult::Error("Hebbian requires pre and post".to_string());
+                }
+                // Hebbian: "neurons that fire together wire together"
+                let association = args[0].and(&args[1]);
+                CamResult::Fingerprint(association)
+            }
+            _ => CamResult::Error(format!("Unknown Learning op: 0x{:02X}", slot)),
+        }
+    }
+
+    /// Execute CAM operation by name
+    pub fn execute_cam_named(&mut self, name: &str, args: &[Fingerprint]) -> CamResult {
+        // Map common names to operation IDs
+        let op_id = match name.to_uppercase().as_str() {
+            "BIND" => HammingOp::Bind as u16,
+            "UNBIND" => HammingOp::Unbind as u16,
+            "SIMILARITY" => HammingOp::Similarity as u16,
+            "DISTANCE" => HammingOp::Distance as u16,
+            "BUNDLE" => HammingOp::Bundle as u16,
+            "PERMUTE" => HammingOp::Permute as u16,
+            "VECTOR_SEARCH" => LanceOp::VectorSearch as u16,
+            "INSERT" => LanceOp::Insert as u16,
+            "SCAN" => LanceOp::Scan as u16,
+            "SELECT_SIMILAR" => SqlOp::SelectSimilar as u16,
+            _ => return CamResult::Error(format!("Unknown operation: {}", name)),
+        };
+        self.execute_cam(op_id, args)
+    }
+}
+
+/// Convert Fingerprint to [u64; 156] words (for CogRedis compatibility)
+fn fp_to_words(fp: &Fingerprint) -> [u64; 156] {
+    let raw = fp.as_raw();
+    let mut words = [0u64; 156];
+    words.copy_from_slice(&raw[..156]);
+    words
+}
+
+/// Convert [u64; 156] words to Fingerprint
+fn words_to_fp(words: &[u64; 156]) -> Fingerprint {
+    use crate::FINGERPRINT_U64;
+    let mut data = [0u64; FINGERPRINT_U64];
+    data[..156].copy_from_slice(words);
+    Fingerprint::from_raw(data)
 }
 
 // =============================================================================
