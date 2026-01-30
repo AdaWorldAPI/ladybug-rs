@@ -61,9 +61,17 @@ pub mod world;
 pub mod query;
 pub mod storage;
 pub mod fabric;
+pub mod learning;
+
+#[cfg(any(feature = "codebook", feature = "hologram", feature = "spo", feature = "compress"))]
+pub mod extensions;
 
 #[cfg(feature = "python")]
 pub mod python;
+pub mod learning;
+
+#[cfg(any(feature = "codebook", feature = "hologram", feature = "spo", feature = "compress"))]
+pub mod extensions;
 
 // Re-exports for convenience
 pub use crate::core::{Fingerprint, Embedding, VsaOps, DIM, DIM_U64};
