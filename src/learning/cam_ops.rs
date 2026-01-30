@@ -617,17 +617,20 @@ pub type OpFn = Arc<dyn Fn(&OpContext, &[Fingerprint]) -> OpResult + Send + Sync
 
 /// Operation context - access to storage, codebook, crystal
 /// 
-/// ARCHITECTURE NOTE:
-/// - LanceDB is the ONE storage layer (via LanceDbOps trait)
-/// - Neo4j is EXPORT-ONLY for visualization (via Neo4jExport trait)
-/// - Graph operations use Cypher → SQL transpilation over LanceDB
-/// - Never connect to Neo4j for reads - only for exporting to visualize
+/// ARCHITECTURE:
+/// - LanceDB is the ONE storage layer (nodes + edges tables)
+/// - Graph queries use Cypher → SQL transpilation (recursive CTEs)
+/// - 4096 CAM operations include Cypher semantics (0x200-0x2FF)
+/// - No external Neo4j needed - graph is EMULATED over LanceDB
+/// 
+/// Storage Layout:
+/// - 4096 operations = the methods you can call
+/// - 64K buckets (16-bit) = addressing space in codebook
+/// - LanceDB tables = physical storage (nodes, edges, sessions)
 pub struct OpContext<'a> {
     /// LanceDB connection - THE storage layer
     pub lance_db: Option<&'a dyn LanceDbOps>,
-    /// Neo4j export interface - FOR VISUALIZATION ONLY
-    pub neo4j_export: Option<&'a dyn Neo4jExport>,
-    /// In-memory codebook
+    /// In-memory codebook (64K buckets)
     pub codebook: &'a CognitiveCodebook,
     /// Crystal model
     pub crystal: Option<&'a CrystalLM>,
@@ -653,21 +656,21 @@ pub trait LanceDbOps: Send + Sync {
     // ... more operations
 }
 
-/// Trait for Neo4j EXPORT operations - visualization only, NOT for reads
+/// Cypher operations (0x200-0x2FF) - Graph semantics over LanceDB
 /// 
-/// IMPORTANT: This is a ONE-WAY export to Neo4j for visualization.
-/// All actual storage and graph queries go through LanceDB.
-/// Neo4j is just a pretty frontend to watch the graph evolve.
-pub trait Neo4jExport: Send + Sync {
-    /// Export a node to Neo4j for visualization
-    fn export_node(&self, fp: &Fingerprint, label: &str, props: &str) -> Result<()>;
-    /// Export an edge to Neo4j for visualization
-    fn export_edge(&self, from: &Fingerprint, rel: &str, to: &Fingerprint) -> Result<()>;
-    /// Export a subgraph for visualization
-    fn export_subgraph(&self, nodes: &[Fingerprint], edges: &[(Fingerprint, String, Fingerprint)]) -> Result<()>;
-    /// Clear Neo4j and re-export from LanceDB (sync)
-    fn sync_from_lance(&self, lance: &dyn LanceDbOps) -> Result<()>;
-}
+/// These operations EXPRESS graph semantics but EXECUTE over LanceDB
+/// via Cypher → SQL transpilation (recursive CTEs for traversal).
+/// 
+/// We HAVE Neo4j - as an abstraction layer, not as a separate database.
+/// Same as SQL: we HAVE SQL semantics over LanceDB via DuckDB.
+/// 
+/// Example:
+///   CypherOp::MatchNode → finds nodes in LanceDB nodes table
+///   CypherOp::Traverse  → recursive CTE over edges table
+///   CypherOp::ShortestPath → Dijkstra via SQL window functions
+/// 
+/// This is the "All for One" principle: one substrate (LanceDB),
+/// multiple query languages (SQL, Cypher, Vector, Hamming).
 
 // Placeholder types until we implement the full system
 pub struct CognitiveCodebook;
