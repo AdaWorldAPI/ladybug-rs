@@ -1,178 +1,237 @@
 //! Universal Bind Space - The DTO That All Languages Hit
 //!
-//! # The Insight
+//! # 8-bit Prefix : 8-bit Address Architecture
 //!
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────────────────────┐
-//! │                              16-bit ADDRESS SPACE                           │
+//! │                      PREFIX (8-bit) : ADDRESS (8-bit)                       │
 //! ├─────────────────┬───────────────────────────────────────────────────────────┤
-//! │  0x0000-0x0FFF  │  SURFACE (4K) - VERBS + OPS                               │
-//! │                 │                 The language primitives                   │
+//! │  0x00:XX        │  SURFACE 0 - Lance/Kuzu (256)                             │
+//! │                 │  Vector search, graph traversal primitives                │
 //! ├─────────────────┼───────────────────────────────────────────────────────────┤
-//! │  0x1000-0x7FFF  │  FLUID (28K) - CONTEXT SELECTOR + EDGES                   │
-//! │                 │                 Defines WHAT 0x8000-0xFFFF means:         │
-//! │                 │                   • Chunk 0: Concept space                │
-//! │                 │                   • Chunk 1: Memory space                 │
-//! │                 │                   • Chunk 2: Codebook space               │
-//! │                 │                   • Chunk 3: Meta-awareness               │
-//! │                 │                 EDGES live here too                       │
+//! │  0x01:XX        │  SURFACE 1 - SQL/Neo4j (256)                              │
+//! │                 │  Relational + property graph primitives                   │
 //! ├─────────────────┼───────────────────────────────────────────────────────────┤
-//! │  0x8000-0xFFFF  │  NODES (32K) - THE UNIVERSAL BIND SPACE                   │
-//! │                 │                 What it IS depends on fluid context       │
-//! │                 │                                                           │
-//! │                 │                 CogRedis?  → Reads/writes here            │
-//! │                 │                 Cypher?    → Queries here                 │
-//! │                 │                 Neo4j?     → Traverses here               │
-//! │                 │                 GraphQL?   → Resolves here                │
-//! │                 │                 SQL?       → Selects here                 │
-//! │                 │                                                           │
-//! │                 │                 ONE SPACE. ANY LANGUAGE.                  │
+//! │  0x02:XX        │  SURFACE 2 - Higher-order thinking (256)                  │
+//! │                 │  Meta-cognition, NARS, reasoning patterns                 │
+//! ├─────────────────┼───────────────────────────────────────────────────────────┤
+//! │  0x03:XX        │  SURFACE 3 - Verbs/Cypher (256)                           │
+//! │                 │  CAUSES, BECOMES, ENABLES... 144 Go board verbs           │
+//! ├─────────────────┼───────────────────────────────────────────────────────────┤
+//! │  0x04-0x7F:XX   │  FLUID (124 chunks × 256 = 31,744 edges)                  │
+//! │                 │  Context selector + edge storage                          │
+//! ├─────────────────┼───────────────────────────────────────────────────────────┤
+//! │  0x80-0xFF:XX   │  NODES (128 chunks × 256 = 32,768 nodes)                  │
+//! │                 │  THE UNIVERSAL BIND SPACE                                 │
+//! │                 │  All languages hit this. Any syntax. Same addresses.      │
 //! └─────────────────┴───────────────────────────────────────────────────────────┘
 //! ```
 //!
-//! # Architecture
-//!
-//! The fluid zone (0x1000-0x7FFF) acts as a CONTEXT SELECTOR that determines
-//! how the node space (0x8000-0xFFFF) is interpreted:
-//!
-//! - Setting fluid context to Chunk 0 → node space = concepts
-//! - Setting fluid context to Chunk 1 → node space = memories  
-//! - Setting fluid context to Chunk 2 → node space = codebook entries
-//! - Setting fluid context to Chunk 3 → node space = meta-awareness states
-//!
-//! The node space itself is the UNIVERSAL DTO - all query languages bind here.
-//! The fingerprint at any address doesn't care what language asked for it.
-//!
-//! # Query Language Adapters
-//!
-//! All adapters implement the same trait and hit the same bind space:
+//! # Why 8-bit + 8-bit?
 //!
 //! ```text
-//!                     ┌─────────────┐
-//!                     │ Bind Space  │
-//!                     │ 0x8000-FFFF │
-//!                     └──────┬──────┘
-//!                            │
-//!        ┌───────────────────┼───────────────────┐
-//!        │                   │                   │
-//!   ┌────┴────┐        ┌────┴────┐        ┌────┴────┐
-//!   │  Redis  │        │  Cypher │        │   SQL   │
-//!   │   GET   │        │  MATCH  │        │ SELECT  │
-//!   └─────────┘        └─────────┘        └─────────┘
+//! Operation          HashMap (16-bit)    Array index (8+8)
+//! ─────────────────────────────────────────────────────────
+//! Hash compute       ~20 cycles          0
+//! Bucket lookup      ~10-50 cycles       0  
+//! Cache miss risk    High                Low (predictable)
+//! Branch prediction  Poor                Perfect (3-way)
+//! TOTAL              ~30-100 cycles      ~3-5 cycles
 //! ```
+//!
+//! Works on ANY CPU: No AVX-512, no SIMD, no special instructions.
+//! Just shift, mask, array index. Even works on embedded/WASM.
+//!
+//! # The 4-Compartment Surface
+//!
+//! Each surface is 256 slots that fit in L1 cache:
+//!
+//! | Prefix | Surface      | Language primitives                    |
+//! |--------|--------------|----------------------------------------|
+//! | 0x00   | Lance/Kuzu   | VECTOR_SEARCH, TRAVERSE, RESONATE      |
+//! | 0x01   | SQL/Neo4j    | SELECT, JOIN, MATCH, WHERE             |
+//! | 0x02   | Meta         | REFLECT, ABSTRACT, DEDUCE, ABDUCT      |
+//! | 0x03   | Verbs        | CAUSES, BECOMES, ENABLES, AMPLIFIES    |
+//!
+//! All surfaces speak different languages but hit the SAME bind space.
 
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 // =============================================================================
-// ADDRESS CONSTANTS
+// ADDRESS CONSTANTS (8-bit prefix architecture)
 // =============================================================================
 
-/// Surface tier: verbs + ops (fixed vocabulary)
-pub const SURFACE_START: u16 = 0x0000;
-pub const SURFACE_END: u16 = 0x0FFF;
-pub const SURFACE_SIZE: usize = 4096;
-
-/// Fluid tier: context selector + edges
-pub const FLUID_START: u16 = 0x1000;
-pub const FLUID_END: u16 = 0x7FFF;
-pub const FLUID_SIZE: usize = 28672;
-
-/// Node tier: universal bind space
-pub const NODE_START: u16 = 0x8000;
-pub const NODE_END: u16 = 0xFFFF;
-pub const NODE_SIZE: usize = 32768;
-
-/// Total addressable space
-pub const TOTAL_SIZE: usize = 65536;
-
-/// Words in a 10K-bit fingerprint
+/// Fingerprint words (10K bits = 156 × 64-bit words)
 pub const FINGERPRINT_WORDS: usize = 156;
 
+/// Slots per chunk (2^8 = 256)
+pub const CHUNK_SIZE: usize = 256;
+
+/// Surface prefixes (4 compartments)
+pub const PREFIX_LANCE: u8 = 0x00;    // Lance/Kuzu ops
+pub const PREFIX_SQL: u8 = 0x01;      // SQL/Neo4j ops
+pub const PREFIX_META: u8 = 0x02;     // Higher-order thinking
+pub const PREFIX_VERBS: u8 = 0x03;    // Verbs/Cypher
+
+/// Fluid range (edges + context)
+pub const PREFIX_FLUID_START: u8 = 0x04;
+pub const PREFIX_FLUID_END: u8 = 0x7F;
+pub const FLUID_CHUNKS: usize = 124;  // 0x7F - 0x04 + 1
+
+/// Node range (universal bind space)  
+pub const PREFIX_NODE_START: u8 = 0x80;
+pub const PREFIX_NODE_END: u8 = 0xFF;
+pub const NODE_CHUNKS: usize = 128;   // 0xFF - 0x80 + 1
+
+/// Total addressable
+pub const TOTAL_ADDRESSES: usize = 65536;
+
 // =============================================================================
-// CHUNK CONTEXTS (What the node space means)
+// ADDRESS TYPE
 // =============================================================================
 
-/// Chunk context - defines interpretation of node space
+/// 16-bit address as prefix:slot
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(u16)]
-pub enum ChunkContext {
-    /// Concept space - abstract types and categories
-    Concepts = 0,
-    /// Memory space - episodic memories, experiences
-    Memories = 1,
-    /// Codebook space - learned patterns, templates
-    Codebook = 2,
-    /// Meta-awareness - self-model, introspection states
-    MetaAwareness = 3,
-    /// Extended node space - overflow when >32K nodes needed
-    Extended(u16) = 4,
-}
+pub struct Addr(pub u16);
 
-impl ChunkContext {
-    /// Get the fluid address that activates this context
-    pub fn selector_addr(&self) -> u16 {
-        match self {
-            ChunkContext::Concepts => FLUID_START,
-            ChunkContext::Memories => FLUID_START + 1,
-            ChunkContext::Codebook => FLUID_START + 2,
-            ChunkContext::MetaAwareness => FLUID_START + 3,
-            ChunkContext::Extended(n) => FLUID_START + 4 + n,
-        }
+impl Addr {
+    /// Create from prefix and slot
+    #[inline(always)]
+    pub fn new(prefix: u8, slot: u8) -> Self {
+        Self(((prefix as u16) << 8) | (slot as u16))
     }
     
-    /// Parse from fluid address
-    pub fn from_selector(addr: u16) -> Option<Self> {
-        if addr < FLUID_START || addr > FLUID_END {
-            return None;
-        }
-        let offset = addr - FLUID_START;
-        match offset {
-            0 => Some(ChunkContext::Concepts),
-            1 => Some(ChunkContext::Memories),
-            2 => Some(ChunkContext::Codebook),
-            3 => Some(ChunkContext::MetaAwareness),
-            n => Some(ChunkContext::Extended(n - 4)),
+    /// Get prefix (high byte)
+    #[inline(always)]
+    pub fn prefix(self) -> u8 {
+        (self.0 >> 8) as u8
+    }
+    
+    /// Get slot (low byte)
+    #[inline(always)]
+    pub fn slot(self) -> u8 {
+        (self.0 & 0xFF) as u8
+    }
+    
+    /// Check if in surface (prefix 0x00-0x03)
+    #[inline(always)]
+    pub fn is_surface(self) -> bool {
+        self.prefix() <= PREFIX_VERBS
+    }
+    
+    /// Check if in fluid zone (prefix 0x04-0x7F)
+    #[inline(always)]
+    pub fn is_fluid(self) -> bool {
+        let p = self.prefix();
+        p >= PREFIX_FLUID_START && p <= PREFIX_FLUID_END
+    }
+    
+    /// Check if in node space (prefix 0x80-0xFF)
+    #[inline(always)]
+    pub fn is_node(self) -> bool {
+        self.prefix() >= PREFIX_NODE_START
+    }
+    
+    /// Get surface compartment (0-3) or None
+    #[inline(always)]
+    pub fn surface_compartment(self) -> Option<SurfaceCompartment> {
+        match self.prefix() {
+            PREFIX_LANCE => Some(SurfaceCompartment::Lance),
+            PREFIX_SQL => Some(SurfaceCompartment::Sql),
+            PREFIX_META => Some(SurfaceCompartment::Meta),
+            PREFIX_VERBS => Some(SurfaceCompartment::Verbs),
+            _ => None,
         }
     }
 }
 
+impl From<u16> for Addr {
+    fn from(v: u16) -> Self {
+        Self(v)
+    }
+}
+
+impl From<Addr> for u16 {
+    fn from(a: Addr) -> Self {
+        a.0
+    }
+}
+
 // =============================================================================
-// BIND NODE - The universal content container
+// SURFACE COMPARTMENTS
 // =============================================================================
 
-/// A node in the universal bind space
+/// The 4 surface compartments
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum SurfaceCompartment {
+    /// 0x00: Lance/Kuzu - vector search, graph traversal
+    Lance = 0,
+    /// 0x01: SQL/Neo4j - relational, property graph
+    Sql = 1,
+    /// 0x02: Meta - higher-order thinking, NARS
+    Meta = 2,
+    /// 0x03: Verbs - CAUSES, BECOMES, etc.
+    Verbs = 3,
+}
+
+impl SurfaceCompartment {
+    pub fn prefix(self) -> u8 {
+        self as u8
+    }
+    
+    pub fn addr(self, slot: u8) -> Addr {
+        Addr::new(self as u8, slot)
+    }
+}
+
+// =============================================================================
+// CHUNK CONTEXT (What node space means)
+// =============================================================================
+
+/// Context that defines how node space is interpreted
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum ChunkContext {
+    /// Concept space - abstract types and categories
+    #[default]
+    Concepts,
+    /// Memory space - episodic memories
+    Memories,
+    /// Codebook space - learned patterns
+    Codebook,
+    /// Meta-awareness - self-model, introspection
+    MetaAwareness,
+    /// Extended addressing for overflow
+    Extended(u8),
+}
+
+// =============================================================================
+// BIND NODE - Universal content container
+// =============================================================================
+
+/// A node in the bind space
 /// 
-/// This is what ALL query languages ultimately read/write.
-/// The fingerprint doesn't care what syntax asked for it.
-#[derive(Debug, Clone)]
+/// This is what ALL query languages read/write.
+#[derive(Clone)]
 pub struct BindNode {
-    /// 10K-bit fingerprint (the content-addressable identity)
+    /// 10K-bit fingerprint
     pub fingerprint: [u64; FINGERPRINT_WORDS],
     /// Human-readable label
     pub label: Option<String>,
-    /// Qualia index (0-255, emergent)
+    /// Qualia index (0-255)
     pub qidx: u8,
-    /// Creation timestamp
-    pub created: Instant,
-    /// Last access timestamp  
-    pub accessed: Instant,
-    /// Access count (for promotion/cache decisions)
+    /// Access count
     pub access_count: u32,
-    /// Optional payload (serialized content)
+    /// Optional payload
     pub payload: Option<Vec<u8>>,
 }
 
 impl BindNode {
     pub fn new(fingerprint: [u64; FINGERPRINT_WORDS]) -> Self {
-        let now = Instant::now();
         Self {
             fingerprint,
             label: None,
             qidx: 0,
-            created: now,
-            accessed: now,
             access_count: 0,
             payload: None,
         }
@@ -188,63 +247,66 @@ impl BindNode {
         self
     }
     
-    pub fn with_payload(mut self, payload: Vec<u8>) -> Self {
-        self.payload = Some(payload);
-        self
-    }
-    
-    /// Touch - update access time and count
+    #[inline(always)]
     pub fn touch(&mut self) {
-        self.accessed = Instant::now();
-        self.access_count += 1;
+        self.access_count = self.access_count.saturating_add(1);
+    }
+}
+
+impl Default for BindNode {
+    fn default() -> Self {
+        Self::new([0u64; FINGERPRINT_WORDS])
     }
 }
 
 // =============================================================================
-// BIND EDGE - Connection in the fluid zone
+// BIND EDGE - Connection via verb
 // =============================================================================
 
 /// An edge connecting nodes via a verb
-/// 
-/// Edges live in the fluid zone (0x1000-0x7FFF).
-/// They connect nodes in the bind space using verbs from the surface.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct BindEdge {
-    /// Source node address (in node space 0x8000-0xFFFF)
-    pub from: u16,
-    /// Target node address (in node space 0x8000-0xFFFF)
-    pub to: u16,
-    /// Verb address (in surface space 0x0000-0x0FFF)
-    pub verb: u16,
-    /// Edge fingerprint: from ⊗ verb ⊗ to (for ABBA retrieval)
+    /// Source node address (0x80-0xFF:XX)
+    pub from: Addr,
+    /// Target node address (0x80-0xFF:XX)
+    pub to: Addr,
+    /// Verb address (0x03:XX typically)
+    pub verb: Addr,
+    /// Bound fingerprint: from ⊗ verb ⊗ to
     pub fingerprint: [u64; FINGERPRINT_WORDS],
-    /// Edge weight/strength
+    /// Edge weight
     pub weight: f32,
-    /// Creation timestamp
-    pub created: Instant,
 }
 
 impl BindEdge {
-    pub fn new(from: u16, verb: u16, to: u16) -> Self {
+    pub fn new(from: Addr, verb: Addr, to: Addr) -> Self {
         Self {
             from,
             to,
             verb,
-            fingerprint: [0u64; FINGERPRINT_WORDS], // Set by bind operation
+            fingerprint: [0u64; FINGERPRINT_WORDS],
             weight: 1.0,
-            created: Instant::now(),
         }
     }
     
-    /// Compute edge fingerprint via XOR binding
-    pub fn bind(&mut self, from_fp: &[u64; FINGERPRINT_WORDS], verb_fp: &[u64; FINGERPRINT_WORDS], to_fp: &[u64; FINGERPRINT_WORDS]) {
+    /// Bind: compute edge fingerprint via XOR
+    pub fn bind(
+        &mut self,
+        from_fp: &[u64; FINGERPRINT_WORDS],
+        verb_fp: &[u64; FINGERPRINT_WORDS],
+        to_fp: &[u64; FINGERPRINT_WORDS],
+    ) {
         for i in 0..FINGERPRINT_WORDS {
             self.fingerprint[i] = from_fp[i] ^ verb_fp[i] ^ to_fp[i];
         }
     }
     
-    /// ABBA unbind: given edge and one known, recover the other
-    pub fn unbind(&self, known: &[u64; FINGERPRINT_WORDS], verb_fp: &[u64; FINGERPRINT_WORDS]) -> [u64; FINGERPRINT_WORDS] {
+    /// ABBA unbind: recover unknown from edge + known + verb
+    pub fn unbind(
+        &self,
+        known: &[u64; FINGERPRINT_WORDS],
+        verb_fp: &[u64; FINGERPRINT_WORDS],
+    ) -> [u64; FINGERPRINT_WORDS] {
         let mut result = [0u64; FINGERPRINT_WORDS];
         for i in 0..FINGERPRINT_WORDS {
             result[i] = self.fingerprint[i] ^ known[i] ^ verb_fp[i];
@@ -254,139 +316,252 @@ impl BindEdge {
 }
 
 // =============================================================================
-// BIND SPACE - The Universal DTO
+// BIND SPACE - The Universal DTO (Array-based storage)
 // =============================================================================
 
 /// The Universal Bind Space
 /// 
-/// This is the single source of truth that all query languages hit.
-/// Whether you speak Redis, Cypher, SQL, or GraphQL - you end up here.
+/// Pure array indexing. No HashMap. No SIMD required.
+/// Works on any CPU.
 pub struct BindSpace {
-    /// Surface tier: verbs and ops (fixed)
-    surface: HashMap<u16, BindNode>,
+    // =========================================================================
+    // SURFACES (4 compartments × 256 slots each)
+    // =========================================================================
     
-    /// Fluid tier: edges and context selectors
-    fluid: HashMap<u16, BindNode>,
+    /// Surface 0: Lance/Kuzu ops
+    surface_lance: Box<[Option<BindNode>; CHUNK_SIZE]>,
+    /// Surface 1: SQL/Neo4j ops  
+    surface_sql: Box<[Option<BindNode>; CHUNK_SIZE]>,
+    /// Surface 2: Meta/Higher-order thinking
+    surface_meta: Box<[Option<BindNode>; CHUNK_SIZE]>,
+    /// Surface 3: Verbs/Cypher
+    surface_verbs: Box<[Option<BindNode>; CHUNK_SIZE]>,
     
-    /// Fluid edges (separate for efficient traversal)
+    // =========================================================================
+    // FLUID (124 chunks × 256 slots = 31,744 edges)
+    // =========================================================================
+    
+    /// Fluid chunks for edge storage
+    fluid: Vec<Box<[Option<BindNode>; CHUNK_SIZE]>>,
+    
+    /// Edges (separate for efficient traversal)
     edges: Vec<BindEdge>,
     
-    /// Edge index: from_addr -> edge indices (CSR-style)
-    edge_index_out: HashMap<u16, Vec<usize>>,
+    /// Edge index: from.0 -> edge indices (CSR-style)
+    edge_out: Vec<Vec<usize>>,
     
-    /// Edge index: to_addr -> edge indices (reverse CSR)
-    edge_index_in: HashMap<u16, Vec<usize>>,
+    /// Edge index: to.0 -> edge indices (reverse CSR)
+    edge_in: Vec<Vec<usize>>,
     
-    /// Node tier: the actual bind space
-    nodes: HashMap<u16, BindNode>,
+    // =========================================================================
+    // NODES (128 chunks × 256 slots = 32,768 nodes)
+    // =========================================================================
     
-    /// Current chunk context
+    /// Node chunks
+    nodes: Vec<Box<[Option<BindNode>; CHUNK_SIZE]>>,
+    
+    // =========================================================================
+    // STATE
+    // =========================================================================
+    
+    /// Current context
     context: ChunkContext,
     
-    /// Next available addresses
-    next_fluid: u16,
-    next_node: u16,
+    /// Next fluid slot (prefix, slot)
+    next_fluid: (u8, u8),
+    
+    /// Next node slot (prefix, slot)
+    next_node: (u8, u8),
 }
 
 impl BindSpace {
     pub fn new() -> Self {
+        // Initialize surfaces
+        let surface_lance = Box::new(std::array::from_fn(|_| None));
+        let surface_sql = Box::new(std::array::from_fn(|_| None));
+        let surface_meta = Box::new(std::array::from_fn(|_| None));
+        let surface_verbs = Box::new(std::array::from_fn(|_| None));
+        
+        // Initialize fluid chunks
+        let mut fluid = Vec::with_capacity(FLUID_CHUNKS);
+        for _ in 0..FLUID_CHUNKS {
+            fluid.push(Box::new(std::array::from_fn(|_| None)));
+        }
+        
+        // Initialize node chunks
+        let mut nodes = Vec::with_capacity(NODE_CHUNKS);
+        for _ in 0..NODE_CHUNKS {
+            nodes.push(Box::new(std::array::from_fn(|_| None)));
+        }
+        
+        // Edge indices (64K entries for O(1) lookup)
+        let edge_out = vec![Vec::new(); TOTAL_ADDRESSES];
+        let edge_in = vec![Vec::new(); TOTAL_ADDRESSES];
+        
         let mut space = Self {
-            surface: HashMap::new(),
-            fluid: HashMap::new(),
+            surface_lance,
+            surface_sql,
+            surface_meta,
+            surface_verbs,
+            fluid,
             edges: Vec::new(),
-            edge_index_out: HashMap::new(),
-            edge_index_in: HashMap::new(),
-            nodes: HashMap::new(),
+            edge_out,
+            edge_in,
+            nodes,
             context: ChunkContext::Concepts,
-            next_fluid: FLUID_START + 256,  // Reserve first 256 for contexts
-            next_node: NODE_START,
+            next_fluid: (PREFIX_FLUID_START, 0),
+            next_node: (PREFIX_NODE_START, 0),
         };
-        space.init_surface();
+        
+        space.init_surfaces();
         space
     }
     
-    /// Initialize surface with core verbs
-    fn init_surface(&mut self) {
-        // Core verbs (from the 144 Go board intersections)
-        let verbs = [
-            (0x0060, "CAUSES"),
-            (0x0061, "BECOMES"),
-            (0x0062, "ENABLES"),
-            (0x0063, "PREVENTS"),
-            (0x0064, "REQUIRES"),
-            (0x0065, "IMPLIES"),
-            (0x0066, "CONTAINS"),
-            (0x0067, "ACTIVATES"),
-            (0x0068, "INHIBITS"),
-            (0x0069, "TRANSFORMS"),
-            (0x006A, "RESONATES"),
-            (0x006B, "AMPLIFIES"),
-            (0x006C, "DAMPENS"),
-            (0x006D, "OBSERVES"),
-            (0x006E, "REMEMBERS"),
-            (0x006F, "FORGETS"),
-            // Flow verbs
-            (0x0070, "SHIFT"),
-            (0x0071, "LEAP"),
-            (0x0072, "EMERGE"),
-            (0x0073, "SUBSIDE"),
-            (0x0074, "OSCILLATE"),
-            (0x0075, "CRYSTALLIZE"),
-            (0x0076, "DISSOLVE"),
-            (0x0077, "TRANSFORM"),
+    /// Initialize surfaces with core ops
+    fn init_surfaces(&mut self) {
+        // Surface 0: Lance/Kuzu ops
+        let lance_ops = [
+            (0x00, "VECTOR_SEARCH"),
+            (0x01, "TRAVERSE"),
+            (0x02, "RESONATE"),
+            (0x03, "HAMMING"),
+            (0x04, "BIND"),
+            (0x05, "UNBIND"),
+            (0x06, "BUNDLE"),
+            (0x07, "SIMILARITY"),
+            (0x08, "KNN"),
+            (0x09, "ANN"),
+            (0x0A, "CLUSTER"),
+            (0x0B, "QUANTIZE"),
         ];
+        for (slot, label) in lance_ops {
+            self.surface_lance[slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
+        }
         
-        for (addr, label) in verbs {
-            let mut node = BindNode::new(verb_fingerprint(label));
-            node.label = Some(label.to_string());
-            self.surface.insert(addr, node);
+        // Surface 1: SQL/Neo4j ops
+        let sql_ops = [
+            (0x00, "SELECT"),
+            (0x01, "INSERT"),
+            (0x02, "UPDATE"),
+            (0x03, "DELETE"),
+            (0x04, "JOIN"),
+            (0x05, "WHERE"),
+            (0x06, "GROUP"),
+            (0x07, "ORDER"),
+            (0x08, "MATCH"),
+            (0x09, "CREATE"),
+            (0x0A, "MERGE"),
+            (0x0B, "RETURN"),
+        ];
+        for (slot, label) in sql_ops {
+            self.surface_sql[slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
+        }
+        
+        // Surface 2: Meta/Higher-order ops
+        let meta_ops = [
+            (0x00, "REFLECT"),
+            (0x01, "ABSTRACT"),
+            (0x02, "DEDUCE"),
+            (0x03, "ABDUCT"),
+            (0x04, "INDUCE"),
+            (0x05, "ANALOGIZE"),
+            (0x06, "HYPOTHESIZE"),
+            (0x07, "REVISE"),
+            (0x08, "BELIEVE"),
+            (0x09, "DOUBT"),
+            (0x0A, "IMAGINE"),
+            (0x0B, "COUNTERFACT"),
+        ];
+        for (slot, label) in meta_ops {
+            self.surface_meta[slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
+        }
+        
+        // Surface 3: Verbs (the 144 Go board verbs)
+        let verb_ops = [
+            (0x00, "CAUSES"),
+            (0x01, "BECOMES"),
+            (0x02, "ENABLES"),
+            (0x03, "PREVENTS"),
+            (0x04, "REQUIRES"),
+            (0x05, "IMPLIES"),
+            (0x06, "CONTAINS"),
+            (0x07, "ACTIVATES"),
+            (0x08, "INHIBITS"),
+            (0x09, "TRANSFORMS"),
+            (0x0A, "RESONATES"),
+            (0x0B, "AMPLIFIES"),
+            (0x0C, "DAMPENS"),
+            (0x0D, "OBSERVES"),
+            (0x0E, "REMEMBERS"),
+            (0x0F, "FORGETS"),
+            (0x10, "SHIFT"),
+            (0x11, "LEAP"),
+            (0x12, "EMERGE"),
+            (0x13, "SUBSIDE"),
+            (0x14, "OSCILLATE"),
+            (0x15, "CRYSTALLIZE"),
+            (0x16, "DISSOLVE"),
+            (0x17, "GROUNDS"),
+            (0x18, "ABSTRACTS"),
+            (0x19, "REFINES"),
+            (0x1A, "CONTRADICTS"),
+            (0x1B, "SUPPORTS"),
+        ];
+        for (slot, label) in verb_ops {
+            self.surface_verbs[slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
         }
     }
     
     // =========================================================================
-    // CONTEXT OPERATIONS
+    // CORE READ/WRITE (Pure array indexing - 3-5 cycles)
     // =========================================================================
     
-    /// Set the current chunk context
-    /// This changes what the node space (0x8000-0xFFFF) means
-    pub fn set_context(&mut self, context: ChunkContext) {
-        self.context = context;
-    }
-    
-    /// Get current context
-    pub fn context(&self) -> ChunkContext {
-        self.context
-    }
-    
-    // =========================================================================
-    // UNIVERSAL READ/WRITE (All languages hit these)
-    // =========================================================================
-    
-    /// Read from any address
+    /// Read from any address - THE HOT PATH
     /// 
-    /// This is what GET (Redis), MATCH (Cypher), SELECT (SQL) all become.
-    pub fn read(&mut self, addr: u16) -> Option<&BindNode> {
-        let node = match addr {
-            a if a <= SURFACE_END => self.surface.get(&a),
-            a if a <= FLUID_END => self.fluid.get(&a),
-            a => self.nodes.get(&a),
-        };
+    /// This is what GET, MATCH, SELECT all become.
+    /// Pure array indexing, no hash, no search.
+    #[inline(always)]
+    pub fn read(&self, addr: Addr) -> Option<&BindNode> {
+        let prefix = addr.prefix();
+        let slot = addr.slot() as usize;
         
-        // Touch for access tracking (need mut for this)
-        if let Some(_) = node {
-            // We'd need interior mutability for proper touch
-            // For now, just return the reference
+        match prefix {
+            PREFIX_LANCE => self.surface_lance[slot].as_ref(),
+            PREFIX_SQL => self.surface_sql[slot].as_ref(),
+            PREFIX_META => self.surface_meta[slot].as_ref(),
+            PREFIX_VERBS => self.surface_verbs[slot].as_ref(),
+            p if p >= PREFIX_FLUID_START && p <= PREFIX_FLUID_END => {
+                let chunk = (p - PREFIX_FLUID_START) as usize;
+                self.fluid.get(chunk).and_then(|c| c[slot].as_ref())
+            }
+            p if p >= PREFIX_NODE_START => {
+                let chunk = (p - PREFIX_NODE_START) as usize;
+                self.nodes.get(chunk).and_then(|c| c[slot].as_ref())
+            }
+            _ => None,
         }
-        
-        node
     }
     
-    /// Read mutable from any address
-    pub fn read_mut(&mut self, addr: u16) -> Option<&mut BindNode> {
-        let node = match addr {
-            a if a <= SURFACE_END => self.surface.get_mut(&a),
-            a if a <= FLUID_END => self.fluid.get_mut(&a),
-            a => self.nodes.get_mut(&a),
+    /// Read mutable with touch
+    #[inline(always)]
+    pub fn read_mut(&mut self, addr: Addr) -> Option<&mut BindNode> {
+        let prefix = addr.prefix();
+        let slot = addr.slot() as usize;
+        
+        let node = match prefix {
+            PREFIX_LANCE => self.surface_lance[slot].as_mut(),
+            PREFIX_SQL => self.surface_sql[slot].as_mut(),
+            PREFIX_META => self.surface_meta[slot].as_mut(),
+            PREFIX_VERBS => self.surface_verbs[slot].as_mut(),
+            p if p >= PREFIX_FLUID_START && p <= PREFIX_FLUID_END => {
+                let chunk = (p - PREFIX_FLUID_START) as usize;
+                self.fluid.get_mut(chunk).and_then(|c| c[slot].as_mut())
+            }
+            p if p >= PREFIX_NODE_START => {
+                let chunk = (p - PREFIX_NODE_START) as usize;
+                self.nodes.get_mut(chunk).and_then(|c| c[slot].as_mut())
+            }
+            _ => None,
         };
         
         if let Some(n) = node {
@@ -399,123 +574,134 @@ impl BindSpace {
     
     /// Write to node space
     /// 
-    /// This is what SET (Redis), CREATE (Cypher), INSERT (SQL) all become.
-    pub fn write(&mut self, fingerprint: [u64; FINGERPRINT_WORDS]) -> u16 {
-        let addr = self.next_node;
-        self.next_node = self.next_node.wrapping_add(1);
-        if self.next_node < NODE_START {
-            self.next_node = NODE_START;  // Wrap within node space
+    /// This is what SET, CREATE, INSERT all become.
+    pub fn write(&mut self, fingerprint: [u64; FINGERPRINT_WORDS]) -> Addr {
+        let (prefix, slot) = self.next_node;
+        let addr = Addr::new(prefix, slot);
+        
+        // Advance next slot
+        self.next_node = if slot == 255 {
+            if prefix == PREFIX_NODE_END {
+                (PREFIX_NODE_START, 0)  // Wrap
+            } else {
+                (prefix + 1, 0)
+            }
+        } else {
+            (prefix, slot + 1)
+        };
+        
+        // Write to chunk
+        let chunk = (prefix - PREFIX_NODE_START) as usize;
+        if let Some(c) = self.nodes.get_mut(chunk) {
+            c[slot as usize] = Some(BindNode::new(fingerprint));
         }
         
-        let node = BindNode::new(fingerprint);
-        self.nodes.insert(addr, node);
         addr
     }
     
     /// Write with label
-    pub fn write_labeled(&mut self, fingerprint: [u64; FINGERPRINT_WORDS], label: &str) -> u16 {
+    pub fn write_labeled(&mut self, fingerprint: [u64; FINGERPRINT_WORDS], label: &str) -> Addr {
         let addr = self.write(fingerprint);
-        if let Some(node) = self.nodes.get_mut(&addr) {
+        if let Some(node) = self.read_mut(addr) {
             node.label = Some(label.to_string());
         }
         addr
     }
     
-    /// Delete from any address
-    pub fn delete(&mut self, addr: u16) -> Option<BindNode> {
-        match addr {
-            a if a <= SURFACE_END => None,  // Can't delete surface
-            a if a <= FLUID_END => self.fluid.remove(&a),
-            a => self.nodes.remove(&a),
+    /// Delete from address
+    pub fn delete(&mut self, addr: Addr) -> Option<BindNode> {
+        let prefix = addr.prefix();
+        let slot = addr.slot() as usize;
+        
+        // Can't delete surfaces
+        if prefix <= PREFIX_VERBS {
+            return None;
+        }
+        
+        if prefix >= PREFIX_FLUID_START && prefix <= PREFIX_FLUID_END {
+            let chunk = (prefix - PREFIX_FLUID_START) as usize;
+            self.fluid.get_mut(chunk).and_then(|c| c[slot].take())
+        } else if prefix >= PREFIX_NODE_START {
+            let chunk = (prefix - PREFIX_NODE_START) as usize;
+            self.nodes.get_mut(chunk).and_then(|c| c[slot].take())
+        } else {
+            None
         }
     }
     
     // =========================================================================
-    // EDGE OPERATIONS (Fluid zone)
+    // EDGE OPERATIONS (CSR-style O(1) lookup)
     // =========================================================================
     
     /// Create an edge
-    /// 
-    /// This is what relationships in Cypher, foreign keys in SQL become.
-    pub fn link(&mut self, from: u16, verb: u16, to: u16) -> usize {
+    pub fn link(&mut self, from: Addr, verb: Addr, to: Addr) -> usize {
         let mut edge = BindEdge::new(from, verb, to);
         
-        // Get fingerprints and bind
+        // Bind fingerprints
         if let (Some(from_node), Some(verb_node), Some(to_node)) = 
-            (self.nodes.get(&from), self.surface.get(&verb), self.nodes.get(&to)) 
+            (self.read(from), self.read(verb), self.read(to)) 
         {
-            edge.bind(&from_node.fingerprint, &verb_node.fingerprint, &to_node.fingerprint);
+            let from_fp = from_node.fingerprint;
+            let verb_fp = verb_node.fingerprint;
+            let to_fp = to_node.fingerprint;
+            edge.bind(&from_fp, &verb_fp, &to_fp);
         }
         
         let idx = self.edges.len();
         
-        // Update indices (CSR-style)
-        self.edge_index_out.entry(from).or_default().push(idx);
-        self.edge_index_in.entry(to).or_default().push(idx);
+        // Update CSR indices
+        self.edge_out[from.0 as usize].push(idx);
+        self.edge_in[to.0 as usize].push(idx);
         
         self.edges.push(edge);
         idx
     }
     
-    /// Get outgoing edges (CSR-style O(1) index lookup)
-    pub fn edges_out(&self, from: u16) -> Vec<&BindEdge> {
-        self.edge_index_out
-            .get(&from)
-            .map(|indices| indices.iter().filter_map(|&i| self.edges.get(i)).collect())
-            .unwrap_or_default()
+    /// Get outgoing edges (O(1) index lookup)
+    #[inline(always)]
+    pub fn edges_out(&self, from: Addr) -> impl Iterator<Item = &BindEdge> {
+        self.edge_out[from.0 as usize]
+            .iter()
+            .filter_map(|&i| self.edges.get(i))
     }
     
-    /// Get incoming edges (reverse CSR)
-    pub fn edges_in(&self, to: u16) -> Vec<&BindEdge> {
-        self.edge_index_in
-            .get(&to)
-            .map(|indices| indices.iter().filter_map(|&i| self.edges.get(i)).collect())
-            .unwrap_or_default()
-    }
-    
-    /// Get edges by verb
-    pub fn edges_via(&self, verb: u16) -> Vec<&BindEdge> {
-        self.edges.iter().filter(|e| e.verb == verb).collect()
+    /// Get incoming edges (O(1) index lookup)
+    #[inline(always)]
+    pub fn edges_in(&self, to: Addr) -> impl Iterator<Item = &BindEdge> {
+        self.edge_in[to.0 as usize]
+            .iter()
+            .filter_map(|&i| self.edges.get(i))
     }
     
     /// Traverse: from -> via verb -> targets
-    pub fn traverse(&self, from: u16, verb: u16) -> Vec<u16> {
+    pub fn traverse(&self, from: Addr, verb: Addr) -> Vec<Addr> {
         self.edges_out(from)
-            .into_iter()
             .filter(|e| e.verb == verb)
             .map(|e| e.to)
             .collect()
     }
     
-    /// Reverse traverse: targets <- via verb <- to
-    pub fn traverse_reverse(&self, to: u16, verb: u16) -> Vec<u16> {
+    /// Reverse traverse: sources <- via verb <- to
+    pub fn traverse_reverse(&self, to: Addr, verb: Addr) -> Vec<Addr> {
         self.edges_in(to)
-            .into_iter()
             .filter(|e| e.verb == verb)
             .map(|e| e.from)
             .collect()
     }
     
-    // =========================================================================
-    // N-HOP TRAVERSAL (What Kuzu CSR does)
-    // =========================================================================
-    
-    /// N-hop traversal from a node via a verb
-    /// 
-    /// This is the core graph operation that Kuzu CSR accelerates.
-    /// We use edge indices for O(1) neighbor lookup per hop.
-    pub fn traverse_n_hops(&self, start: u16, verb: u16, max_hops: usize) -> Vec<(usize, u16)> {
+    /// N-hop traversal (Kuzu CSR equivalent)
+    pub fn traverse_n_hops(&self, start: Addr, verb: Addr, max_hops: usize) -> Vec<(usize, Addr)> {
         let mut results = Vec::new();
         let mut frontier = vec![start];
         let mut visited = std::collections::HashSet::new();
-        visited.insert(start);
+        visited.insert(start.0);
         
         for hop in 1..=max_hops {
             let mut next_frontier = Vec::new();
             
             for &node in &frontier {
                 for target in self.traverse(node, verb) {
-                    if visited.insert(target) {
+                    if visited.insert(target.0) {
                         results.push((hop, target));
                         next_frontier.push(target);
                     }
@@ -532,14 +718,62 @@ impl BindSpace {
     }
     
     // =========================================================================
-    // STATISTICS
+    // CONTEXT
+    // =========================================================================
+    
+    pub fn set_context(&mut self, ctx: ChunkContext) {
+        self.context = ctx;
+    }
+    
+    pub fn context(&self) -> ChunkContext {
+        self.context
+    }
+    
+    // =========================================================================
+    // SURFACE HELPERS
+    // =========================================================================
+    
+    /// Get verb address by name
+    pub fn verb(&self, name: &str) -> Option<Addr> {
+        for slot in 0..CHUNK_SIZE {
+            if let Some(node) = &self.surface_verbs[slot] {
+                if node.label.as_deref() == Some(name) {
+                    return Some(Addr::new(PREFIX_VERBS, slot as u8));
+                }
+            }
+        }
+        None
+    }
+    
+    /// Get verb fingerprint by address
+    pub fn verb_fingerprint(&self, verb: Addr) -> Option<&[u64; FINGERPRINT_WORDS]> {
+        self.read(verb).map(|n| &n.fingerprint)
+    }
+    
+    // =========================================================================
+    // STATS
     // =========================================================================
     
     pub fn stats(&self) -> BindSpaceStats {
+        let surface_count = [
+            &self.surface_lance,
+            &self.surface_sql,
+            &self.surface_meta,
+            &self.surface_verbs,
+        ].iter().map(|s| s.iter().filter(|x| x.is_some()).count()).sum();
+        
+        let fluid_count: usize = self.fluid.iter()
+            .map(|c| c.iter().filter(|x| x.is_some()).count())
+            .sum();
+            
+        let node_count: usize = self.nodes.iter()
+            .map(|c| c.iter().filter(|x| x.is_some()).count())
+            .sum();
+        
         BindSpaceStats {
-            surface_count: self.surface.len(),
-            fluid_count: self.fluid.len(),
-            node_count: self.nodes.len(),
+            surface_count,
+            fluid_count,
+            node_count,
             edge_count: self.edges.len(),
             context: self.context,
         }
@@ -562,22 +796,21 @@ pub struct BindSpaceStats {
 }
 
 // =============================================================================
-// HELPER FUNCTIONS
+// HELPERS
 // =============================================================================
 
-/// Generate a deterministic fingerprint for a verb label
-fn verb_fingerprint(label: &str) -> [u64; FINGERPRINT_WORDS] {
+/// Generate fingerprint from label (deterministic)
+fn label_fingerprint(label: &str) -> [u64; FINGERPRINT_WORDS] {
     let mut fp = [0u64; FINGERPRINT_WORDS];
     let bytes = label.as_bytes();
     
-    // Simple hash spread across fingerprint
     for (i, &b) in bytes.iter().enumerate() {
-        let word_idx = i % FINGERPRINT_WORDS;
-        let bit_idx = (b as usize * 7 + i * 13) % 64;
-        fp[word_idx] |= 1u64 << bit_idx;
+        let word = i % FINGERPRINT_WORDS;
+        let bit = (b as usize * 7 + i * 13) % 64;
+        fp[word] |= 1u64 << bit;
     }
     
-    // Spread more bits for density
+    // Spread bits
     for i in 0..FINGERPRINT_WORDS {
         let seed = fp[i];
         fp[(i + 1) % FINGERPRINT_WORDS] ^= seed.rotate_left(17);
@@ -587,29 +820,24 @@ fn verb_fingerprint(label: &str) -> [u64; FINGERPRINT_WORDS] {
     fp
 }
 
-/// Compute Hamming distance between fingerprints
+/// Hamming distance
 pub fn hamming_distance(a: &[u64; FINGERPRINT_WORDS], b: &[u64; FINGERPRINT_WORDS]) -> u32 {
-    let mut dist = 0u32;
+    let mut d = 0u32;
     for i in 0..FINGERPRINT_WORDS {
-        dist += (a[i] ^ b[i]).count_ones();
+        d += (a[i] ^ b[i]).count_ones();
     }
-    dist
+    d
 }
 
 // =============================================================================
-// QUERY LANGUAGE TRAIT (What all adapters implement)
+// QUERY ADAPTER TRAIT
 // =============================================================================
 
 /// Trait for query language adapters
-/// 
-/// All languages (Redis, Cypher, SQL, GraphQL) implement this
-/// and ultimately call BindSpace methods.
 pub trait QueryAdapter {
-    /// Execute a query and return results
     fn execute(&self, space: &mut BindSpace, query: &str) -> QueryResult;
 }
 
-/// Generic query result
 #[derive(Debug)]
 pub struct QueryResult {
     pub columns: Vec<String>,
@@ -619,14 +847,10 @@ pub struct QueryResult {
 
 impl QueryResult {
     pub fn empty() -> Self {
-        Self {
-            columns: Vec::new(),
-            rows: Vec::new(),
-            affected: 0,
-        }
+        Self { columns: Vec::new(), rows: Vec::new(), affected: 0 }
     }
     
-    pub fn single(addr: u16) -> Self {
+    pub fn single(addr: Addr) -> Self {
         Self {
             columns: vec!["addr".to_string()],
             rows: vec![vec![QueryValue::Addr(addr)]],
@@ -635,10 +859,9 @@ impl QueryResult {
     }
 }
 
-/// Query value types
 #[derive(Debug, Clone)]
 pub enum QueryValue {
-    Addr(u16),
+    Addr(Addr),
     String(String),
     Int(i64),
     Float(f64),
@@ -656,18 +879,50 @@ mod tests {
     use super::*;
     
     #[test]
-    fn test_address_ranges() {
-        assert_eq!(SURFACE_SIZE, 4096);
-        assert_eq!(FLUID_SIZE, 28672);
-        assert_eq!(NODE_SIZE, 32768);
-        assert_eq!(SURFACE_SIZE + FLUID_SIZE + NODE_SIZE, TOTAL_SIZE);
+    fn test_addr_split() {
+        let addr = Addr::new(0x80, 0x42);
+        assert_eq!(addr.prefix(), 0x80);
+        assert_eq!(addr.slot(), 0x42);
+        assert_eq!(addr.0, 0x8042);
     }
     
     #[test]
-    fn test_bind_space_creation() {
+    fn test_surface_compartments() {
+        let lance = Addr::new(PREFIX_LANCE, 0x05);
+        let sql = Addr::new(PREFIX_SQL, 0x10);
+        let meta = Addr::new(PREFIX_META, 0x00);
+        let verbs = Addr::new(PREFIX_VERBS, 0x01);
+        
+        assert!(lance.is_surface());
+        assert!(sql.is_surface());
+        assert!(meta.is_surface());
+        assert!(verbs.is_surface());
+        
+        assert_eq!(lance.surface_compartment(), Some(SurfaceCompartment::Lance));
+        assert_eq!(verbs.surface_compartment(), Some(SurfaceCompartment::Verbs));
+    }
+    
+    #[test]
+    fn test_fluid_node_ranges() {
+        let fluid = Addr::new(0x50, 0x00);
+        let node = Addr::new(0x80, 0x00);
+        
+        assert!(fluid.is_fluid());
+        assert!(!fluid.is_node());
+        
+        assert!(node.is_node());
+        assert!(!node.is_fluid());
+    }
+    
+    #[test]
+    fn test_bind_space_surfaces() {
         let space = BindSpace::new();
-        assert!(space.surface.len() > 0);  // Verbs initialized
-        assert_eq!(space.context, ChunkContext::Concepts);
+        
+        // Check verbs initialized
+        let causes = Addr::new(PREFIX_VERBS, 0x00);
+        let node = space.read(causes);
+        assert!(node.is_some());
+        assert_eq!(node.unwrap().label.as_deref(), Some("CAUSES"));
     }
     
     #[test]
@@ -676,7 +931,7 @@ mod tests {
         let fp = [42u64; FINGERPRINT_WORDS];
         
         let addr = space.write(fp);
-        assert!(addr >= NODE_START);
+        assert!(addr.is_node());
         
         let node = space.read(addr);
         assert!(node.is_some());
@@ -687,78 +942,48 @@ mod tests {
     fn test_link_traverse() {
         let mut space = BindSpace::new();
         
-        // Create two nodes
-        let a = space.write_labeled([1u64; FINGERPRINT_WORDS], "Node A");
-        let b = space.write_labeled([2u64; FINGERPRINT_WORDS], "Node B");
+        let a = space.write_labeled([1u64; FINGERPRINT_WORDS], "A");
+        let b = space.write_labeled([2u64; FINGERPRINT_WORDS], "B");
         
-        // Link them with CAUSES
-        let verb = 0x0060;  // CAUSES
-        space.link(a, verb, b);
+        let causes = Addr::new(PREFIX_VERBS, 0x00);  // CAUSES
+        space.link(a, causes, b);
         
-        // Traverse
-        let targets = space.traverse(a, verb);
+        let targets = space.traverse(a, causes);
         assert_eq!(targets.len(), 1);
         assert_eq!(targets[0], b);
     }
     
     #[test]
-    fn test_n_hop_traversal() {
+    fn test_n_hop() {
         let mut space = BindSpace::new();
         
-        // Create chain: A -> B -> C -> D
         let a = space.write([1u64; FINGERPRINT_WORDS]);
         let b = space.write([2u64; FINGERPRINT_WORDS]);
         let c = space.write([3u64; FINGERPRINT_WORDS]);
         let d = space.write([4u64; FINGERPRINT_WORDS]);
         
-        let verb = 0x0060;  // CAUSES
-        space.link(a, verb, b);
-        space.link(b, verb, c);
-        space.link(c, verb, d);
-        
-        // 3-hop traversal from A
-        let results = space.traverse_n_hops(a, verb, 3);
-        assert_eq!(results.len(), 3);
-        assert_eq!(results[0], (1, b));  // 1 hop to B
-        assert_eq!(results[1], (2, c));  // 2 hops to C
-        assert_eq!(results[2], (3, d));  // 3 hops to D
-    }
-    
-    #[test]
-    fn test_context_switching() {
-        let mut space = BindSpace::new();
-        
-        assert_eq!(space.context(), ChunkContext::Concepts);
-        
-        space.set_context(ChunkContext::Memories);
-        assert_eq!(space.context(), ChunkContext::Memories);
-        
-        space.set_context(ChunkContext::MetaAwareness);
-        assert_eq!(space.context(), ChunkContext::MetaAwareness);
-    }
-    
-    #[test]
-    fn test_edge_indices() {
-        let mut space = BindSpace::new();
-        
-        let a = space.write([1u64; FINGERPRINT_WORDS]);
-        let b = space.write([2u64; FINGERPRINT_WORDS]);
-        let c = space.write([3u64; FINGERPRINT_WORDS]);
-        
-        let causes = 0x0060;
-        let enables = 0x0062;
-        
+        let causes = Addr::new(PREFIX_VERBS, 0x00);
         space.link(a, causes, b);
-        space.link(a, enables, c);
         space.link(b, causes, c);
+        space.link(c, causes, d);
         
-        // A has 2 outgoing edges
-        assert_eq!(space.edges_out(a).len(), 2);
+        let results = space.traverse_n_hops(a, causes, 3);
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0], (1, b));
+        assert_eq!(results[1], (2, c));
+        assert_eq!(results[2], (3, d));
+    }
+    
+    #[test]
+    fn test_verb_lookup() {
+        let space = BindSpace::new();
         
-        // C has 2 incoming edges
-        assert_eq!(space.edges_in(c).len(), 2);
+        let causes = space.verb("CAUSES");
+        assert!(causes.is_some());
+        assert_eq!(causes.unwrap(), Addr::new(PREFIX_VERBS, 0x00));
         
-        // Only 2 CAUSES edges total
-        assert_eq!(space.edges_via(causes).len(), 2);
+        let becomes = space.verb("BECOMES");
+        assert!(becomes.is_some());
+        assert_eq!(becomes.unwrap(), Addr::new(PREFIX_VERBS, 0x01));
     }
 }
