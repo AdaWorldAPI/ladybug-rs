@@ -1,17 +1,18 @@
 //! Storage module - Persistence layers
 //!
-//! # 8-bit Prefix Architecture
+//! # 8-bit Prefix : 8-bit Slot Architecture
 //!
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────────────────────┐
-//! │                      PREFIX (8-bit) : ADDRESS (8-bit)                       │
+//! │                      PREFIX (8-bit) : SLOT (8-bit)                          │
 //! ├─────────────────┬───────────────────────────────────────────────────────────┤
-//! │  0x00:XX        │  SURFACE 0 - Lance/Kuzu (256 ops)                         │
-//! │  0x01:XX        │  SURFACE 1 - SQL/Neo4j (256 ops)                          │
-//! │  0x02:XX        │  SURFACE 2 - Meta/NARS (256 ops)                          │
-//! │  0x03:XX        │  SURFACE 3 - Verbs/Cypher (256 verbs)                     │
+//! │  0x00-0x0F:XX   │  SURFACE (16 × 256 = 4,096)                               │
+//! │                 │  0x00: Lance    0x04: NARS      0x08: Concepts            │
+//! │                 │  0x01: SQL      0x05: Causal    0x09: Qualia              │
+//! │                 │  0x02: Cypher   0x06: Meta      0x0A: Memory              │
+//! │                 │  0x03: GraphQL  0x07: Verbs     0x0B: Learning            │
 //! ├─────────────────┼───────────────────────────────────────────────────────────┤
-//! │  0x04-0x7F:XX   │  FLUID (124 × 256 = 31,744 edges)                         │
+//! │  0x10-0x7F:XX   │  FLUID (112 × 256 = 28,672)                               │
 //! ├─────────────────┼───────────────────────────────────────────────────────────┤
 //! │  0x80-0xFF:XX   │  NODES (128 × 256 = 32,768) - UNIVERSAL BIND SPACE        │
 //! └─────────────────┴───────────────────────────────────────────────────────────┘
@@ -43,17 +44,25 @@ pub use cog_redis::{
     // Address types
     CogAddr, Tier, SurfaceCompartment,
     
-    // Prefix constants
-    PREFIX_LANCE, PREFIX_SQL, PREFIX_META, PREFIX_VERBS,
-    PREFIX_FLUID_START, PREFIX_FLUID_END,
-    PREFIX_NODE_START, PREFIX_NODE_END,
-    CHUNK_SIZE,
+    // Surface prefix constants (16 compartments)
+    PREFIX_SURFACE_START, PREFIX_SURFACE_END, SURFACE_PREFIXES,
+    PREFIX_LANCE, PREFIX_SQL, PREFIX_CYPHER, PREFIX_GRAPHQL,
+    PREFIX_NARS, PREFIX_CAUSAL, PREFIX_META, PREFIX_VERBS,
+    PREFIX_CONCEPTS, PREFIX_QUALIA, PREFIX_MEMORY, PREFIX_LEARNING,
     
-    // Legacy constants (compatibility)
-    SURFACE_START, SURFACE_END, SURFACE_SIZE,
-    FLUID_START, FLUID_END, FLUID_SIZE,
-    NODE_START, NODE_END, NODE_SIZE,
-    TOTAL_SIZE,
+    // Fluid prefix constants (112 chunks)
+    PREFIX_FLUID_START, PREFIX_FLUID_END, FLUID_PREFIXES,
+    
+    // Node prefix constants (128 chunks)
+    PREFIX_NODE_START, PREFIX_NODE_END, NODE_PREFIXES,
+    
+    // Size constants
+    CHUNK_SIZE, SURFACE_SIZE, FLUID_SIZE, NODE_SIZE, TOTAL_SIZE,
+    
+    // Legacy 16-bit range constants (compatibility)
+    SURFACE_START, SURFACE_END,
+    FLUID_START, FLUID_END,
+    NODE_START, NODE_END,
     
     // Values and edges
     CogValue, CogEdge,
