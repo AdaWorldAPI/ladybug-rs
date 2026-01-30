@@ -11,5 +11,8 @@ pub mod hologram;
 #[cfg(feature = "spo")]
 pub mod spo;
 
+#[cfg(feature = "spo")]
+pub mod context_crystal;
+
 #[cfg(feature = "compress")]
 pub mod compress;
