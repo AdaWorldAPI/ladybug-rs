@@ -7,7 +7,31 @@ entirely through binary operations (XOR, popcount, permute) at 65M comparisons/s
 
 The question: **Can this replace Jina embeddings entirely?**
 
-Answer: **YES**, through a self-bootstrapping process.
+Answer: **YES**, through a self-bootstrapping process informed by arXiv:2505.11764.
+
+## Key Insights from "Towards Universal Semantics with LLMs"
+
+The paper confirms our approach is sound:
+
+1. **65 Semantic Primes are Empirically Universal**
+   - Attested in 90+ languages including low-resource ones
+   - Any word can be paraphrased using only these primes
+   - Cross-translatable without loss of meaning
+
+2. **Small Fine-Tuned Models Beat GPT-4o**
+   - DeepNSM-1B and DeepNSM-8B outperform GPT-4o on explication quality
+   - Only ~44K training examples needed
+   - Quality filtering is crucial (score ≥ 35)
+
+3. **NSM Explications >> Dictionary Definitions**
+   - 20+ BLEU points better on low-resource translation
+   - Non-circular, precise, culturally neutral
+   - Legality Score = α * (primes - molecules) / total_words
+
+4. **The Evaluation Stack**
+   - Legality: How many primes vs molecules?
+   - Substitutability: Does explication predict target word?
+   - Cross-Translatability: Round-trip through low-resource language
 
 ## What We Have
 
