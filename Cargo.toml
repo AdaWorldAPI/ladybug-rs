@@ -18,8 +18,11 @@ default = ["simd", "parallel"]
 simd = []
 parallel = ["rayon"]
 python = ["pyo3"]
-full = ["simd", "parallel", "python"]
-
+codebook = []
+hologram = []
+spo = ["reqwest"]
+compress = []
+full = ["simd", "parallel", "python", "codebook", "hologram", "spo", "compress"]
 [dependencies]
 # Storage
 lance = "0.9"
@@ -65,3 +68,6 @@ harness = false
 [profile.release]
 lto = "fat"
 codegen-units = 1
+
+# Extension dependencies
+reqwest = { version = "0.11", features = ["json"], optional = true }
