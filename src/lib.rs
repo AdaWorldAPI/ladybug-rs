@@ -50,6 +50,10 @@ pub mod world;
 pub mod query;
 pub mod storage;
 pub mod fabric;
+pub mod learning;
+
+#[cfg(any(feature = "codebook", feature = "hologram", feature = "spo", feature = "compress"))]
+pub mod extensions;
 
 #[cfg(feature = "python")]
 pub mod python;
@@ -97,3 +101,9 @@ pub const FINGERPRINT_BYTES: usize = FINGERPRINT_U64 * 8;
 
 /// Default embedding dimension (for dense vectors)
 pub const EMBEDDING_DIM: usize = 1024;
+
+// Learning module re-exports
+pub use crate::learning::{
+    Blackboard, LearningSession, LearningMoment, 
+    ConceptExtractor, ResonanceTracker,
+};
