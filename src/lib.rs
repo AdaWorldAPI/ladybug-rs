@@ -61,6 +61,7 @@ pub mod nars;
 pub mod grammar;  // NEW: Grammar Triangle
 pub mod graph;
 pub mod world;
+pub mod search;
 pub mod query;
 pub mod storage;
 pub mod fabric;
