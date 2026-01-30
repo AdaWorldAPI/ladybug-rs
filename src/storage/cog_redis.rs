@@ -6,15 +6,16 @@
 //! ┌─────────────────────────────────────────────────────────────────────────────┐
 //! │                      PREFIX (8-bit) : ADDRESS (8-bit)                       │
 //! ├─────────────────┬───────────────────────────────────────────────────────────┤
-//! │  0x00:XX        │  SURFACE 0 - Lance/Kuzu (256 ops)                         │
-//! │  0x01:XX        │  SURFACE 1 - SQL/Neo4j (256 ops)                          │
-//! │  0x02:XX        │  SURFACE 2 - Meta/NARS (256 ops)                          │
-//! │  0x03:XX        │  SURFACE 3 - Verbs/Cypher (256 verbs)                     │
+//! │  0x00-0x0F:XX   │  SURFACE (16 prefixes × 256 = 4,096)                      │
+//! │                 │  0x00: Lance    0x04: NARS      0x08: Concepts            │
+//! │                 │  0x01: SQL      0x05: Causal    0x09: Qualia              │
+//! │                 │  0x02: Cypher   0x06: Meta      0x0A: Memory              │
+//! │                 │  0x03: GraphQL  0x07: Verbs     0x0B: Learning            │
 //! ├─────────────────┼───────────────────────────────────────────────────────────┤
-//! │  0x04-0x7F:XX   │  FLUID (124 chunks × 256 = 31,744 edges)                  │
+//! │  0x10-0x7F:XX   │  FLUID (112 prefixes × 256 = 28,672)                      │
 //! │                 │  Working memory - TTL governed, promote/demote            │
 //! ├─────────────────┼───────────────────────────────────────────────────────────┤
-//! │  0x80-0xFF:XX   │  NODES (128 chunks × 256 = 32,768 nodes)                  │
+//! │  0x80-0xFF:XX   │  NODES (128 prefixes × 256 = 32,768)                      │
 //! │                 │  Persistent graph - THE UNIVERSAL BIND SPACE              │
 //! └─────────────────┴───────────────────────────────────────────────────────────┘
 //! ```
@@ -73,30 +74,57 @@ use crate::search::causal::CausalSearch;
 use crate::learning::cognitive_frameworks::TruthValue;
 
 // =============================================================================
-// ADDRESS SPACE CONSTANTS (8-bit prefix architecture)
+// ADDRESS SPACE CONSTANTS (8-bit prefix : 8-bit slot)
 // =============================================================================
 
-/// Surface prefixes (4 compartments × 256 slots = 1024 total)
-pub const PREFIX_LANCE: u8 = 0x00;    // Lance/Kuzu ops
-pub const PREFIX_SQL: u8 = 0x01;      // SQL/Neo4j ops
-pub const PREFIX_META: u8 = 0x02;     // Higher-order thinking
-pub const PREFIX_VERBS: u8 = 0x03;    // Verbs/Cypher
+/// Slots per chunk
+pub const CHUNK_SIZE: usize = 256;
+
+// -----------------------------------------------------------------------------
+// SURFACE: 16 prefixes (0x00-0x0F) × 256 = 4,096 addresses
+// -----------------------------------------------------------------------------
+
+pub const PREFIX_SURFACE_START: u8 = 0x00;
+pub const PREFIX_SURFACE_END: u8 = 0x0F;
+pub const SURFACE_PREFIXES: usize = 16;
+
+/// Surface compartments
+pub const PREFIX_LANCE: u8 = 0x00;      // Lance/Kuzu vector ops
+pub const PREFIX_SQL: u8 = 0x01;        // SQL relational ops
+pub const PREFIX_CYPHER: u8 = 0x02;     // Neo4j/Cypher graph ops
+pub const PREFIX_GRAPHQL: u8 = 0x03;    // GraphQL ops
+pub const PREFIX_NARS: u8 = 0x04;       // NARS inference
+pub const PREFIX_CAUSAL: u8 = 0x05;     // Causal reasoning (Pearl)
+pub const PREFIX_META: u8 = 0x06;       // Meta-cognition
+pub const PREFIX_VERBS: u8 = 0x07;      // Verbs (CAUSES, BECOMES...)
+pub const PREFIX_CONCEPTS: u8 = 0x08;   // Core concept types
+pub const PREFIX_QUALIA: u8 = 0x09;     // Qualia operations
+pub const PREFIX_MEMORY: u8 = 0x0A;     // Memory operations
+pub const PREFIX_LEARNING: u8 = 0x0B;   // Learning operations
 
 /// Legacy constants (for compatibility)
 pub const SURFACE_START: u16 = 0x0000;
-pub const SURFACE_END: u16 = 0x03FF;  // 4 prefixes × 256 slots
-pub const SURFACE_SIZE: usize = 1024;
+pub const SURFACE_END: u16 = 0x0FFF;    // 16 prefixes × 256 slots
+pub const SURFACE_SIZE: usize = 4096;
 
-/// Fluid zone: edges + working memory (prefix 0x04-0x7F)
-pub const PREFIX_FLUID_START: u8 = 0x04;
+// -----------------------------------------------------------------------------
+// FLUID: 112 prefixes (0x10-0x7F) × 256 = 28,672 addresses
+// -----------------------------------------------------------------------------
+
+pub const PREFIX_FLUID_START: u8 = 0x10;
 pub const PREFIX_FLUID_END: u8 = 0x7F;
-pub const FLUID_START: u16 = 0x0400;
+pub const FLUID_PREFIXES: usize = 112;
+pub const FLUID_START: u16 = 0x1000;
 pub const FLUID_END: u16 = 0x7FFF;
-pub const FLUID_SIZE: usize = 31744;  // 124 chunks × 256
+pub const FLUID_SIZE: usize = 28672;    // 112 × 256
 
-/// Node tier: universal bind space (prefix 0x80-0xFF)
+// -----------------------------------------------------------------------------
+// NODES: 128 prefixes (0x80-0xFF) × 256 = 32,768 addresses
+// -----------------------------------------------------------------------------
+
 pub const PREFIX_NODE_START: u8 = 0x80;
 pub const PREFIX_NODE_END: u8 = 0xFF;
+pub const NODE_PREFIXES: usize = 128;
 pub const NODE_START: u16 = 0x8000;
 pub const NODE_END: u16 = 0xFFFF;
 pub const NODE_SIZE: usize = 32768;   // 128 chunks × 256
@@ -146,22 +174,16 @@ impl CogAddr {
     pub fn tier(&self) -> Tier {
         let p = self.prefix();
         match p {
-            0x00..=0x03 => Tier::Surface,
-            0x04..=0x7F => Tier::Fluid,
-            _ => Tier::Node,
+            0x00..=0x0F => Tier::Surface,  // 16 prefixes
+            0x10..=0x7F => Tier::Fluid,    // 112 prefixes
+            _ => Tier::Node,               // 128 prefixes
         }
     }
     
     /// Which surface compartment (if surface tier)
     #[inline(always)]
     pub fn surface_compartment(&self) -> Option<SurfaceCompartment> {
-        match self.prefix() {
-            PREFIX_LANCE => Some(SurfaceCompartment::Lance),
-            PREFIX_SQL => Some(SurfaceCompartment::Sql),
-            PREFIX_META => Some(SurfaceCompartment::Meta),
-            PREFIX_VERBS => Some(SurfaceCompartment::Verbs),
-            _ => None,
-        }
+        SurfaceCompartment::from_prefix(self.prefix())
     }
     
     /// Is this in the persistent node tier?
@@ -180,7 +202,7 @@ impl CogAddr {
     /// Is this a surface operation?
     #[inline(always)]
     pub fn is_surface(&self) -> bool {
-        self.prefix() <= PREFIX_VERBS
+        self.prefix() <= PREFIX_SURFACE_END
     }
     
     /// Promote to node tier (move to 0x80+ prefix, keep slot)
@@ -188,7 +210,7 @@ impl CogAddr {
         CogAddr::from_parts(PREFIX_NODE_START, self.slot())
     }
     
-    /// Demote to fluid tier (move to 0x04+ prefix, keep slot)
+    /// Demote to fluid tier (move to 0x10+ prefix, keep slot)
     pub fn demote(&self) -> CogAddr {
         CogAddr::from_parts(PREFIX_FLUID_START, self.slot())
     }
@@ -203,26 +225,44 @@ impl From<u16> for CogAddr {
 /// Address tier
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Tier {
-    /// Fixed vocabulary (4 compartments × 256)
+    /// Fixed vocabulary (16 compartments × 256 = 4,096)
     Surface,
-    /// Working memory (124 chunks × 256)
+    /// Working memory (112 chunks × 256 = 28,672)
     Fluid,
-    /// Persistent graph (128 chunks × 256)
+    /// Persistent graph (128 chunks × 256 = 32,768)
     Node,
 }
 
-/// Surface compartments (prefix 0x00-0x03)
+/// Surface compartments (16 available, prefix 0x00-0x0F)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SurfaceCompartment {
     /// 0x00: Lance/Kuzu - vector search, traversal
-    Lance = 0,
-    /// 0x01: SQL/Neo4j - relational, property graph
-    Sql = 1,
-    /// 0x02: Meta - higher-order thinking, NARS
-    Meta = 2,
-    /// 0x03: Verbs - CAUSES, BECOMES, etc.
-    Verbs = 3,
+    Lance = 0x00,
+    /// 0x01: SQL - relational ops
+    Sql = 0x01,
+    /// 0x02: Neo4j/Cypher - property graph
+    Cypher = 0x02,
+    /// 0x03: GraphQL ops
+    GraphQL = 0x03,
+    /// 0x04: NARS inference
+    Nars = 0x04,
+    /// 0x05: Causal reasoning (Pearl)
+    Causal = 0x05,
+    /// 0x06: Meta - higher-order thinking
+    Meta = 0x06,
+    /// 0x07: Verbs - CAUSES, BECOMES, etc.
+    Verbs = 0x07,
+    /// 0x08: Concepts - core types
+    Concepts = 0x08,
+    /// 0x09: Qualia ops
+    Qualia = 0x09,
+    /// 0x0A: Memory ops
+    Memory = 0x0A,
+    /// 0x0B: Learning ops
+    Learning = 0x0B,
+    /// 0x0C-0x0F: Reserved
+    Reserved = 0x0C,
 }
 
 impl SurfaceCompartment {
@@ -232,6 +272,25 @@ impl SurfaceCompartment {
     
     pub fn addr(self, slot: u8) -> CogAddr {
         CogAddr::from_parts(self as u8, slot)
+    }
+    
+    pub fn from_prefix(prefix: u8) -> Option<Self> {
+        match prefix {
+            0x00 => Some(Self::Lance),
+            0x01 => Some(Self::Sql),
+            0x02 => Some(Self::Cypher),
+            0x03 => Some(Self::GraphQL),
+            0x04 => Some(Self::Nars),
+            0x05 => Some(Self::Causal),
+            0x06 => Some(Self::Meta),
+            0x07 => Some(Self::Verbs),
+            0x08 => Some(Self::Concepts),
+            0x09 => Some(Self::Qualia),
+            0x0A => Some(Self::Memory),
+            0x0B => Some(Self::Learning),
+            0x0C..=0x0F => Some(Self::Reserved),
+            _ => None,
+        }
     }
 }
 
