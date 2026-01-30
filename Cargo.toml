@@ -29,7 +29,7 @@ parallel = ["rayon"]             # Parallel processing
 # Storage backends
 lancedb = ["lance"]              # LanceDB vector storage
 neo4j = ["neo4rs"]               # Neo4j graph database
-redis = ["redis"]                # Redis caching
+redis = ["dep:redis"]            # Redis caching
 
 # Extensions
 python = ["pyo3"]                # Python bindings

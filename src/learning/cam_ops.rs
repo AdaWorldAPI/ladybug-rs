@@ -471,6 +471,987 @@ pub enum HammingOp {
 }
 
 // =============================================================================
+// NARS OPERATIONS (0x400-0x4FF)
+// =============================================================================
+
+#[repr(u16)]
+#[derive(Clone, Copy, Debug)]
+pub enum NarsOp {
+    // Truth value operations (0x400-0x40F)
+    TruthNew            = 0x400,
+    TruthExpectation    = 0x401,
+    TruthConfidence     = 0x402,
+    TruthFrequency      = 0x403,
+    TruthNegate         = 0x404,
+    TruthIntersect      = 0x405,
+    TruthUnion          = 0x406,
+    TruthDifference     = 0x407,
+
+    // First-order inference (0x410-0x42F)
+    Deduction           = 0x410,
+    Induction           = 0x411,
+    Abduction           = 0x412,
+    Exemplification     = 0x413,
+    Comparison          = 0x414,
+    Analogy             = 0x415,
+    Resemblance         = 0x416,
+    Conversion          = 0x417,
+    Contraposition      = 0x418,
+
+    // Higher-order inference (0x430-0x44F)
+    Revision            = 0x430,
+    Choice              = 0x431,
+    Intersection        = 0x432,
+    Union               = 0x433,
+    Difference          = 0x434,
+    Negation            = 0x435,
+    Implication         = 0x436,
+    Equivalence         = 0x437,
+
+    // Copulas (0x450-0x46F)
+    Inheritance         = 0x450,  // -->
+    Similarity          = 0x451,  // <->
+    Instance            = 0x452,  // {-->}
+    Property            = 0x453,  // [-->]
+    InstanceProperty    = 0x454,  // {[-->]}
+    ImplicationP        = 0x455,  // ==>  predictive
+    ImplicationR        = 0x456,  // =/>  retrospective
+    ImplicationC        = 0x457,  // =|>  concurrent
+    EquivalenceP        = 0x458,  // <=>
+    EquivalenceR        = 0x459,
+    EquivalenceC        = 0x45A,
+
+    // Compound terms (0x470-0x48F)
+    ExtensionalSet      = 0x470,  // {a, b, c}
+    IntensionalSet     = 0x471,  // [a, b, c]
+    ExtensionalIntersection = 0x472,  // (& a b)
+    IntensionalIntersection = 0x473,  // (| a b)
+    ExtensionalDifference = 0x474,  // (- a b)
+    IntensionalDifference = 0x475,
+    Product             = 0x476,  // (* a b)
+    Image               = 0x477,  // (/ r _ a) or (\ r a _)
+    Conjunction         = 0x478,  // (&& a b)
+    Disjunction         = 0x479,  // (|| a b)
+    SequentialConj      = 0x47A,  // (&/ a b)
+    ParallelConj        = 0x47B,  // (&| a b)
+
+    // Temporal (0x490-0x4AF)
+    Before              = 0x490,
+    After               = 0x491,
+    When                = 0x492,
+    While               = 0x493,
+    Eternal             = 0x494,
+    Present             = 0x495,
+    Past                = 0x496,
+    Future              = 0x497,
+
+    // Evidence (0x4B0-0x4CF)
+    EvidencePositive    = 0x4B0,
+    EvidenceNegative    = 0x4B1,
+    EvidenceTotal       = 0x4B2,
+    EvidenceUpdate      = 0x4B3,
+    EvidenceDecay       = 0x4B4,
+    EvidenceHorizon     = 0x4B5,
+
+    // Attention (0x4D0-0x4EF)
+    Priority            = 0x4D0,
+    Durability          = 0x4D1,
+    Quality             = 0x4D2,
+    BudgetMerge         = 0x4D3,
+    BudgetForget        = 0x4D4,
+    BudgetActivate      = 0x4D5,
+
+    // Goals/Operations (0x4F0-0x4FF)
+    GoalDerive          = 0x4F0,
+    GoalAchieve         = 0x4F1,
+    OperationExecute    = 0x4F2,
+    Anticipate          = 0x4F3,
+    Satisfy             = 0x4F4,
+}
+
+// =============================================================================
+// FILESYSTEM OPERATIONS (0x500-0x5FF)
+// =============================================================================
+
+#[repr(u16)]
+#[derive(Clone, Copy, Debug)]
+pub enum FilesystemOp {
+    // File operations (0x500-0x51F)
+    FileOpen            = 0x500,
+    FileClose           = 0x501,
+    FileRead            = 0x502,
+    FileWrite           = 0x503,
+    FileAppend          = 0x504,
+    FileSeek            = 0x505,
+    FileTruncate        = 0x506,
+    FileFlush           = 0x507,
+    FileSize            = 0x508,
+    FileExists          = 0x509,
+    FileDelete          = 0x50A,
+    FileRename          = 0x50B,
+    FileCopy            = 0x50C,
+    FileMove            = 0x50D,
+    FileTouch           = 0x50E,
+    FileHash            = 0x50F,
+
+    // Directory operations (0x520-0x53F)
+    DirCreate           = 0x520,
+    DirDelete           = 0x521,
+    DirList             = 0x522,
+    DirWalk             = 0x523,
+    DirExists           = 0x524,
+    DirRename           = 0x525,
+    DirSize             = 0x526,
+    DirCount            = 0x527,
+
+    // Path operations (0x540-0x55F)
+    PathJoin            = 0x540,
+    PathSplit           = 0x541,
+    PathParent          = 0x542,
+    PathFilename        = 0x543,
+    PathExtension       = 0x544,
+    PathStem            = 0x545,
+    PathNormalize       = 0x546,
+    PathAbsolute        = 0x547,
+    PathRelative        = 0x548,
+    PathIsFile          = 0x549,
+    PathIsDir           = 0x54A,
+    PathIsSymlink       = 0x54B,
+
+    // Fingerprint I/O (0x560-0x57F)
+    FpSave              = 0x560,
+    FpLoad              = 0x561,
+    FpSaveBatch         = 0x562,
+    FpLoadBatch         = 0x563,
+    FpExportBinary      = 0x564,
+    FpImportBinary      = 0x565,
+    FpExportBase64      = 0x566,
+    FpImportBase64      = 0x567,
+    FpExportHex         = 0x568,
+    FpImportHex         = 0x569,
+
+    // Serialization (0x580-0x59F)
+    SerializeJson       = 0x580,
+    DeserializeJson     = 0x581,
+    SerializeYaml       = 0x582,
+    DeserializeYaml     = 0x583,
+    SerializeBincode    = 0x584,
+    DeserializeBincode  = 0x585,
+    SerializeMsgpack    = 0x586,
+    DeserializeMsgpack  = 0x587,
+    SerializeArrow      = 0x588,
+    DeserializeArrow    = 0x589,
+    SerializeParquet    = 0x58A,
+    DeserializeParquet  = 0x58B,
+
+    // Watch/Events (0x5A0-0x5BF)
+    WatchFile           = 0x5A0,
+    WatchDir            = 0x5A1,
+    UnwatchFile         = 0x5A2,
+    UnwatchDir          = 0x5A3,
+    WatchEvents         = 0x5A4,
+
+    // Memory mapping (0x5C0-0x5DF)
+    MmapOpen            = 0x5C0,
+    MmapClose           = 0x5C1,
+    MmapRead            = 0x5C2,
+    MmapWrite           = 0x5C3,
+    MmapSync            = 0x5C4,
+
+    // Compression (0x5E0-0x5FF)
+    CompressLz4         = 0x5E0,
+    DecompressLz4       = 0x5E1,
+    CompressZstd        = 0x5E2,
+    DecompressZstd      = 0x5E3,
+    CompressSnappy      = 0x5E4,
+    DecompressSnappy    = 0x5E5,
+}
+
+// =============================================================================
+// CRYSTAL/TEMPORAL OPERATIONS (0x600-0x6FF)
+// =============================================================================
+
+#[repr(u16)]
+#[derive(Clone, Copy, Debug)]
+pub enum CrystalOp {
+    // Crystal model core (0x600-0x61F)
+    CrystalCreate       = 0x600,
+    CrystalLoad         = 0x601,
+    CrystalSave         = 0x602,
+    CrystalInfer        = 0x603,
+    CrystalTrain        = 0x604,
+    CrystalExpand       = 0x605,
+    CrystalCompress     = 0x606,
+    CrystalMerge        = 0x607,
+    CrystalSplit        = 0x608,
+    CrystalProject      = 0x609,
+    CrystalReconstruct  = 0x60A,
+
+    // Axis operations (0x620-0x63F)
+    AxisT               = 0x620,  // Topic axis
+    AxisS               = 0x621,  // Style axis
+    AxisD               = 0x622,  // Detail axis
+    AxisGet             = 0x623,
+    AxisSet             = 0x624,
+    AxisRotate          = 0x625,
+    AxisInterpolate     = 0x626,
+    AxisExtrapolate     = 0x627,
+
+    // Temporal primitives (0x640-0x65F)
+    Now                 = 0x640,
+    Timestamp           = 0x641,
+    Duration            = 0x642,
+    Interval            = 0x643,
+    TimeAdd             = 0x644,
+    TimeSub             = 0x645,
+    TimeDiff            = 0x646,
+    TimeCompare         = 0x647,
+    TimeParse           = 0x648,
+    TimeFormat          = 0x649,
+
+    // Temporal windows (0x660-0x67F)
+    WindowTumbling      = 0x660,
+    WindowSliding       = 0x661,
+    WindowSession       = 0x662,
+    WindowHopping       = 0x663,
+    WindowSnapshot      = 0x664,
+    WindowAggregate     = 0x665,
+
+    // Temporal operators (0x680-0x69F)
+    TemporalBefore      = 0x680,
+    TemporalAfter       = 0x681,
+    TemporalDuring      = 0x682,
+    TemporalOverlaps    = 0x683,
+    TemporalMeets       = 0x684,
+    TemporalStarts      = 0x685,
+    TemporalFinishes    = 0x686,
+    TemporalEquals      = 0x687,
+    TemporalContains    = 0x688,
+
+    // Versioning (0x6A0-0x6BF)
+    VersionCreate       = 0x6A0,
+    VersionCheckout     = 0x6A1,
+    VersionCommit       = 0x6A2,
+    VersionRollback     = 0x6A3,
+    VersionDiff         = 0x6A4,
+    VersionMerge        = 0x6A5,
+    VersionHistory      = 0x6A6,
+    VersionTag          = 0x6A7,
+    VersionBranch       = 0x6A8,
+
+    // Ice-cake layers (0x6C0-0x6DF)
+    LayerFrozen         = 0x6C0,
+    LayerWarm           = 0x6C1,
+    LayerHot            = 0x6C2,
+    LayerPromote        = 0x6C3,
+    LayerDemote         = 0x6C4,
+    LayerMerge          = 0x6C5,
+    LayerStats          = 0x6C6,
+
+    // Decay/Forgetting (0x6E0-0x6FF)
+    DecayExponential    = 0x6E0,
+    DecayPower          = 0x6E1,
+    DecayLinear         = 0x6E2,
+    DecayStep           = 0x6E3,
+    ForgetThreshold     = 0x6E4,
+    ForgetRandom        = 0x6E5,
+    ConsolidateMemory   = 0x6E6,
+    RehearsalSpaced     = 0x6E7,
+}
+
+// =============================================================================
+// NSM SEMANTIC OPERATIONS (0x700-0x7FF)
+// =============================================================================
+
+#[repr(u16)]
+#[derive(Clone, Copy, Debug)]
+pub enum NsmOp {
+    // Semantic primitives (0x700-0x71F) - Wierzbicka primes
+    I                   = 0x700,
+    You                 = 0x701,
+    Someone             = 0x702,
+    Something           = 0x703,
+    People              = 0x704,
+    Body                = 0x705,
+    Kind                = 0x706,
+    Part                = 0x707,
+    This                = 0x708,
+    Same                = 0x709,
+    Other               = 0x70A,
+    One                 = 0x70B,
+    Two                 = 0x70C,
+    Some                = 0x70D,
+    All                 = 0x70E,
+    Much                = 0x70F,
+    Little              = 0x710,
+    Good                = 0x711,
+    Bad                 = 0x712,
+    Big                 = 0x713,
+    Small               = 0x714,
+
+    // Mental predicates (0x720-0x73F)
+    Think               = 0x720,
+    Know                = 0x721,
+    Want                = 0x722,
+    Feel                = 0x723,
+    See                 = 0x724,
+    Hear                = 0x725,
+    Say                 = 0x726,
+    Do                  = 0x727,
+    Happen              = 0x728,
+    Move                = 0x729,
+    Touch               = 0x72A,
+
+    // Space/Time (0x740-0x75F)
+    Where               = 0x740,
+    Here                = 0x741,
+    Above               = 0x742,
+    Below               = 0x743,
+    Far                 = 0x744,
+    Near                = 0x745,
+    Side                = 0x746,
+    Inside              = 0x747,
+    WhenNsm             = 0x748,
+    NowNsm              = 0x749,
+    BeforeNsm           = 0x74A,
+    AfterNsm            = 0x74B,
+    LongTime            = 0x74C,
+    ShortTime           = 0x74D,
+    ForSomeTime         = 0x74E,
+    Moment              = 0x74F,
+
+    // Logical (0x760-0x77F)
+    Not                 = 0x760,
+    Maybe               = 0x761,
+    Can                 = 0x762,
+    Because             = 0x763,
+    If                  = 0x764,
+    Like                = 0x765,
+    Very                = 0x766,
+    More                = 0x767,
+
+    // Existence (0x780-0x79F)
+    There               = 0x780,
+    Live                = 0x781,
+    Die                 = 0x782,
+
+    // NSM composition (0x7A0-0x7BF)
+    NsmCompose          = 0x7A0,
+    NsmDecompose        = 0x7A1,
+    NsmMatch            = 0x7A2,
+    NsmDistance         = 0x7A3,
+    NsmSimplify         = 0x7A4,
+    NsmExpand           = 0x7A5,
+    NsmNormalize        = 0x7A6,
+
+    // Semantic molecules (0x7C0-0x7DF)
+    MoleculeCreate      = 0x7C0,
+    MoleculeAdd         = 0x7C1,
+    MoleculeRemove      = 0x7C2,
+    MoleculeMatch       = 0x7C3,
+    MoleculeSimilar     = 0x7C4,
+    MoleculeDecompose   = 0x7C5,
+
+    // Explication (0x7E0-0x7FF)
+    Explicate           = 0x7E0,
+    ExplicateWord       = 0x7E1,
+    ExplicateConcept    = 0x7E2,
+    ExplicateEmotion    = 0x7E3,
+    ExplicateAction     = 0x7E4,
+    ExplicateSocial     = 0x7E5,
+    CulturalScript      = 0x7E6,
+    SemanticTemplate    = 0x7E7,
+}
+
+// =============================================================================
+// ACT-R COGNITIVE ARCHITECTURE (0x800-0x8FF)
+// =============================================================================
+
+#[repr(u16)]
+#[derive(Clone, Copy, Debug)]
+pub enum ActrOp {
+    // Declarative memory (0x800-0x81F)
+    ChunkCreate         = 0x800,
+    ChunkStore          = 0x801,
+    ChunkRetrieve       = 0x802,
+    ChunkModify         = 0x803,
+    ChunkMerge          = 0x804,
+    ChunkActivation     = 0x805,
+    ChunkBaseLevel      = 0x806,
+    ChunkSpread         = 0x807,
+    ChunkPartialMatch   = 0x808,
+    ChunkBlend          = 0x809,
+
+    // Procedural memory (0x820-0x83F)
+    ProductionCreate    = 0x820,
+    ProductionMatch     = 0x821,
+    ProductionFire      = 0x822,
+    ProductionUtility   = 0x823,
+    ProductionCompile   = 0x824,
+    ProductionLearn     = 0x825,
+
+    // Buffers (0x840-0x85F)
+    BufferGoal          = 0x840,
+    BufferRetrieval     = 0x841,
+    BufferVisual        = 0x842,
+    BufferAural         = 0x843,
+    BufferMotor         = 0x844,
+    BufferVocal         = 0x845,
+    BufferImageal       = 0x846,
+    BufferTemporal      = 0x847,
+    BufferClear         = 0x848,
+    BufferQuery         = 0x849,
+    BufferRequest       = 0x84A,
+
+    // Activation (0x860-0x87F)
+    ActivationBase      = 0x860,
+    ActivationSpread    = 0x861,
+    ActivationNoise     = 0x862,
+    ActivationDecay     = 0x863,
+    ActivationBoost     = 0x864,
+    ActivationThreshold = 0x865,
+
+    // Timing (0x880-0x89F)
+    TimePerception      = 0x880,
+    TimeProduction      = 0x881,
+    LatencyRetrieval    = 0x882,
+    LatencyProduction   = 0x883,
+    CycleStep           = 0x884,
+
+    // Conflict resolution (0x8A0-0x8BF)
+    ConflictSet         = 0x8A0,
+    ConflictResolve     = 0x8A1,
+    UtilityCompute      = 0x8A2,
+    UtilityLearn        = 0x8A3,
+    UtilityNoise        = 0x8A4,
+
+    // Subsymbolic (0x8C0-0x8DF)
+    SubsymbolicBlend    = 0x8C0,
+    SubsymbolicMatch    = 0x8C1,
+    SubsymbolicSimilarity = 0x8C2,
+    SubsymbolicError    = 0x8C3,
+
+    // Module interface (0x8E0-0x8FF)
+    ModuleVision        = 0x8E0,
+    ModuleAudio         = 0x8E1,
+    ModuleMotor         = 0x8E2,
+    ModuleSpeech        = 0x8E3,
+    ModuleDeclarative   = 0x8E4,
+    ModuleProcedural    = 0x8E5,
+    ModuleGoal          = 0x8E6,
+    ModuleImaginal      = 0x8E7,
+}
+
+// =============================================================================
+// RL/DECISION OPERATIONS (0x900-0x9FF)
+// =============================================================================
+
+#[repr(u16)]
+#[derive(Clone, Copy, Debug)]
+pub enum RlOp {
+    // Value functions (0x900-0x91F)
+    ValueState          = 0x900,
+    ValueAction         = 0x901,
+    ValueAdvantage      = 0x902,
+    ValueUpdate         = 0x903,
+    ValueBootstrap      = 0x904,
+    QValue              = 0x905,
+    QUpdate             = 0x906,
+    QMax                = 0x907,
+    QSoftmax            = 0x908,
+
+    // Policy (0x920-0x93F)
+    PolicyGreedy        = 0x920,
+    PolicyEpsilonGreedy = 0x921,
+    PolicySoftmax       = 0x922,
+    PolicyUCB           = 0x923,
+    PolicyThompson      = 0x924,
+    PolicyRandom        = 0x925,
+    PolicyImprove       = 0x926,
+    PolicyEvaluate      = 0x927,
+
+    // Reward (0x940-0x95F)
+    RewardObserve       = 0x940,
+    RewardShape         = 0x941,
+    RewardIntrinsic     = 0x942,
+    RewardCuriosity     = 0x943,
+    RewardSparse        = 0x944,
+    RewardDense         = 0x945,
+    ReturnCompute       = 0x946,
+    ReturnDiscount      = 0x947,
+
+    // TD Learning (0x960-0x97F)
+    TdError             = 0x960,
+    TdUpdate            = 0x961,
+    TdLambda            = 0x962,
+    Sarsa               = 0x963,
+    SarsaLambda         = 0x964,
+    ExpectedSarsa       = 0x965,
+    QLearning           = 0x966,
+    DoubleQ             = 0x967,
+
+    // Eligibility traces (0x980-0x99F)
+    TraceCreate         = 0x980,
+    TraceUpdate         = 0x981,
+    TraceDecay          = 0x982,
+    TraceClear          = 0x983,
+    TraceAccumulating   = 0x984,
+    TraceReplacing      = 0x985,
+    TraceDutch          = 0x986,
+
+    // Exploration (0x9A0-0x9BF)
+    ExploreRandom       = 0x9A0,
+    ExploreEpsilon      = 0x9A1,
+    ExploreBoltzmann    = 0x9A2,
+    ExploreUCB          = 0x9A3,
+    ExploreOptimistic   = 0x9A4,
+    ExploreNovelty      = 0x9A5,
+    ExploreCount        = 0x9A6,
+
+    // Model-based (0x9C0-0x9DF)
+    ModelLearn          = 0x9C0,
+    ModelPredict        = 0x9C1,
+    ModelPlan           = 0x9C2,
+    ModelSimulate       = 0x9C3,
+    Dyna                = 0x9C4,
+    MCTS                = 0x9C5,
+    PrioritizedSweep    = 0x9C6,
+
+    // Multi-agent (0x9E0-0x9FF)
+    AgentCreate         = 0x9E0,
+    AgentObserve        = 0x9E1,
+    AgentAct            = 0x9E2,
+    AgentCommunicate    = 0x9E3,
+    NashEquilibrium     = 0x9E4,
+    Minimax             = 0x9E5,
+    SelfPlay            = 0x9E6,
+}
+
+// =============================================================================
+// CAUSALITY OPERATIONS (0xA00-0xAFF)
+// =============================================================================
+
+#[repr(u16)]
+#[derive(Clone, Copy, Debug)]
+pub enum CausalOp {
+    // Structural (0xA00-0xA1F)
+    GraphCreate         = 0xA00,
+    GraphAddNode        = 0xA01,
+    GraphAddEdge        = 0xA02,
+    GraphRemoveNode     = 0xA03,
+    GraphRemoveEdge     = 0xA04,
+    GraphParents        = 0xA05,
+    GraphChildren       = 0xA06,
+    GraphAncestors      = 0xA07,
+    GraphDescendants    = 0xA08,
+    GraphTopologicalSort = 0xA09,
+
+    // D-separation (0xA20-0xA3F)
+    DSeparated          = 0xA20,
+    DConnected          = 0xA21,
+    Collider            = 0xA22,
+    Fork                = 0xA23,
+    Chain               = 0xA24,
+    BackdoorPath        = 0xA25,
+    FrontdoorPath       = 0xA26,
+
+    // Intervention - do() calculus (0xA40-0xA5F)
+    DoIntervene         = 0xA40,
+    DoSet               = 0xA41,
+    DoIdle              = 0xA42,
+    DoCompound          = 0xA43,
+    DoConditional       = 0xA44,
+    TruncatedProduct    = 0xA45,
+    Manipulated         = 0xA46,
+
+    // Adjustment (0xA60-0xA7F)
+    BackdoorAdjust      = 0xA60,
+    FrontdoorAdjust     = 0xA61,
+    InstrumentalVar     = 0xA62,
+    PropensityScore     = 0xA63,
+    IPW                 = 0xA64,  // Inverse probability weighting
+    AIPW                = 0xA65,  // Augmented IPW
+    MatchingEstimator   = 0xA66,
+
+    // Counterfactual (0xA80-0xA9F)
+    Counterfactual      = 0xA80,
+    TwinNetwork         = 0xA81,
+    Abduct              = 0xA82,
+    Act                 = 0xA83,
+    Predict             = 0xA84,
+    ProbNecessity       = 0xA85,  // P(Y_x'=0 | X=x, Y=1)
+    ProbSufficiency     = 0xA86,  // P(Y_x=1 | X=x', Y=0)
+    ProbNecSuf          = 0xA87,  // P(Y_x=1 AND Y_x'=0)
+
+    // Effect estimation (0xAA0-0xABF)
+    ATE                 = 0xAA0,  // Average treatment effect
+    ATT                 = 0xAA1,  // ... on treated
+    ATC                 = 0xAA2,  // ... on control
+    CATE                = 0xAA3,  // Conditional ATE
+    LocalATE            = 0xAA4,
+    NaturalDirect       = 0xAA5,
+    NaturalIndirect     = 0xAA6,
+    ControlledDirect    = 0xAA7,
+    TotalEffect         = 0xAA8,
+
+    // Causal discovery (0xAC0-0xADF)
+    DiscoverPC          = 0xAC0,
+    DiscoverFCI         = 0xAC1,
+    DiscoverGES         = 0xAC2,
+    DiscoverLiNGAM      = 0xAC3,
+    DiscoverContinuous  = 0xAC4,
+    ConstraintBased     = 0xAC5,
+    ScoreBased          = 0xAC6,
+
+    // Bounds (0xAE0-0xAFF)
+    BoundsNatural       = 0xAE0,
+    BoundsTight         = 0xAE1,
+    BoundsMonotonic     = 0xAE2,
+    SensitivityAnalysis = 0xAE3,
+    RobustnessCheck     = 0xAE4,
+}
+
+// =============================================================================
+// QUALIA OPERATIONS (0xB00-0xBFF)
+// =============================================================================
+
+#[repr(u16)]
+#[derive(Clone, Copy, Debug)]
+pub enum QualiaOp {
+    // Arousal/Valence core (0xB00-0xB1F)
+    ArousalGet          = 0xB00,
+    ArousalSet          = 0xB01,
+    ValenceGet          = 0xB02,
+    ValenceSet          = 0xB03,
+    TensionGet          = 0xB04,
+    TensionSet          = 0xB05,
+    CertaintyGet        = 0xB06,
+    CertaintySet        = 0xB07,
+    AgencyGet           = 0xB08,
+    AgencySet           = 0xB09,
+    TemporalityGet      = 0xB0A,
+    TemporalitySet      = 0xB0B,
+    SocialityGet        = 0xB0C,
+    SocialitySet        = 0xB0D,
+    NoveltyGet          = 0xB0E,
+    NoveltySet          = 0xB0F,
+
+    // Qualia vector operations (0xB20-0xB3F)
+    QualiaCreate        = 0xB20,
+    QualiaClone         = 0xB21,
+    QualiaBlend         = 0xB22,
+    QualiaDistance      = 0xB23,
+    QualiaSimilarity    = 0xB24,
+    QualiaInterpolate   = 0xB25,
+    QualiaExtrapolate   = 0xB26,
+    QualiaNormalize     = 0xB27,
+
+    // Emotion primitives (0xB40-0xB5F)
+    EmotionJoy          = 0xB40,
+    EmotionSadness      = 0xB41,
+    EmotionAnger        = 0xB42,
+    EmotionFear         = 0xB43,
+    EmotionDisgust      = 0xB44,
+    EmotionSurprise     = 0xB45,
+    EmotionTrust        = 0xB46,
+    EmotionAnticipation = 0xB47,
+    EmotionBlend        = 0xB48,
+    EmotionIntensify    = 0xB49,
+    EmotionDampen       = 0xB4A,
+    EmotionOpposite     = 0xB4B,
+
+    // Felt sense (0xB60-0xB7F)
+    FeltWarmth          = 0xB60,
+    FeltCoolness        = 0xB61,
+    FeltPressure        = 0xB62,
+    FeltLightness       = 0xB63,
+    FeltDensity         = 0xB64,
+    FeltFlow            = 0xB65,
+    FeltStuckness       = 0xB66,
+    FeltExpansion       = 0xB67,
+    FeltContraction     = 0xB68,
+    FeltResonance       = 0xB69,
+    FeltDissonance      = 0xB6A,
+
+    // Phenomenal field (0xB80-0xB9F)
+    FieldCreate         = 0xB80,
+    FieldSample         = 0xB81,
+    FieldGradient       = 0xB82,
+    FieldPeak           = 0xB83,
+    FieldValley         = 0xB84,
+    FieldSmooth         = 0xB85,
+    FieldSharp          = 0xB86,
+    FieldMerge          = 0xB87,
+
+    // Consciousness markers (0xBA0-0xBBF)
+    Awake               = 0xBA0,
+    Dreaming            = 0xBA1,
+    Flow                = 0xBA2,
+    Focused             = 0xBA3,
+    Diffuse             = 0xBA4,
+    Metacognitive       = 0xBA5,
+    PreReflective       = 0xBA6,
+
+    // Affect regulation (0xBC0-0xBDF)
+    RegulateUp          = 0xBC0,
+    RegulateDown        = 0xBC1,
+    Reappraise          = 0xBC2,
+    Suppress            = 0xBC3,
+    Express             = 0xBC4,
+    Distract            = 0xBC5,
+    Ruminate            = 0xBC6,
+    Accept              = 0xBC7,
+
+    // Somatic (0xBE0-0xBFF)
+    BodyScan            = 0xBE0,
+    BodyLocate          = 0xBE1,
+    BodyIntensity       = 0xBE2,
+    Interoception       = 0xBE3,
+    Proprioception      = 0xBE4,
+    GroundingBody       = 0xBE5,
+}
+
+// =============================================================================
+// RUNG/ABSTRACTION OPERATIONS (0xC00-0xCFF)
+// =============================================================================
+
+#[repr(u16)]
+#[derive(Clone, Copy, Debug)]
+pub enum RungOp {
+    // Rung levels (0xC00-0xC0F) - Ladder of abstraction
+    RungNoise           = 0xC00,  // Level 0: Random noise
+    RungSignal          = 0xC01,  // Level 1: Coherent signal
+    RungPattern         = 0xC02,  // Level 2: Repeating pattern
+    RungConcept         = 0xC03,  // Level 3: Abstract concept
+    RungRelation        = 0xC04,  // Level 4: Relations between concepts
+    RungSchema          = 0xC05,  // Level 5: Organized schemas
+    RungNarrative       = 0xC06,  // Level 6: Story-like coherence
+    RungTheory          = 0xC07,  // Level 7: Explanatory theory
+    RungMetaTheory      = 0xC08,  // Level 8: Theory about theories
+    RungTranscendent    = 0xC09,  // Level 9: Beyond categories
+
+    // Rung navigation (0xC10-0xC2F)
+    RungAscend          = 0xC10,
+    RungDescend         = 0xC11,
+    RungCurrent         = 0xC12,
+    RungProject         = 0xC13,
+    RungGrounded        = 0xC14,
+    RungAbstract        = 0xC15,
+    RungInstantiate     = 0xC16,
+    RungGeneralize      = 0xC17,
+
+    // Abstraction operations (0xC30-0xC4F)
+    AbstractExtract     = 0xC30,
+    AbstractMerge       = 0xC31,
+    AbstractSplit       = 0xC32,
+    AbstractAlign       = 0xC33,
+    AbstractCompare     = 0xC34,
+    AbstractBlend       = 0xC35,
+    AbstractDifferentiate = 0xC36,
+
+    // Grounding (0xC50-0xC6F)
+    GroundToSensory     = 0xC50,
+    GroundToMotor       = 0xC51,
+    GroundToEmotion     = 0xC52,
+    GroundToMemory      = 0xC53,
+    GroundToLanguage    = 0xC54,
+    GroundToSocial      = 0xC55,
+    GroundCheck         = 0xC56,
+
+    // Hierarchy operations (0xC70-0xC8F)
+    HierarchyCreate     = 0xC70,
+    HierarchyInsert     = 0xC71,
+    HierarchyRemove     = 0xC72,
+    HierarchyParent     = 0xC73,
+    HierarchyChildren   = 0xC74,
+    HierarchySiblings   = 0xC75,
+    HierarchyPath       = 0xC76,
+    HierarchyDepth      = 0xC77,
+    HierarchyBreadth    = 0xC78,
+
+    // Conceptual blending (0xC90-0xCAF)
+    BlendCreate         = 0xC90,
+    BlendInput1         = 0xC91,
+    BlendInput2         = 0xC92,
+    BlendGeneric        = 0xC93,
+    BlendEmergent       = 0xC94,
+    BlendProject        = 0xC95,
+    BlendCompose        = 0xC96,
+    BlendComplete       = 0xC97,
+    BlendElaborate      = 0xC98,
+
+    // Metaphor (0xCB0-0xCCF)
+    MetaphorMap         = 0xCB0,
+    MetaphorSource      = 0xCB1,
+    MetaphorTarget      = 0xCB2,
+    MetaphorGrounds     = 0xCB3,
+    MetaphorExtend      = 0xCB4,
+    MetaphorLiteral     = 0xCB5,
+    MetaphorEntail      = 0xCB6,
+
+    // Analogy (0xCD0-0xCEF)
+    AnalogyFind         = 0xCD0,
+    AnalogyMap          = 0xCD1,
+    AnalogyEvaluate     = 0xCD2,
+    AnalogyTransfer     = 0xCD3,
+    AnalogyAdapt        = 0xCD4,
+    StructureMap        = 0xCD5,
+    RelationalMatch     = 0xCD6,
+
+    // Prototype (0xCF0-0xCFF)
+    PrototypeCreate     = 0xCF0,
+    PrototypeUpdate     = 0xCF1,
+    PrototypeMatch      = 0xCF2,
+    PrototypeDistance   = 0xCF3,
+    ExemplarStore       = 0xCF4,
+    ExemplarRetrieve    = 0xCF5,
+    CategoryMembership  = 0xCF6,
+    Typicality          = 0xCF7,
+}
+
+// =============================================================================
+// META/REFLECTION OPERATIONS (0xD00-0xDFF)
+// =============================================================================
+
+#[repr(u16)]
+#[derive(Clone, Copy, Debug)]
+pub enum MetaOp {
+    // Self-reference (0xD00-0xD1F)
+    SelfModel           = 0xD00,
+    SelfUpdate          = 0xD01,
+    SelfPredict         = 0xD02,
+    SelfMonitor         = 0xD03,
+    SelfCorrect         = 0xD04,
+    SelfExplain         = 0xD05,
+    SelfCritique        = 0xD06,
+    SelfImprove         = 0xD07,
+
+    // Confidence/Uncertainty (0xD20-0xD3F)
+    ConfidenceGet       = 0xD20,
+    ConfidenceSet       = 0xD21,
+    ConfidenceCalibrate = 0xD22,
+    UncertaintyQuantify = 0xD23,
+    UncertaintyReduce   = 0xD24,
+    EntropyMeasure      = 0xD25,
+    SurpriseMeasure     = 0xD26,
+
+    // Knowledge state (0xD40-0xD5F)
+    KnowWhat            = 0xD40,
+    KnowHow             = 0xD41,
+    KnowWhy             = 0xD42,
+    KnowWhen            = 0xD43,
+    KnowWho             = 0xD44,
+    KnowThat            = 0xD45,
+    DontKnow            = 0xD46,
+    CantKnow            = 0xD47,
+
+    // Reasoning trace (0xD60-0xD7F)
+    TraceBegin          = 0xD60,
+    TraceStep           = 0xD61,
+    TraceEnd            = 0xD62,
+    TraceRewind         = 0xD63,
+    TraceReplay         = 0xD64,
+    TraceBranch         = 0xD65,
+    TraceMerge          = 0xD66,
+    TraceExplain        = 0xD67,
+
+    // Goal management (0xD80-0xD9F)
+    GoalSet             = 0xD80,
+    GoalClear           = 0xD81,
+    GoalCheck           = 0xD82,
+    GoalStack           = 0xD83,
+    GoalPush            = 0xD84,
+    GoalPop             = 0xD85,
+    GoalPrioritize      = 0xD86,
+    GoalConflict        = 0xD87,
+    SubgoalCreate       = 0xD88,
+
+    // Attention control (0xDA0-0xDBF)
+    AttentionFocus      = 0xDA0,
+    AttentionBroaden    = 0xDA1,
+    AttentionNarrow     = 0xDA2,
+    AttentionShift      = 0xDA3,
+    AttentionSustain    = 0xDA4,
+    AttentionDivide     = 0xDA5,
+    AttentionFilter     = 0xDA6,
+    Salience            = 0xDA7,
+
+    // Strategy selection (0xDC0-0xDDF)
+    StrategySelect      = 0xDC0,
+    StrategyEvaluate    = 0xDC1,
+    StrategySwitch      = 0xDC2,
+    StrategyLearn       = 0xDC3,
+    Heuristic           = 0xDC4,
+    Algorithm           = 0xDC5,
+    Fallback            = 0xDC6,
+
+    // Debugging/Inspection (0xDE0-0xDFF)
+    Inspect             = 0xDE0,
+    Breakpoint          = 0xDE1,
+    Watch               = 0xDE2,
+    Profile             = 0xDE3,
+    Benchmark           = 0xDE4,
+    Validate            = 0xDE5,
+    Invariant           = 0xDE6,
+    Assert              = 0xDE7,
+    Log                 = 0xDE8,
+    Trace               = 0xDE9,
+}
+
+// =============================================================================
+// USER-DEFINED OPERATIONS (0xF00-0xFFF)
+// =============================================================================
+
+#[repr(u16)]
+#[derive(Clone, Copy, Debug)]
+pub enum UserOp {
+    // User function slots (0xF00-0xF7F) - 128 slots
+    User000 = 0xF00, User001 = 0xF01, User002 = 0xF02, User003 = 0xF03,
+    User004 = 0xF04, User005 = 0xF05, User006 = 0xF06, User007 = 0xF07,
+    User008 = 0xF08, User009 = 0xF09, User00A = 0xF0A, User00B = 0xF0B,
+    User00C = 0xF0C, User00D = 0xF0D, User00E = 0xF0E, User00F = 0xF0F,
+    // ... (slots 0xF10-0xF7F implicitly available)
+
+    // Plugin interface (0xF80-0xF9F)
+    PluginLoad          = 0xF80,
+    PluginUnload        = 0xF81,
+    PluginList          = 0xF82,
+    PluginCall          = 0xF83,
+    PluginRegister      = 0xF84,
+    PluginUnregister    = 0xF85,
+
+    // FFI (0xFA0-0xFBF)
+    FfiCall             = 0xFA0,
+    FfiCallback         = 0xFA1,
+    FfiMarshal          = 0xFA2,
+    FfiUnmarshal        = 0xFA3,
+
+    // Scripting (0xFC0-0xFDF)
+    ScriptEval          = 0xFC0,
+    ScriptCompile       = 0xFC1,
+    ScriptRun           = 0xFC2,
+    ScriptParse         = 0xFC3,
+
+    // Extension points (0xFE0-0xFFF)
+    ExtensionPoint0     = 0xFE0,
+    ExtensionPoint1     = 0xFE1,
+    ExtensionPoint2     = 0xFE2,
+    ExtensionPoint3     = 0xFE3,
+    ExtensionPoint4     = 0xFE4,
+    ExtensionPoint5     = 0xFE5,
+    ExtensionPoint6     = 0xFE6,
+    ExtensionPoint7     = 0xFE7,
+    Reserved0           = 0xFF0,
+    Reserved1           = 0xFF1,
+    Reserved2           = 0xFF2,
+    Reserved3           = 0xFF3,
+    Noop                = 0xFFC,
+    Debug               = 0xFFD,
+    Panic               = 0xFFE,
+    Halt                = 0xFFF,
+}
+
+// =============================================================================
 // LEARNING OPERATIONS (0xE00-0xEFF) - EXPANDED
 // =============================================================================
 
@@ -728,8 +1709,18 @@ impl OpDictionary {
         self.register_sql_ops();
         self.register_cypher_ops();
         self.register_hamming_ops();
+        self.register_nars_ops();
+        self.register_filesystem_ops();
+        self.register_crystal_ops();
+        self.register_nsm_ops();
+        self.register_actr_ops();
+        self.register_rl_ops();
+        self.register_causality_ops();
+        self.register_qualia_ops();
+        self.register_rung_ops();
+        self.register_meta_ops();
         self.register_learning_ops();
-        // ... other categories
+        self.register_user_ops();
     }
     
     fn register_lancedb_ops(&mut self) {
@@ -1336,7 +2327,6 @@ mod tests {
         let codebook = CognitiveCodebook;
         let ctx = OpContext {
             lance_db: None,
-            neo4j: None,
             codebook: &codebook,
             crystal: None,
             params: vec![],
@@ -1362,7 +2352,6 @@ mod tests {
         let codebook = CognitiveCodebook;
         let ctx = OpContext {
             lance_db: None,
-            neo4j: None,
             codebook: &codebook,
             crystal: None,
             params: vec![],
