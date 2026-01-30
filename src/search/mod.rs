@@ -1,7 +1,7 @@
-//! Search module - Alien Magic Vector Search + Causal Reasoning
+//! Search module - Alien Magic Vector Search + Causal Reasoning + Cognitive Search
 //!
-//! This module provides a search API that looks like float vector search
-//! (Faiss, Annoy, etc.) but runs on pure integer SIMD operations.
+//! This module provides search APIs that look like float vector search
+//! but run on pure integer SIMD operations with cognitive extensions.
 //!
 //! # Features
 //!
@@ -10,32 +10,46 @@
 //! - **Rolling σ**: Window-based coherence detection
 //! - **A⊗B⊗B=A**: O(1) direct retrieval via XOR unbinding
 //! - **Causal Search**: Three rungs (correlate, intervene, counterfact)
+//! - **Cognitive Search**: NARS inference + Qualia resonance + SPO structure
+//!
+//! # Human-like Cognitive Operations
+//!
+//! ```text
+//! DEDUCE      → What must follow? (NARS deduction)
+//! INDUCE      → What pattern emerges? (NARS induction)
+//! ABDUCT      → What explains this? (NARS abduction)
+//! CONTRADICT  → What conflicts? (NARS negation)
+//! INTUIT      → What feels right? (qualia resonance)
+//! ASSOCIATE   → What's related? (qualia similarity)
+//! FANOUT      → What connects? (SPO expansion)
+//! EXTRAPOLATE → What comes next? (sequence prediction)
+//! SYNTHESIZE  → How do these combine? (bundle + revision)
+//! JUDGE       → Is this true? (truth evaluation)
+//! ```
 //!
 //! # Example
 //!
 //! ```ignore
-//! use ladybug::search::{AlienSearch, CausalSearch, QueryMode};
+//! use ladybug::search::{CognitiveSearch, QualiaVector, TruthValue};
 //!
-//! // Correlation search (looks like vector search)
-//! let mut search = AlienSearch::with_capacity(10000);
-//! let results = search.search_similarity(&query.to_words(), 10);
+//! let mut search = CognitiveSearch::new();
 //!
-//! // Causal search (three rungs)
-//! let mut causal = CausalSearch::new();
+//! // Add atoms with qualia and truth
+//! search.add_with_qualia(fp, qualia, truth);
 //!
-//! // Rung 1: What correlates?
-//! let correlates = causal.query_correlates(&x, 10);
+//! // Intuit: find what "feels" similar
+//! let results = search.intuit(&query_qualia, 10);
 //!
-//! // Rung 2: What happens if I do this?
-//! causal.store_intervention(&state, &action, &outcome, 1.0);
-//! let outcomes = causal.query_outcome(&state, &action);
+//! // Deduce: draw conclusions
+//! let conclusion = search.deduce(&premise1, &premise2);
 //!
-//! // Rung 3: What would have happened?
-//! let counterfactuals = causal.query_counterfactual(&state, &alt_action);
+//! // Judge: evaluate truth
+//! let truth = search.judge(&statement);
 //! ```
 
 pub mod hdr_cascade;
 pub mod causal;
+pub mod cognitive;
 
 pub use hdr_cascade::{
     // Core operations
@@ -84,4 +98,23 @@ pub use causal::{
     QueryMode,
     CausalResult,
     CausalSearch,
+};
+
+pub use cognitive::{
+    // Qualia
+    QualiaVector,
+    
+    // SPO
+    SpoTriple,
+    
+    // Cognitive atom
+    CognitiveAtom,
+    
+    // Results
+    CognitiveResult,
+    SearchVia,
+    RelevanceScores,
+    
+    // Unified cognitive search
+    CognitiveSearch,
 };
