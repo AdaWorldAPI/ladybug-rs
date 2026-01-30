@@ -20,6 +20,17 @@ parallel = ["rayon"]
 python = ["pyo3"]
 full = ["simd", "parallel", "python"]
 
+[features]
+default = []
+full = ["codebook", "hologram", "spo", "compress"]
+codebook = []    # Multi-pass CAM codebook
+hologram = []    # Holographic quorum storage
+spo = ["reqwest"]       # 3D knowledge graph (needs Jina API)
+compress = []    # Semantic compression
+python = ["pyo3"]
+simd = []
+
+
 [dependencies]
 # Storage
 lance = "0.9"
@@ -59,3 +70,6 @@ harness = false
 [profile.release]
 lto = "fat"
 codegen-units = 1
+
+# Optional deps for extensions
+reqwest = { version = "0.11", features = ["json"], optional = true }
