@@ -31,6 +31,10 @@ arrow-schema = "50"
 datafusion = "35"
 sqlparser = "0.43"
 
+# Async
+tokio = { version = "1.35", features = ["full"] }
+futures = "0.3"
+
 # Parallelism
 rayon = { version = "1.8", optional = true }
 parking_lot = "0.12"
@@ -44,6 +48,8 @@ thiserror = "1.0"
 uuid = { version = "1.6", features = ["v4"] }
 hashbrown = "0.14"
 smallvec = "1.11"
+chrono = "0.4"
+hex = "0.4"
 
 # Python
 pyo3 = { version = "0.20", optional = true, features = ["extension-module"] }
