@@ -1432,40 +1432,40 @@ impl CogRedis {
     /// Execute Hamming/VSA operations (0x300-0x3FF)
     fn execute_hamming_op(&mut self, slot: u8, args: &[Fingerprint]) -> CamResult {
         match slot {
-            // Bind (0x00)
+            // Distance (0x00) - HammingOp::Distance = 0x300
             0x00 => {
-                if args.len() < 2 {
-                    return CamResult::Error("Bind requires two fingerprints".to_string());
-                }
-                let bound = args[0].bind(&args[1]);
-                CamResult::Fingerprint(bound)
-            }
-            // Unbind (0x01)
-            0x01 => {
-                if args.len() < 2 {
-                    return CamResult::Error("Unbind requires two fingerprints".to_string());
-                }
-                let unbound = args[0].unbind(&args[1]);
-                CamResult::Fingerprint(unbound)
-            }
-            // Distance (0x10)
-            0x10 => {
                 if args.len() < 2 {
                     return CamResult::Error("Distance requires two fingerprints".to_string());
                 }
                 let dist = args[0].hamming(&args[1]);
                 CamResult::Scalar(dist as f64)
             }
-            // Similarity (0x11)
-            0x11 => {
+            // Similarity (0x01) - HammingOp::Similarity = 0x301
+            0x01 => {
                 if args.len() < 2 {
                     return CamResult::Error("Similarity requires two fingerprints".to_string());
                 }
                 let sim = args[0].similarity(&args[1]);
                 CamResult::Scalar(sim as f64)
             }
-            // Bundle (0x08)
-            0x08 => {
+            // Bind (0x10) - HammingOp::Bind = 0x310
+            0x10 => {
+                if args.len() < 2 {
+                    return CamResult::Error("Bind requires two fingerprints".to_string());
+                }
+                let bound = args[0].bind(&args[1]);
+                CamResult::Fingerprint(bound)
+            }
+            // Unbind (0x11) - HammingOp::Unbind = 0x311
+            0x11 => {
+                if args.len() < 2 {
+                    return CamResult::Error("Unbind requires two fingerprints".to_string());
+                }
+                let unbound = args[0].unbind(&args[1]);
+                CamResult::Fingerprint(unbound)
+            }
+            // Bundle (0x12) - HammingOp::Bundle = 0x312
+            0x12 => {
                 if args.is_empty() {
                     return CamResult::Fingerprint(Fingerprint::zero());
                 }
@@ -1473,8 +1473,8 @@ impl CogRedis {
                 let bundled = crate::learning::cam_ops::bundle_fingerprints(args);
                 CamResult::Fingerprint(bundled)
             }
-            // Permute (0x20)
-            0x20 => {
+            // Permute (0x30) - HammingOp::Permute = 0x330
+            0x30 => {
                 if args.is_empty() {
                     return CamResult::Error("Permute requires fingerprint".to_string());
                 }
@@ -1622,23 +1622,428 @@ impl CogRedis {
 
     /// Execute CAM operation by name
     pub fn execute_cam_named(&mut self, name: &str, args: &[Fingerprint]) -> CamResult {
-        // Map common names to operation IDs
+        // Map common names to operation IDs (using exact enum values)
         let op_id = match name.to_uppercase().as_str() {
-            "BIND" => HammingOp::Bind as u16,
-            "UNBIND" => HammingOp::Unbind as u16,
-            "SIMILARITY" => HammingOp::Similarity as u16,
-            "DISTANCE" => HammingOp::Distance as u16,
-            "BUNDLE" => HammingOp::Bundle as u16,
-            "PERMUTE" => HammingOp::Permute as u16,
-            "VECTOR_SEARCH" => LanceOp::VectorSearch as u16,
-            "INSERT" => LanceOp::Insert as u16,
-            "SCAN" => LanceOp::Scan as u16,
-            "SELECT_SIMILAR" => SqlOp::SelectSimilar as u16,
+            "BIND" => HammingOp::Bind as u16,           // 0x310
+            "UNBIND" => HammingOp::Unbind as u16,       // 0x311
+            "SIMILARITY" => HammingOp::Similarity as u16, // 0x301
+            "DISTANCE" => HammingOp::Distance as u16,   // 0x300
+            "BUNDLE" => HammingOp::Bundle as u16,       // 0x312
+            "PERMUTE" => HammingOp::Permute as u16,     // 0x330
+            "VECTOR_SEARCH" => LanceOp::VectorSearch as u16, // 0x060
+            "INSERT" => LanceOp::Insert as u16,         // 0x030
+            "SCAN" => LanceOp::Scan as u16,             // 0x040
+            "SELECT_SIMILAR" => SqlOp::SelectSimilar as u16, // 0x110
             _ => return CamResult::Error(format!("Unknown operation: {}", name)),
         };
         self.execute_cam(op_id, args)
     }
 }
+
+// =============================================================================
+// REDIS COMMAND EXECUTOR
+// =============================================================================
+
+/// Redis command result
+#[derive(Clone, Debug)]
+pub enum RedisResult {
+    /// OK response
+    Ok,
+    /// Simple string
+    String(String),
+    /// Integer
+    Integer(i64),
+    /// Bulk string (fingerprint as hex or bytes)
+    Bulk(Vec<u8>),
+    /// Array of results
+    Array(Vec<RedisResult>),
+    /// Null
+    Nil,
+    /// Error
+    Error(String),
+}
+
+impl RedisResult {
+    pub fn is_ok(&self) -> bool {
+        matches!(self, RedisResult::Ok)
+    }
+
+    pub fn is_error(&self) -> bool {
+        matches!(self, RedisResult::Error(_))
+    }
+}
+
+impl CogRedis {
+    /// Execute a Redis-style command string
+    ///
+    /// # Supported Commands
+    ///
+    /// ## Standard Redis (with cognitive extensions)
+    /// - `GET key` - Get value (returns fingerprint + metadata)
+    /// - `SET key value [QUALIA q] [TRUTH f,c] [TTL t]` - Set value
+    /// - `DEL key` - Delete key
+    /// - `KEYS pattern` - List keys matching pattern
+    ///
+    /// ## Cognitive Extensions
+    /// - `BIND a b [VIA verb]` - Create edge (XOR bind)
+    /// - `UNBIND edge a` - Recover b from edge
+    /// - `RESONATE query [K k] [THRESHOLD t]` - Similarity search
+    /// - `CAUSE a` - Get effects (Rung 2)
+    /// - `WOULD a b` - Counterfactual (Rung 3)
+    /// - `DEDUCE premise rule` - NARS deduction
+    ///
+    /// ## CAM Operations
+    /// - `CAM op_name arg1 arg2 ...` - Execute CAM operation by name
+    /// - `CAM.ID 0x0300 arg1 arg2 ...` - Execute CAM operation by ID
+    ///
+    pub fn execute_command(&mut self, cmd: &str) -> RedisResult {
+        let parts: Vec<&str> = cmd.split_whitespace().collect();
+        if parts.is_empty() {
+            return RedisResult::Error("Empty command".to_string());
+        }
+
+        let command = parts[0].to_uppercase();
+        let args = &parts[1..];
+
+        match command.as_str() {
+            // Standard Redis commands
+            "GET" => self.cmd_get(args),
+            "SET" => self.cmd_set(args),
+            "DEL" => self.cmd_del(args),
+            "KEYS" => self.cmd_keys(args),
+            "PING" => RedisResult::String("PONG".to_string()),
+            "INFO" => self.cmd_info(),
+
+            // Cognitive extensions
+            "BIND" => self.cmd_bind(args),
+            "UNBIND" => self.cmd_unbind(args),
+            "RESONATE" => self.cmd_resonate(args),
+            "CAUSE" => self.cmd_cause(args),
+            "WOULD" => self.cmd_would(args),
+            "DEDUCE" => self.cmd_deduce(args),
+            "INTUIT" => self.cmd_intuit(args),
+            "FANOUT" => self.cmd_fanout(args),
+
+            // CAM operations
+            "CAM" => self.cmd_cam(args),
+            "CAM.ID" => self.cmd_cam_id(args),
+
+            // Stats
+            "STATS" => self.cmd_stats(),
+
+            _ => RedisResult::Error(format!("Unknown command: {}", command)),
+        }
+    }
+
+    // --- Standard Redis commands ---
+
+    fn cmd_get(&mut self, args: &[&str]) -> RedisResult {
+        if args.is_empty() {
+            return RedisResult::Error("GET requires key".to_string());
+        }
+
+        let key = args[0];
+        if let Some(node) = self.bind_get(key) {
+            let fp_hex = node.fingerprint.iter()
+                .map(|w| format!("{:016x}", w))
+                .collect::<Vec<_>>()
+                .join("");
+            RedisResult::String(fp_hex)
+        } else {
+            RedisResult::Nil
+        }
+    }
+
+    fn cmd_set(&mut self, args: &[&str]) -> RedisResult {
+        if args.len() < 2 {
+            return RedisResult::Error("SET requires key and value".to_string());
+        }
+
+        let key = args[0];
+        let value = args[1];
+
+        // Create fingerprint from value
+        let fp = Fingerprint::from_content(value);
+        let _addr = self.bind_set(key, fp_to_words(&fp));
+
+        RedisResult::Ok
+    }
+
+    fn cmd_del(&mut self, args: &[&str]) -> RedisResult {
+        if args.is_empty() {
+            return RedisResult::Error("DEL requires key".to_string());
+        }
+
+        let mut deleted = 0i64;
+        for key in args {
+            if let Some(addr) = self.resolve_key(key) {
+                self.bind_space.delete(addr);
+                deleted += 1;
+            }
+        }
+        RedisResult::Integer(deleted)
+    }
+
+    fn cmd_keys(&self, args: &[&str]) -> RedisResult {
+        let pattern = args.first().copied().unwrap_or("*");
+        let stats = self.bind_space.stats();
+
+        // Return count for now (full pattern matching would require label index)
+        RedisResult::Array(vec![
+            RedisResult::String(format!("surface:{}", stats.surface_count)),
+            RedisResult::String(format!("fluid:{}", stats.fluid_count)),
+            RedisResult::String(format!("node:{}", stats.node_count)),
+        ])
+    }
+
+    fn cmd_info(&self) -> RedisResult {
+        let stats = self.bind_space.stats();
+        RedisResult::String(format!(
+            "# BindSpace\r\nsurface_count:{}\r\nfluid_count:{}\r\nnode_count:{}\r\nedge_count:{}\r\ncontext:{:?}",
+            stats.surface_count, stats.fluid_count, stats.node_count, stats.edge_count, stats.context
+        ))
+    }
+
+    // --- Cognitive extension commands ---
+
+    fn cmd_bind(&mut self, args: &[&str]) -> RedisResult {
+        if args.len() < 2 {
+            return RedisResult::Error("BIND requires at least 2 keys".to_string());
+        }
+
+        let a = Fingerprint::from_content(args[0]);
+        let b = Fingerprint::from_content(args[1]);
+
+        // Optional VIA verb
+        let verb = if args.len() > 3 && args[2].to_uppercase() == "VIA" {
+            Fingerprint::from_content(args[3])
+        } else {
+            Fingerprint::from_content("RELATES")
+        };
+
+        // Create edge: a ⊗ verb ⊗ b
+        let edge = a.bind(&verb).bind(&b);
+        let addr = self.bind_space.write(fp_to_words(&edge));
+
+        RedisResult::String(format!("{:04X}", addr.0))
+    }
+
+    fn cmd_unbind(&mut self, args: &[&str]) -> RedisResult {
+        if args.len() < 2 {
+            return RedisResult::Error("UNBIND requires edge and key".to_string());
+        }
+
+        // Unbind using CAM operation
+        let edge = Fingerprint::from_content(args[0]);
+        let a = Fingerprint::from_content(args[1]);
+
+        let result = self.execute_cam(HammingOp::Unbind as u16, &[edge, a]);
+        match result {
+            CamResult::Fingerprint(fp) => {
+                let hex = fp.as_raw().iter()
+                    .take(4)
+                    .map(|w| format!("{:016x}", w))
+                    .collect::<Vec<_>>()
+                    .join("");
+                RedisResult::String(hex)
+            }
+            CamResult::Error(e) => RedisResult::Error(e),
+            _ => RedisResult::Error("Unexpected result".to_string()),
+        }
+    }
+
+    fn cmd_resonate(&mut self, args: &[&str]) -> RedisResult {
+        if args.is_empty() {
+            return RedisResult::Error("RESONATE requires query".to_string());
+        }
+
+        let query = Fingerprint::from_content(args[0]);
+        let k = if args.len() > 2 && args[1].to_uppercase() == "K" {
+            args[2].parse().unwrap_or(10)
+        } else {
+            10
+        };
+
+        let result = self.execute_cam(LanceOp::VectorSearch as u16, &[query]);
+        match result {
+            CamResult::Fingerprints(fps) => {
+                let results: Vec<RedisResult> = fps.iter()
+                    .take(k)
+                    .map(|(addr, _fp)| RedisResult::String(format!("{:04X}", addr.0)))
+                    .collect();
+                RedisResult::Array(results)
+            }
+            CamResult::Error(e) => RedisResult::Error(e),
+            _ => RedisResult::Array(vec![]),
+        }
+    }
+
+    fn cmd_cause(&mut self, args: &[&str]) -> RedisResult {
+        if args.is_empty() {
+            return RedisResult::Error("CAUSE requires intervention".to_string());
+        }
+
+        let intervention = Fingerprint::from_content(args[0]);
+        let result = self.execute_cam(0xA20, &[intervention]); // CausalOp::DoIntervene
+
+        match result {
+            CamResult::Addr(addr) => RedisResult::String(format!("{:04X}", addr.0)),
+            CamResult::Error(e) => RedisResult::Error(e),
+            _ => RedisResult::Nil,
+        }
+    }
+
+    fn cmd_would(&mut self, args: &[&str]) -> RedisResult {
+        if args.len() < 2 {
+            return RedisResult::Error("WOULD requires world and change".to_string());
+        }
+
+        let world = Fingerprint::from_content(args[0]);
+        let change = Fingerprint::from_content(args[1]);
+        let result = self.execute_cam(0xA30, &[world, change]); // CausalOp::Counterfactual
+
+        match result {
+            CamResult::Fingerprint(fp) => {
+                let hex = fp.as_raw().iter()
+                    .take(4)
+                    .map(|w| format!("{:016x}", w))
+                    .collect::<Vec<_>>()
+                    .join("");
+                RedisResult::String(hex)
+            }
+            CamResult::Error(e) => RedisResult::Error(e),
+            _ => RedisResult::Nil,
+        }
+    }
+
+    fn cmd_deduce(&mut self, args: &[&str]) -> RedisResult {
+        if args.len() < 2 {
+            return RedisResult::Error("DEDUCE requires premise and rule".to_string());
+        }
+
+        let premise = Fingerprint::from_content(args[0]);
+        let rule = Fingerprint::from_content(args[1]);
+        let result = self.execute_cam(0x400, &[premise, rule]); // NarsOp::Deduction
+
+        match result {
+            CamResult::Fingerprint(fp) => {
+                let hex = fp.as_raw().iter()
+                    .take(4)
+                    .map(|w| format!("{:016x}", w))
+                    .collect::<Vec<_>>()
+                    .join("");
+                RedisResult::String(hex)
+            }
+            CamResult::Error(e) => RedisResult::Error(e),
+            _ => RedisResult::Nil,
+        }
+    }
+
+    fn cmd_intuit(&mut self, args: &[&str]) -> RedisResult {
+        if args.is_empty() {
+            return RedisResult::Error("INTUIT requires qualia parameters".to_string());
+        }
+
+        let input = Fingerprint::from_content(args[0]);
+        let result = self.execute_cam(0xB00, &[input]); // QualiaOp::Valence
+
+        match result {
+            CamResult::Scalar(v) => RedisResult::String(format!("{:.4}", v)),
+            CamResult::Error(e) => RedisResult::Error(e),
+            _ => RedisResult::Nil,
+        }
+    }
+
+    fn cmd_fanout(&mut self, args: &[&str]) -> RedisResult {
+        if args.is_empty() {
+            return RedisResult::Error("FANOUT requires source".to_string());
+        }
+
+        // Parse address from hex
+        let addr_str = args[0];
+        let addr_val = u16::from_str_radix(addr_str.trim_start_matches("0x"), 16)
+            .unwrap_or(0);
+        let addr = CogAddr(addr_val);
+
+        let edges = self.fanout(addr);
+        let results: Vec<RedisResult> = edges.iter()
+            .map(|edge| RedisResult::String(format!("{:04X} -> {:04X}", edge.from.0, edge.to.0)))
+            .collect();
+
+        RedisResult::Array(results)
+    }
+
+    // --- CAM operations ---
+
+    fn cmd_cam(&mut self, args: &[&str]) -> RedisResult {
+        if args.is_empty() {
+            return RedisResult::Error("CAM requires operation name".to_string());
+        }
+
+        let op_name = args[0];
+        let fp_args: Vec<Fingerprint> = args[1..].iter()
+            .map(|s| Fingerprint::from_content(s))
+            .collect();
+
+        let result = self.execute_cam_named(op_name, &fp_args);
+        cam_result_to_redis(result)
+    }
+
+    fn cmd_cam_id(&mut self, args: &[&str]) -> RedisResult {
+        if args.is_empty() {
+            return RedisResult::Error("CAM.ID requires operation ID".to_string());
+        }
+
+        let op_id = u16::from_str_radix(args[0].trim_start_matches("0x"), 16)
+            .unwrap_or(0);
+        let fp_args: Vec<Fingerprint> = args[1..].iter()
+            .map(|s| Fingerprint::from_content(s))
+            .collect();
+
+        let result = self.execute_cam(op_id, &fp_args);
+        cam_result_to_redis(result)
+    }
+
+    fn cmd_stats(&self) -> RedisResult {
+        let stats = self.bind_space.stats();
+        RedisResult::Array(vec![
+            RedisResult::String(format!("surface_count:{}", stats.surface_count)),
+            RedisResult::String(format!("fluid_count:{}", stats.fluid_count)),
+            RedisResult::String(format!("node_count:{}", stats.node_count)),
+            RedisResult::String(format!("edge_count:{}", stats.edge_count)),
+            RedisResult::String(format!("context:{:?}", stats.context)),
+        ])
+    }
+}
+
+/// Convert CamResult to RedisResult
+fn cam_result_to_redis(result: CamResult) -> RedisResult {
+    match result {
+        CamResult::Fingerprint(fp) => {
+            let hex = fp.as_raw().iter()
+                .take(8)
+                .map(|w| format!("{:016x}", w))
+                .collect::<Vec<_>>()
+                .join("");
+            RedisResult::String(hex)
+        }
+        CamResult::Fingerprints(fps) => {
+            let results: Vec<RedisResult> = fps.iter()
+                .map(|(addr, _fp)| RedisResult::String(format!("{:04X}", addr.0)))
+                .collect();
+            RedisResult::Array(results)
+        }
+        CamResult::Scalar(v) => RedisResult::String(format!("{:.6}", v)),
+        CamResult::Bool(b) => RedisResult::Integer(if b { 1 } else { 0 }),
+        CamResult::Addr(addr) => RedisResult::String(format!("{:04X}", addr.0)),
+        CamResult::Unit => RedisResult::Ok,
+        CamResult::Error(e) => RedisResult::Error(e),
+    }
+}
+
+// =============================================================================
+// HELPERS
+// =============================================================================
 
 /// Convert Fingerprint to [u64; 156] words (for CogRedis compatibility)
 fn fp_to_words(fp: &Fingerprint) -> [u64; 156] {
@@ -1746,7 +2151,7 @@ mod tests {
     #[test]
     fn test_qualia_search() {
         let mut redis = CogRedis::new();
-        
+
         // Add values with different qualia
         for i in 0..10 {
             let q = QualiaVector {
@@ -1756,12 +2161,90 @@ mod tests {
             };
             redis.set(random_fp(), SetOptions::default().qualia(q));
         }
-        
+
         // Search by qualia range
         let high_arousal = redis.keys_by_qualia(None, Some((0.7, 1.0)));
         assert!(!high_arousal.is_empty());
-        
+
         let positive_valence = redis.keys_by_qualia(Some((0.0, 1.0)), None);
         assert!(!positive_valence.is_empty());
+    }
+
+    #[test]
+    fn test_execute_command_ping() {
+        let mut redis = CogRedis::new();
+
+        let result = redis.execute_command("PING");
+        match result {
+            RedisResult::String(s) => assert_eq!(s, "PONG"),
+            _ => panic!("Expected String PONG"),
+        }
+    }
+
+    #[test]
+    fn test_execute_command_set_get() {
+        let mut redis = CogRedis::new();
+
+        // SET key value - stores in bind space
+        let result = redis.execute_command("SET mykey hello");
+        assert!(result.is_ok());
+
+        // Verify bind space has content after SET
+        let stats = redis.bind_space.stats();
+        assert!(stats.node_count > 0, "SET should create a node");
+    }
+
+    #[test]
+    fn test_execute_command_bind() {
+        let mut redis = CogRedis::new();
+
+        // BIND a b
+        let result = redis.execute_command("BIND apple red VIA color");
+        match result {
+            RedisResult::String(addr) => {
+                // Should be hex address
+                assert!(!addr.is_empty());
+            }
+            _ => panic!("Expected address string"),
+        }
+    }
+
+    #[test]
+    fn test_execute_command_cam() {
+        let mut redis = CogRedis::new();
+
+        // CAM BIND operation
+        let result = redis.execute_command("CAM BIND apple red");
+        match result {
+            RedisResult::String(hex) => {
+                // Should return hex fingerprint
+                assert!(!hex.is_empty());
+            }
+            _ => panic!("Expected hex string from BIND"),
+        }
+
+        // CAM SIMILARITY operation
+        let result = redis.execute_command("CAM SIMILARITY apple apple");
+        match result {
+            RedisResult::String(s) => {
+                let sim: f64 = s.parse().unwrap_or(0.0);
+                // Self-similarity should be very high (1.0)
+                assert!(sim > 0.99, "Self-similarity should be ~1.0, got {}", sim);
+            }
+            _ => panic!("Expected similarity value"),
+        }
+    }
+
+    #[test]
+    fn test_execute_command_stats() {
+        let mut redis = CogRedis::new();
+
+        let result = redis.execute_command("STATS");
+        match result {
+            RedisResult::Array(arr) => {
+                assert!(arr.len() >= 4); // surface, fluid, node, edge, context
+            }
+            _ => panic!("Expected array result"),
+        }
     }
 }
