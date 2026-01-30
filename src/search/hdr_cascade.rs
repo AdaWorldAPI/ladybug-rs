@@ -843,7 +843,10 @@ impl FingerprintSearch for Fingerprint {
     }
     
     fn from_words(words: &[u64; WORDS]) -> Self {
-        let mut bytes = vec![0u8; WORDS * 8];
+        use crate::FINGERPRINT_U64;
+        // Fingerprint uses 157 words, HDR cascade uses 156
+        // Pad with zero for the last word
+        let mut bytes = vec![0u8; FINGERPRINT_U64 * 8];  // 1256 bytes
         for (i, &word) in words.iter().enumerate() {
             bytes[i*8..(i+1)*8].copy_from_slice(&word.to_le_bytes());
         }

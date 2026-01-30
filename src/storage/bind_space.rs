@@ -415,29 +415,44 @@ pub struct BindSpace {
 }
 
 impl BindSpace {
+    /// Allocate a chunk on heap without stack intermediary
+    fn alloc_chunk() -> Box<[Option<BindNode>; CHUNK_SIZE]> {
+        // Use vec to allocate on heap, then convert to boxed array
+        // This avoids stack allocation of ~320KB per chunk
+        let mut v: Vec<Option<BindNode>> = Vec::with_capacity(CHUNK_SIZE);
+        for _ in 0..CHUNK_SIZE {
+            v.push(None);
+        }
+        // SAFETY: Vec has exactly CHUNK_SIZE elements
+        let boxed_slice = v.into_boxed_slice();
+        // Convert Box<[T]> to Box<[T; N]>
+        let ptr = Box::into_raw(boxed_slice) as *mut [Option<BindNode>; CHUNK_SIZE];
+        unsafe { Box::from_raw(ptr) }
+    }
+
     pub fn new() -> Self {
-        // Initialize 16 surface compartments
+        // Initialize 16 surface compartments (heap allocated)
         let mut surfaces = Vec::with_capacity(SURFACE_PREFIXES);
         for _ in 0..SURFACE_PREFIXES {
-            surfaces.push(Box::new(std::array::from_fn(|_| None)));
+            surfaces.push(Self::alloc_chunk());
         }
-        
-        // Initialize 112 fluid chunks
+
+        // Initialize 112 fluid chunks (heap allocated)
         let mut fluid = Vec::with_capacity(FLUID_PREFIXES);
         for _ in 0..FLUID_PREFIXES {
-            fluid.push(Box::new(std::array::from_fn(|_| None)));
+            fluid.push(Self::alloc_chunk());
         }
-        
-        // Initialize 128 node chunks
+
+        // Initialize 128 node chunks (heap allocated)
         let mut nodes = Vec::with_capacity(NODE_PREFIXES);
         for _ in 0..NODE_PREFIXES {
-            nodes.push(Box::new(std::array::from_fn(|_| None)));
+            nodes.push(Self::alloc_chunk());
         }
-        
+
         // Edge indices (64K entries for O(1) lookup)
         let edge_out = vec![Vec::new(); TOTAL_ADDRESSES];
         let edge_in = vec![Vec::new(); TOTAL_ADDRESSES];
-        
+
         let mut space = Self {
             surfaces,
             fluid,
@@ -449,7 +464,7 @@ impl BindSpace {
             next_fluid: (PREFIX_FLUID_START, 0),
             next_node: (PREFIX_NODE_START, 0),
         };
-        
+
         space.init_surfaces();
         space
     }

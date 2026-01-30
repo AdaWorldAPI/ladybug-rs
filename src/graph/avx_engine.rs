@@ -510,12 +510,13 @@ fn fingerprint_to_words(fp: &Fingerprint) -> [u64; WORDS] {
 }
 
 fn words_to_fingerprint(words: &[u64; WORDS]) -> Fingerprint {
-    let mut bytes = [0u8; 1250];
+    use crate::FINGERPRINT_U64;
+    // Fingerprint uses 157 words, AVX engine uses 156
+    // Pad with zero for the last word
+    let mut bytes = vec![0u8; FINGERPRINT_U64 * 8];  // 1256 bytes
     for (i, &word) in words.iter().enumerate() {
         let start = i * 8;
-        if start + 8 <= bytes.len() {
-            bytes[start..start + 8].copy_from_slice(&word.to_le_bytes());
-        }
+        bytes[start..start + 8].copy_from_slice(&word.to_le_bytes());
     }
     Fingerprint::from_bytes(&bytes).expect("valid fingerprint bytes")
 }
