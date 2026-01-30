@@ -26,5 +26,8 @@ pub mod codebook_training;
 #[cfg(feature = "spo")]
 pub mod deepnsm_integration;
 
+#[cfg(feature = "spo")]
+pub mod cognitive_codebook;
+
 #[cfg(feature = "compress")]
 pub mod compress;
