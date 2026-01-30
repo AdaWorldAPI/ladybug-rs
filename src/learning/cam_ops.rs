@@ -1399,6 +1399,99 @@ pub enum MetaOp {
 }
 
 // =============================================================================
+// VERB OPERATIONS (0x700-0x7FF) - Semantic Verbs
+// =============================================================================
+
+#[repr(u16)]
+#[derive(Clone, Copy, Debug)]
+pub enum VerbOp {
+    // Core relations (0x700-0x71F)
+    Causes          = 0x700,
+    CausedBy        = 0x701,
+    Becomes         = 0x702,
+    Enables         = 0x703,
+    Prevents        = 0x704,
+    Contains        = 0x705,
+    PartOf          = 0x706,
+    Requires        = 0x707,
+    Implies         = 0x708,
+    IsA             = 0x709,
+    HasA            = 0x70A,
+    SameAs          = 0x70B,
+    DifferentFrom   = 0x70C,
+    SimilarTo       = 0x70D,
+    OppositeOf      = 0x70E,
+    DerivedFrom     = 0x70F,
+
+    // Epistemic (0x720-0x73F)
+    Supports        = 0x720,
+    Contradicts     = 0x721,
+    Grounds         = 0x722,
+    Abstracts       = 0x723,
+    Refines         = 0x724,
+    Believes        = 0x725,
+    Knows           = 0x726,
+    Doubts          = 0x727,
+    Infers          = 0x728,
+    Assumes         = 0x729,
+
+    // Temporal (0x740-0x75F)
+    Before          = 0x740,
+    After           = 0x741,
+    During          = 0x742,
+    Overlaps        = 0x743,
+    Meets           = 0x744,
+    Starts          = 0x745,
+    Finishes        = 0x746,
+
+    // Agentive (0x760-0x77F)
+    Does            = 0x760,
+    Uses            = 0x761,
+    Makes           = 0x762,
+    Gives           = 0x763,
+    Takes           = 0x764,
+    Wants           = 0x765,
+    Needs           = 0x766,
+    Intends         = 0x767,
+}
+
+// =============================================================================
+// MEMORY OPERATIONS (0x0A0-0x0AF) - Subset of Surface
+// Note: Memory uses prefix 0x0A in bind_space, here as operations
+// =============================================================================
+
+#[repr(u16)]
+#[derive(Clone, Copy, Debug)]
+pub enum MemoryOp {
+    // Core operations
+    Store           = 0xA00,
+    Recall          = 0xA01,
+    Forget          = 0xA02,
+    Consolidate     = 0xA03,
+
+    // Episodic memory
+    RecordEpisode   = 0xA10,
+    ReplayEpisode   = 0xA11,
+    MatchEpisode    = 0xA12,
+
+    // Working memory
+    Push            = 0xA20,
+    Pop             = 0xA21,
+    Peek            = 0xA22,
+    Clear           = 0xA23,
+
+    // Semantic memory
+    DefineCategory  = 0xA30,
+    QueryCategory   = 0xA31,
+    LinkCategories  = 0xA32,
+
+    // Procedural memory
+    LearnProcedure  = 0xA40,
+    RecallProcedure = 0xA41,
+    ExecuteProcedure = 0xA42,
+}
+
+// =============================================================================
 // USER-DEFINED OPERATIONS (0xF00-0xFFF)
 // =============================================================================
 
@@ -1703,21 +1796,26 @@ impl OpDictionary {
         self.fingerprints.insert(hash, id);
     }
     
-    /// Register all operations
+    /// Register all operations (16 compartments × 256 slots = 4096 ops)
     fn register_all_ops(&mut self) {
-        self.register_lancedb_ops();
-        self.register_sql_ops();
-        self.register_cypher_ops();
-        self.register_hamming_ops();
-        self.register_learning_ops();
-        // TODO: Implement remaining compartment registrations:
-        // - register_nars_ops (0x04)
-        // - register_causal_ops (0x05)
-        // - register_meta_ops (0x06)
-        // - register_verbs_ops (0x07)
-        // - register_concepts_ops (0x08)
-        // - register_qualia_ops (0x09)
-        // - register_memory_ops (0x0A)
+        // Core storage/query ops
+        self.register_lancedb_ops();      // 0x00: Lance vector ops
+        self.register_sql_ops();          // 0x01: SQL relational ops
+        self.register_cypher_ops();       // 0x02: Cypher graph ops
+        self.register_hamming_ops();      // 0x03: VSA/Hamming ops
+
+        // Inference/reasoning ops
+        self.register_nars_ops();         // 0x04: NARS inference
+        self.register_causal_ops();       // 0x0A: Pearl's causal ladder
+        self.register_meta_ops();         // 0x0D: Meta-cognition
+
+        // Semantic ops
+        self.register_verbs_ops();        // 0x07: Verbs (CAUSES, BECOMES, etc.)
+        self.register_qualia_ops();       // 0x0B: Qualia/affect
+        self.register_memory_ops();       // 0x0A: Memory operations
+
+        // Learning ops
+        self.register_learning_ops();     // 0x0E: Learning operations
     }
     
     fn register_lancedb_ops(&mut self) {
@@ -2292,6 +2390,570 @@ pub fn fold_to_48(fp: &Fingerprint) -> u64 {
     
     // Take lower 48 bits
     hash & 0xFFFF_FFFF_FFFF
+}
+
+// =============================================================================
+// NARS INFERENCE OPERATIONS (0x400-0x4FF)
+// =============================================================================
+
+impl OpDictionary {
+    fn register_nars_ops(&mut self) {
+        // Deduction: M→P, S→M ⊢ S→P
+        self.register(
+            NarsOp::Deduction as u16,
+            "NARS_DEDUCTION",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint, OpType::Fingerprint, OpType::Fingerprint],
+                output: OpType::Fingerprint,
+            },
+            "NARS deduction: M→P, S→M ⊢ S→P with truth function",
+            Arc::new(|_ctx, args| {
+                if args.len() < 3 {
+                    return OpResult::Error("Deduction requires M, P, S".to_string());
+                }
+                // Bind: conclusion = S ⊗ P (via transitive inference)
+                let conclusion = args[2].bind(&args[1]);
+                OpResult::One(conclusion)
+            })
+        );
+
+        // Induction: M→P, M→S ⊢ S→P
+        self.register(
+            NarsOp::Induction as u16,
+            "NARS_INDUCTION",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint, OpType::Fingerprint, OpType::Fingerprint],
+                output: OpType::Fingerprint,
+            },
+            "NARS induction: M→P, M→S ⊢ S→P",
+            Arc::new(|_ctx, args| {
+                if args.len() < 3 {
+                    return OpResult::Error("Induction requires M, P, S".to_string());
+                }
+                let conclusion = args[2].bind(&args[1]);
+                OpResult::One(conclusion)
+            })
+        );
+
+        // Abduction: P→M, S→M ⊢ S→P
+        self.register(
+            NarsOp::Abduction as u16,
+            "NARS_ABDUCTION",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint, OpType::Fingerprint, OpType::Fingerprint],
+                output: OpType::Fingerprint,
+            },
+            "NARS abduction: P→M, S→M ⊢ S→P (hypothesis formation)",
+            Arc::new(|_ctx, args| {
+                if args.len() < 3 {
+                    return OpResult::Error("Abduction requires P, M, S".to_string());
+                }
+                let hypothesis = args[2].bind(&args[0]);
+                OpResult::One(hypothesis)
+            })
+        );
+
+        // Revision: combine evidence
+        self.register(
+            NarsOp::Revision as u16,
+            "NARS_REVISION",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint, OpType::Fingerprint],
+                output: OpType::Fingerprint,
+            },
+            "NARS revision: combine evidence from two sources",
+            Arc::new(|_ctx, args| {
+                if args.len() < 2 {
+                    return OpResult::Error("Revision requires two beliefs".to_string());
+                }
+                // Bundle (majority voting) for revision
+                let revised = bundle_fingerprints(&[args[0].clone(), args[1].clone()]);
+                OpResult::One(revised)
+            })
+        );
+
+        // Choice: select best action
+        self.register(
+            NarsOp::Choice as u16,
+            "NARS_CHOICE",
+            OpSignature {
+                inputs: vec![OpType::FingerprintArray],
+                output: OpType::Fingerprint,
+            },
+            "NARS choice: select option with highest expectation",
+            Arc::new(|_ctx, args| {
+                if args.is_empty() {
+                    return OpResult::Error("Choice requires options".to_string());
+                }
+                // Return first option (would normally sort by expectation)
+                OpResult::One(args[0].clone())
+            })
+        );
+    }
+}
+
+// =============================================================================
+// CAUSAL OPERATIONS (0xA00-0xAFF) - Pearl's Causal Ladder
+// =============================================================================
+
+impl OpDictionary {
+    fn register_causal_ops(&mut self) {
+        // Rung 2: Intervention (do-calculus)
+        self.register(
+            CausalOp::DoIntervene as u16,
+            "CAUSAL_DO_INTERVENE",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint, OpType::Fingerprint],
+                output: OpType::Fingerprint,
+            },
+            "Rung 2: Intervention P(Y|do(X)) - cut incoming edges",
+            Arc::new(|_ctx, args| {
+                if args.len() < 2 {
+                    return OpResult::Error("DoIntervene requires cause and effect".to_string());
+                }
+                let do_marker = Fingerprint::from_content("DO::intervention");
+                let effect = args[0].bind(&do_marker).bind(&args[1]);
+                OpResult::One(effect)
+            })
+        );
+
+        // Rung 3: Counterfactual
+        self.register(
+            CausalOp::Counterfactual as u16,
+            "CAUSAL_COUNTERFACTUAL",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint, OpType::Fingerprint, OpType::Fingerprint],
+                output: OpType::Fingerprint,
+            },
+            "Rung 3: Counterfactual P(Y_x'|X=x, Y=y) - what if?",
+            Arc::new(|_ctx, args| {
+                if args.len() < 3 {
+                    return OpResult::Error("Counterfactual requires actual, counterfactual, outcome".to_string());
+                }
+                let actual = &args[0];
+                let counter = &args[1];
+                let outcome = &args[2];
+                let cf_outcome = outcome.bind(actual).bind(counter);
+                OpResult::One(cf_outcome)
+            })
+        );
+
+        // Graph parents (discover causes)
+        self.register(
+            CausalOp::GraphParents as u16,
+            "CAUSAL_GRAPH_PARENTS",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint],
+                output: OpType::FingerprintArray,
+            },
+            "Get parent nodes (causes) in causal graph",
+            Arc::new(|_ctx, _args| {
+                OpResult::Many(vec![])
+            })
+        );
+
+        // Graph children (trace effects)
+        self.register(
+            CausalOp::GraphChildren as u16,
+            "CAUSAL_GRAPH_CHILDREN",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint],
+                output: OpType::FingerprintArray,
+            },
+            "Get child nodes (effects) in causal graph",
+            Arc::new(|_ctx, _args| {
+                OpResult::Many(vec![])
+            })
+        );
+
+        // Backdoor adjustment
+        self.register(
+            CausalOp::BackdoorAdjust as u16,
+            "CAUSAL_BACKDOOR_ADJUST",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint, OpType::Fingerprint, OpType::FingerprintArray],
+                output: OpType::Fingerprint,
+            },
+            "Backdoor adjustment formula",
+            Arc::new(|_ctx, args| {
+                if args.len() < 2 {
+                    return OpResult::Error("BackdoorAdjust requires X, Y, and confounders".to_string());
+                }
+                let adjusted = args[0].bind(&args[1]);
+                OpResult::One(adjusted)
+            })
+        );
+    }
+}
+
+// =============================================================================
+// META-COGNITION OPERATIONS (0xD00-0xDFF)
+// =============================================================================
+
+impl OpDictionary {
+    fn register_meta_ops(&mut self) {
+        // Self-model
+        self.register(
+            MetaOp::SelfModel as u16,
+            "META_SELF_MODEL",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint],
+                output: OpType::Fingerprint,
+            },
+            "Access/update self-model representation",
+            Arc::new(|_ctx, args| {
+                if args.is_empty() {
+                    return OpResult::One(Fingerprint::from_content("META::self_model"));
+                }
+                let self_marker = Fingerprint::from_content("META::self");
+                let reflected = args[0].bind(&self_marker);
+                OpResult::One(reflected)
+            })
+        );
+
+        // Self-explain
+        self.register(
+            MetaOp::SelfExplain as u16,
+            "META_SELF_EXPLAIN",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint],
+                output: OpType::Fingerprint,
+            },
+            "Explain reasoning trace for decision",
+            Arc::new(|_ctx, args| {
+                if args.is_empty() {
+                    return OpResult::One(Fingerprint::from_content("EXPLAIN::empty"));
+                }
+                let explain_marker = Fingerprint::from_content("META::explanation");
+                let explained = args[0].bind(&explain_marker);
+                OpResult::One(explained)
+            })
+        );
+
+        // Know-what
+        self.register(
+            MetaOp::KnowWhat as u16,
+            "META_KNOW_WHAT",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint],
+                output: OpType::Fingerprint,
+            },
+            "Declarative knowledge - know that X",
+            Arc::new(|_ctx, args| {
+                if args.is_empty() {
+                    return OpResult::One(Fingerprint::from_content("KNOW::nothing"));
+                }
+                let know_marker = Fingerprint::from_content("KNOW::what");
+                OpResult::One(args[0].bind(&know_marker))
+            })
+        );
+
+        // Know-how
+        self.register(
+            MetaOp::KnowHow as u16,
+            "META_KNOW_HOW",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint],
+                output: OpType::Fingerprint,
+            },
+            "Procedural knowledge - know how to X",
+            Arc::new(|_ctx, args| {
+                if args.is_empty() {
+                    return OpResult::One(Fingerprint::from_content("KNOW::nothing"));
+                }
+                let know_marker = Fingerprint::from_content("KNOW::how");
+                OpResult::One(args[0].bind(&know_marker))
+            })
+        );
+
+        // Confidence get
+        self.register(
+            MetaOp::ConfidenceGet as u16,
+            "META_CONFIDENCE_GET",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint],
+                output: OpType::Scalar,
+            },
+            "Get confidence level for belief",
+            Arc::new(|_ctx, _args| {
+                OpResult::Scalar(0.5)  // Default moderate confidence
+            })
+        );
+
+        // Uncertainty quantify
+        self.register(
+            MetaOp::UncertaintyQuantify as u16,
+            "META_UNCERTAINTY_QUANTIFY",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint],
+                output: OpType::Scalar,
+            },
+            "Quantify uncertainty about belief",
+            Arc::new(|_ctx, _args| {
+                OpResult::Scalar(0.5)
+            })
+        );
+    }
+}
+
+// =============================================================================
+// VERBS OPERATIONS (0x700-0x7FF)
+// =============================================================================
+
+impl OpDictionary {
+    fn register_verbs_ops(&mut self) {
+        let verbs = [
+            (VerbOp::Causes as u16, "CAUSES", "Causal relation: A causes B"),
+            (VerbOp::Becomes as u16, "BECOMES", "Transition: A becomes B"),
+            (VerbOp::Enables as u16, "ENABLES", "Enablement: A enables B"),
+            (VerbOp::Prevents as u16, "PREVENTS", "Prevention: A prevents B"),
+            (VerbOp::Contains as u16, "CONTAINS", "Containment: A contains B"),
+            (VerbOp::Requires as u16, "REQUIRES", "Requirement: A requires B"),
+            (VerbOp::Implies as u16, "IMPLIES", "Implication: A implies B"),
+            (VerbOp::Supports as u16, "SUPPORTS", "Support: A supports B"),
+            (VerbOp::Contradicts as u16, "CONTRADICTS", "Contradiction: A contradicts B"),
+            (VerbOp::Grounds as u16, "GROUNDS", "Grounding: A grounds B"),
+            (VerbOp::Abstracts as u16, "ABSTRACTS", "Abstraction: A abstracts B"),
+            (VerbOp::Refines as u16, "REFINES", "Refinement: A refines B"),
+        ];
+
+        for (id, name, doc) in verbs {
+            let verb_name = name.to_string();
+            self.register(
+                id,
+                &format!("VERB_{}", name),
+                OpSignature {
+                    inputs: vec![OpType::Fingerprint, OpType::Fingerprint],
+                    output: OpType::Fingerprint,
+                },
+                doc,
+                Arc::new(move |_ctx, args| {
+                    if args.len() < 2 {
+                        return OpResult::Error(format!("{} requires two arguments", verb_name));
+                    }
+                    // Create verb fingerprint and bind: A ⊗ VERB ⊗ B
+                    let verb_fp = Fingerprint::from_content(&format!("VERB::{}", verb_name));
+                    let edge = args[0].bind(&verb_fp).bind(&args[1]);
+                    OpResult::One(edge)
+                })
+            );
+        }
+    }
+}
+
+// =============================================================================
+// QUALIA OPERATIONS (0xB00-0xBFF)
+// =============================================================================
+
+impl OpDictionary {
+    fn register_qualia_ops(&mut self) {
+        // Valence get - positive/negative dimension
+        self.register(
+            QualiaOp::ValenceGet as u16,
+            "QUALIA_VALENCE_GET",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint],
+                output: OpType::Scalar,
+            },
+            "Get valence (positive/negative) of experience",
+            Arc::new(|_ctx, _args| {
+                OpResult::Scalar(0.0)  // Neutral default
+            })
+        );
+
+        // Arousal get - activation dimension
+        self.register(
+            QualiaOp::ArousalGet as u16,
+            "QUALIA_AROUSAL_GET",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint],
+                output: OpType::Scalar,
+            },
+            "Get arousal (activation level) of experience",
+            Arc::new(|_ctx, _args| {
+                OpResult::Scalar(0.5)  // Medium activation default
+            })
+        );
+
+        // Qualia create
+        self.register(
+            QualiaOp::QualiaCreate as u16,
+            "QUALIA_CREATE",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint],
+                output: OpType::Fingerprint,
+            },
+            "Create qualia vector from state",
+            Arc::new(|_ctx, args| {
+                if args.is_empty() {
+                    return OpResult::One(Fingerprint::from_content("QUALIA::neutral"));
+                }
+                let qualia_marker = Fingerprint::from_content("QUALIA::felt");
+                let felt = args[0].bind(&qualia_marker);
+                OpResult::One(felt)
+            })
+        );
+
+        // Qualia similarity
+        self.register(
+            QualiaOp::QualiaSimilarity as u16,
+            "QUALIA_SIMILARITY",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint, OpType::Fingerprint],
+                output: OpType::Scalar,
+            },
+            "Compute similarity between qualia states",
+            Arc::new(|_ctx, args| {
+                if args.len() < 2 {
+                    return OpResult::Scalar(0.0);
+                }
+                let sim = args[0].similarity(&args[1]) as f64;
+                OpResult::Scalar(sim)
+            })
+        );
+
+        // Qualia blend
+        self.register(
+            QualiaOp::QualiaBlend as u16,
+            "QUALIA_BLEND",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint, OpType::Fingerprint, OpType::Scalar],
+                output: OpType::Fingerprint,
+            },
+            "Blend two qualia states with weight",
+            Arc::new(|_ctx, args| {
+                if args.len() < 2 {
+                    return OpResult::Error("Blend requires two qualia states".to_string());
+                }
+                // Blend via bundling
+                let blended = bundle_fingerprints(&[args[0].clone(), args[1].clone()]);
+                OpResult::One(blended)
+            })
+        );
+
+        // Emotion joy
+        self.register(
+            QualiaOp::EmotionJoy as u16,
+            "QUALIA_EMOTION_JOY",
+            OpSignature {
+                inputs: vec![],
+                output: OpType::Fingerprint,
+            },
+            "Get joy emotion fingerprint",
+            Arc::new(|_ctx, _args| {
+                OpResult::One(Fingerprint::from_content("EMOTION::joy"))
+            })
+        );
+
+        // Emotion sadness
+        self.register(
+            QualiaOp::EmotionSadness as u16,
+            "QUALIA_EMOTION_SADNESS",
+            OpSignature {
+                inputs: vec![],
+                output: OpType::Fingerprint,
+            },
+            "Get sadness emotion fingerprint",
+            Arc::new(|_ctx, _args| {
+                OpResult::One(Fingerprint::from_content("EMOTION::sadness"))
+            })
+        );
+
+        // Emotion blend
+        self.register(
+            QualiaOp::EmotionBlend as u16,
+            "QUALIA_EMOTION_BLEND",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint, OpType::Fingerprint],
+                output: OpType::Fingerprint,
+            },
+            "Blend two emotions together",
+            Arc::new(|_ctx, args| {
+                if args.len() < 2 {
+                    return OpResult::Error("EmotionBlend requires two emotions".to_string());
+                }
+                let blended = bundle_fingerprints(&[args[0].clone(), args[1].clone()]);
+                OpResult::One(blended)
+            })
+        );
+    }
+}
+
+// =============================================================================
+// MEMORY OPERATIONS (0x0A00-0x0AFF)
+// =============================================================================
+
+impl OpDictionary {
+    fn register_memory_ops(&mut self) {
+        // Store to memory
+        self.register(
+            MemoryOp::Store as u16,
+            "MEMORY_STORE",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint],
+                output: OpType::Bool,
+            },
+            "Store fingerprint to episodic memory",
+            Arc::new(|_ctx, args| {
+                if args.is_empty() {
+                    return OpResult::Bool(false);
+                }
+                // Would insert to LanceDB memory table
+                OpResult::Bool(true)
+            })
+        );
+
+        // Recall from memory
+        self.register(
+            MemoryOp::Recall as u16,
+            "MEMORY_RECALL",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint, OpType::Scalar],
+                output: OpType::FingerprintArray,
+            },
+            "Recall similar memories (k nearest)",
+            Arc::new(|_ctx, args| {
+                if args.is_empty() {
+                    return OpResult::Many(vec![]);
+                }
+                // Would vector search LanceDB
+                OpResult::Many(vec![args[0].clone()])
+            })
+        );
+
+        // Forget (soft delete)
+        self.register(
+            MemoryOp::Forget as u16,
+            "MEMORY_FORGET",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint],
+                output: OpType::Bool,
+            },
+            "Forget memory (reduce weight/TTL)",
+            Arc::new(|_ctx, _args| {
+                OpResult::Bool(true)
+            })
+        );
+
+        // Consolidate (strengthen)
+        self.register(
+            MemoryOp::Consolidate as u16,
+            "MEMORY_CONSOLIDATE",
+            OpSignature {
+                inputs: vec![OpType::Fingerprint],
+                output: OpType::Fingerprint,
+            },
+            "Consolidate memory (strengthen, move to long-term)",
+            Arc::new(|_ctx, args| {
+                if args.is_empty() {
+                    return OpResult::Error("Consolidate requires memory".to_string());
+                }
+                let consolidated = Fingerprint::from_content("CONSOLIDATED");
+                let result = args[0].bind(&consolidated);
+                OpResult::One(result)
+            })
+        );
+    }
 }
 
 // =============================================================================

@@ -305,9 +305,9 @@ mod tests {
     fn test_hamming_inverse() {
         let a = Fingerprint::zero();
         let b = Fingerprint::ones();
-        // All bits differ
-        assert_eq!(hamming_distance(&a, &b), crate::FINGERPRINT_BITS as u32 - 48);
-        // (minus 48 because last 48 bits are padding)
+        // All bits differ: 157 u64 words × 64 bits = 10048 bits
+        // Note: ones() sets all bits including padding to 1
+        assert_eq!(hamming_distance(&a, &b), (crate::FINGERPRINT_U64 * 64) as u32);
     }
     
     #[test]
