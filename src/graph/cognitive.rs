@@ -106,10 +106,10 @@ pub enum Verb {
     After           = 49,   // Allen: a AFTER b
     Meets           = 50,   // Allen: a MEETS b (end touches start)
     MetBy           = 51,   // Allen: a MET_BY b
-    Overlaps        = 52,   // Allen: a OVERLAPS b (partial)
+    TemporalOverlaps = 52,  // Allen: a OVERLAPS b (partial)
     OverlappedBy    = 53,   // Allen: a OVERLAPPED_BY b
     During          = 54,   // Allen: a DURING b (contained)
-    Contains        = 55,   // Allen: a CONTAINS b
+    TemporalContains = 55,  // Allen: a CONTAINS b
     Starts          = 56,   // Allen: a STARTS b (same start)
     StartedBy       = 57,   // Allen: a STARTED_BY b
     Finishes        = 58,   // Allen: a FINISHES b (same end)
@@ -395,8 +395,10 @@ impl Verb {
             Verb::Frustrates => "FRUSTRATES",
             Verb::Inspires => "INSPIRES",
             
-            // Temporal duplicates (different enum variant)
+            // Temporal duplicates (different enum variant) - Allen interval relations
             Verb::OverlappedBy => "OVERLAPPED_BY",
+            Verb::TemporalOverlaps => "TEMPORAL_OVERLAPS",
+            Verb::TemporalContains => "TEMPORAL_CONTAINS",
         }
     }
     

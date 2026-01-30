@@ -51,7 +51,8 @@
 //! └─────────────────────────────────────────────────────────────────┘
 //! ```
 
-#![cfg_attr(feature = "simd", feature(portable_simd))]
+// portable_simd requires nightly - use fallback popcount instead
+// #![cfg_attr(feature = "simd", feature(portable_simd))]
 #![allow(dead_code)] // During development
 
 // === Core modules ===
@@ -98,6 +99,7 @@ pub use crate::world::{World, Counterfactual, Change};
 pub use crate::query::{Query, QueryResult, cypher_to_sql, SqlEngine, QueryBuilder};
 
 // Storage
+#[cfg(feature = "lancedb")]
 pub use crate::storage::{Database, LanceStore, NodeRecord, EdgeRecord};
 
 // === Error types ===
@@ -122,25 +124,15 @@ pub enum Error {
     
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-    
-    #[error("Lance error: {0}")]
-    Lance(#[from] lance::Error),
-    
+
     #[error("Arrow error: {0}")]
     Arrow(#[from] arrow::error::ArrowError),
-    
+
     #[error("DataFusion error: {0}")]
     DataFusion(#[from] datafusion::error::DataFusionError),
-    
-    #[error("Tokio error: {0}")]
-    Tokio(#[from] tokio::io::Error),
 }
 
-impl From<storage::StorageError> for Error {
-    fn from(e: storage::StorageError) -> Self {
-        Error::Storage(e.to_string())
-    }
-}
+// StorageError conversion removed - use Error::Storage directly
 
 impl From<query::QueryError> for Error {
     fn from(e: query::QueryError) -> Self {

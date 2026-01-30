@@ -847,7 +847,7 @@ impl FingerprintSearch for Fingerprint {
         for (i, &word) in words.iter().enumerate() {
             bytes[i*8..(i+1)*8].copy_from_slice(&word.to_le_bytes());
         }
-        Fingerprint::from_bytes(&bytes)
+        Fingerprint::from_bytes(&bytes).expect("valid fingerprint bytes")
     }
     
     fn hamming(&self, other: &Self) -> u32 {

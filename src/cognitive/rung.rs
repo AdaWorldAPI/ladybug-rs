@@ -139,7 +139,7 @@ impl std::fmt::Display for RungBand {
 }
 
 /// What triggered a rung shift
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RungTrigger {
     /// BLOCK state persisted for N consecutive turns
     SustainedBlock { consecutive_blocks: u32 },

@@ -1709,18 +1709,15 @@ impl OpDictionary {
         self.register_sql_ops();
         self.register_cypher_ops();
         self.register_hamming_ops();
-        self.register_nars_ops();
-        self.register_filesystem_ops();
-        self.register_crystal_ops();
-        self.register_nsm_ops();
-        self.register_actr_ops();
-        self.register_rl_ops();
-        self.register_causality_ops();
-        self.register_qualia_ops();
-        self.register_rung_ops();
-        self.register_meta_ops();
         self.register_learning_ops();
-        self.register_user_ops();
+        // TODO: Implement remaining compartment registrations:
+        // - register_nars_ops (0x04)
+        // - register_causal_ops (0x05)
+        // - register_meta_ops (0x06)
+        // - register_verbs_ops (0x07)
+        // - register_concepts_ops (0x08)
+        // - register_qualia_ops (0x09)
+        // - register_memory_ops (0x0A)
     }
     
     fn register_lancedb_ops(&mut self) {

@@ -55,20 +55,20 @@ full = [
 # Storage: LanceDB + Arrow ecosystem
 # -----------------------------------------------------------------------------
 lance = { version = "0.9", optional = true }
-arrow = { version = "50", features = ["ffi"] }
-arrow-array = "50"
-arrow-schema = "50"
-arrow-buffer = "50"
-arrow-data = "50"
-arrow-cast = "50"
-arrow-select = "50"
-parquet = { version = "50", features = ["snap", "lz4", "zstd"] }
+arrow = { version = "53", features = ["ffi"] }
+arrow-array = "53"
+arrow-schema = "53"
+arrow-buffer = "53"
+arrow-data = "53"
+arrow-cast = "53"
+arrow-select = "53"
+parquet = { version = "53", features = ["snap", "lz4", "zstd"] }
 
 # -----------------------------------------------------------------------------
 # Query: DataFusion SQL engine
 # -----------------------------------------------------------------------------
-datafusion = "35"
-sqlparser = "0.43"
+datafusion = "43"
+sqlparser = "0.52"
 
 # -----------------------------------------------------------------------------
 # Graph: Neo4j driver
@@ -117,6 +117,7 @@ hex = "0.4"
 base64 = "0.21"
 rand = "0.8"
 num-traits = "0.2"
+num_cpus = "1.16"
 itertools = "0.12"
 once_cell = "1.19"
 lazy_static = "1.4"

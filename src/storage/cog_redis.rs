@@ -132,9 +132,6 @@ pub const NODE_SIZE: usize = 32768;   // 128 chunks × 256
 /// Total address space
 pub const TOTAL_SIZE: usize = 65536;
 
-/// Slots per chunk
-pub const CHUNK_SIZE: usize = 256;
-
 // =============================================================================
 // ADDRESS TYPE
 // =============================================================================

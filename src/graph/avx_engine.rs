@@ -517,7 +517,7 @@ fn words_to_fingerprint(words: &[u64; WORDS]) -> Fingerprint {
             bytes[start..start + 8].copy_from_slice(&word.to_le_bytes());
         }
     }
-    Fingerprint::from_bytes(&bytes)
+    Fingerprint::from_bytes(&bytes).expect("valid fingerprint bytes")
 }
 
 fn fingerprint_hash(fp: &Fingerprint) -> u64 {

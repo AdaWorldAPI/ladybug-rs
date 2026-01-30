@@ -142,7 +142,7 @@ pub enum Expr {
     Variable(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Value {
     String(String),
     Integer(i64),

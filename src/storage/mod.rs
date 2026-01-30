@@ -26,18 +26,19 @@
 //! - **BindSpace**: Universal DTO - all languages hit this
 //! - **CogRedis**: Redis syntax adapter with cognitive semantics
 //! - **LanceDB**: Vector storage (fingerprints, embeddings)
-//! - **Kuzu**: Optional native graph (Cypher syntax)
 //! - **Database**: Unified query interface
 
+#[cfg(feature = "lancedb")]
 pub mod lance;
+#[cfg(feature = "lancedb")]
 pub mod database;
-pub mod kuzu;
 pub mod cog_redis;
 pub mod bind_space;
 
-pub use lance::LanceStore;
+#[cfg(feature = "lancedb")]
+pub use lance::{LanceStore, NodeRecord, EdgeRecord};
+#[cfg(feature = "lancedb")]
 pub use database::Database;
-pub use kuzu::{KuzuStore, NodeRecord, EdgeRecord, PathRecord};
 
 // CogRedis exports
 pub use cog_redis::{

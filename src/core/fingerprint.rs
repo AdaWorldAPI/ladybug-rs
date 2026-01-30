@@ -174,6 +174,52 @@ impl Fingerprint {
     pub fn unpermute(&self, positions: i32) -> Fingerprint {
         self.permute(-positions)
     }
+
+    /// Create orthogonal fingerprint for index (deterministic, well-separated)
+    ///
+    /// Uses the index as a seed to generate a fingerprint that is approximately
+    /// orthogonal (50% similarity) to fingerprints generated with other indices.
+    pub fn orthogonal(index: usize) -> Self {
+        let seed = (index as u64).wrapping_mul(0x9E3779B97F4A7C15);
+        Self::from_content(&format!("__orthogonal_basis_{:016x}", seed))
+    }
+
+    /// Convert to owned byte vector
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.as_bytes().to_vec()
+    }
+
+    /// Density: fraction of bits that are set (0.0 - 1.0)
+    pub fn density(&self) -> f32 {
+        self.popcount() as f32 / FINGERPRINT_BITS as f32
+    }
+
+    /// Bitwise NOT (invert all bits)
+    pub fn not(&self) -> Fingerprint {
+        let mut result = [0u64; FINGERPRINT_U64];
+        for i in 0..FINGERPRINT_U64 {
+            result[i] = !self.data[i];
+        }
+        Fingerprint { data: result }
+    }
+
+    /// Bitwise AND
+    pub fn and(&self, other: &Fingerprint) -> Fingerprint {
+        let mut result = [0u64; FINGERPRINT_U64];
+        for i in 0..FINGERPRINT_U64 {
+            result[i] = self.data[i] & other.data[i];
+        }
+        Fingerprint { data: result }
+    }
+
+    /// Bitwise OR
+    pub fn or(&self, other: &Fingerprint) -> Fingerprint {
+        let mut result = [0u64; FINGERPRINT_U64];
+        for i in 0..FINGERPRINT_U64 {
+            result[i] = self.data[i] | other.data[i];
+        }
+        Fingerprint { data: result }
+    }
 }
 
 impl PartialEq for Fingerprint {
@@ -247,17 +293,3 @@ mod tests {
         assert_eq!(fp1.similarity(&fp1), 1.0);
     }
 }
-
-    /// Create orthogonal fingerprint for index (deterministic, well-separated)
-    /// 
-    /// Uses the index as a seed to generate a fingerprint that is approximately
-    /// orthogonal (50% similarity) to fingerprints generated with other indices.
-    pub fn orthogonal(index: usize) -> Self {
-        let seed = (index as u64).wrapping_mul(0x9E3779B97F4A7C15);
-        Self::from_content(&format!("__orthogonal_basis_{:016x}", seed))
-    }
-    
-    /// Convert to owned byte vector
-    pub fn to_bytes(&self) -> Vec<u8> {
-        self.as_bytes().to_vec()
-    }

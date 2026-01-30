@@ -112,74 +112,79 @@ impl SqlEngine {
     }
     
     /// Register all custom UDFs
+    /// TODO: Rewrite using ScalarUDFImpl trait for DataFusion 43+
     fn register_udfs(&mut self) {
-        // hamming(a, b) -> distance
-        self.ctx.register_udf(create_hamming_udf());
-        
-        // similarity(a, b) -> 0.0-1.0
-        self.ctx.register_udf(create_similarity_udf());
-        
-        // popcount(x) -> count
-        self.ctx.register_udf(create_popcount_udf());
-        
-        // xor_bind(a, b) -> fingerprint
-        self.ctx.register_udf(create_xor_bind_udf());
+        // UDF registration disabled - DataFusion 43+ requires ScalarUDFImpl trait
+        // See: https://docs.rs/datafusion/latest/datafusion/logical_expr/struct.ScalarUDF.html
+        //
+        // Planned UDFs:
+        // - hamming(a, b) -> distance
+        // - similarity(a, b) -> 0.0-1.0
+        // - popcount(x) -> count
+        // - xor_bind(a, b) -> fingerprint
     }
     
     /// Register Lance tables as DataFusion tables
+    #[cfg(feature = "lancedb")]
     async fn register_lance_tables(&mut self, db_path: &str) -> Result<()> {
         use lance::dataset::Dataset;
         use datafusion::datasource::MemTable;
-        
+
         // Register nodes table
         let nodes_path = format!("{}/nodes.lance", db_path);
         if std::path::Path::new(&nodes_path).exists() {
             let dataset = Dataset::open(&nodes_path).await?;
             let schema = dataset.schema().clone();
-            
+
             // Read all data into memory (for now - TODO: use Lance TableProvider)
             let batches = dataset
                 .scan()
                 .try_into_stream()
                 .await?;
-            
+
             use futures::StreamExt;
             let mut all_batches = Vec::new();
             let mut stream = batches;
             while let Some(batch) = stream.next().await {
                 all_batches.push(batch?);
             }
-            
+
             if !all_batches.is_empty() {
                 let table = MemTable::try_new(Arc::new(schema.into()), vec![all_batches])?;
                 self.ctx.register_table("nodes", Arc::new(table))?;
             }
         }
-        
+
         // Register edges table
         let edges_path = format!("{}/edges.lance", db_path);
         if std::path::Path::new(&edges_path).exists() {
             let dataset = Dataset::open(&edges_path).await?;
             let schema = dataset.schema().clone();
-            
+
             let batches = dataset
                 .scan()
                 .try_into_stream()
                 .await?;
-            
+
             use futures::StreamExt;
             let mut all_batches = Vec::new();
             let mut stream = batches;
             while let Some(batch) = stream.next().await {
                 all_batches.push(batch?);
             }
-            
+
             if !all_batches.is_empty() {
                 let table = MemTable::try_new(Arc::new(schema.into()), vec![all_batches])?;
                 self.ctx.register_table("edges", Arc::new(table))?;
             }
         }
-        
+
+        Ok(())
+    }
+
+    /// No-op when lancedb feature not enabled
+    #[cfg(not(feature = "lancedb"))]
+    async fn register_lance_tables(&mut self, _db_path: &str) -> Result<()> {
         Ok(())
     }
     
@@ -252,12 +257,18 @@ impl Default for SqlEngine {
 }
 
 // =============================================================================
-// UDF IMPLEMENTATIONS
+// UDF IMPLEMENTATIONS (disabled - requires DataFusion 43+ ScalarUDFImpl trait)
 // =============================================================================
 
+#[allow(unused_imports)]
 use datafusion::arrow::datatypes::Field;
+#[allow(unused_imports)]
 use datafusion::logical_expr::ColumnarValue;
+#[allow(unused_imports)]
 use datafusion::scalar::ScalarValue;
+
+/* TODO: Rewrite UDFs using ScalarUDFImpl trait for DataFusion 43+
+   The old closure-based ScalarUDF::new() API is no longer available.
 
 /// Create hamming distance UDF
 fn create_hamming_udf() -> ScalarUDF {
@@ -377,12 +388,14 @@ fn create_xor_bind_udf() -> ScalarUDF {
         }),
     )
 }
+End of disabled UDF code */
 
 // =============================================================================
 // ARRAY OPERATIONS
 // =============================================================================
 
 /// Compute Hamming distance for arrays
+#[allow(dead_code)]
 fn hamming_array(a: ArrayRef, b: ArrayRef) -> datafusion::error::Result<ArrayRef> {
     let a_bin = a.as_any().downcast_ref::<BinaryArray>()
         .or_else(|| {
@@ -431,6 +444,7 @@ fn hamming_array(a: ArrayRef, b: ArrayRef) -> datafusion::error::Result<ArrayRef
 }
 
 /// Compute similarity for arrays
+#[allow(dead_code)]
 fn similarity_array(a: ArrayRef, b: ArrayRef) -> datafusion::error::Result<ArrayRef> {
     let a_fixed = a.as_any().downcast_ref::<FixedSizeBinaryArray>();
     let b_fixed = b.as_any().downcast_ref::<FixedSizeBinaryArray>();
@@ -477,6 +491,7 @@ fn similarity_array(a: ArrayRef, b: ArrayRef) -> datafusion::error::Result<Array
 }
 
 /// Compute popcount for array
+#[allow(dead_code)]
 fn popcount_array(arr: ArrayRef) -> datafusion::error::Result<ArrayRef> {
     let u64_arr = arr.as_any().downcast_ref::<UInt64Array>();
     
@@ -517,6 +532,7 @@ fn popcount_array(arr: ArrayRef) -> datafusion::error::Result<ArrayRef> {
 }
 
 /// XOR bind two arrays
+#[allow(dead_code)]
 fn xor_bind_array(a: ArrayRef, b: ArrayRef) -> datafusion::error::Result<ArrayRef> {
     let a_bin = a.as_any().downcast_ref::<BinaryArray>();
     let b_bin = b.as_any().downcast_ref::<BinaryArray>();
