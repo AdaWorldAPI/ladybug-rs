@@ -44,48 +44,64 @@
 
 ## Current State
 
-**Main branch**: ~38K lines of Rust (141 tests passing, 5 pre-existing failures)
+**Main branch**: ~37.5K lines of Rust (141 tests passing, 5 pre-existing failures)
 
-### ✅ Completed (this session)
+**Last updated**: 2026-01-31
 
-- [x] 8+8 addressing schema (prefix:slot)
-- [x] Universal BindSpace with O(1) array indexing
-- [x] 4096 CAM operations (16 compartments × 256 slots)
-- [x] CAM execution bridge in CogRedis
-- [x] Redis command executor with CAM routing (PR #26 MERGED)
-- [x] LanceDB/DataFusion execution mappings
-- [x] Cognitive Redis commands (BIND, UNBIND, RESONATE, CAUSE, WOULD, DEDUCE, INTUIT, FANOUT)
-- [x] Wire Redis commands to BindSpace execution
+### ✅ Completed
 
-### 🔄 Open PRs to Review
+| Feature | Lines | Status |
+|---------|-------|--------|
+| 8+8 addressing (prefix:slot) | bind_space.rs (1142) | ✓ Merged |
+| Universal BindSpace O(1) indexing | bind_space.rs | ✓ Merged |
+| 4096 CAM operations (16×256) | cam_ops.rs (3031) | ✓ Merged |
+| CAM execution bridge | cog_redis.rs | ✓ Merged (PR #26) |
+| Redis command executor | cog_redis.rs (2250) | ✓ Merged (PR #26) |
+| LanceDB/DataFusion mappings | datafusion.rs | ✓ Merged |
+| HDR Cascade Search | hdr_cascade.rs (1015) | ✓ ON MAIN |
+| Cognitive Redis commands | cog_redis.rs | ✓ Merged |
+| Wire Redis to BindSpace | cog_redis.rs | ✓ Merged (PR #25) |
 
-| PR | Description | Priority | Notes |
-|----|-------------|----------|-------|
-| #21 | HDR Cascade Search | HIGH | O(1) bind vector search via popcount stacking |
-| #24 | 64-bit CAM index | MEDIUM | Review alignment with 8+8 model |
-| #23 | Updated exports (16 prefixes) | LOW | May be stale |
-| #22 | Updated exports (16 prefixes) | LOW | Duplicate of #23? |
-| #16 | Grammar engine | MEDIUM | Audit recovery |
-| #15 | Crystal extension | LOW | Review |
-| #14 | ARCHITECTURE.md | LOW | Documentation |
-| #12 | Dependencies | LOW | Merge when needed |
-| #11 | Reconstructed files | ⚠️ LOW | AUDIT FIRST |
+### 🔄 Open PRs (Cleanup Needed)
+
+| PR | Description | Action |
+|----|-------------|--------|
+| **#21** | HDR Cascade Search | **CLOSE** - already on main |
+| #24 | 64-bit CAM index | Review alignment with 8+8 |
+| #23 | Updated exports (16 prefixes) | Close if stale |
+| #22 | Updated exports (16 prefixes) | Close if stale |
+| #16 | Grammar engine | Audit recovery |
+| #15 | Crystal extension | Review |
+| #14 | ARCHITECTURE.md | Review + Merge |
+| #12 | Dependencies | Merge when needed |
+| #11 | Reconstructed files | ⚠️ AUDIT FIRST |
 
 ### 🔴 Remaining Failures (5 tests - pre-existing)
 
-- `collapse_gate` — needs investigation
-- `causal_ops` — needs investigation  
-- `quantum_ops` — needs investigation
-- `cypher` — needs investigation
-- `causal` — needs investigation
+- `collapse_gate` — collapse gate logic
+- `causal_ops` — Pearl's ladder ops
+- `quantum_ops` — quantum-style operators
+- `cypher` — Cypher query handling
+- `causal` — causal inference
 
 ### 📋 TODO (Next Session)
 
-- [ ] Fix 5 remaining test failures
-- [ ] Merge PR #21 (HDR Cascade) — popcount stacking for similarity search
-- [ ] Wire HDR cascade to BindSpace similarity ops
-- [ ] Implement fluid zone TTL + promote/demote
-- [ ] Add persistence (mmap for large datasets)
+**Priority 1: PR Cleanup**
+- [ ] Close PR #21 (HDR already on main)
+- [ ] Close stale PRs #22, #23
+
+**Priority 2: Wire HDR to RESONATE**
+- [ ] Connect hdr_cascade.rs to CogRedis RESONATE command
+- [ ] Add similarity search through BindSpace
+
+**Priority 3: Fluid Zone Lifecycle**
+- [ ] Implement TTL expiration (`tick()`)
+- [ ] Implement `crystallize()` — promote fluid to node
+- [ ] Implement `evaporate()` — demote node to fluid
+
+**Priority 4: Fix Test Failures**
+- [ ] Investigate 5 pre-existing failures
+- [ ] Add persistence layer (mmap)
 
 **Recent Commits** (PR #26):
 ```
