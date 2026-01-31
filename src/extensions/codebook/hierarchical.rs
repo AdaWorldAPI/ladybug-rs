@@ -146,7 +146,7 @@ impl Projection {
     pub fn new() -> Self {
         // Generate P random hyperplanes
         let hyperplanes: Vec<Fingerprint> = (0..P)
-            .map(|i| Fingerprint::from_seed(0xPR0JECT10N + i as u64))
+            .map(|i| Fingerprint::from_seed(0xBADC0DE710 + i as u64))
             .collect();
         
         Self { hyperplanes }
