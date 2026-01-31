@@ -429,13 +429,13 @@ mod tests {
     #[test]
     fn test_cache_hit_rate() {
         let mut cache = JinaCache::new("test_key");
-        
-        // First access - all API calls
-        let texts = vec!["Ada", "Jan", "loves", "creates", "art"];
+
+        // First access - all API calls (use distinct strings to avoid near-match)
+        let texts = vec!["Ada", "Jan", "loves", "creates", "butterfly"];
         for text in &texts {
             let _ = cache.get_fingerprint(text);
         }
-        
+
         assert_eq!(cache.stats.api_calls, 5);
         assert_eq!(cache.stats.exact_hits, 0);
         

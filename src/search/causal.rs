@@ -167,8 +167,12 @@ pub struct CorrelationStore {
 
 impl CorrelationStore {
     pub fn new() -> Self {
+        let mut index = HdrIndex::new();
+        // For correlation queries, distance = popcount(Y) where Y is ~50% dense
+        // Set threshold_l2 to 6000 to allow 60% difference (needed for ABBA retrieval)
+        index.set_thresholds(156, 2000, 6000);
         Self {
-            index: HdrIndex::new(),
+            index,
             edges: Vec::new(),
             verbs: CausalVerbs::new(),
         }
@@ -197,15 +201,25 @@ impl CorrelationStore {
     }
     
     /// Query: what correlates with X?
+    /// Uses ABBA unbinding - not similarity search
     pub fn query(&self, x: &[u64; WORDS], k: usize) -> Vec<(&CausalEdge, u32)> {
-        // Pattern = X ⊗ SEE (partial match)
-        let mut pattern = [0u64; WORDS];
-        for i in 0..WORDS {
-            pattern[i] = x[i] ^ self.verbs.see[i];
+        // ABBA retrieval: unbind each edge to check if it's for X
+        // edge = X ⊗ SEE ⊗ Y, so edge ⊗ X ⊗ SEE = Y
+        // If this edge was stored with X, unbound Y should match edge.outcome
+        let mut results: Vec<(usize, u32)> = Vec::new();
+
+        for (idx, edge) in self.edges.iter().enumerate() {
+            let y_unbound = self.unbind_outcome(edge, x);
+            // Compare unbound result with stored outcome
+            let dist = hamming_distance(&y_unbound, &edge.outcome);
+            results.push((idx, dist));
         }
-        
-        let matches = self.index.search(&pattern, k);
-        matches.into_iter()
+
+        // Sort by distance (0 = exact match = this edge was for X)
+        results.sort_by_key(|(_, d)| *d);
+        results.truncate(k);
+
+        results.into_iter()
             .map(|(idx, dist)| (&self.edges[idx], dist))
             .collect()
     }
@@ -869,18 +883,28 @@ impl Default for CausalSearch {
 mod tests {
     use super::*;
     
-    fn random_fp() -> [u64; WORDS] {
-        let mut fp = [0u64; WORDS];
-        for i in 0..WORDS {
-            fp[i] = rand::random();
-        }
-        fp
+    use crate::core::Fingerprint;
+
+    /// Convert 157-word Fingerprint to 156-word array for HDR cascade
+    fn fp_to_words(fp: &Fingerprint) -> [u64; WORDS] {
+        let raw = fp.as_raw();
+        let mut result = [0u64; WORDS];
+        result.copy_from_slice(&raw[..WORDS]);
+        result
     }
-    
+
+    /// Create a content-based fingerprint (proper density for HDR cascade)
+    fn random_fp() -> [u64; WORDS] {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        fp_to_words(&Fingerprint::from_content(&format!("concept_{}", id)))
+    }
+
     #[test]
     fn test_correlation_store() {
         let mut store = CorrelationStore::new();
-        
+
         let x = random_fp();
         let y = random_fp();
         

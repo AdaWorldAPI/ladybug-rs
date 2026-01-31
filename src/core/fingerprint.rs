@@ -160,13 +160,24 @@ impl Fingerprint {
         let mut result = Self::zero();
         let total_bits = FINGERPRINT_BITS;
         let shift = positions.rem_euclid(total_bits as i32) as usize;
-        
+
+        // Rotate bits within the logical 10000-bit space
         for i in 0..total_bits {
             let new_pos = (i + shift) % total_bits;
             if self.get_bit(i) {
                 result.set_bit(new_pos, true);
             }
         }
+
+        // Preserve bits beyond FINGERPRINT_BITS (10000-10047 in last partial word)
+        let full_words = FINGERPRINT_BITS / 64;  // 156 full words
+        let extra_bits = FINGERPRINT_BITS % 64;  // 16 bits used in word 156
+        if full_words < FINGERPRINT_U64 {
+            // Clear the rotated bits in the last word, keep only overflow bits
+            let mask = !((1u64 << extra_bits) - 1);  // Mask for bits >= extra_bits
+            result.data[full_words] = (result.data[full_words] & !mask) | (self.data[full_words] & mask);
+        }
+
         result
     }
     

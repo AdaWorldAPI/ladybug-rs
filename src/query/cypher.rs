@@ -399,15 +399,27 @@ impl CypherParser {
                 continue;
             }
             
-            // Numbers
+            // Numbers (handle range notation like 1..5 - stop at double dot)
             if c.is_ascii_digit() || (c == '-' && i + 1 < chars.len() && chars[i + 1].is_ascii_digit()) {
                 let start = i;
                 if c == '-' { i += 1; }
-                while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == '.') {
-                    i += 1;
+                let mut has_decimal = false;
+                while i < chars.len() {
+                    if chars[i].is_ascii_digit() {
+                        i += 1;
+                    } else if chars[i] == '.' && !has_decimal {
+                        // Check for range operator ".." - don't consume if double dot
+                        if i + 1 < chars.len() && chars[i + 1] == '.' {
+                            break;  // Stop before range operator
+                        }
+                        has_decimal = true;
+                        i += 1;
+                    } else {
+                        break;
+                    }
                 }
                 let num_str: String = chars[start..i].iter().collect();
-                if num_str.contains('.') {
+                if has_decimal {
                     tokens.push(Token::FloatLit(num_str.parse().unwrap()));
                 } else {
                     tokens.push(Token::IntLit(num_str.parse().unwrap()));

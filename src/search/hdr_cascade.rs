@@ -57,7 +57,8 @@ use crate::{Error, Result};
 // CONSTANTS
 // =============================================================================
 
-/// Number of 64-bit words in a fingerprint
+/// Number of 64-bit words in a fingerprint (156 = 9984 bits)
+/// Note: Fingerprint uses 157 words, but we use 156 for HDR cascade
 const WORDS: usize = 156;
 
 /// Bits per fingerprint

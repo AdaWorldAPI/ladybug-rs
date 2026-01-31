@@ -104,22 +104,24 @@ use std::collections::HashMap;
 // =============================================================================
 
 /// The 65 NSM primitives organized by category
+/// The 65 NSM primitives organized by category (Wierzbicka 1996, Goddard 2011)
 pub const NSM_CATEGORIES: &[(&str, &[&str])] = &[
     ("SUBSTANTIVES", &["I", "YOU", "SOMEONE", "SOMETHING", "PEOPLE", "BODY"]),
-    ("DETERMINERS", &["THIS", "THE_SAME", "OTHER"]),
-    ("QUANTIFIERS", &["ONE", "TWO", "SOME", "ALL", "MUCH", "MANY"]),
+    ("DETERMINERS", &["THIS", "THE_SAME", "OTHER", "ANOTHER"]),
+    ("QUANTIFIERS", &["ONE", "TWO", "SOME", "ALL", "MUCH", "MANY", "MORE"]),
     ("EVALUATORS", &["GOOD", "BAD"]),
     ("DESCRIPTORS", &["BIG", "SMALL"]),
     ("MENTAL", &["THINK", "KNOW", "WANT", "FEEL", "SEE", "HEAR"]),
     ("SPEECH", &["SAY", "WORDS", "TRUE"]),
     ("ACTIONS", &["DO", "HAPPEN", "MOVE", "TOUCH"]),
-    ("EXISTENCE", &["THERE_IS", "HAVE"]),
+    ("EXISTENCE", &["THERE_IS", "HAVE", "BE"]),
     ("LIFE", &["LIVE", "DIE"]),
     ("TIME", &["WHEN", "NOW", "BEFORE", "AFTER", "A_LONG_TIME", "A_SHORT_TIME", "FOR_SOME_TIME", "MOMENT"]),
     ("SPACE", &["WHERE", "HERE", "ABOVE", "BELOW", "FAR", "NEAR", "SIDE", "INSIDE"]),
     ("LOGICAL", &["NOT", "MAYBE", "CAN", "BECAUSE", "IF"]),
     ("INTENSIFIER", &["VERY"]),
-    ("SIMILARITY", &["LIKE"]),
+    ("SIMILARITY", &["LIKE", "KIND"]),
+    ("PART_WHOLE", &["PART", "PLACE"]),
 ];
 
 /// Role markers for binding

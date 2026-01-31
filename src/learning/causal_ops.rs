@@ -651,24 +651,33 @@ fn hash_fp(fp: &[u64; 156]) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
-    fn random_fp() -> [u64; 156] {
-        let mut fp = [0u64; 156];
-        for i in 0..156 {
-            fp[i] = rand::random();
-        }
-        fp
+
+    /// Convert 157-word Fingerprint to 156-word array
+    fn fp_to_words(fp: &Fingerprint) -> [u64; 156] {
+        let raw = fp.as_raw();
+        let mut result = [0u64; 156];
+        result.copy_from_slice(&raw[..156]);
+        result
     }
-    
+
+    /// Create a content-based fingerprint (proper density)
+    fn random_fp() -> [u64; 156] {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        fp_to_words(&Fingerprint::from_content(&format!("concept_{}", id)))
+    }
+
     #[test]
     fn test_store_query_correlation() {
         let mut engine = CausalEngine::new();
-        
-        let x = random_fp();
-        let y = random_fp();
-        
+
+        // Use content-based fingerprints that represent actual concepts
+        let x = fp_to_words(&Fingerprint::from_content("rain"));
+        let y = fp_to_words(&Fingerprint::from_content("wet_ground"));
+
         engine.store_correlation(&x, &y, 0.9);
-        
+
         let results = engine.query_correlates(&x, 5);
         assert!(!results.is_empty());
     }

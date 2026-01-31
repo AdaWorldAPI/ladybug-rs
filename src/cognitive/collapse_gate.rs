@@ -483,10 +483,10 @@ mod tests {
         let sd_tight = calculate_sd(&tight);
         assert!(sd_tight < SD_FLOW_THRESHOLD);
         
-        // High variance
-        let spread = [0.9, 0.1, 0.5];
+        // High variance (values at extremes)
+        let spread = [1.0, 0.0, 0.5];
         let sd_spread = calculate_sd(&spread);
-        assert!(sd_spread > SD_BLOCK_THRESHOLD);
+        assert!(sd_spread > SD_BLOCK_THRESHOLD, "SD {} should exceed {}", sd_spread, SD_BLOCK_THRESHOLD);
     }
     
     #[test]

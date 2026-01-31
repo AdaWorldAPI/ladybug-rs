@@ -89,7 +89,8 @@ impl CrystalAxes {
     
     /// Total size in bytes
     pub fn size_bytes(&self) -> usize {
-        3 * 10000 / 8  // 3,750 bytes
+        use crate::FINGERPRINT_U64;
+        3 * FINGERPRINT_U64 * 8  // 3 * 1256 = 3,768 bytes
     }
     
     /// Total size in kilobytes
@@ -108,11 +109,13 @@ impl CrystalAxes {
     
     /// Deserialize from bytes
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() < 3750 {
+        use crate::FINGERPRINT_U64;
+        let chunk_size = FINGERPRINT_U64 * 8;  // 157 * 8 = 1256 bytes per fingerprint
+
+        if bytes.len() < chunk_size * 3 {
             return None;
         }
 
-        let chunk_size = 10000 / 8;
         Some(Self {
             temporal: Fingerprint::from_bytes(&bytes[0..chunk_size]).ok()?,
             structural: Fingerprint::from_bytes(&bytes[chunk_size..chunk_size*2]).ok()?,
@@ -713,7 +716,8 @@ mod tests {
     #[test]
     fn test_crystal_axes_size() {
         let axes = CrystalAxes::new();
-        assert_eq!(axes.size_bytes(), 3750);
+        // 3 fingerprints × 157 u64 words × 8 bytes = 3768 bytes
+        assert_eq!(axes.size_bytes(), 3 * crate::FINGERPRINT_U64 * 8);
         println!("Crystal axes size: {} bytes = {:.2} KB", 
             axes.size_bytes(), axes.size_kb());
     }

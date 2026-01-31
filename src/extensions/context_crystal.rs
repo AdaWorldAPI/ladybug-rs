@@ -304,15 +304,17 @@ impl ContextCrystal {
     
     /// Get bundled fingerprint for a temporal slice (all S×O at time t)
     fn temporal_slice(&self, t: usize) -> Fingerprint {
-        let mut result = Fingerprint::zero();
-        for s in 0..GRID {
-            for o in 0..GRID {
+        // Collect all non-empty cells for this temporal slice
+        let cells: Vec<Fingerprint> = (0..GRID)
+            .flat_map(|s| (0..GRID).filter_map(move |o| {
                 if self.counts[t][s][o] > 0 {
-                    result = bundle(&[result, self.cells[t][s][o].clone()]);
+                    Some(self.cells[t][s][o].clone())
+                } else {
+                    None
                 }
-            }
-        }
-        result
+            }))
+            .collect();
+        bundle(&cells)
     }
     
     /// Get the central sentence's resonance (S0)
@@ -372,16 +374,21 @@ fn hash_to_grid(fp: &Fingerprint) -> usize {
 
 /// Bundle multiple fingerprints (majority voting)
 fn bundle(fps: &[Fingerprint]) -> Fingerprint {
-    if fps.is_empty() {
+    // Filter out zero fingerprints - they would unfairly vote "no" on all bits
+    let non_zero: Vec<&Fingerprint> = fps.iter()
+        .filter(|fp| fp.popcount() > 0)
+        .collect();
+
+    if non_zero.is_empty() {
         return Fingerprint::zero();
     }
-    if fps.len() == 1 {
-        return fps[0].clone();
+    if non_zero.len() == 1 {
+        return non_zero[0].clone();
     }
-    
+
     let mut counts = [0i32; N];
-    
-    for fp in fps {
+
+    for fp in non_zero {
         for i in 0..N {
             if fp.get_bit(i) {
                 counts[i] += 1;
