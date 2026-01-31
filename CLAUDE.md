@@ -46,31 +46,32 @@
 
 **Main branch**: ~38K lines of Rust (141 tests passing, 5 pre-existing failures)
 
-### ✅ Completed
+### ✅ Completed (this session)
 
 - [x] 8+8 addressing schema (prefix:slot)
 - [x] Universal BindSpace with O(1) array indexing
 - [x] 4096 CAM operations (16 compartments × 256 slots)
 - [x] CAM execution bridge in CogRedis
-- [x] Redis command executor with CAM routing
+- [x] Redis command executor with CAM routing (PR #26 MERGED)
 - [x] LanceDB/DataFusion execution mappings
 - [x] Cognitive Redis commands (BIND, UNBIND, RESONATE, CAUSE, WOULD, DEDUCE, INTUIT, FANOUT)
+- [x] Wire Redis commands to BindSpace execution
 
 ### 🔄 Open PRs to Review
 
-| PR | Description | Action |
-|----|-------------|--------|
-| #21 | HDR Cascade Search (alien magic) | Review + Merge |
-| #24 | 64-bit CAM index | Review alignment with 8+8 |
-| #23 | Updated exports for 16 prefixes | Review |
-| #22 | Updated exports for 16 prefixes | Review (duplicate?) |
-| #16 | Grammar engine (audit recovery) | Review |
-| #15 | Crystal extension | Review |
-| #14 | ARCHITECTURE.md | Review |
-| #12 | Dependencies | Merge |
-| #11 | Reconstructed cognitive files | ⚠️ AUDIT FIRST |
+| PR | Description | Priority | Notes |
+|----|-------------|----------|-------|
+| #21 | HDR Cascade Search | HIGH | O(1) bind vector search via popcount stacking |
+| #24 | 64-bit CAM index | MEDIUM | Review alignment with 8+8 model |
+| #23 | Updated exports (16 prefixes) | LOW | May be stale |
+| #22 | Updated exports (16 prefixes) | LOW | Duplicate of #23? |
+| #16 | Grammar engine | MEDIUM | Audit recovery |
+| #15 | Crystal extension | LOW | Review |
+| #14 | ARCHITECTURE.md | LOW | Documentation |
+| #12 | Dependencies | LOW | Merge when needed |
+| #11 | Reconstructed files | ⚠️ LOW | AUDIT FIRST |
 
-### 🔴 Remaining Failures (5 tests)
+### 🔴 Remaining Failures (5 tests - pre-existing)
 
 - `collapse_gate` — needs investigation
 - `causal_ops` — needs investigation  
@@ -78,14 +79,21 @@
 - `cypher` — needs investigation
 - `causal` — needs investigation
 
-### 📋 TODO
+### 📋 TODO (Next Session)
 
 - [ ] Fix 5 remaining test failures
-- [ ] Merge PR #21 (HDR Cascade) — O(1) bind vector search via popcount stacking
-- [ ] Review PR #24 for alignment with 8+8 model
-- [ ] Wire HDR cascade to BindSpace for similarity search
+- [ ] Merge PR #21 (HDR Cascade) — popcount stacking for similarity search
+- [ ] Wire HDR cascade to BindSpace similarity ops
 - [ ] Implement fluid zone TTL + promote/demote
-- [ ] Add persistence (currently in-memory only)
+- [ ] Add persistence (mmap for large datasets)
+
+**Recent Commits** (PR #26):
+```
+271f4a2 - Add Redis command executor with CAM operation routing
+3f329c5 - Add CAM execution bridge to CogRedis
+13e95d6 - Fix example field names
+07a1578 - Implement 4096 CAM operations
+```
 
 **Key files**:
 ```
