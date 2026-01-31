@@ -35,6 +35,7 @@ pub mod database;
 pub mod cog_redis;
 pub mod bind_space;
 pub mod hardening;
+pub mod temporal;
 
 #[cfg(feature = "lancedb")]
 pub use lance::{LanceStore, NodeRecord, EdgeRecord};
@@ -93,4 +94,21 @@ pub use hardening::{
     WriteAheadLog, WalEntry,
     QueryContext, QueryTimeoutError,
     HardeningMetrics, MetricsSnapshot,
+};
+
+// Temporal exports (ACID, time travel, what-if)
+pub use temporal::{
+    // Types
+    Version, Timestamp, TxnId,
+    IsolationLevel, TxnState,
+    TemporalEntry, TemporalEdge,
+    Transaction,
+    // Stores
+    VersionManager, TemporalStore,
+    // What-if
+    WhatIfBranch, VersionDiff,
+    // Errors
+    TemporalError,
+    // Full-featured CogRedis
+    TemporalCogRedis, TemporalStats,
 };
