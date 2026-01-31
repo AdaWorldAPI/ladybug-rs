@@ -44,7 +44,48 @@
 
 ## Current State
 
-**Main branch**: ~35K lines of Rust
+**Main branch**: ~38K lines of Rust (141 tests passing, 5 pre-existing failures)
+
+### ✅ Completed
+
+- [x] 8+8 addressing schema (prefix:slot)
+- [x] Universal BindSpace with O(1) array indexing
+- [x] 4096 CAM operations (16 compartments × 256 slots)
+- [x] CAM execution bridge in CogRedis
+- [x] Redis command executor with CAM routing
+- [x] LanceDB/DataFusion execution mappings
+- [x] Cognitive Redis commands (BIND, UNBIND, RESONATE, CAUSE, WOULD, DEDUCE, INTUIT, FANOUT)
+
+### 🔄 Open PRs to Review
+
+| PR | Description | Action |
+|----|-------------|--------|
+| #21 | HDR Cascade Search (alien magic) | Review + Merge |
+| #24 | 64-bit CAM index | Review alignment with 8+8 |
+| #23 | Updated exports for 16 prefixes | Review |
+| #22 | Updated exports for 16 prefixes | Review (duplicate?) |
+| #16 | Grammar engine (audit recovery) | Review |
+| #15 | Crystal extension | Review |
+| #14 | ARCHITECTURE.md | Review |
+| #12 | Dependencies | Merge |
+| #11 | Reconstructed cognitive files | ⚠️ AUDIT FIRST |
+
+### 🔴 Remaining Failures (5 tests)
+
+- `collapse_gate` — needs investigation
+- `causal_ops` — needs investigation  
+- `quantum_ops` — needs investigation
+- `cypher` — needs investigation
+- `causal` — needs investigation
+
+### 📋 TODO
+
+- [ ] Fix 5 remaining test failures
+- [ ] Merge PR #21 (HDR Cascade) — O(1) bind vector search via popcount stacking
+- [ ] Review PR #24 for alignment with 8+8 model
+- [ ] Wire HDR cascade to BindSpace for similarity search
+- [ ] Implement fluid zone TTL + promote/demote
+- [ ] Add persistence (currently in-memory only)
 
 **Key files**:
 ```
@@ -70,106 +111,84 @@ src/search/
 
 ## YOUR MISSION
 
-### 1. Refactor CAM Ops to 8+8 Schema
+### Priority 1: Fix Remaining Test Failures
 
-The `src/learning/cam_ops.rs` uses old 12-bit flat addressing. Refactor to:
+5 tests still failing. Run and investigate:
+
+```bash
+cargo test 2>&1 | grep -E "FAILED|failures:"
+```
+
+### Priority 2: Merge HDR Cascade (PR #21)
+
+This is the "alien magic" — O(1) bind vector search via popcount stacking:
+
+```
+Level 0: 1-bit sketch  → 90% filtered
+Level 1: 4-bit count   → 90% of survivors
+Level 2: 8-bit count   → 90% of survivors  
+Level 3: Full popcount → exact distance
+
+~7ns per candidate vs ~100ns for float cosine
+```
+
+Review and merge, then wire to BindSpace.
+
+### Priority 3: Wire HDR to BindSpace
+
+Connect the HDR cascade search to the fluid zone for similarity queries:
 
 ```rust
-/// Surface compartment (0x00-0x0F)
-pub fn surface_prefix(compartment: SurfaceCompartment) -> u8 {
-    compartment as u8  // 0x00-0x0F
-}
-
-/// Full 16-bit address
-pub fn addr(prefix: u8, slot: u8) -> u16 {
-    ((prefix as u16) << 8) | (slot as u16)
-}
-
-/// Decode address
-pub fn decode(addr: u16) -> (u8, u8) {
-    ((addr >> 8) as u8, (addr & 0xFF) as u8)
-}
-```
-
-### 2. Implement Missing 4096 Operations
-
-Each surface compartment (0x00-0x0F) has 256 slots. Map them to LanceDB ops:
-
-```
-SURFACE 0x00 (Lance) - 256 ops:
-├── 0x00:00 VECTOR_SEARCH    → lance.search_vector(fp, k)
-├── 0x00:01 VECTOR_INSERT    → lance.insert(table, batch)
-├── 0x00:02 VECTOR_DELETE    → lance.delete(table, ids)
-├── 0x00:03 VECTOR_UPDATE    → lance.update(table, batch)
-├── 0x00:04 ANN_BUILD        → lance.create_index(table, IVF_PQ)
-├── 0x00:05 ANN_QUERY        → lance.query_ann(fp, k, nprobes)
-├── 0x00:06 SCAN_TABLE       → lance.scan(table, filter)
-├── 0x00:07 SCAN_FRAGMENT    → lance.scan_fragment(table, frag_id)
-...
-
-SURFACE 0x01 (SQL) - 256 ops:
-├── 0x01:00 SELECT           → datafusion.sql("SELECT ...")
-├── 0x01:01 INSERT           → datafusion.sql("INSERT ...")
-├── 0x01:02 UPDATE           → datafusion.sql("UPDATE ...")
-├── 0x01:03 DELETE           → datafusion.sql("DELETE ...")
-├── 0x01:04 JOIN             → datafusion.sql("... JOIN ...")
-├── 0x01:05 AGGREGATE        → datafusion.sql("... GROUP BY ...")
-├── 0x01:06 WINDOW           → datafusion.sql("... OVER ...")
-├── 0x01:07 CTE              → datafusion.sql("WITH ... AS ...")
-...
-
-SURFACE 0x02 (Cypher) - 256 ops:
-├── 0x02:00 MATCH            → cypher_to_sql("MATCH ...")
-├── 0x02:01 CREATE_NODE      → cypher_to_sql("CREATE ...")
-├── 0x02:02 CREATE_EDGE      → cypher_to_sql("CREATE ...-[...]->...")
-├── 0x02:03 MERGE            → cypher_to_sql("MERGE ...")
-├── 0x02:04 DELETE_NODE      → cypher_to_sql("DELETE ...")
-├── 0x02:05 DELETE_EDGE      → cypher_to_sql("DELETE ...")
-├── 0x02:06 SET_PROPERTY     → cypher_to_sql("SET ...")
-├── 0x02:07 SHORTEST_PATH    → cypher_to_sql("shortestPath(...)")
-...
-
-SURFACE 0x07 (Verbs) - 256 ops:
-├── 0x07:00 CAUSES           → bind(src, VERB_CAUSES, tgt)
-├── 0x07:01 SUPPORTS         → bind(src, VERB_SUPPORTS, tgt)
-├── 0x07:02 CONTRADICTS      → bind(src, VERB_CONTRADICTS, tgt)
-├── 0x07:03 BECOMES          → bind(src, VERB_BECOMES, tgt)
-├── 0x07:04 REFINES          → bind(src, VERB_REFINES, tgt)
-├── 0x07:05 GROUNDS          → bind(src, VERB_GROUNDS, tgt)
-├── 0x07:06 ABSTRACTS        → bind(src, VERB_ABSTRACTS, tgt)
-├── 0x07:07 ENABLES          → bind(src, VERB_ENABLES, tgt)
-...
-```
-
-### 3. Wire Redis Commands to Bind Space
-
-In `src/storage/cog_redis.rs`, ensure all commands route through bind space:
-
-```rust
-pub fn execute(&mut self, cmd: &str) -> CogResult {
-    let parsed = parse_redis_command(cmd)?;
+// In cog_redis.rs RESONATE command
+pub fn resonate(&mut self, query: &Fingerprint, k: usize) -> Vec<(Addr, f32)> {
+    // Use HDR cascade for fast filtering
+    let candidates = self.hdr_index.search(query, k * 10);
     
-    match parsed.op {
-        "GET" => {
-            let addr = self.resolve_key(&parsed.key)?;
-            let node = self.bind_space.read(addr)?;
-            CogResult::from_node(node)
+    // Return top k with similarity scores
+    candidates.into_iter()
+        .take(k)
+        .map(|m| (m.addr, m.similarity))
+        .collect()
+}
+```
+
+### Priority 4: Implement Fluid Zone Lifecycle
+
+The fluid zone (0x10-0x7F) needs:
+
+```rust
+// TTL expiration
+pub fn tick(&mut self) {
+    let now = timestamp();
+    for chunk in &mut self.fluid {
+        for slot in chunk.iter_mut() {
+            if let Some(node) = slot {
+                if node.ttl.map(|t| t < now).unwrap_or(false) {
+                    *slot = None;  // Evaporate
+                }
+            }
         }
-        "SET" => {
-            let addr = self.resolve_or_allocate(&parsed.key)?;
-            let node = BindNode::from_value(&parsed.value)?;
-            self.bind_space.write(addr, node)?;
-            CogResult::Ok
-        }
-        "BIND" => {
-            let (a, b, verb) = parse_bind_args(&parsed.args)?;
-            let edge_fp = a.bind(&verb).bind(&b);
-            let addr = self.allocate_fluid()?;
-            self.bind_space.write(addr, BindNode::edge(edge_fp))?;
-            CogResult::Addr(addr)
-        }
-        // ... etc
     }
+}
+
+// Promote to node space
+pub fn crystallize(&mut self, fluid_addr: Addr) -> Option<Addr> {
+    let node = self.read(fluid_addr)?;
+    let node_addr = self.allocate_node()?;
+    self.write(node_addr, node.clone());
+    self.delete(fluid_addr);
+    Some(node_addr)
+}
+
+// Demote from node space  
+pub fn evaporate(&mut self, node_addr: Addr, ttl: u32) -> Option<Addr> {
+    let node = self.read(node_addr)?;
+    let fluid_addr = self.allocate_fluid()?;
+    let mut node = node.clone();
+    node.ttl = Some(timestamp() + ttl);
+    self.write(fluid_addr, node);
+    self.delete(node_addr);
+    Some(fluid_addr)
 }
 ```
 
