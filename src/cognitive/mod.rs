@@ -15,6 +15,9 @@ mod collapse_gate;
 mod seven_layer;
 mod rung;
 mod fabric;
+// TODO: Fix API mismatches before enabling
+// mod grammar_engine;
+// mod substrate;
 
 pub use thought::{Thought, Concept, Belief};
 pub use style::*;
@@ -23,3 +26,6 @@ pub use collapse_gate::*;
 pub use seven_layer::*;
 pub use rung::*;
 pub use fabric::*;
+// TODO: Fix API mismatches before enabling
+// pub use grammar_engine::*;
+// pub use substrate::*;

@@ -4,11 +4,13 @@ mod fingerprint;
 mod simd;
 mod vsa;
 mod buffer;
+mod scent;
 
 pub use fingerprint::Fingerprint;
 pub use simd::{hamming_distance, batch_hamming, HammingEngine};
 pub use vsa::VsaOps;
 pub use buffer::BufferPool;
+pub use scent::*;
 
 /// Dense embedding vector
 pub type Embedding = Vec<f32>;
