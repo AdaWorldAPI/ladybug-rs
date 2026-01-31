@@ -35,6 +35,9 @@ pub mod database;
 pub mod cog_redis;
 pub mod bind_space;
 pub mod hardening;
+pub mod temporal;
+pub mod resilient;
+pub mod concurrency;
 
 #[cfg(feature = "lancedb")]
 pub use lance::{LanceStore, NodeRecord, EdgeRecord};
@@ -93,4 +96,53 @@ pub use hardening::{
     WriteAheadLog, WalEntry,
     QueryContext, QueryTimeoutError,
     HardeningMetrics, MetricsSnapshot,
+};
+
+// Temporal exports (ACID, time travel, what-if)
+pub use temporal::{
+    // Types
+    Version, Timestamp, TxnId,
+    IsolationLevel, TxnState,
+    TemporalEntry, TemporalEdge,
+    Transaction,
+    // Stores
+    VersionManager, TemporalStore,
+    // What-if
+    WhatIfBranch, VersionDiff,
+    // Errors
+    TemporalError,
+    // Full-featured CogRedis
+    TemporalCogRedis, TemporalStats,
+};
+
+// Resilient exports (ReFS-like hardening)
+pub use resilient::{
+    // Config
+    ResilienceConfig,
+    // Buffer types
+    VirtualVersion, WriteState,
+    BufferedWrite, BufferedDelete, BufferedLink,
+    WriteBuffer,
+    // Dependency tracking
+    DependencyGraph,
+    // Recovery
+    RecoveryEngine, RecoveryAction,
+    // Store
+    ResilientStore, ReadResult, ResilientStatus,
+    // Errors
+    BufferError,
+};
+
+// Concurrency exports (MVCC, memory pool, parallel execution)
+pub use concurrency::{
+    // Memory pool
+    MemoryPoolConfig, MemoryPool, MemoryGuard, MemoryPoolStats, MemoryError,
+    // MVCC
+    MvccSlot, ReadHandle, WriteIntent, WriteResult, MvccStore,
+    // Parallel execution
+    ParallelConfig, ParallelExecutor, ResultHandle, ParallelError,
+    // Query context
+    QueryContext as ConcurrentQueryContext, ConflictError,
+    // Combined store
+    ConcurrentStore, WriteConflict, ConcurrentStats,
 };
