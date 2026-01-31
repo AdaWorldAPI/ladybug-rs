@@ -1,195 +1,58 @@
-# Ladybug-RS Storage Layer Handover
+# Ladybug-RS Handover
 
-## Session Summary
+## Session Summary (2026-01-31)
 
-**Date**: 2026-01-31  
-**Focus**: 8-bit prefix architecture correction + PR updates
+### ✅ Completed This Session
 
----
+| Task | Status | Details |
+|------|--------|---------|
+| 8+8 prefix architecture | ✓ | 16 surface prefixes (0x00-0x0F), corrected from 4 |
+| PR cleanup | ✓ | Closed #21, #22, #23 (superseded/duplicate) |
+| CLAUDE.md update | ✓ | Accurate status, line counts, PR state |
 
-## What Was Done This Session
-
-### Architecture Correction
-Fixed the math error: changed from 4 surface compartments to 16 prefixes (0x00-0x0F) to correctly fill 4,096 surface addresses.
-
-### PRs Updated
-- **PR #18** (Cognitive Redis): 16 prefix constants
-- **PR #19** (Hot Edge Cache): 16 prefix constants  
-- **PR #20** (Universal Bind Space): 16 surface Vec instead of 4 individual arrays
-- **PR #26** (MERGED): Redis command executor with CAM routing
-
-### Recent Merges (Prior to This Session)
-```
-271f4a2 - Add Redis command executor with CAM operation routing
-3f329c5 - Add CAM execution bridge to CogRedis
-13e95d6 - Fix example field names
-07a1578 - Implement 4096 CAM operations
-```
-
----
-
-## Architecture Overview
-
-### The 8-bit Prefix : 8-bit Slot Model
+### 📊 Current Codebase
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                      PREFIX (8-bit) : SLOT (8-bit)                          │
-├─────────────────┬───────────────────────────────────────────────────────────┤
-│  0x00-0x0F:XX   │  SURFACE (16 prefixes × 256 = 4,096)                      │
-│                 │  0x00: Lance      0x04: NARS       0x08: Concepts         │
-│                 │  0x01: SQL        0x05: Causal     0x09: Qualia           │
-│                 │  0x02: Cypher     0x06: Meta       0x0A: Memory           │
-│                 │  0x03: GraphQL    0x07: Verbs      0x0B: Learning         │
-│                 │  0x0C-0x0F: Reserved                                      │
-├─────────────────┼───────────────────────────────────────────────────────────┤
-│  0x10-0x7F:XX   │  FLUID (112 prefixes × 256 = 28,672)                      │
-│                 │  Edges + Context selector + Working memory                │
-│                 │  TTL governed, promote/demote                             │
-├─────────────────┼───────────────────────────────────────────────────────────┤
-│  0x80-0xFF:XX   │  NODES (128 prefixes × 256 = 32,768)                      │
-│                 │  THE UNIVERSAL BIND SPACE                                 │
-│                 │  All query languages hit the same addresses               │
-└─────────────────┴───────────────────────────────────────────────────────────┘
+Main branch: ~37.5K lines of Rust
+Tests: 141 passing, 5 pre-existing failures
 
-TOTAL: 256 prefixes × 256 slots = 65,536 addresses
+Key files:
+- src/storage/bind_space.rs    (1,142 lines) - Universal DTO
+- src/storage/cog_redis.rs     (2,250 lines) - Redis adapter  
+- src/learning/cam_ops.rs      (3,031 lines) - 4096 CAM ops
+- src/search/hdr_cascade.rs    (1,015 lines) - O(1) similarity
 ```
 
-### Why 8+8?
+### 🔄 Open PRs (6 remaining)
 
-| Operation          | HashMap (16-bit) | Array Index (8+8) |
-|-------------------|------------------|-------------------|
-| Hash compute      | ~20 cycles       | 0                 |
-| Bucket lookup     | ~10-50 cycles    | 0                 |
-| Cache miss risk   | High             | Low (predictable) |
-| Branch prediction | Poor             | Perfect (3-way)   |
-| **TOTAL**         | ~30-100 cycles   | **3-5 cycles**    |
+| PR | Description | Action |
+|----|-------------|--------|
+| #24 | 64-bit CAM index | Review for 8+8 alignment |
+| #16 | Grammar engine | Audit recovery file |
+| #15 | Crystal extension | Review |
+| #14 | ARCHITECTURE.md | Review + Merge |
+| #12 | Dependencies | Merge when needed |
+| #11 | Reconstructed files | ⚠️ AUDIT FIRST |
 
-**No AVX-512. No SIMD. No special CPU instructions.**  
-Just shift, mask, array index. Works on embedded/WASM.
+### 📋 Next Priorities
 
----
+1. **Wire HDR to RESONATE** - Connect hdr_cascade.rs to similarity search
+2. **Fluid Zone Lifecycle** - Implement TTL, crystallize(), evaporate()
+3. **Fix 5 Test Failures** - collapse_gate, causal_ops, quantum_ops, cypher, causal
+4. **Merge PR #14** - ARCHITECTURE.md documentation
 
-## The Key Insight
-
-**The fluid zone (0x10-0x7F) is a CONTEXT SELECTOR.**
-
-It defines what the node space (0x80-0xFF) means:
-- Chunk context = Concepts → node space holds concepts
-- Chunk context = Memories → node space holds memories
-- Chunk context = Codebook → node space holds patterns
-
-**The node space is the UNIVERSAL DTO.**
-
-All query languages bind to the same 32K addresses:
-```
-GET 0x8042              (Redis)
-MATCH (n) WHERE id(n) = 0x8042  (Cypher)
-SELECT * WHERE addr = 0x8042    (SQL)
-{ node(id: "0x8042") }          (GraphQL)
-```
-
-Same address. Same fingerprint. The data doesn't care what syntax asked for it.
-
----
-
-## Open Pull Requests
-
-### HIGH Priority
-- **PR #21** - HDR Cascade Search (popcount stacking for O(1) similarity)
-
-### MEDIUM Priority  
-- **PR #24** - 64-bit CAM index (review alignment with 8+8)
-- **PR #18** - Cognitive Redis (may be stale after #26 merge)
-- **PR #19** - Hot Edge Cache (depends on #18)
-- **PR #20** - Universal Bind Space
-
-### LOW Priority
-- **PR #23, #22** - Export updates (likely stale)
-- **PR #16** - Grammar engine
-- **PR #15** - Crystal extension
-- **PR #14** - ARCHITECTURE.md
-- **PR #12** - Dependencies
-- **PR #11** - ⚠️ Reconstructed files (AUDIT FIRST)
-
----
-
-## Merge Order
-
-1. **PR #20** first (Universal Bind Space) - the foundation
-2. **PR #18** second (Cognitive Redis) - uses bind_space types
-3. **PR #19** third (Hot Cache) - enhancement to CogRedis
-
----
-
-## Code Structure
+### 🏗️ Architecture Reference
 
 ```
-src/storage/
-├── mod.rs           # Module exports
-├── bind_space.rs    # Universal DTO (PR #20)
-├── cog_redis.rs     # Redis adapter (PR #18, #19)
-├── lance.rs         # Vector storage
-├── kuzu.rs          # Graph storage (stub)
-└── database.rs      # Unified interface
-```
+PREFIX (8-bit) : SLOT (8-bit) = 65,536 addresses
 
-### The Hot Path
-
-```rust
-pub fn read(&self, addr: Addr) -> Option<&BindNode> {
-    let prefix = addr.prefix();
-    let slot = addr.slot() as usize;
-    
-    match prefix {
-        // Surface: 16 compartments (0x00-0x0F)
-        p if p <= PREFIX_SURFACE_END => {
-            self.surfaces.get(p as usize).and_then(|c| c[slot].as_ref())
-        }
-        // Fluid: 112 chunks (0x10-0x7F)
-        p if p >= PREFIX_FLUID_START && p <= PREFIX_FLUID_END => {
-            let chunk = (p - PREFIX_FLUID_START) as usize;
-            self.fluid.get(chunk).and_then(|c| c[slot].as_ref())
-        }
-        // Nodes: 128 chunks (0x80-0xFF)
-        p if p >= PREFIX_NODE_START => {
-            let chunk = (p - PREFIX_NODE_START) as usize;
-            self.nodes.get(chunk).and_then(|c| c[slot].as_ref())
-        }
-        _ => None,
-    }
-}
+0x00-0x0F:XX   SURFACE  (16 × 256 = 4,096)
+0x10-0x7F:XX   FLUID    (112 × 256 = 28,672)
+0x80-0xFF:XX   NODES    (128 × 256 = 32,768)
 ```
 
 ---
 
-## What's NOT Done Yet
-
-1. **5 Test Failures** - collapse_gate, causal_ops, quantum_ops, cypher, causal
-2. **HDR Cascade Integration** - PR #21 needs merge + wire to BindSpace
-3. **Fluid Zone TTL** - promote/demote not implemented
-4. **Persistence** - Currently in-memory only (consider mmap)
-5. **Language Adapters** - QueryAdapter trait defined but no implementations
-
----
-
-## Quick Start
-
-```bash
-cd /home/claude/ladybug-rs
-git fetch origin
-git checkout feature/universal-bind-space
-
-# Key files
-cat src/storage/bind_space.rs    # The DTO
-cat src/storage/cog_redis.rs     # Redis adapter
-cat src/storage/mod.rs           # Exports
-```
-
----
-
-## Links
-
-- PR #18: https://github.com/AdaWorldAPI/ladybug-rs/pull/18
-- PR #19: https://github.com/AdaWorldAPI/ladybug-rs/pull/19
-- PR #20: https://github.com/AdaWorldAPI/ladybug-rs/pull/20
+**Links:**
+- Repo: https://github.com/AdaWorldAPI/ladybug-rs
+- CLAUDE.md: Full context for AI sessions
