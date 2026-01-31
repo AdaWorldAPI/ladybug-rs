@@ -6,7 +6,12 @@
 mod truth;
 mod inference;
 mod evidence;
+mod context;
 
 pub use truth::TruthValue;
 pub use inference::{InferenceRule, Deduction, Induction, Abduction, Analogy};
 pub use evidence::Evidence;
+pub use context::{
+    InferenceContext, StyleWeights, AtomGate, PearlMode,
+    CollapseModulation, InferenceRuleKind, AtomKind,
+};

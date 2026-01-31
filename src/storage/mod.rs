@@ -34,6 +34,7 @@ pub mod lance;
 pub mod database;
 pub mod cog_redis;
 pub mod bind_space;
+pub mod hardening;
 
 #[cfg(feature = "lancedb")]
 pub use lance::{LanceStore, NodeRecord, EdgeRecord};
@@ -73,6 +74,9 @@ pub use cog_redis::{
     
     // Results
     GetResult, SetOptions, ResonateResult, DeduceResult,
+
+    // Production-hardened version
+    HardenedCogRedis,
 };
 
 // BindSpace exports (universal DTO)
@@ -80,4 +84,13 @@ pub use bind_space::{
     Addr, BindNode, BindEdge, BindSpace, BindSpaceStats,
     ChunkContext, QueryAdapter, QueryResult, QueryValue,
     hamming_distance, FINGERPRINT_WORDS,
+};
+
+// Hardening exports (production-ready features)
+pub use hardening::{
+    HardeningConfig, HardenedBindSpace,
+    LruTracker, TtlManager,
+    WriteAheadLog, WalEntry,
+    QueryContext, QueryTimeoutError,
+    HardeningMetrics, MetricsSnapshot,
 };

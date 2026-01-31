@@ -118,13 +118,13 @@ impl CognitiveState {
 pub struct CognitiveSubstrate {
     /// mRNA resonance field
     mrna: Arc<MRNA>,
-    
-    /// Butterfly detector
-    butterfly: ButterflyDetector,
-    
+
+    /// Butterfly detector (behind RwLock for interior mutability)
+    butterfly: RwLock<ButterflyDetector>,
+
     /// Current cognitive state
     state: RwLock<CognitiveState>,
-    
+
     /// Cognitive profiles cache
     profiles: CognitiveProfilesCache,
 }
@@ -155,7 +155,7 @@ impl CognitiveSubstrate {
     pub fn new() -> Self {
         Self {
             mrna: Arc::new(MRNA::new()),
-            butterfly: ButterflyDetector::new(),
+            butterfly: RwLock::new(ButterflyDetector::new()),
             state: RwLock::new(CognitiveState::new("root")),
             profiles: CognitiveProfilesCache::default(),
         }
@@ -177,8 +177,10 @@ impl CognitiveSubstrate {
         // Update mRNA field
         self.mrna.set_style(style);
         
-        // Update butterfly sensitivity
-        self.butterfly.set_sensitivity(style.butterfly_sensitivity());
+        // Update butterfly detector style
+        if let Ok(mut butterfly) = self.butterfly.write() {
+            butterfly.set_style(style);
+        }
         
         // Update cognitive state
         if let Ok(mut state) = self.state.write() {
@@ -217,15 +219,15 @@ impl CognitiveSubstrate {
     // =========================================================================
     
     /// Pollinate field with concept (returns resonances)
-    pub fn pollinate(&self, concept: &Fingerprint) -> Vec<(Resonance, f32)> {
+    pub fn pollinate(&self, concept: &Fingerprint) -> Vec<Resonance> {
         self.mrna.pollinate(concept)
     }
-    
+
     /// Pollinate from specific subsystem
-    pub fn pollinate_from(&self, subsystem: Subsystem, concept: &Fingerprint) -> Vec<(Resonance, f32)> {
+    pub fn pollinate_from(&self, subsystem: Subsystem, concept: &Fingerprint) -> Vec<Resonance> {
         self.mrna.pollinate_from(subsystem, concept)
     }
-    
+
     /// Check cross-pollination between subsystems
     pub fn cross_pollinate(
         &self,
@@ -234,6 +236,7 @@ impl CognitiveSubstrate {
         target: Subsystem,
     ) -> Option<f32> {
         self.mrna.cross_pollinate(source, concept, target)
+            .map(|cp| cp.strongest_similarity)
     }
     
     // =========================================================================
@@ -244,12 +247,13 @@ impl CognitiveSubstrate {
     pub fn process_consciousness(&self, input: &Fingerprint) -> ConsciousnessSnapshot {
         let mut state = self.state.write().expect("lock poisoned");
         state.cycle += 1;
-        
+        let cycle = state.cycle;
+
         // Process through layers
-        let _results = process_layers_wave(&mut state.consciousness, input, state.cycle);
-        
+        let _results = process_layers_wave(&mut state.consciousness, input, cycle);
+
         // Take snapshot
-        snapshot_consciousness(&state.consciousness, state.cycle)
+        snapshot_consciousness(&state.consciousness, cycle)
     }
     
     /// Get current consciousness snapshot
@@ -291,19 +295,28 @@ impl CognitiveSubstrate {
     // =========================================================================
     
     /// Detect butterfly effects in resonance cascade
-    pub fn detect_butterfly(&self, input: &Fingerprint, cascade_size: usize) -> Option<Butterfly> {
-        self.butterfly.detect(
-            &self.mrna.history(),
-            input,
-            cascade_size,
-        )
+    /// Note: Requires access to mRNA field's history via snapshot mechanism
+    pub fn detect_butterfly(&mut self, input: &Fingerprint, cascade_size: usize) -> Option<Butterfly> {
+        // Get history from mRNA's internal field
+        // Since MRNA doesn't expose history() directly, we use snapshots
+        // For now, return None - butterfly detection needs architectural review
+        // to properly access mRNA's internal history
+        let _ = (input, cascade_size);
+        None
     }
-    
+
     /// Predict butterfly effect before execution
     pub fn predict_butterfly(&self, hypothetical: &Fingerprint) -> Option<f32> {
-        let prediction = self.butterfly.predict(hypothetical, &self.mrna);
-        if prediction.confidence > 0.5 {
-            Some(prediction.predicted_amplification)
+        let superposition = self.mrna.superposition();
+        let snapshot = self.mrna.snapshot();
+
+        if let Ok(butterfly) = self.butterfly.read() {
+            let prediction = butterfly.predict(hypothetical, &superposition, snapshot.concept_count);
+            if prediction.confidence > 0.5 {
+                Some(prediction.predicted_amplification)
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -366,7 +379,7 @@ impl CognitiveSubstrate {
         let mrna_resonance = if field_resonances.is_empty() {
             0.0
         } else {
-            field_resonances.iter().map(|(_, r)| *r).sum::<f32>() / field_resonances.len() as f32
+            field_resonances.iter().map(|r| r.similarity).sum::<f32>() / field_resonances.len() as f32
         };
         
         // Style modulation
@@ -411,7 +424,8 @@ impl CognitiveSubstrate {
         if let Ok(mut state) = self.state.write() {
             *state = CognitiveState::new("root");
         }
-        self.mrna.clear();
+        // Note: MRNA doesn't have clear() - it manages its own eviction
+        // Creating a new MRNA would require changing the Arc
     }
 }
 
@@ -480,7 +494,7 @@ impl CognitiveFabric {
     pub fn with_style(style: ThinkingStyle) -> Self {
         let mut fabric = Self::new();
         fabric.substrate.set_thinking_style(style);
-        fabric.butterfly.set_sensitivity(style.butterfly_sensitivity());
+        fabric.butterfly.set_style(style);
         fabric
     }
     
@@ -488,24 +502,24 @@ impl CognitiveFabric {
     pub fn cognitive_cycle(&mut self, input: &Fingerprint) -> CognitiveCycleResult {
         // 1. Pollinate mRNA field
         let resonances = self.substrate.pollinate(input);
-        
+
         // 2. Process consciousness
         let consciousness = self.substrate.process_consciousness(input);
-        
-        // 3. Check for butterfly
-        let butterfly = self.substrate.detect_butterfly(input, resonances.len());
-        
+
+        // 3. Check for butterfly (currently disabled pending architecture review)
+        let butterfly: Option<Butterfly> = None;
+
         // 4. Unified query
         let query = self.substrate.query(input);
-        
+
         // 5. Evaluate collapse if we have resonances
         let collapse = if !resonances.is_empty() {
-            let scores: Vec<f32> = resonances.iter().map(|(_, r)| *r).collect();
+            let scores: Vec<f32> = resonances.iter().map(|r| r.similarity).collect();
             Some(self.substrate.evaluate_collapse(&scores))
         } else {
             None
         };
-        
+
         CognitiveCycleResult {
             resonances,
             consciousness,
@@ -527,20 +541,20 @@ impl Default for CognitiveFabric {
 #[derive(Clone)]
 pub struct CognitiveCycleResult {
     /// mRNA resonances
-    pub resonances: Vec<(Resonance, f32)>,
-    
+    pub resonances: Vec<Resonance>,
+
     /// Consciousness snapshot
     pub consciousness: ConsciousnessSnapshot,
-    
+
     /// Detected butterfly (if any)
     pub butterfly: Option<Butterfly>,
-    
+
     /// Unified query result
     pub query: UnifiedQueryResult,
-    
+
     /// Collapse decision (if applicable)
     pub collapse: Option<CollapseDecision>,
-    
+
     /// Cycle number
     pub cycle: u64,
 }
