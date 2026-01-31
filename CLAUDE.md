@@ -83,18 +83,28 @@
 
 ### 📋 TODO (Next Session)
 
-**Priority 1: PR Cleanup**
-- [ ] Close PR #21 (HDR already on main)
-- [ ] Close stale PRs #22, #23
-
-**Priority 2: Wire HDR to RESONATE**
+**Priority 1: Wire HDR to RESONATE**
 - [ ] Connect hdr_cascade.rs to CogRedis RESONATE command
 - [ ] Add similarity search through BindSpace
 
-**Priority 3: Fluid Zone Lifecycle**
+**Priority 2: Fluid Zone Lifecycle**
 - [ ] Implement TTL expiration (`tick()`)
 - [ ] Implement `crystallize()` — promote fluid to node
 - [ ] Implement `evaporate()` — demote node to fluid
+
+**Priority 3: Harvest from PR #24 (old CAM index)**
+
+Populate surface compartments from old type constants:
+
+| Surface | Slots to Add | Source |
+|---------|--------------|--------|
+| 0x08 Concepts | 7 consciousness layers | LAYER_SUBSTRATE..LAYER_META |
+| 0x09 Qualia | 12 thinking styles | STYLE_ANALYTICAL..STYLE_SPATIAL |
+
+Harvest patterns:
+- [ ] Cypher traversal API (`match_edges_from`, `match_edges_to`, `all_edges_from`)
+- [ ] LBUG file format for persistence
+- [ ] COW append pattern for fluid zone versioning
 
 **Priority 4: Fix Test Failures**
 - [ ] Investigate 5 pre-existing failures
