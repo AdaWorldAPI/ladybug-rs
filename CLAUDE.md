@@ -73,20 +73,34 @@
 | #12 | Dependencies | Merge when needed |
 | #11 | Reconstructed files | ⚠️ AUDIT FIRST |
 
-### 🔴 Remaining Failures (5 tests - pre-existing)
+### 🔴 Remaining Failures (5 tests - need crystal features)
 
-These tests are **self-contained** but may need feature flags or investigation:
+These tests **require the SPO+qualia crystal** to be compiled in:
 
-| Test | File | Likely Issue |
-|------|------|--------------|
-| `collapse_gate` | src/cognitive/collapse_gate.rs | Triangle/GateState logic |
-| `causal_ops` | src/learning/causal_ops.rs | CausalEngine/CausalSearch |
-| `quantum_ops` | src/learning/quantum_ops.rs | TreeAddr/quantum operators |
-| `cypher` | src/storage/cypher.rs | Cypher parser/transpiler |
-| `causal` | src/search/causal.rs | Causal search (3 rungs) |
+```bash
+# WITHOUT crystal features = 5 failures
+cargo test
 
-**Note:** The 5×5×5 crystal (`context_crystal.rs`) is gated behind `--features spo`.
-Run with: `cargo test --features "spo,quantum"`
+# WITH crystal features = should pass
+cargo test --features "spo,quantum,codebook"
+```
+
+| Test | Feature Required | What It Tests |
+|------|------------------|---------------|
+| `collapse_gate` | `quantum` | Triangle collapse (consciousness gates) |
+| `causal_ops` | `spo` | CausalEngine (Pearl's 3 rungs over SPO) |
+| `quantum_ops` | `quantum` | TreeAddr (256-way branching in crystal) |
+| `cypher` | `spo` | Cypher→SPO triple translation |
+| `causal` | `spo,quantum` | SEE/DO/IMAGINE over crystal substrate |
+
+**The 5×5×5 SPO+qualia crystal** (`src/extensions/spo/`, `context_crystal.rs`) is the substrate these tests operate on. Without `--features spo,quantum`, the crystal types don't exist.
+
+**Fix:** Always test with crystal features:
+```bash
+cargo test --all-features
+# or specifically:
+cargo test --features "spo,quantum,codebook,hologram"
+```
 
 ### 📋 TODO (Next Session)
 
@@ -113,8 +127,8 @@ Harvest patterns:
 - [ ] LBUG file format for persistence
 - [ ] COW append pattern for fluid zone versioning
 
-**Priority 4: Fix Test Failures**
-- [ ] Investigate 5 pre-existing failures
+**Priority 4: Verify All Tests Pass**
+- [ ] Run `cargo test --all-features` to confirm crystal tests pass
 - [ ] Add persistence layer (mmap)
 
 **Recent Commits** (PR #26):
