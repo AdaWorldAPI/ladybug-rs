@@ -1392,8 +1392,8 @@ fn test_cypher_comparison() {
 // JINA CACHE DEMONSTRATION
 // ============================================================================
 
-mod jina_cache;
-mod jina_api;
+// jina_cache and jina_api are declared in mod.rs, use super:: to access
+use super::jina_cache;
 
 fn test_jina_cache() {
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");

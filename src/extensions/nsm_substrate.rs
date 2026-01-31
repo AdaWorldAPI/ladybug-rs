@@ -524,7 +524,11 @@ impl MetacognitiveSubstrate {
     pub fn new() -> Self {
         Self {
             codebook: NsmCodebook::new(),
-            crystal: [[[const { Fingerprint::zero() }; 5]; 5]; 5],
+            crystal: core::array::from_fn(|_| {
+                core::array::from_fn(|_| {
+                    core::array::from_fn(|_| Fingerprint::zero())
+                })
+            }),
             concepts: HashMap::new(),
             tick: 0,
         }

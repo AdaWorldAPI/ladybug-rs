@@ -111,12 +111,12 @@ impl CrystalAxes {
         if bytes.len() < 3750 {
             return None;
         }
-        
+
         let chunk_size = 10000 / 8;
         Some(Self {
-            temporal: Fingerprint::from_bytes(&bytes[0..chunk_size])?,
-            structural: Fingerprint::from_bytes(&bytes[chunk_size..chunk_size*2])?,
-            depth: Fingerprint::from_bytes(&bytes[chunk_size*2..chunk_size*3])?,
+            temporal: Fingerprint::from_bytes(&bytes[0..chunk_size]).ok()?,
+            structural: Fingerprint::from_bytes(&bytes[chunk_size..chunk_size*2]).ok()?,
+            depth: Fingerprint::from_bytes(&bytes[chunk_size*2..chunk_size*3]).ok()?,
         })
     }
 }
@@ -178,7 +178,11 @@ impl CrystalLM {
     /// Train from (input, output) text pairs
     pub fn train(&mut self, pairs: &[(String, String)]) {
         // Phase 1: Build 5×5×5 crystal from training data
-        let mut crystal = [[[Vec::<Fingerprint>::new(); 5]; 5]; 5];
+        let mut crystal: [[[Vec<Fingerprint>; 5]; 5]; 5] = core::array::from_fn(|_| {
+            core::array::from_fn(|_| {
+                core::array::from_fn(|_| Vec::new())
+            })
+        });
         
         for (input, output) in pairs {
             // Encode with cleaning
@@ -199,7 +203,11 @@ impl CrystalLM {
         }
         
         // Phase 2: Bundle each cell (noise elimination via majority voting)
-        let mut bundled_crystal = [[[Fingerprint::zero(); 5]; 5]; 5];
+        let mut bundled_crystal: [[[Fingerprint; 5]; 5]; 5] = core::array::from_fn(|_| {
+            core::array::from_fn(|_| {
+                core::array::from_fn(|_| Fingerprint::zero())
+            })
+        });
         
         for t in 0..5 {
             for s in 0..5 {

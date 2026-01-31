@@ -105,7 +105,7 @@ pub struct KeywordWeights {
     momentum: f32,
     
     /// Previous gradients (for momentum)
-    prev_gradients: HashMap<String, Vec<f32>>,
+    prev_gradients: HashMap<String, f32>,
 }
 
 impl Default for KeywordWeights {

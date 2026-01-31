@@ -177,8 +177,12 @@ impl Default for ContextCrystal {
 
 impl ContextCrystal {
     pub fn new() -> Self {
-        // Initialize all cells to zero
-        let cells = Box::new([[[const { Fingerprint::zero() }; GRID]; GRID]; GRID]);
+        // Initialize all cells to zero using from_fn (Fingerprint doesn't impl Copy)
+        let cells = Box::new(core::array::from_fn(|_| {
+            core::array::from_fn(|_| {
+                core::array::from_fn(|_| Fingerprint::zero())
+            })
+        }));
         Self {
             cells,
             counts: [[[0u32; GRID]; GRID]; GRID],
