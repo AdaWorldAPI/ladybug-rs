@@ -43,6 +43,7 @@ pub mod corpus;
 pub mod service;
 pub mod substrate;
 pub mod redis_adapter;
+pub mod lance_zero_copy;
 
 #[cfg(feature = "lancedb")]
 pub use lance::{LanceStore, NodeRecord, EdgeRecord};
@@ -214,6 +215,16 @@ pub use substrate::{
     SubstrateStats,
     // Main interface
     Substrate,
+};
+
+// Lance zero-copy exports (unified address space)
+pub use lance_zero_copy::{
+    // Zero-copy view into Lance
+    LanceView,
+    // Temperature tracking for bubbling
+    Temperature, ScentAwareness,
+    // Bubbling operations
+    BubbleResult, ZeroCopyBubbler,
 };
 
 // Redis Adapter exports (Redis syntax interface)
