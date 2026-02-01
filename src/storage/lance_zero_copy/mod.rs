@@ -2340,6 +2340,11 @@ impl SparseFingerprint {
     pub fn resolution(&self) -> usize {
         self.total_words * 64
     }
+
+    /// Total words in this fingerprint
+    pub fn total_words(&self) -> usize {
+        self.total_words
+    }
 }
 
 /// Create sparse fingerprint at different resolutions
