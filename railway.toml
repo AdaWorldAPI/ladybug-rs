@@ -1,18 +1,18 @@
-# Railway Configuration for Ladybug-RS
-# https://docs.railway.app/reference/config-as-code
+# =============================================================================
+# railway.toml — LadybugDB Railway Configuration
+# =============================================================================
+# Cognitive database: SQL + Cypher + Vector + Hamming + NARS
+# ~700KB binary, AVX-512 auto-detected, zero Python deps
+# =============================================================================
 
 [build]
-builder = "dockerfile"
+builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
-[build.buildArgs]
-TARGET_CPU = "skylake-avx512"
-FEATURES = "simd,parallel,codebook,hologram,quantum"
-
 [deploy]
-numReplicas = 1
-startCommand = "./ladybug-server"
+startCommand = "ladybug-start"
 healthcheckPath = "/health"
-healthcheckTimeout = 30
+healthcheckTimeout = 10
+numReplicas = 1
 restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 3
+restartPolicyMaxRetries = 5

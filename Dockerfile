@@ -1,124 +1,107 @@
 # =============================================================================
-# Ladybug-RS Multi-Stage Dockerfile
+# LadybugDB — Docker Multi-Stage Build (v2)
 # =============================================================================
-# Build optimized for Railway (AVX-512) or fallback (AVX2/generic)
+# Triple-binary: AVX-512, AVX-2, and generic x86-64
+# Runtime auto-selects best binary via /proc/cpuinfo
 #
-# Build arguments:
-#   --build-arg TARGET_CPU=native    (auto-detect, default)
-#   --build-arg TARGET_CPU=skylake   (AVX-512)
-#   --build-arg TARGET_CPU=haswell   (AVX2)
-#   --build-arg TARGET_CPU=x86-64    (generic fallback)
+# BUILD:
+#   docker build -t ladybugdb .
 #
-# Usage:
-#   docker build -t ladybug-rs .
-#   docker build -t ladybug-rs --build-arg TARGET_CPU=skylake .
+# RUN:
+#   docker run -p 8080:8080 ladybugdb
+#   docker run -p 8080:8080 -e LADYBUG_DATA_DIR=/data -v ./data:/data ladybugdb
+#
+# RAILWAY:
+#   Auto-detects via RAILWAY_* env vars → binds 0.0.0.0:$PORT
+#
+# CLAUDE CODE:
+#   Auto-detects via CLAUDE_* env vars → binds 127.0.0.1:5432
 # =============================================================================
 
-# -----------------------------------------------------------------------------
-# Stage 1: Builder
-# -----------------------------------------------------------------------------
-FROM rust:1.75-bookworm AS builder
+# =============================================================================
+# STAGE 1: Builder — compile three binaries
+# =============================================================================
+FROM rust:1.83-slim-bookworm AS builder
 
-# Build arguments
-ARG TARGET_CPU=native
-ARG FEATURES="simd,parallel,codebook,hologram,quantum"
-
-# Install build dependencies
 RUN apt-get update && apt-get install -y \
-    cmake \
-    pkg-config \
-    libssl-dev \
+    pkg-config libssl-dev cmake protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
-# Set up workspace
-WORKDIR /app
+WORKDIR /build
 
-# Copy Cargo files first for dependency caching
+# --- Dependency caching ---
 COPY Cargo.toml Cargo.lock* ./
-
-# Create dummy main for dependency caching
 RUN mkdir -p src/bin && \
-    echo 'fn main() { println!("dummy"); }' > src/bin/server.rs && \
-    echo 'pub fn dummy() {}' > src/lib.rs
+    echo "fn main() {}" > src/bin/server.rs && \
+    echo "pub fn dummy() {}" > src/lib.rs && \
+    cargo fetch 2>/dev/null || true
 
-# Pre-build dependencies (cached layer)
-RUN RUSTFLAGS="-C target-cpu=${TARGET_CPU}" \
-    cargo build --release --bin ladybug-server --features "${FEATURES}" 2>/dev/null || true
-
-# Remove dummy files
-RUN rm -rf src target/release/.fingerprint/ladybug* target/release/deps/ladybug*
-
-# Copy actual source
+# --- Full source ---
 COPY . .
 
-# Build with optimizations
-RUN RUSTFLAGS="-C target-cpu=${TARGET_CPU} -C opt-level=3 -C lto=fat" \
-    cargo build --release --bin ladybug-server --features "${FEATURES}"
+# --- AVX-512 binary (Railway, cloud servers) ---
+RUN RUSTFLAGS="-C target-cpu=x86-64-v4 -C link-arg=-s" \
+    cargo build --release --bin ladybug-server && \
+    cp target/release/ladybug-server /build/ladybug-avx512 && \
+    cargo clean -p ladybug
 
-# Strip binary for smaller size
-RUN strip target/release/ladybug-server
+# --- AVX-2 binary (most modern x86-64) ---
+RUN RUSTFLAGS="-C target-cpu=x86-64-v3 -C link-arg=-s" \
+    cargo build --release --bin ladybug-server && \
+    cp target/release/ladybug-server /build/ladybug-avx2 && \
+    cargo clean -p ladybug
 
-# -----------------------------------------------------------------------------
-# Stage 2: Runtime (minimal)
-# -----------------------------------------------------------------------------
+# --- Generic binary (any x86-64) ---
+RUN RUSTFLAGS="-C link-arg=-s" \
+    cargo build --release --bin ladybug-server && \
+    cp target/release/ladybug-server /build/ladybug-generic
+
+# =============================================================================
+# STAGE 2: Runtime (minimal ~50MB)
+# =============================================================================
 FROM debian:bookworm-slim AS runtime
 
-# Install minimal runtime dependencies
-RUN apt-get update && apt-get install -y \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl procps \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -m -s /bin/bash ladybug \
+    && mkdir -p /data && chown ladybug:ladybug /data
 
-# Create non-root user
-RUN useradd -r -u 1000 -s /bin/false ladybug
+# Copy all three binaries
+COPY --from=builder /build/ladybug-avx512 /usr/local/bin/
+COPY --from=builder /build/ladybug-avx2   /usr/local/bin/
+COPY --from=builder /build/ladybug-generic /usr/local/bin/
 
-WORKDIR /app
+# Copy docs
+COPY --from=builder /build/README.md /opt/ladybug/
+COPY --from=builder /build/docs/ /opt/ladybug/docs/
 
-# Copy binary from builder
-COPY --from=builder /app/target/release/ladybug-server /app/ladybug-server
-
-# Set ownership
-RUN chown -R ladybug:ladybug /app
-
-USER ladybug
-
-# Default environment
-ENV HOST=0.0.0.0
-ENV PORT=8080
-ENV RUST_LOG=info
-
-# Expose port
-EXPOSE 8080
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
-
-# Run server
-CMD ["./ladybug-server"]
-
-# =============================================================================
-# Alternative: AVX-512 optimized build for Railway/Modern servers
-# =============================================================================
-FROM builder AS builder-avx512
-
-RUN RUSTFLAGS="-C target-cpu=skylake-avx512 -C opt-level=3 -C lto=fat -C target-feature=+avx512f,+avx512vl" \
-    cargo build --release --bin ladybug-server --features "simd,parallel,codebook,hologram,quantum" && \
-    strip target/release/ladybug-server
-
-FROM debian:bookworm-slim AS runtime-avx512
-
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
-RUN useradd -r -u 1000 -s /bin/false ladybug
-
-WORKDIR /app
-COPY --from=builder-avx512 /app/target/release/ladybug-server /app/ladybug-server
-RUN chown -R ladybug:ladybug /app
+# Auto-select entrypoint
+COPY <<'ENTRY' /usr/local/bin/ladybug-start
+#!/bin/sh
+set -e
+if grep -q "avx512f" /proc/cpuinfo 2>/dev/null; then
+  BIN=ladybug-avx512; LVL=AVX-512
+elif grep -q "avx2" /proc/cpuinfo 2>/dev/null; then
+  BIN=ladybug-avx2; LVL=AVX-2
+else
+  BIN=ladybug-generic; LVL=Generic
+fi
+echo "[ladybugdb] SIMD: ${LVL} → ${BIN}"
+exec "/usr/local/bin/${BIN}" "$@"
+ENTRY
+RUN chmod +x /usr/local/bin/ladybug-start
 
 USER ladybug
-ENV HOST=0.0.0.0
-ENV PORT=8080
-ENV RUST_LOG=info
+WORKDIR /home/ladybug
+
+ENV LADYBUG_HOST=0.0.0.0
+ENV LADYBUG_PORT=8080
+ENV LADYBUG_DATA_DIR=/data
+
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
-CMD ["./ladybug-server"]
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:${LADYBUG_PORT}/health || exit 1
+
+ENTRYPOINT ["ladybug-start"]
