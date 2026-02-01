@@ -1,0 +1,108 @@
+# =============================================================================
+# Docker Compose for Ladybug-RS Local Development
+# =============================================================================
+#
+# Usage:
+#   docker-compose up              # Start with default settings
+#   docker-compose up --build      # Rebuild and start
+#   docker-compose up -d           # Start in background
+#   docker-compose logs -f         # Follow logs
+#   docker-compose down            # Stop and remove
+#
+# Profiles:
+#   docker-compose --profile avx512 up    # Use AVX-512 optimized build
+#   docker-compose --profile dev up       # Development with hot reload
+# =============================================================================
+
+version: '3.9'
+
+services:
+  # ---------------------------------------------------------------------------
+  # Main Ladybug-RS Server (auto-detect CPU features)
+  # ---------------------------------------------------------------------------
+  ladybug:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        TARGET_CPU: native
+        FEATURES: "simd,parallel,codebook,hologram,quantum"
+    container_name: ladybug-rs
+    ports:
+      - "8080:8080"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8080
+      - RUST_LOG=info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+
+  # ---------------------------------------------------------------------------
+  # AVX-512 Optimized (for Railway/modern servers)
+  # ---------------------------------------------------------------------------
+  ladybug-avx512:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime-avx512
+    container_name: ladybug-rs-avx512
+    profiles:
+      - avx512
+    ports:
+      - "8080:8080"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8080
+      - RUST_LOG=info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Development mode (mount source for iteration)
+  # ---------------------------------------------------------------------------
+  ladybug-dev:
+    image: rust:1.75-bookworm
+    container_name: ladybug-rs-dev
+    profiles:
+      - dev
+    working_dir: /app
+    volumes:
+      - .:/app
+      - cargo-cache:/usr/local/cargo/registry
+      - target-cache:/app/target
+    ports:
+      - "8080:8080"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8080
+      - RUST_LOG=debug
+      - CARGO_TARGET_DIR=/app/target
+    command: >
+      bash -c "
+        cargo build --release --bin ladybug-server --features 'simd,parallel,codebook,hologram,quantum' &&
+        ./target/release/ladybug-server
+      "
+    restart: unless-stopped
+
+volumes:
+  cargo-cache:
+  target-cache:
+
+networks:
+  default:
+    name: ladybug-network

@@ -1,0 +1,14 @@
+# Ladybug-RS Python SDK Dependencies
+#
+# Core (no external dependencies needed - uses stdlib urllib)
+# The SDK uses only Python standard library!
+
+# Optional: For async support
+# aiohttp>=3.8.0
+
+# Optional: For better HTTP handling
+# requests>=2.28.0
+
+# Optional: Type hints validation
+# mypy>=1.0.0
+# types-requests>=2.28.0
