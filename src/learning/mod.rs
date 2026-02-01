@@ -35,6 +35,7 @@ pub mod cognitive_frameworks;
 pub mod quantum_ops;
 pub mod rl_ops;
 pub mod causal_ops;
+pub mod cognitive_styles;
 
 pub use moment::{Moment, MomentType, Qualia, MomentBuilder};
 pub use session::{LearningSession, SessionState, SessionPhase};
@@ -80,4 +81,16 @@ pub use rl_ops::{
 };
 pub use causal_ops::{
     CausalOp, CausalEngine, GraphEdge, CausalEdgeType,
+};
+
+// Cognitive styles with RL-based adaptation
+pub use cognitive_styles::{
+    // Core types
+    Operator, Atom, StyleFingerprint, StyleOrigin,
+    // Style definition
+    CognitiveStyle, create_base_styles,
+    // RL components
+    TaskContext, TaskOutcome, RLConfig,
+    // Selector (main interface)
+    StyleSelector, StyleSelectorStats,
 };
