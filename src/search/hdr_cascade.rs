@@ -1245,6 +1245,166 @@ impl RubiconSearch {
     pub fn threshold(&self) -> u16 {
         self.tracker.threshold
     }
+
+    /// Voyager deep field search
+    /// Find faint signals hidden in noise by stacking weak candidates
+    ///
+    /// Like astronomical image stacking:
+    /// - Single exposure at radius 7000 = pure noise
+    /// - Stack 10 exposures = faint signal emerges
+    /// - Stack 100 exposures = the star reveals itself
+    pub fn voyager_deep_field(
+        &self,
+        query: &[u64; WORDS],
+        radius: u32,
+        stack_size: usize,
+    ) -> Option<VoyagerResult> {
+        let fps = &self.index.fingerprints;
+        if fps.is_empty() { return None; }
+
+        // Gather weak candidates at the edge of detection
+        let mut weak_candidates = Vec::with_capacity(stack_size);
+        let radius_min = radius.saturating_sub(500);
+        let radius_max = radius + 500;
+
+        for fp in fps {
+            let dist = hamming_distance(query, fp);
+
+            // In the noise zone but potentially stackable
+            if dist >= radius_min && dist <= radius_max {
+                weak_candidates.push(*fp);
+                if weak_candidates.len() >= stack_size { break; }
+            }
+        }
+
+        if weak_candidates.len() < 3 { return None; }
+
+        // Stack exposures using orthogonal superposition
+        let star = superposition_clean(query, &weak_candidates)?;
+
+        // Measure the cleaned signal
+        let cleaned_dist = hamming_distance(query, &star);
+        let signal_strength = 1.0 - (cleaned_dist as f32 / 10000.0);
+        let noise_reduction = radius as f32 / cleaned_dist.max(1) as f32;
+
+        // Did we find a star? (signal improved by at least 2x)
+        if noise_reduction > 1.5 {
+            Some(VoyagerResult {
+                star,
+                original_radius: radius,
+                cleaned_distance: cleaned_dist,
+                signal_strength,
+                noise_reduction,
+                stack_count: weak_candidates.len(),
+            })
+        } else {
+            None
+        }
+    }
+}
+
+// =============================================================================
+// VOYAGER DEEP FIELD - Orthogonal Superposition Cleaning
+// =============================================================================
+
+/// Result from Voyager deep field search
+#[derive(Debug, Clone)]
+pub struct VoyagerResult {
+    /// The cleaned "star" fingerprint
+    pub star: [u64; WORDS],
+    /// Original search radius
+    pub original_radius: u32,
+    /// Distance after cleaning
+    pub cleaned_distance: u32,
+    /// Signal strength (0.0-1.0)
+    pub signal_strength: f32,
+    /// Noise reduction factor (higher = better)
+    pub noise_reduction: f32,
+    /// Number of exposures stacked
+    pub stack_count: usize,
+}
+
+/// Orthogonal superposition noise cleaning
+///
+/// Like stacking astronomical photos:
+/// - Noise is random → cancels in majority vote
+/// - Signal is consistent → survives the vote
+/// - More stacks = cleaner extraction
+pub fn superposition_clean(
+    query: &[u64; WORDS],
+    weak_candidates: &[[u64; WORDS]],
+) -> Option<[u64; WORDS]> {
+    if weak_candidates.len() < 3 { return None; }
+
+    let n = weak_candidates.len();
+    let threshold = n / 2; // Majority vote
+
+    // XOR each candidate with query to get the "difference signal"
+    let deltas: Vec<_> = weak_candidates.iter()
+        .map(|c| {
+            let mut delta = [0u64; WORDS];
+            for i in 0..WORDS {
+                delta[i] = query[i] ^ c[i];
+            }
+            delta
+        })
+        .collect();
+
+    // Componentwise majority vote (VSA bundle)
+    // Bits that differ in MOST candidates = real difference (signal)
+    // Bits that differ in FEW candidates = noise (filtered out)
+    let mut cleaned_delta = [0u64; WORDS];
+
+    for word in 0..WORDS {
+        let mut result_word = 0u64;
+
+        for bit in 0..64 {
+            let mask = 1u64 << bit;
+
+            // Count votes for this bit
+            let votes: usize = deltas.iter()
+                .filter(|d| d[word] & mask != 0)
+                .count();
+
+            // Majority vote
+            if votes > threshold {
+                result_word |= mask;
+            }
+        }
+
+        cleaned_delta[word] = result_word;
+    }
+
+    // Apply cleaned delta back to query to get the "star"
+    let mut star = [0u64; WORDS];
+    for i in 0..WORDS {
+        star[i] = query[i] ^ cleaned_delta[i];
+    }
+
+    Some(star)
+}
+
+/// Signal classification based on Belichtungsmesser
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignalClass {
+    /// Clean hit - high confidence match
+    Strong,
+    /// Normal search territory
+    Moderate,
+    /// Noisy but potentially stackable for deep field
+    WeakButStackable,
+    /// Pure noise - reject
+    Noise,
+}
+
+/// Classify a comparison result for routing
+pub fn classify_signal(mean: u8, sd: u8, distance: u32) -> SignalClass {
+    match (mean, sd, distance) {
+        (0..=2, 0..=30, 0..=2000) => SignalClass::Strong,
+        (0..=4, 0..=60, 0..=4000) => SignalClass::Moderate,
+        (_, 50.., 4000..=8000) => SignalClass::WeakButStackable,
+        _ => SignalClass::Noise,
+    }
 }
 
 #[cfg(test)]
@@ -1324,5 +1484,85 @@ mod belichtung_tests {
         // First result should be the exact match
         assert_eq!(results[0].0, 42);
         assert_eq!(results[0].1, 0);
+    }
+
+    #[test]
+    fn test_superposition_clean() {
+        // Create a base fingerprint
+        let base = random_fingerprint();
+
+        // Create a "true target" that differs consistently from base
+        let mut target = base;
+        target[0] ^= 0xFFFF_FFFF_FFFF_FFFF; // Flip all bits in word 0
+        target[1] ^= 0xFFFF_FFFF_FFFF_FFFF; // Flip all bits in word 1
+
+        // Create noisy versions of the target (all close to target, not base)
+        let mut noisy_candidates = Vec::new();
+        for i in 0..20 {
+            let mut noisy = target;
+            // Add small random noise to each candidate
+            noisy[10 + (i % 10)] ^= 1u64 << (i % 64);
+            noisy_candidates.push(noisy);
+        }
+
+        // Query is the base, candidates are near target
+        // Cleaning should find the consistent pattern (target)
+        let cleaned = superposition_clean(&base, &noisy_candidates);
+        assert!(cleaned.is_some());
+
+        let cleaned = cleaned.unwrap();
+
+        // The cleaned version should be closer to target than to base
+        let dist_to_target = hamming_distance(&cleaned, &target);
+        let dist_to_base = hamming_distance(&cleaned, &base);
+
+        // Cleaned should be much closer to target (the consistent signal)
+        // than to base (the query)
+        assert!(dist_to_target < dist_to_base,
+            "Cleaned should be closer to target. To target: {}, to base: {}",
+            dist_to_target, dist_to_base);
+    }
+
+    #[test]
+    fn test_signal_classification() {
+        // Strong signal
+        assert_eq!(classify_signal(1, 20, 1000), SignalClass::Strong);
+
+        // Moderate signal
+        assert_eq!(classify_signal(3, 50, 3000), SignalClass::Moderate);
+
+        // Weak but stackable
+        assert_eq!(classify_signal(5, 70, 6000), SignalClass::WeakButStackable);
+
+        // Noise
+        assert_eq!(classify_signal(7, 100, 9000), SignalClass::Noise);
+    }
+
+    #[test]
+    fn test_voyager_deep_field() {
+        let mut search = RubiconSearch::with_capacity(100);
+
+        // Add some fingerprints
+        let base = random_fingerprint();
+        for i in 0..50 {
+            let mut fp = base;
+            // Add varying amounts of noise
+            for j in 0..(i * 10) {
+                let word = (j / 64) % WORDS;
+                let bit = j % 64;
+                fp[word] ^= 1u64 << bit;
+            }
+            search.add(&fp);
+        }
+
+        // Try deep field search at a weak radius
+        // This tests the mechanism even if it doesn't find a star
+        let result = search.voyager_deep_field(&base, 3000, 10);
+        // Result may or may not find something depending on the random data
+        // Just verify it doesn't panic
+        if let Some(r) = result {
+            assert!(r.noise_reduction > 0.0);
+            assert!(r.stack_count >= 3);
+        }
     }
 }

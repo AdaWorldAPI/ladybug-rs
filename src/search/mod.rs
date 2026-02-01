@@ -84,6 +84,12 @@ pub use hdr_cascade::{
     belichtung_meter,
     QualityTracker,
     RubiconSearch,
+
+    // Voyager deep field (orthogonal superposition cleaning)
+    superposition_clean,
+    VoyagerResult,
+    SignalClass,
+    classify_signal,
 };
 
 pub use causal::{
