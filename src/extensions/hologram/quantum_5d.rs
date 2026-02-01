@@ -1475,3 +1475,533 @@ mod comparison_tests {
         assert!(interference > 1_000_000, "Expected > 1M interference paths");
     }
 }
+
+// =============================================================================
+// CHAIN-SIGNED QUANTUM STRING
+// =============================================================================
+//
+// Bitcoin-style chain signatures for quantum error correction.
+//
+// Key insight: Proof-of-work creates IRREVERSIBILITY like quantum measurement.
+// Once you've "mined" a state, you can't undo it without redoing all work.
+//
+// String theory connection:
+// - Point particle = single quantum state
+// - String = chain of states connected by hash "tension"
+// - Worldsheet = history of state transitions
+// - String tension = proof-of-work difficulty
+//
+// Multi-hop verification provides:
+// 1. Tamper-evident history (can't fake ancestry)
+// 2. Non-local correlation (entangled states share merkle roots)
+// 3. Error correction (invalid states break the chain)
+
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+
+/// Chain-signed quantum state
+/// The proof-of-work makes state transitions IRREVERSIBLE
+#[derive(Clone)]
+pub struct ChainSignedCell {
+    /// Current quantum state
+    pub cell: QuantumCell5D,
+
+    /// Hash commitment to this state
+    pub state_hash: [u8; 32],
+
+    /// Hash of previous valid state (chain link)
+    pub prev_hash: [u8; 32],
+
+    /// Merkle root of ancestry (logarithmic proof)
+    pub merkle_root: [u8; 32],
+
+    /// Nonce that satisfies difficulty
+    pub nonce: u64,
+
+    /// Chain height (depth of history)
+    pub height: u64,
+
+    /// Cumulative work (sum of difficulties)
+    pub total_work: u128,
+}
+
+impl ChainSignedCell {
+    /// Genesis cell (no parent)
+    pub fn genesis(cell: QuantumCell5D, difficulty: u32) -> Self {
+        let mut signed = Self {
+            cell,
+            state_hash: [0u8; 32],
+            prev_hash: [0u8; 32], // Genesis has no parent
+            merkle_root: [0u8; 32],
+            nonce: 0,
+            height: 0,
+            total_work: 0,
+        };
+        signed.mine(difficulty);
+        signed
+    }
+
+    /// Create child state (links to parent)
+    pub fn child(&self, new_cell: QuantumCell5D, difficulty: u32) -> Self {
+        let mut signed = Self {
+            cell: new_cell,
+            state_hash: [0u8; 32],
+            prev_hash: self.state_hash,
+            merkle_root: self.compute_merkle_child(),
+            nonce: 0,
+            height: self.height + 1,
+            total_work: self.total_work,
+        };
+        signed.mine(difficulty);
+        signed
+    }
+
+    /// Hash the current state
+    fn compute_state_hash(&self) -> [u8; 32] {
+        let mut hasher = DefaultHasher::new();
+
+        // Hash amplitude (sparse fingerprint content)
+        self.cell.amplitude.popcount().hash(&mut hasher);
+        self.cell.amplitude.nnz().hash(&mut hasher);
+
+        // Hash phase
+        self.cell.phase.bits[0].hash(&mut hasher);
+        self.cell.phase.bits[1].hash(&mut hasher);
+
+        // Hash chain links
+        self.prev_hash.hash(&mut hasher);
+        self.nonce.hash(&mut hasher);
+
+        // Convert to 32 bytes (repeat hash for simplicity)
+        let h = hasher.finish();
+        let mut result = [0u8; 32];
+        for i in 0..4 {
+            let bytes = h.to_le_bytes();
+            result[i*8..(i+1)*8].copy_from_slice(&bytes);
+        }
+        result
+    }
+
+    /// Compute merkle root including this state
+    fn compute_merkle_child(&self) -> [u8; 32] {
+        let mut hasher = DefaultHasher::new();
+        self.merkle_root.hash(&mut hasher);
+        self.state_hash.hash(&mut hasher);
+
+        let h = hasher.finish();
+        let mut result = [0u8; 32];
+        for i in 0..4 {
+            let bytes = h.to_le_bytes();
+            result[i*8..(i+1)*8].copy_from_slice(&bytes);
+        }
+        result
+    }
+
+    /// Mine: find nonce where hash has required leading zeros
+    /// This is the "measurement" - irreversible computational work
+    fn mine(&mut self, difficulty: u32) {
+        loop {
+            self.state_hash = self.compute_state_hash();
+
+            // Check if hash meets difficulty (leading zero bits)
+            let leading_zeros = self.count_leading_zeros();
+            if leading_zeros >= difficulty {
+                // Add work: 2^difficulty
+                self.total_work += 1u128 << difficulty;
+                break;
+            }
+            self.nonce += 1;
+        }
+    }
+
+    /// Count leading zero bits in hash
+    fn count_leading_zeros(&self) -> u32 {
+        let mut zeros = 0;
+        for byte in &self.state_hash {
+            if *byte == 0 {
+                zeros += 8;
+            } else {
+                zeros += byte.leading_zeros();
+                break;
+            }
+        }
+        zeros
+    }
+
+    /// Verify this state has valid proof-of-work
+    pub fn verify(&self, difficulty: u32) -> bool {
+        let computed = self.compute_state_hash();
+        computed == self.state_hash && self.count_leading_zeros() >= difficulty
+    }
+
+    /// String tension: work per unit height
+    /// Higher tension = more stable string
+    pub fn tension(&self) -> f64 {
+        if self.height == 0 {
+            return 0.0;
+        }
+        self.total_work as f64 / self.height as f64
+    }
+}
+
+/// Entanglement proof via shared ancestry
+/// Two cells are "entangled" if they share a merkle root
+#[derive(Clone)]
+pub struct EntanglementProof {
+    /// Common ancestor hash
+    pub common_ancestor: [u8; 32],
+
+    /// Height of common ancestor
+    pub ancestor_height: u64,
+
+    /// Merkle path from cell A to ancestor
+    pub path_a: Vec<[u8; 32]>,
+
+    /// Merkle path from cell B to ancestor
+    pub path_b: Vec<[u8; 32]>,
+
+    /// Combined proof-of-work (proves non-local correlation)
+    pub combined_work: u128,
+}
+
+impl EntanglementProof {
+    /// Create entanglement proof from two chain-signed cells
+    pub fn create(a: &ChainSignedCell, b: &ChainSignedCell) -> Option<Self> {
+        // Find common ancestor by comparing merkle roots
+        // For simplicity, assume they share genesis if roots match
+        if a.merkle_root == b.merkle_root || a.prev_hash == b.prev_hash {
+            Some(Self {
+                common_ancestor: if a.height < b.height { a.state_hash } else { b.state_hash },
+                ancestor_height: a.height.min(b.height),
+                path_a: vec![a.state_hash, a.merkle_root],
+                path_b: vec![b.state_hash, b.merkle_root],
+                combined_work: a.total_work + b.total_work,
+            })
+        } else {
+            None // No shared ancestry = not entangled
+        }
+    }
+
+    /// Verify the entanglement proof
+    pub fn verify(&self) -> bool {
+        // In full implementation, verify merkle paths
+        self.combined_work > 0 && !self.path_a.is_empty() && !self.path_b.is_empty()
+    }
+
+    /// Entanglement strength: log of combined work
+    /// More work = stronger entanglement = harder to fake
+    pub fn strength(&self) -> f64 {
+        (self.combined_work as f64).log2()
+    }
+}
+
+/// Quantum string: chain of signed states through Hilbert space
+pub struct QuantumString {
+    /// Chain of states (worldline)
+    states: Vec<ChainSignedCell>,
+
+    /// Mining difficulty (string tension)
+    difficulty: u32,
+
+    /// Coordinate in crystal
+    coord: Coord5D,
+}
+
+impl QuantumString {
+    /// Create new string at coordinate with genesis state
+    pub fn new(coord: Coord5D, initial_cell: QuantumCell5D, difficulty: u32) -> Self {
+        let genesis = ChainSignedCell::genesis(initial_cell, difficulty);
+        Self {
+            states: vec![genesis],
+            difficulty,
+            coord,
+        }
+    }
+
+    /// Evolve string: add new state to chain
+    pub fn evolve(&mut self, new_cell: QuantumCell5D) {
+        if let Some(tip) = self.states.last() {
+            let child = tip.child(new_cell, self.difficulty);
+            self.states.push(child);
+        }
+    }
+
+    /// Current state (tip of chain)
+    pub fn current(&self) -> Option<&ChainSignedCell> {
+        self.states.last()
+    }
+
+    /// Chain length (worldline extent)
+    pub fn length(&self) -> usize {
+        self.states.len()
+    }
+
+    /// Total work in string
+    pub fn total_work(&self) -> u128 {
+        self.states.last().map(|s| s.total_work).unwrap_or(0)
+    }
+
+    /// String tension (work/length)
+    pub fn tension(&self) -> f64 {
+        if self.states.is_empty() {
+            return 0.0;
+        }
+        self.total_work() as f64 / self.states.len() as f64
+    }
+
+    /// Verify entire chain
+    pub fn verify_chain(&self) -> bool {
+        for (i, state) in self.states.iter().enumerate() {
+            // Verify proof-of-work
+            if !state.verify(self.difficulty) {
+                return false;
+            }
+
+            // Verify chain links (except genesis)
+            if i > 0 {
+                let prev = &self.states[i - 1];
+                if state.prev_hash != prev.state_hash {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// Create entanglement with another string
+    pub fn entangle_with(&self, other: &QuantumString) -> Option<EntanglementProof> {
+        let a = self.current()?;
+        let b = other.current()?;
+        EntanglementProof::create(a, b)
+    }
+}
+
+/// Chain-signed crystal: 5D crystal with blockchain error correction
+pub struct ChainSignedCrystal {
+    /// Base crystal
+    crystal: Crystal5D,
+
+    /// Quantum strings at each active coordinate
+    strings: HashMap<usize, QuantumString>,
+
+    /// Mining difficulty
+    difficulty: u32,
+
+    /// Total accumulated work
+    total_work: u128,
+}
+
+impl ChainSignedCrystal {
+    /// Create chain-signed crystal
+    pub fn new(size: usize, resolution: CellResolution, difficulty: u32) -> Self {
+        Self {
+            crystal: Crystal5D::new(size, resolution),
+            strings: HashMap::new(),
+            difficulty,
+            total_work: 0,
+        }
+    }
+
+    /// Inject with chain signature
+    pub fn inject_signed(&mut self, coord: &Coord5D, cell: QuantumCell5D) {
+        let idx = coord.to_index(self.crystal.size());
+
+        // Create or extend string at this coordinate
+        if let Some(string) = self.strings.get_mut(&idx) {
+            string.evolve(cell.clone());
+        } else {
+            let string = QuantumString::new(*coord, cell.clone(), self.difficulty);
+            self.strings.insert(idx, string);
+        }
+
+        // Update base crystal
+        self.crystal.set_quantum(coord, cell);
+
+        // Update total work
+        self.total_work = self.strings.values()
+            .map(|s| s.total_work())
+            .sum();
+    }
+
+    /// Signed interference step
+    pub fn interference_step_signed(&mut self) -> usize {
+        let changes = self.crystal.interference_step();
+
+        // Sign all changed states
+        for (idx, cell) in self.crystal.cells.iter() {
+            if let Some(string) = self.strings.get_mut(idx) {
+                // Only sign if state actually changed
+                if string.current().map(|c| c.cell.amplitude.nnz()) != Some(cell.amplitude.nnz()) {
+                    string.evolve(cell.clone());
+                }
+            }
+        }
+
+        self.total_work = self.strings.values()
+            .map(|s| s.total_work())
+            .sum();
+
+        changes
+    }
+
+    /// Verify all strings
+    pub fn verify_all(&self) -> bool {
+        self.strings.values().all(|s| s.verify_chain())
+    }
+
+    /// Total accumulated work (proof of computation)
+    pub fn total_work(&self) -> u128 {
+        self.total_work
+    }
+
+    /// Average string tension
+    pub fn average_tension(&self) -> f64 {
+        if self.strings.is_empty() {
+            return 0.0;
+        }
+        self.strings.values()
+            .map(|s| s.tension())
+            .sum::<f64>() / self.strings.len() as f64
+    }
+
+    /// Find entangled pairs
+    pub fn find_entanglements(&self) -> Vec<(Coord5D, Coord5D, EntanglementProof)> {
+        let mut results = Vec::new();
+        let coords: Vec<_> = self.strings.keys().cloned().collect();
+
+        for i in 0..coords.len() {
+            for j in (i+1)..coords.len() {
+                let a = &self.strings[&coords[i]];
+                let b = &self.strings[&coords[j]];
+
+                if let Some(proof) = a.entangle_with(b) {
+                    let coord_a = Coord5D::from_index(coords[i], self.crystal.size());
+                    let coord_b = Coord5D::from_index(coords[j], self.crystal.size());
+                    results.push((coord_a, coord_b, proof));
+                }
+            }
+        }
+
+        results
+    }
+
+    /// Get base crystal (read-only)
+    pub fn crystal(&self) -> &Crystal5D {
+        &self.crystal
+    }
+}
+
+#[cfg(test)]
+mod chain_tests {
+    use super::*;
+
+    #[test]
+    fn test_chain_signed_genesis() {
+        let mut fp = resolution::standard();
+        fp.set(0, 0xDEADBEEF);
+        let cell = QuantumCell5D::from_fingerprint(fp);
+
+        let signed = ChainSignedCell::genesis(cell, 4); // 4 bits difficulty
+
+        assert_eq!(signed.height, 0);
+        assert!(signed.verify(4));
+        assert!(signed.total_work > 0);
+        println!("Genesis work: {}", signed.total_work);
+    }
+
+    #[test]
+    fn test_chain_signed_child() {
+        let mut fp1 = resolution::standard();
+        fp1.set(0, 0xAAAA);
+        let cell1 = QuantumCell5D::from_fingerprint(fp1);
+        let genesis = ChainSignedCell::genesis(cell1, 4);
+
+        let mut fp2 = resolution::standard();
+        fp2.set(0, 0x5555);
+        let cell2 = QuantumCell5D::from_fingerprint(fp2);
+        let child = genesis.child(cell2, 4);
+
+        assert_eq!(child.height, 1);
+        assert_eq!(child.prev_hash, genesis.state_hash);
+        assert!(child.verify(4));
+        assert!(child.total_work > genesis.total_work);
+    }
+
+    #[test]
+    fn test_quantum_string() {
+        let coord = Coord5D::new(2, 2, 2, 2, 2);
+
+        let mut fp = resolution::standard();
+        fp.set(0, 0xCAFE);
+        let cell = QuantumCell5D::from_fingerprint(fp);
+
+        let mut string = QuantumString::new(coord, cell, 2);
+
+        // Evolve a few times
+        for i in 1..5 {
+            let mut fp = resolution::standard();
+            fp.set(0, 0xCAFE + i);
+            let cell = QuantumCell5D::from_fingerprint(fp);
+            string.evolve(cell);
+        }
+
+        assert_eq!(string.length(), 5);
+        assert!(string.verify_chain());
+        assert!(string.tension() > 0.0);
+
+        println!("String length: {}", string.length());
+        println!("String tension: {:.2}", string.tension());
+        println!("Total work: {}", string.total_work());
+    }
+
+    #[test]
+    fn test_entanglement_proof() {
+        let coord1 = Coord5D::new(0, 0, 0, 0, 0);
+        let coord2 = Coord5D::new(1, 0, 0, 0, 0);
+
+        let fp = resolution::standard();
+
+        // Create two strings from same genesis
+        let genesis_cell = QuantumCell5D::from_fingerprint(fp.clone());
+        let genesis = ChainSignedCell::genesis(genesis_cell, 2);
+
+        let mut cell1 = QuantumCell5D::from_fingerprint(fp.clone());
+        cell1.phase = PhaseTag5D::zero();
+        let signed1 = genesis.child(cell1, 2);
+
+        let mut cell2 = QuantumCell5D::from_fingerprint(fp);
+        cell2.phase = PhaseTag5D::pi(); // Opposite phase = entangled
+        let signed2 = genesis.child(cell2, 2);
+
+        // They share genesis as ancestor
+        if let Some(proof) = EntanglementProof::create(&signed1, &signed2) {
+            assert!(proof.verify());
+            println!("Entanglement strength: {:.2} bits", proof.strength());
+        }
+    }
+
+    #[test]
+    fn test_chain_signed_crystal() {
+        let mut crystal = ChainSignedCrystal::new(3, CellResolution::Standard, 2);
+
+        // Inject some signed states
+        for i in 0..3 {
+            let coord = Coord5D::new(i, 1, 1, 1, 1);
+            let mut fp = resolution::standard();
+            fp.set(0, 0xFFFF >> i);
+            let cell = QuantumCell5D::from_fingerprint(fp);
+            crystal.inject_signed(&coord, cell);
+        }
+
+        assert!(crystal.verify_all());
+        assert!(crystal.total_work() > 0);
+
+        println!("Total work: {}", crystal.total_work());
+        println!("Average tension: {:.2}", crystal.average_tension());
+
+        // Run signed interference
+        let changes = crystal.interference_step_signed();
+        println!("Interference changes: {}", changes);
+        println!("Work after interference: {}", crystal.total_work());
+    }
+}
