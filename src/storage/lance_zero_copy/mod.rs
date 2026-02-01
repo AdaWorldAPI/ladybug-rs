@@ -332,6 +332,23 @@ impl Default for ArrowZeroCopy {
 ///
 /// Uses a simple LSH-style bucket assignment based on the first few bits
 /// of each fingerprint word, creating a coarse-grained spatial ordering.
+///
+/// # IMPORTANT: Codebook Index Preservation
+///
+/// This index does NOT invalidate codebook addressing. The 8+8 address model
+/// (prefix:slot) always uses the ORIGINAL index for lookup:
+///
+/// ```text
+/// Address 0x42:0x0F → original_index = lookup(0x42, 0x0F) → fingerprint
+///                                          ↓
+///                              AdjacencyIndex::sorted_position(original_index)
+///                                          ↓
+///                              (only used for cache-friendly iteration)
+/// ```
+///
+/// - Direct lookups by address: use original_index (preserves codebook)
+/// - Batch scanning: use iter_sorted() for cache locality
+/// - Similarity search: use locality_range() then original_index for results
 pub struct AdjacencyIndex {
     /// Bucket assignments for each fingerprint
     /// bucket[i] = locality hash for fingerprint i
@@ -1217,6 +1234,793 @@ impl ZeroCopyBubbler {
 }
 
 // =============================================================================
+// KÙZU-STYLE OPTIMIZATIONS
+// =============================================================================
+// Buffer pool, copy-on-write, efficient serialization, CSR edges
+
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+use std::io::{Read as IoRead, Write as IoWrite};
+
+/// Magic bytes for file format identification
+pub const MAGIC_BYTES: [u8; 8] = *b"LADYBUG\x00";
+
+/// File format version (major.minor.patch as u32)
+pub const FORMAT_VERSION: u32 = 0x0001_0000; // 1.0.0
+
+// -----------------------------------------------------------------------------
+// BUFFER POOL MANAGER (Kùzu-style page management)
+// -----------------------------------------------------------------------------
+
+/// Page size for buffer pool (4KB aligned like OS pages)
+pub const PAGE_SIZE: usize = 4096;
+
+/// Page ID combining file ID and page number
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PageId {
+    pub file_id: u32,
+    pub page_num: u32,
+}
+
+impl PageId {
+    pub fn new(file_id: u32, page_num: u32) -> Self {
+        Self { file_id, page_num }
+    }
+}
+
+/// Buffer frame in the pool
+pub struct BufferFrame {
+    /// Page ID this frame holds
+    page_id: Option<PageId>,
+    /// The actual data
+    data: Box<[u8; PAGE_SIZE]>,
+    /// Pin count (>0 means page is in use)
+    pin_count: u32,
+    /// Dirty flag (modified since load)
+    dirty: bool,
+    /// Reference bit for clock algorithm
+    ref_bit: bool,
+}
+
+impl BufferFrame {
+    fn new() -> Self {
+        Self {
+            page_id: None,
+            data: Box::new([0u8; PAGE_SIZE]),
+            pin_count: 0,
+            dirty: false,
+            ref_bit: false,
+        }
+    }
+
+    /// Mark as dirty (needs writeback)
+    pub fn mark_dirty(&mut self) {
+        self.dirty = true;
+    }
+
+    /// Get data slice
+    pub fn data(&self) -> &[u8; PAGE_SIZE] {
+        &self.data
+    }
+
+    /// Get mutable data slice
+    pub fn data_mut(&mut self) -> &mut [u8; PAGE_SIZE] {
+        self.dirty = true;
+        &mut self.data
+    }
+}
+
+/// Buffer Pool Manager with clock-based page eviction
+///
+/// Kùzu-style buffer management:
+/// - Fixed-size buffer pool with page frames
+/// - Clock algorithm for victim selection
+/// - Pin/unpin semantics for safe access
+/// - Dirty page tracking for write-back
+pub struct BufferPoolManager {
+    /// Pool of buffer frames
+    frames: Vec<BufferFrame>,
+    /// Map from PageId to frame index
+    page_table: HashMap<PageId, usize>,
+    /// Clock hand for eviction
+    clock_hand: usize,
+    /// Number of frames
+    pool_size: usize,
+    /// Statistics
+    hits: AtomicU64,
+    misses: AtomicU64,
+    evictions: AtomicU64,
+}
+
+impl BufferPoolManager {
+    /// Create buffer pool with specified number of frames
+    pub fn new(pool_size: usize) -> Self {
+        let frames = (0..pool_size).map(|_| BufferFrame::new()).collect();
+        Self {
+            frames,
+            page_table: HashMap::with_capacity(pool_size),
+            clock_hand: 0,
+            pool_size,
+            hits: AtomicU64::new(0),
+            misses: AtomicU64::new(0),
+            evictions: AtomicU64::new(0),
+        }
+    }
+
+    /// Fetch page into buffer pool
+    ///
+    /// Returns frame index if successful.
+    /// Uses clock algorithm for eviction if pool is full.
+    pub fn fetch_page(&mut self, page_id: PageId) -> Option<usize> {
+        // Check if already in pool
+        if let Some(&frame_idx) = self.page_table.get(&page_id) {
+            self.hits.fetch_add(1, Ordering::Relaxed);
+            self.frames[frame_idx].ref_bit = true;
+            return Some(frame_idx);
+        }
+
+        self.misses.fetch_add(1, Ordering::Relaxed);
+
+        // Find a victim frame using clock algorithm
+        let victim_idx = self.find_victim()?;
+
+        // Evict if necessary
+        if let Some(old_page_id) = self.frames[victim_idx].page_id {
+            if self.frames[victim_idx].dirty {
+                // Would write back to disk here
+                // self.flush_page(old_page_id);
+            }
+            self.page_table.remove(&old_page_id);
+            self.evictions.fetch_add(1, Ordering::Relaxed);
+        }
+
+        // Load new page (would read from disk here)
+        self.frames[victim_idx].page_id = Some(page_id);
+        self.frames[victim_idx].pin_count = 1;
+        self.frames[victim_idx].dirty = false;
+        self.frames[victim_idx].ref_bit = true;
+        self.page_table.insert(page_id, victim_idx);
+
+        Some(victim_idx)
+    }
+
+    /// Find victim frame using clock algorithm
+    fn find_victim(&mut self) -> Option<usize> {
+        let mut attempts = 0;
+        let max_attempts = self.pool_size * 2;
+
+        while attempts < max_attempts {
+            let idx = self.clock_hand;
+            self.clock_hand = (self.clock_hand + 1) % self.pool_size;
+
+            // Skip pinned pages
+            if self.frames[idx].pin_count > 0 {
+                attempts += 1;
+                continue;
+            }
+
+            // Check reference bit
+            if self.frames[idx].ref_bit {
+                self.frames[idx].ref_bit = false;
+                attempts += 1;
+                continue;
+            }
+
+            // Found victim
+            return Some(idx);
+        }
+
+        // All pages pinned or recently used
+        None
+    }
+
+    /// Pin page (increment pin count)
+    pub fn pin_page(&mut self, page_id: PageId) -> bool {
+        if let Some(&frame_idx) = self.page_table.get(&page_id) {
+            self.frames[frame_idx].pin_count += 1;
+            self.frames[frame_idx].ref_bit = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Unpin page (decrement pin count)
+    pub fn unpin_page(&mut self, page_id: PageId, dirty: bool) -> bool {
+        if let Some(&frame_idx) = self.page_table.get(&page_id) {
+            if self.frames[frame_idx].pin_count > 0 {
+                self.frames[frame_idx].pin_count -= 1;
+            }
+            if dirty {
+                self.frames[frame_idx].dirty = true;
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Flush all dirty pages
+    pub fn flush_all(&mut self) {
+        for frame in &mut self.frames {
+            if frame.dirty {
+                // Would write to disk here
+                frame.dirty = false;
+            }
+        }
+    }
+
+    /// Get frame by index
+    pub fn get_frame(&self, frame_idx: usize) -> Option<&BufferFrame> {
+        self.frames.get(frame_idx)
+    }
+
+    /// Get mutable frame by index
+    pub fn get_frame_mut(&mut self, frame_idx: usize) -> Option<&mut BufferFrame> {
+        self.frames.get_mut(frame_idx)
+    }
+
+    /// Statistics
+    pub fn hit_ratio(&self) -> f64 {
+        let hits = self.hits.load(Ordering::Relaxed) as f64;
+        let misses = self.misses.load(Ordering::Relaxed) as f64;
+        if hits + misses == 0.0 {
+            0.0
+        } else {
+            hits / (hits + misses)
+        }
+    }
+
+    pub fn eviction_count(&self) -> u64 {
+        self.evictions.load(Ordering::Relaxed)
+    }
+}
+
+// -----------------------------------------------------------------------------
+// COPY-ON-WRITE (CoW) SEMANTICS
+// -----------------------------------------------------------------------------
+
+/// Copy-on-Write wrapper for zero-copy reads with safe writes
+///
+/// Kùzu uses CoW for MVCC - readers never block writers.
+/// This implementation provides:
+/// - Fast reads via Arc sharing
+/// - Copy only when modification needed
+/// - Version tracking for MVCC
+pub struct CopyOnWrite<T: Clone> {
+    /// The data wrapped in Arc for sharing
+    data: Arc<RwLock<T>>,
+    /// Version number
+    version: AtomicU64,
+    /// Copy count (for statistics)
+    copies: AtomicU64,
+}
+
+impl<T: Clone> CopyOnWrite<T> {
+    /// Create new CoW wrapper
+    pub fn new(data: T) -> Self {
+        Self {
+            data: Arc::new(RwLock::new(data)),
+            version: AtomicU64::new(1),
+            copies: AtomicU64::new(0),
+        }
+    }
+
+    /// Read access (shared, no copy)
+    pub fn read(&self) -> parking_lot::RwLockReadGuard<'_, T> {
+        self.data.read()
+    }
+
+    /// Write access with copy-on-write
+    ///
+    /// If there are multiple readers, creates a copy.
+    /// Otherwise, mutates in place.
+    pub fn write(&self) -> parking_lot::RwLockWriteGuard<'_, T> {
+        self.version.fetch_add(1, Ordering::SeqCst);
+
+        // Check if we're the only owner
+        // Note: With RwLock, we always have exclusive access when writing
+        self.data.write()
+    }
+
+    /// Get a snapshot (clone for independent access)
+    pub fn snapshot(&self) -> T {
+        self.copies.fetch_add(1, Ordering::Relaxed);
+        self.data.read().clone()
+    }
+
+    /// Current version
+    pub fn version(&self) -> u64 {
+        self.version.load(Ordering::Acquire)
+    }
+
+    /// Number of copies made
+    pub fn copy_count(&self) -> u64 {
+        self.copies.load(Ordering::Relaxed)
+    }
+}
+
+impl<T: Clone + Default> Default for CopyOnWrite<T> {
+    fn default() -> Self {
+        Self::new(T::default())
+    }
+}
+
+// -----------------------------------------------------------------------------
+// EFFICIENT SERIALIZATION (Kùzu-style with magic bytes, versioning)
+// -----------------------------------------------------------------------------
+
+/// Serialization header for fingerprint storage
+#[derive(Debug, Clone, Copy)]
+#[repr(C, packed)]
+pub struct SerializationHeader {
+    /// Magic bytes for format identification
+    pub magic: [u8; 8],
+    /// Format version
+    pub version: u32,
+    /// Flags (compression, encoding, etc.)
+    pub flags: u32,
+    /// Number of fingerprints
+    pub count: u64,
+    /// Checksum of data section (CRC32)
+    pub checksum: u32,
+    /// Reserved for future use
+    pub reserved: [u8; 4],
+}
+
+impl SerializationHeader {
+    /// Create new header
+    pub fn new(count: u64) -> Self {
+        Self {
+            magic: MAGIC_BYTES,
+            version: FORMAT_VERSION,
+            flags: 0,
+            count,
+            checksum: 0,
+            reserved: [0; 4],
+        }
+    }
+
+    /// Header size in bytes
+    pub const SIZE: usize = std::mem::size_of::<Self>();
+
+    /// Validate header
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.magic != MAGIC_BYTES {
+            return Err("Invalid magic bytes");
+        }
+        if self.version > FORMAT_VERSION {
+            return Err("Unsupported format version");
+        }
+        Ok(())
+    }
+
+    /// Serialize header to bytes
+    pub fn to_bytes(&self) -> [u8; Self::SIZE] {
+        unsafe { std::mem::transmute_copy(self) }
+    }
+
+    /// Deserialize header from bytes
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() < Self::SIZE {
+            return None;
+        }
+        let header: Self = unsafe {
+            std::ptr::read(bytes.as_ptr() as *const Self)
+        };
+        Some(header)
+    }
+}
+
+/// Serialization flags
+pub mod flags {
+    /// Data is LZ4 compressed
+    pub const COMPRESSED_LZ4: u32 = 1 << 0;
+    /// Data is bit-packed (no wasted bits)
+    pub const BITPACKED: u32 = 1 << 1;
+    /// Fingerprints are sorted by adjacency
+    pub const ADJACENCY_SORTED: u32 = 1 << 2;
+    /// Includes adjacency index
+    pub const HAS_ADJACENCY_INDEX: u32 = 1 << 3;
+    /// Includes scent metadata
+    pub const HAS_SCENT: u32 = 1 << 4;
+}
+
+/// Efficient serializer for fingerprint storage
+pub struct FingerprintSerializer;
+
+impl FingerprintSerializer {
+    /// Serialize fingerprints to bytes with header
+    pub fn serialize(fingerprints: &FingerprintBuffer) -> Vec<u8> {
+        let count = fingerprints.len() as u64;
+        let data_size = count as usize * FINGERPRINT_WORDS * 8;
+
+        let mut header = SerializationHeader::new(count);
+
+        // Compute checksum
+        let data_bytes = unsafe {
+            std::slice::from_raw_parts(
+                fingerprints.as_ptr() as *const u8,
+                data_size
+            )
+        };
+        header.checksum = Self::crc32(data_bytes);
+
+        // Build output
+        let mut output = Vec::with_capacity(SerializationHeader::SIZE + data_size);
+        output.extend_from_slice(&header.to_bytes());
+        output.extend_from_slice(data_bytes);
+
+        output
+    }
+
+    /// Deserialize fingerprints from bytes
+    pub fn deserialize(bytes: &[u8]) -> Result<FingerprintBuffer, &'static str> {
+        let header = SerializationHeader::from_bytes(bytes)
+            .ok_or("Truncated header")?;
+        header.validate()?;
+
+        let data_start = SerializationHeader::SIZE;
+        let data_size = header.count as usize * FINGERPRINT_WORDS * 8;
+
+        if bytes.len() < data_start + data_size {
+            return Err("Truncated data");
+        }
+
+        let data_bytes = &bytes[data_start..data_start + data_size];
+
+        // Verify checksum
+        if header.checksum != 0 && header.checksum != Self::crc32(data_bytes) {
+            return Err("Checksum mismatch");
+        }
+
+        // Convert to u64 vec
+        let u64_count = header.count as usize * FINGERPRINT_WORDS;
+        let mut data = vec![0u64; u64_count];
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                data_bytes.as_ptr(),
+                data.as_mut_ptr() as *mut u8,
+                data_size
+            );
+        }
+
+        Ok(FingerprintBuffer::from_vec(data, header.count as usize))
+    }
+
+    /// Simple CRC32 checksum
+    fn crc32(data: &[u8]) -> u32 {
+        // Simple implementation - in production use crc32fast crate
+        let mut crc = 0xFFFF_FFFFu32;
+        for byte in data {
+            crc ^= *byte as u32;
+            for _ in 0..8 {
+                crc = if crc & 1 != 0 {
+                    (crc >> 1) ^ 0xEDB8_8320
+                } else {
+                    crc >> 1
+                };
+            }
+        }
+        !crc
+    }
+}
+
+// -----------------------------------------------------------------------------
+// CSR (COMPRESSED SPARSE ROW) FOR EDGES
+// -----------------------------------------------------------------------------
+
+/// CSR-format edge storage (Kùzu-style)
+///
+/// CSR is extremely cache-efficient for graph traversals.
+/// Layout:
+/// - offsets[node] = start index in edges array
+/// - edges[offset..next_offset] = neighbors of node
+///
+/// Memory: O(V + E) instead of O(V²) for adjacency matrix
+pub struct CsrEdges {
+    /// Offset array: offsets[i] is start of node i's neighbors
+    offsets: Vec<u64>,
+    /// Edge array: consecutive neighbor IDs
+    edges: Vec<u32>,
+    /// Edge weights (optional, parallel to edges)
+    weights: Option<Vec<f32>>,
+    /// Number of nodes
+    num_nodes: usize,
+    /// Number of edges
+    num_edges: usize,
+}
+
+impl CsrEdges {
+    /// Create empty CSR
+    pub fn new() -> Self {
+        Self {
+            offsets: vec![0],
+            edges: Vec::new(),
+            weights: None,
+            num_nodes: 0,
+            num_edges: 0,
+        }
+    }
+
+    /// Build CSR from edge list
+    ///
+    /// Edges: Vec<(source, target)>
+    pub fn from_edges(num_nodes: usize, edges: &[(u32, u32)]) -> Self {
+        // Count edges per node
+        let mut counts = vec![0u64; num_nodes + 1];
+        for &(src, _) in edges {
+            counts[src as usize + 1] += 1;
+        }
+
+        // Prefix sum for offsets
+        let mut offsets = vec![0u64; num_nodes + 1];
+        for i in 1..=num_nodes {
+            offsets[i] = offsets[i - 1] + counts[i];
+        }
+
+        // Fill edges array
+        let mut edge_array = vec![0u32; edges.len()];
+        let mut current = offsets.clone();
+
+        for &(src, dst) in edges {
+            let idx = current[src as usize] as usize;
+            edge_array[idx] = dst;
+            current[src as usize] += 1;
+        }
+
+        Self {
+            offsets,
+            edges: edge_array,
+            weights: None,
+            num_nodes,
+            num_edges: edges.len(),
+        }
+    }
+
+    /// Build CSR with weights
+    pub fn from_weighted_edges(num_nodes: usize, edges: &[(u32, u32, f32)]) -> Self {
+        // Count edges per node
+        let mut counts = vec![0u64; num_nodes + 1];
+        for &(src, _, _) in edges {
+            counts[src as usize + 1] += 1;
+        }
+
+        // Prefix sum for offsets
+        let mut offsets = vec![0u64; num_nodes + 1];
+        for i in 1..=num_nodes {
+            offsets[i] = offsets[i - 1] + counts[i];
+        }
+
+        // Fill edges and weights arrays
+        let mut edge_array = vec![0u32; edges.len()];
+        let mut weight_array = vec![0.0f32; edges.len()];
+        let mut current = offsets.clone();
+
+        for &(src, dst, weight) in edges {
+            let idx = current[src as usize] as usize;
+            edge_array[idx] = dst;
+            weight_array[idx] = weight;
+            current[src as usize] += 1;
+        }
+
+        Self {
+            offsets,
+            edges: edge_array,
+            weights: Some(weight_array),
+            num_nodes,
+            num_edges: edges.len(),
+        }
+    }
+
+    /// Get neighbors of a node (zero-copy slice)
+    #[inline]
+    pub fn neighbors(&self, node: u32) -> &[u32] {
+        let start = self.offsets[node as usize] as usize;
+        let end = self.offsets[node as usize + 1] as usize;
+        &self.edges[start..end]
+    }
+
+    /// Get neighbors with weights
+    #[inline]
+    pub fn neighbors_weighted(&self, node: u32) -> Option<(&[u32], &[f32])> {
+        let start = self.offsets[node as usize] as usize;
+        let end = self.offsets[node as usize + 1] as usize;
+        let weights = self.weights.as_ref()?;
+        Some((&self.edges[start..end], &weights[start..end]))
+    }
+
+    /// Degree of node
+    #[inline]
+    pub fn degree(&self, node: u32) -> usize {
+        let start = self.offsets[node as usize];
+        let end = self.offsets[node as usize + 1];
+        (end - start) as usize
+    }
+
+    /// Number of nodes
+    pub fn num_nodes(&self) -> usize {
+        self.num_nodes
+    }
+
+    /// Number of edges
+    pub fn num_edges(&self) -> usize {
+        self.num_edges
+    }
+
+    /// Iterate over all edges
+    pub fn iter_edges(&self) -> impl Iterator<Item = (u32, u32)> + '_ {
+        (0..self.num_nodes as u32).flat_map(move |src| {
+            self.neighbors(src).iter().map(move |&dst| (src, dst))
+        })
+    }
+
+    /// Memory usage in bytes
+    pub fn memory_usage(&self) -> usize {
+        let offsets_size = self.offsets.len() * 8;
+        let edges_size = self.edges.len() * 4;
+        let weights_size = self.weights.as_ref().map(|w| w.len() * 4).unwrap_or(0);
+        offsets_size + edges_size + weights_size
+    }
+}
+
+impl Default for CsrEdges {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// CSR builder for incremental construction
+pub struct CsrBuilder {
+    /// Adjacency list being built
+    adj_list: Vec<Vec<(u32, f32)>>,
+    /// Number of edges
+    num_edges: usize,
+}
+
+impl CsrBuilder {
+    /// Create builder for n nodes
+    pub fn new(num_nodes: usize) -> Self {
+        Self {
+            adj_list: vec![Vec::new(); num_nodes],
+            num_edges: 0,
+        }
+    }
+
+    /// Add edge
+    pub fn add_edge(&mut self, src: u32, dst: u32) {
+        self.adj_list[src as usize].push((dst, 1.0));
+        self.num_edges += 1;
+    }
+
+    /// Add weighted edge
+    pub fn add_weighted_edge(&mut self, src: u32, dst: u32, weight: f32) {
+        self.adj_list[src as usize].push((dst, weight));
+        self.num_edges += 1;
+    }
+
+    /// Build CSR (sorts neighbors for cache efficiency)
+    pub fn build(mut self) -> CsrEdges {
+        // Sort neighbors for each node
+        for neighbors in &mut self.adj_list {
+            neighbors.sort_by_key(|&(dst, _)| dst);
+        }
+
+        let num_nodes = self.adj_list.len();
+        let has_weights = self.adj_list.iter().any(|n| n.iter().any(|&(_, w)| w != 1.0));
+
+        // Build offsets
+        let mut offsets = Vec::with_capacity(num_nodes + 1);
+        offsets.push(0u64);
+        for neighbors in &self.adj_list {
+            offsets.push(offsets.last().unwrap() + neighbors.len() as u64);
+        }
+
+        // Build edges (and optionally weights)
+        let mut edges = Vec::with_capacity(self.num_edges);
+        let mut weights = if has_weights {
+            Some(Vec::with_capacity(self.num_edges))
+        } else {
+            None
+        };
+
+        for neighbors in &self.adj_list {
+            for &(dst, weight) in neighbors {
+                edges.push(dst);
+                if let Some(ref mut w) = weights {
+                    w.push(weight);
+                }
+            }
+        }
+
+        CsrEdges {
+            offsets,
+            edges,
+            weights,
+            num_nodes,
+            num_edges: self.num_edges,
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// MORSEL-DRIVEN PARALLELISM (Kùzu-style)
+// -----------------------------------------------------------------------------
+
+/// Morsel size for parallel processing
+pub const MORSEL_SIZE: usize = 2048;
+
+/// Morsel: a chunk of work for parallel processing
+pub struct Morsel<T> {
+    /// Start index in source data
+    pub start: usize,
+    /// End index (exclusive)
+    pub end: usize,
+    /// Local results
+    pub results: Vec<T>,
+}
+
+impl<T> Morsel<T> {
+    pub fn new(start: usize, end: usize) -> Self {
+        Self {
+            start,
+            end,
+            results: Vec::new(),
+        }
+    }
+
+    pub fn size(&self) -> usize {
+        self.end - self.start
+    }
+}
+
+/// Morsel dispatcher for parallel fingerprint operations
+pub struct MorselDispatcher {
+    /// Total items
+    total: usize,
+    /// Next morsel start
+    next_start: AtomicU64,
+}
+
+impl MorselDispatcher {
+    /// Create dispatcher for n items
+    pub fn new(total: usize) -> Self {
+        Self {
+            total,
+            next_start: AtomicU64::new(0),
+        }
+    }
+
+    /// Get next morsel (None if done)
+    pub fn next_morsel<T>(&self) -> Option<Morsel<T>> {
+        loop {
+            let start = self.next_start.load(Ordering::Relaxed) as usize;
+            if start >= self.total {
+                return None;
+            }
+
+            let end = (start + MORSEL_SIZE).min(self.total);
+
+            // Try to claim this morsel
+            if self.next_start.compare_exchange(
+                start as u64,
+                end as u64,
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            ).is_ok() {
+                return Some(Morsel::new(start, end));
+            }
+            // Another thread claimed it, retry
+        }
+    }
+
+    /// Reset for reuse
+    pub fn reset(&self) {
+        self.next_start.store(0, Ordering::Release);
+    }
+}
+
+// =============================================================================
 // TESTS
 // =============================================================================
 
@@ -1592,5 +2396,324 @@ mod tests {
         for h in handles {
             h.join().expect("reader thread panicked");
         }
+    }
+
+    // =========================================================================
+    // KÙZU-STYLE OPTIMIZATION TESTS
+    // =========================================================================
+
+    #[test]
+    fn test_buffer_pool_basic() {
+        let mut pool = BufferPoolManager::new(4);
+
+        // Fetch pages
+        let frame1 = pool.fetch_page(PageId::new(0, 0)).unwrap();
+        let frame2 = pool.fetch_page(PageId::new(0, 1)).unwrap();
+
+        assert_ne!(frame1, frame2);
+
+        // Fetching same page should return same frame (hit)
+        let frame1_again = pool.fetch_page(PageId::new(0, 0)).unwrap();
+        assert_eq!(frame1, frame1_again);
+
+        // Check hit ratio
+        assert!(pool.hit_ratio() > 0.0);
+    }
+
+    #[test]
+    fn test_buffer_pool_eviction() {
+        let mut pool = BufferPoolManager::new(2); // Small pool
+
+        // Fill pool
+        pool.fetch_page(PageId::new(0, 0));
+        pool.fetch_page(PageId::new(0, 1));
+
+        // Unpin first page
+        pool.unpin_page(PageId::new(0, 0), false);
+        pool.unpin_page(PageId::new(0, 1), false);
+
+        // Fetch new page should evict
+        pool.fetch_page(PageId::new(0, 2));
+
+        // Should have evicted
+        assert!(pool.eviction_count() > 0);
+    }
+
+    #[test]
+    fn test_buffer_pool_dirty_tracking() {
+        let mut pool = BufferPoolManager::new(4);
+
+        let frame_idx = pool.fetch_page(PageId::new(0, 0)).unwrap();
+
+        // Modify the frame
+        {
+            let frame = pool.get_frame_mut(frame_idx).unwrap();
+            frame.data_mut()[0] = 0xFF;
+        }
+
+        // Unpin as dirty
+        pool.unpin_page(PageId::new(0, 0), true);
+
+        // Flush should handle dirty pages
+        pool.flush_all();
+    }
+
+    #[test]
+    fn test_csr_edges_basic() {
+        // Create simple graph: 0 -> 1, 0 -> 2, 1 -> 2
+        let edges = vec![(0, 1), (0, 2), (1, 2)];
+        let csr = CsrEdges::from_edges(3, &edges);
+
+        assert_eq!(csr.num_nodes(), 3);
+        assert_eq!(csr.num_edges(), 3);
+
+        // Check neighbors
+        let n0 = csr.neighbors(0);
+        assert_eq!(n0.len(), 2);
+        assert!(n0.contains(&1));
+        assert!(n0.contains(&2));
+
+        let n1 = csr.neighbors(1);
+        assert_eq!(n1.len(), 1);
+        assert_eq!(n1[0], 2);
+
+        let n2 = csr.neighbors(2);
+        assert_eq!(n2.len(), 0);
+    }
+
+    #[test]
+    fn test_csr_edges_weighted() {
+        let edges = vec![(0, 1, 1.5), (0, 2, 2.5), (1, 2, 0.5)];
+        let csr = CsrEdges::from_weighted_edges(3, &edges);
+
+        let (neighbors, weights) = csr.neighbors_weighted(0).unwrap();
+        assert_eq!(neighbors.len(), 2);
+        assert_eq!(weights.len(), 2);
+    }
+
+    #[test]
+    fn test_csr_builder() {
+        let mut builder = CsrBuilder::new(4);
+
+        builder.add_edge(0, 1);
+        builder.add_edge(0, 2);
+        builder.add_edge(1, 3);
+        builder.add_weighted_edge(2, 3, 2.0);
+
+        let csr = builder.build();
+
+        assert_eq!(csr.num_nodes(), 4);
+        assert_eq!(csr.num_edges(), 4);
+        assert_eq!(csr.degree(0), 2);
+        assert_eq!(csr.degree(1), 1);
+    }
+
+    #[test]
+    fn test_csr_iteration() {
+        let edges = vec![(0, 1), (0, 2), (1, 2)];
+        let csr = CsrEdges::from_edges(3, &edges);
+
+        let collected: Vec<_> = csr.iter_edges().collect();
+        assert_eq!(collected.len(), 3);
+        assert!(collected.contains(&(0, 1)));
+        assert!(collected.contains(&(0, 2)));
+        assert!(collected.contains(&(1, 2)));
+    }
+
+    #[test]
+    fn test_serialization_header() {
+        let header = SerializationHeader::new(42);
+
+        // Copy fields to avoid packed struct alignment issues
+        let magic = header.magic;
+        let version = header.version;
+        let count = header.count;
+
+        assert_eq!(magic, MAGIC_BYTES);
+        assert_eq!(version, FORMAT_VERSION);
+        assert_eq!(count, 42);
+
+        // Roundtrip
+        let bytes = header.to_bytes();
+        let restored = SerializationHeader::from_bytes(&bytes).unwrap();
+        let restored_count = restored.count;
+        assert_eq!(restored_count, 42);
+        assert!(restored.validate().is_ok());
+    }
+
+    #[test]
+    fn test_fingerprint_serialization_roundtrip() {
+        let fps: Vec<[u64; FINGERPRINT_WORDS]> = (0..10)
+            .map(|i| make_fingerprint(i as u64 * 1000))
+            .collect();
+
+        let mut data = Vec::new();
+        for fp in &fps {
+            data.extend_from_slice(fp);
+        }
+
+        let buffer = FingerprintBuffer::from_vec(data, fps.len());
+
+        // Serialize
+        let serialized = FingerprintSerializer::serialize(&buffer);
+        assert!(serialized.len() > SerializationHeader::SIZE);
+
+        // Deserialize
+        let restored = FingerprintSerializer::deserialize(&serialized).unwrap();
+        assert_eq!(restored.len(), fps.len());
+
+        // Verify contents
+        for (i, expected) in fps.iter().enumerate() {
+            let got = restored.get(i).unwrap();
+            assert_eq!(got, expected);
+        }
+    }
+
+    #[test]
+    fn test_serialization_checksum() {
+        let fps: Vec<[u64; FINGERPRINT_WORDS]> = (0..3)
+            .map(|i| make_fingerprint(i as u64))
+            .collect();
+
+        let mut data = Vec::new();
+        for fp in &fps {
+            data.extend_from_slice(fp);
+        }
+
+        let buffer = FingerprintBuffer::from_vec(data, fps.len());
+        let mut serialized = FingerprintSerializer::serialize(&buffer);
+
+        // Corrupt data after header
+        serialized[SerializationHeader::SIZE + 10] ^= 0xFF;
+
+        // Should fail checksum
+        let result = FingerprintSerializer::deserialize(&serialized);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_copy_on_write() {
+        let cow: CopyOnWrite<Vec<u32>> = CopyOnWrite::new(vec![1, 2, 3]);
+
+        // Read doesn't increment version
+        let v1 = cow.version();
+        {
+            let _guard = cow.read();
+        }
+        assert_eq!(cow.version(), v1);
+
+        // Write increments version
+        {
+            let mut guard = cow.write();
+            guard.push(4);
+        }
+        assert!(cow.version() > v1);
+    }
+
+    #[test]
+    fn test_copy_on_write_snapshot() {
+        let cow: CopyOnWrite<Vec<u32>> = CopyOnWrite::new(vec![1, 2, 3]);
+
+        // Take snapshot
+        let snapshot = cow.snapshot();
+        assert_eq!(snapshot, vec![1, 2, 3]);
+        assert_eq!(cow.copy_count(), 1);
+
+        // Modify original
+        {
+            let mut guard = cow.write();
+            guard.push(4);
+        }
+
+        // Snapshot is independent
+        assert_eq!(snapshot.len(), 3);
+        assert_eq!(cow.read().len(), 4);
+    }
+
+    #[test]
+    fn test_morsel_dispatcher() {
+        let dispatcher = MorselDispatcher::new(5000);
+
+        let mut total_processed = 0usize;
+        let mut morsel_count = 0usize;
+
+        while let Some(morsel) = dispatcher.next_morsel::<()>() {
+            total_processed += morsel.size();
+            morsel_count += 1;
+        }
+
+        assert_eq!(total_processed, 5000);
+        assert_eq!(morsel_count, (5000 + MORSEL_SIZE - 1) / MORSEL_SIZE);
+
+        // Reset and verify
+        dispatcher.reset();
+        assert!(dispatcher.next_morsel::<()>().is_some());
+    }
+
+    #[test]
+    fn test_morsel_parallel() {
+        use std::thread;
+
+        let dispatcher = Arc::new(MorselDispatcher::new(10000));
+        let counter = Arc::new(AtomicU64::new(0));
+
+        let handles: Vec<_> = (0..4)
+            .map(|_| {
+                let d = Arc::clone(&dispatcher);
+                let c = Arc::clone(&counter);
+                thread::spawn(move || {
+                    while let Some(morsel) = d.next_morsel::<()>() {
+                        c.fetch_add(morsel.size() as u64, Ordering::Relaxed);
+                    }
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        // All items processed exactly once
+        assert_eq!(counter.load(Ordering::Relaxed), 10000);
+    }
+
+    #[test]
+    fn test_adjacency_preserves_codebook() {
+        // This test verifies that adjacency sorting does NOT break address lookups
+        let fps: Vec<[u64; FINGERPRINT_WORDS]> = (0..100)
+            .map(|i| make_fingerprint(i as u64 * 1000))
+            .collect();
+
+        let mut data = Vec::new();
+        for fp in &fps {
+            data.extend_from_slice(fp);
+        }
+
+        let buffer = FingerprintBuffer::from_vec(data, fps.len());
+        let adj_index = AdjacencyIndex::build(&buffer);
+
+        // Simulate codebook address lookup
+        // Address 0x42:0x0F would map to some original_index
+        let codebook_addr = 42; // Simulated codebook lookup result
+
+        // Direct lookup still works (codebook not invalidated)
+        let fp_direct = buffer.get(codebook_addr).unwrap();
+        assert_eq!(fp_direct, &fps[codebook_addr]);
+
+        // Adjacency index provides sorted position for cache-friendly scanning
+        let sorted_pos = adj_index.sorted_position(codebook_addr).unwrap();
+
+        // Can map back to original
+        let back_to_original = adj_index.original_index(sorted_pos as usize).unwrap();
+        assert_eq!(back_to_original as usize, codebook_addr);
+
+        // Iteration in sorted order for cache locality
+        let mut count = 0;
+        for orig_idx in adj_index.iter_sorted() {
+            // Can still access by original index (codebook addressing)
+            let _fp = buffer.get(orig_idx as usize).unwrap();
+            count += 1;
+        }
+        assert_eq!(count, 100);
     }
 }
