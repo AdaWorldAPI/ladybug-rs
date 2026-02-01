@@ -38,6 +38,8 @@ pub mod hardening;
 pub mod temporal;
 pub mod resilient;
 pub mod concurrency;
+pub mod snapshots;
+pub mod corpus;
 
 #[cfg(feature = "lancedb")]
 pub use lance::{LanceStore, NodeRecord, EdgeRecord};
@@ -145,4 +147,32 @@ pub use concurrency::{
     QueryContext as ConcurrentQueryContext, ConflictError,
     // Combined store
     ConcurrentStore, WriteConflict, ConcurrentStats,
+};
+
+// Snapshot exports (VMware-like XOR delta snapshots, cold storage)
+pub use snapshots::{
+    // XOR deltas
+    DeltaBlock, Snapshot, SnapshotChain, SnapshotStats,
+    SnapshotId, SnapshotError,
+    // Tiered storage
+    StorageTier, ColdStorageConfig, TieredEntry,
+    TieredStorage, TieredStorageStats, MigrationStats,
+};
+
+// Corpus exports (scent-indexed Arrow FS, Gutenberg chunking)
+pub use corpus::{
+    // Fingerprinting
+    Fingerprint, generate_fingerprint,
+    hamming_distance as corpus_hamming_distance,
+    fingerprint_similarity,
+    // Chunking
+    ChunkStrategy, Chunk, chunk_document,
+    // Documents
+    DocumentMeta, Document,
+    // Store
+    CorpusConfig, CorpusStore, CorpusStats,
+    // Gutenberg
+    parse_gutenberg, load_gutenberg_book,
+    // Errors
+    CorpusError,
 };
