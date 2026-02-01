@@ -612,6 +612,22 @@ impl FrameBuilder {
         let instruction = Instruction::new(LanguagePrefix::Trap, service, 0, arg1, arg2);
         FireflyFrame::new(header, instruction)
     }
+
+    /// No-operation instruction
+    pub fn nop(mut self) -> FireflyFrame {
+        self.sequence += 1;
+        let header = FrameHeader::new(self.session_id, self.lane_id, self.hive_id, self.sequence);
+        let instruction = Instruction::new(LanguagePrefix::Control, 0x00, 0, 0, 0);
+        FireflyFrame::new(header, instruction)
+    }
+
+    /// Halt execution
+    pub fn halt(mut self) -> FireflyFrame {
+        self.sequence += 1;
+        let header = FrameHeader::new(self.session_id, self.lane_id, self.hive_id, self.sequence);
+        let instruction = Instruction::new(LanguagePrefix::Trap, 0x00, 0, 0, 0);
+        FireflyFrame::new(header, instruction)
+    }
 }
 
 // =============================================================================
@@ -671,16 +687,15 @@ mod tests {
 
     #[test]
     fn test_frame_builder() {
-        let builder = FrameBuilder::new(100);
-
-        let f1 = builder.resonate(0x8000, 0x8001, 10);
+        // Each builder method consumes self, so create new builders
+        let f1 = FrameBuilder::new(100).resonate(0x8000, 0x8001, 10);
         assert_eq!(f1.instruction.prefix, LanguagePrefix::Lance);
         assert_eq!(f1.instruction.opcode, 0x00);
 
-        let f2 = builder.cypher_match(0x8010, 0x8011);
+        let f2 = FrameBuilder::new(100).cypher_match(0x8010, 0x8011);
         assert_eq!(f2.instruction.prefix, LanguagePrefix::Cypher);
 
-        let f3 = builder.trap(0x10, 0, 0); // IO_READ
+        let f3 = FrameBuilder::new(100).trap(0x10, 0, 0); // IO_READ
         assert_eq!(f3.instruction.prefix, LanguagePrefix::Trap);
         assert_eq!(f3.instruction.opcode, 0x10);
     }
