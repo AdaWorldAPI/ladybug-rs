@@ -1,3 +1,21 @@
+# ⚠️ PHASE 2 ACTIVE: Server Rewire
+
+**READ FIRST**: `.claude/PHASE2_SERVER_REWIRE.md`
+
+This branch exists to replace `CogRedis` with `RedisAdapter` in `src/bin/server.rs`.
+
+**The full task specification is in `.claude/PHASE2_SERVER_REWIRE.md`. Read it before writing any code.**
+
+Quick summary:
+1. Change imports from `cog_redis::*` to `storage::{RedisAdapter, RedisResult, RedisCommand, ...}`
+2. Replace `DatabaseState.cog_redis: CogRedis` with `adapter: RedisAdapter`
+3. Update 6 endpoint handlers to use `adapter.execute()` / `adapter.execute_command()`
+4. Remove 157→156 truncation hacks and manual Hamming computation
+5. Build with `--features "simd,parallel,codebook,hologram,quantum"`
+6. Only `src/bin/server.rs` changes. Touch nothing else.
+
+---
+
 # CLAUDE.md — Ladybug-RS
 
 ## Project Identity
