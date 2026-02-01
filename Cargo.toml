@@ -39,6 +39,7 @@ hologram = []                    # Holographic reduced representations
 spo = ["reqwest"]                # Subject-Predicate-Object triples
 compress = ["lz4"]               # Compression support
 quantum = []                     # Quantum-inspired operators
+bench = []                       # Benchmark suite (comparison vs Qdrant/Milvus)
 
 # All features
 full = [
@@ -198,6 +199,11 @@ path = "examples/cam_query.rs"
 [[bin]]
 name = "ladybug-server"
 path = "src/bin/server.rs"
+
+[[bin]]
+name = "ladybug-bench"
+path = "src/bin/bench.rs"
+required-features = ["bench"]
 
 # =============================================================================
 # PROFILE: Release optimizations

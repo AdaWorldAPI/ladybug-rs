@@ -75,6 +75,9 @@ pub mod extensions;
 #[cfg(feature = "python")]
 pub mod python;
 
+#[cfg(feature = "bench")]
+pub mod bench;
+
 // === Re-exports for convenience ===
 
 // Core types
