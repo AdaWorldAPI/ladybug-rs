@@ -36,6 +36,7 @@ pub mod firefly_frame;
 pub mod executor;
 pub mod gel;
 pub mod udp_transport;
+pub mod zero_copy;
 
 pub use mrna::{MRNA, ResonanceField, CrossPollination, FieldSnapshot};
 pub use butterfly::{ButterflyDetector, Butterfly, ButterflyPrediction};
@@ -50,3 +51,4 @@ pub use udp_transport::{
     UdpSender, UdpReceiver, FramePacket, LaneRouter,
     SenderStats, ReceiverStats, MAX_UDP_PAYLOAD,
 };
+pub use zero_copy::{ZeroCopyExecutor, AddrRef, Deferred};
