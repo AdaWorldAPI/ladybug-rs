@@ -1,5 +1,5 @@
 # =============================================================================
-# Docker Compose for Ladybug-RS Local Development
+# Docker Compose for Ladybug-RS Local Development & Production
 # =============================================================================
 #
 # Usage:
@@ -10,11 +10,15 @@
 #   docker-compose down            # Stop and remove
 #
 # Profiles:
-#   docker-compose --profile avx512 up    # Use AVX-512 optimized build
+#   docker-compose --profile avx512 up    # Use AVX-512 optimized build (Railway)
+#   docker-compose --profile claude up    # Claude backend mode (localhost)
 #   docker-compose --profile dev up       # Development with hot reload
+#
+# Endpoints after startup:
+#   http://localhost:8080/health   - Health check
+#   http://localhost:8080/metrics  - Prometheus metrics
+#   http://localhost:8080/info     - Server info
 # =============================================================================
-
-version: '3.9'
 
 services:
   # ---------------------------------------------------------------------------
@@ -24,22 +28,26 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: runtime
       args:
         TARGET_CPU: native
-        FEATURES: "simd,parallel,codebook,hologram,quantum"
+        FEATURES: "simd,parallel,codebook,hologram,quantum,spo"
     container_name: ladybug-rs
     ports:
       - "8080:8080"
+    volumes:
+      - ladybug-data:/data
     environment:
       - HOST=0.0.0.0
       - PORT=8080
+      - DATA_DIR=/data
       - RUST_LOG=info
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 15s
     restart: unless-stopped
     deploy:
       resources:
@@ -49,7 +57,7 @@ services:
           memory: 512M
 
   # ---------------------------------------------------------------------------
-  # AVX-512 Optimized (for Railway/modern servers)
+  # AVX-512 Optimized (for Railway/modern servers with AVX-512)
   # ---------------------------------------------------------------------------
   ladybug-avx512:
     build:
@@ -59,24 +67,64 @@ services:
     container_name: ladybug-rs-avx512
     profiles:
       - avx512
+      - railway
     ports:
       - "8080:8080"
+    volumes:
+      - ladybug-data:/data
     environment:
       - HOST=0.0.0.0
       - PORT=8080
+      - DATA_DIR=/data
       - RUST_LOG=info
+      - RAILWAY_ENVIRONMENT=production
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 15s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
+
+  # ---------------------------------------------------------------------------
+  # Claude Backend Mode (localhost-bound, port 5000)
+  # ---------------------------------------------------------------------------
+  ladybug-claude:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime-claude
+    container_name: ladybug-rs-claude
+    profiles:
+      - claude
+    ports:
+      - "5000:5000"
+    volumes:
+      - ladybug-data:/data
+    environment:
+      - HOST=127.0.0.1
+      - PORT=5000
+      - DATA_DIR=/data
+      - RUST_LOG=info
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:5000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
   # Development mode (mount source for iteration)
   # ---------------------------------------------------------------------------
   ladybug-dev:
-    image: rust:1.75-bookworm
+    image: rust:1.76-bookworm
     container_name: ladybug-rs-dev
     profiles:
       - dev
@@ -85,23 +133,30 @@ services:
       - .:/app
       - cargo-cache:/usr/local/cargo/registry
       - target-cache:/app/target
+      - ladybug-data:/data
     ports:
       - "8080:8080"
     environment:
       - HOST=0.0.0.0
       - PORT=8080
+      - DATA_DIR=/data
       - RUST_LOG=debug
       - CARGO_TARGET_DIR=/app/target
     command: >
       bash -c "
-        cargo build --release --bin ladybug-server --features 'simd,parallel,codebook,hologram,quantum' &&
+        apt-get update && apt-get install -y cmake pkg-config libssl-dev curl &&
+        cargo build --release --bin ladybug-server --features 'simd,parallel,codebook,hologram,quantum,spo' &&
         ./target/release/ladybug-server
       "
     restart: unless-stopped
 
 volumes:
+  ladybug-data:
+    name: ladybug-data
   cargo-cache:
+    name: ladybug-cargo-cache
   target-cache:
+    name: ladybug-target-cache
 
 networks:
   default:
