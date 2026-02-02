@@ -8,8 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::storage::BindSpace;
 use crate::search::HdrIndex;
-use crate::storage::bind_space::Addr;
-use crate::core::Fingerprint;
+use crate::storage::bind_space::{Addr, FINGERPRINT_WORDS};
 
 /// MCP Action types
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -265,22 +264,33 @@ async fn execute_mcp_action(
         McpAction::Bind { address, fingerprint, label } => {
             let addr = Addr(address);
 
-            // Convert bytes to Fingerprint (pad if needed)
-            let padded = if fingerprint.len() < crate::FINGERPRINT_BYTES {
-                let mut buf = vec![0u8; crate::FINGERPRINT_BYTES];
-                buf[..fingerprint.len()].copy_from_slice(&fingerprint);
-                buf
-            } else {
-                fingerprint[..crate::FINGERPRINT_BYTES].to_vec()
-            };
-
-            let fp = match Fingerprint::from_bytes(&padded) {
-                Ok(f) => f,
-                Err(e) => return Ok(McpResult::Error { message: e.to_string() }),
-            };
+            // Convert bytes to [u64; FINGERPRINT_WORDS] (156 words = 1248 bytes)
+            let mut fp_array = [0u64; FINGERPRINT_WORDS];
+            for (i, chunk) in fingerprint.chunks(8).enumerate() {
+                if i >= FINGERPRINT_WORDS {
+                    break;
+                }
+                if chunk.len() == 8 {
+                    fp_array[i] = u64::from_le_bytes(chunk.try_into().unwrap());
+                } else {
+                    // Partial chunk - pad with zeros
+                    let mut buf = [0u8; 8];
+                    buf[..chunk.len()].copy_from_slice(chunk);
+                    fp_array[i] = u64::from_le_bytes(buf);
+                }
+            }
 
             let mut space = bind_space.write();
-            let success = space.write_fingerprint(addr, fp, label).is_ok();
+            let success = space.write_at(addr, fp_array);
+
+            // Set label if provided and write succeeded
+            if success {
+                if let Some(lbl) = label {
+                    if let Some(node) = space.read_mut(addr) {
+                        node.label = Some(lbl);
+                    }
+                }
+            }
 
             Ok(McpResult::Bound { address, success })
         }
@@ -374,10 +384,10 @@ async fn execute_mcp_action(
             let stats = space.stats();
 
             Ok(McpResult::Stats {
-                total_nodes: stats.total_nodes,
-                surface_nodes: stats.surface_nodes,
-                fluid_nodes: stats.fluid_nodes,
-                node_space_nodes: stats.node_space_nodes,
+                total_nodes: stats.surface_count + stats.fluid_count + stats.node_count,
+                surface_nodes: stats.surface_count,
+                fluid_nodes: stats.fluid_count,
+                node_space_nodes: stats.node_count,
             })
         }
     }

@@ -69,8 +69,9 @@ arrow-select = "57"
 parquet = { version = "57", features = ["snap", "lz4", "zstd"] }
 arrow-flight = { version = "57", features = ["flight-sql-experimental"], optional = true }
 arrow-ipc = "57"
-tonic = { version = "0.12", optional = true }
-prost = { version = "0.13", optional = true }
+# tonic/prost must match arrow-flight's versions (0.14.1)
+tonic = { version = "0.14", optional = true }
+prost = { version = "0.14", optional = true }
 bytes = "1.11"
 
 # -----------------------------------------------------------------------------
