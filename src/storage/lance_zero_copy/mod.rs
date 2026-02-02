@@ -2593,7 +2593,7 @@ impl CsrBuilder {
         for neighbors in &self.adj_list {
             for &(dst, weight) in neighbors {
                 edges.push(dst);
-                if let Some(ref mut w) = weights {
+                if let Some(w) = weights.as_mut() {
                     w.push(weight);
                 }
             }
