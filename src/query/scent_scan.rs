@@ -44,11 +44,12 @@ use arrow::record_batch::RecordBatch;
 use datafusion::common::ScalarValue;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::TaskContext;
-use datafusion::logical_expr::{ColumnarValue, ScalarUDF, ScalarUDFImpl, Signature, TypeSignature, Volatility};
+use datafusion::logical_expr::{ColumnarValue, ScalarFunctionArgs, ScalarUDF, ScalarUDFImpl, Signature, TypeSignature, Volatility};
 use datafusion::physical_expr::EquivalenceProperties;
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionMode, ExecutionPlan, PlanProperties,
+    DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties,
     RecordBatchStream, SendableRecordBatchStream, Partitioning,
+    execution_plan::{Boundedness, EmissionType},
 };
 use datafusion::prelude::*;
 use futures::Stream;
@@ -182,7 +183,8 @@ impl ScentScanExec {
         let properties = PlanProperties::new(
             eq_properties,
             Partitioning::UnknownPartitioning(1),
-            ExecutionMode::Bounded,
+            EmissionType::Final,
+            Boundedness::Bounded,
         );
 
         Self {
@@ -435,7 +437,7 @@ fn results_to_batch(
     };
 
     RecordBatch::try_new(projected_schema, projected_arrays)
-        .map_err(|e| DataFusionError::ArrowError(e, None))
+        .map_err(|e| DataFusionError::ArrowError(Box::new(e), None))
 }
 
 // =============================================================================
@@ -480,7 +482,7 @@ impl RecordBatchStream for MemoryStream {
 // =============================================================================
 
 /// Hamming distance UDF for use in SQL queries
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct HammingDistanceUdf {
     signature: Signature,
 }
@@ -520,7 +522,8 @@ impl ScalarUDFImpl for HammingDistanceUdf {
         Ok(DataType::UInt32)
     }
 
-    fn invoke_batch(&self, args: &[ColumnarValue], num_rows: usize) -> Result<ColumnarValue> {
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
+        let args = &args.args;
         if args.len() != 2 {
             return Err(DataFusionError::Plan(
                 "hamming_distance requires exactly 2 arguments".to_string()
@@ -586,7 +589,7 @@ impl ScalarUDFImpl for HammingDistanceUdf {
 }
 
 /// Similarity UDF (1.0 - hamming/MAX_BITS)
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct SimilarityUdf {
     signature: Signature,
 }
@@ -626,31 +629,68 @@ impl ScalarUDFImpl for SimilarityUdf {
         Ok(DataType::Float32)
     }
 
-    fn invoke_batch(&self, args: &[ColumnarValue], num_rows: usize) -> Result<ColumnarValue> {
-        // Delegate to hamming_distance and convert
-        let hamming_udf = HammingDistanceUdf::new();
-        let distances = hamming_udf.invoke_batch(args, num_rows)?;
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
+        let args = &args.args;
+        if args.len() != 2 {
+            return Err(DataFusionError::Plan(
+                "similarity requires exactly 2 arguments".to_string()
+            ));
+        }
 
-        match distances {
-            ColumnarValue::Array(arr) => {
-                let dist_arr = arr.as_any().downcast_ref::<UInt32Array>()
-                    .ok_or_else(|| DataFusionError::Plan("Expected UInt32".to_string()))?;
-
-                let similarities: Vec<f32> = dist_arr.iter()
-                    .map(|d| d.map(|v| 1.0 - (v as f32 / MAX_BITS as f32)).unwrap_or(0.0))
-                    .collect();
-
-                Ok(ColumnarValue::Array(Arc::new(Float32Array::from(similarities))))
+        // Handle scalar vs array for each argument
+        let (fp1_array, fp2_array) = match (&args[0], &args[1]) {
+            (ColumnarValue::Array(a1), ColumnarValue::Array(a2)) => {
+                let fp1 = a1.as_any().downcast_ref::<FixedSizeBinaryArray>()
+                    .ok_or_else(|| DataFusionError::Plan("Expected FixedSizeBinary".to_string()))?;
+                let fp2 = a2.as_any().downcast_ref::<FixedSizeBinaryArray>()
+                    .ok_or_else(|| DataFusionError::Plan("Expected FixedSizeBinary".to_string()))?;
+                (fp1.clone(), fp2.clone())
             }
-            ColumnarValue::Scalar(s) => {
-                if let ScalarValue::UInt32(Some(d)) = s {
-                    let sim = 1.0 - (d as f32 / MAX_BITS as f32);
-                    Ok(ColumnarValue::Scalar(ScalarValue::Float32(Some(sim))))
-                } else {
-                    Err(DataFusionError::Plan("Expected UInt32 scalar".to_string()))
+            (ColumnarValue::Array(a1), ColumnarValue::Scalar(s2)) => {
+                let fp1 = a1.as_any().downcast_ref::<FixedSizeBinaryArray>()
+                    .ok_or_else(|| DataFusionError::Plan("Expected FixedSizeBinary".to_string()))?;
+                let query_bytes = match s2 {
+                    ScalarValue::FixedSizeBinary(_, Some(b)) => b.clone(),
+                    _ => return Err(DataFusionError::Plan("Expected binary scalar".to_string())),
+                };
+                let mut builder = FixedSizeBinaryBuilder::new(FP_BYTES as i32);
+                for _ in 0..fp1.len() {
+                    builder.append_value(&query_bytes)?;
+                }
+                (fp1.clone(), builder.finish())
+            }
+            _ => {
+                return Err(DataFusionError::Plan(
+                    "similarity: first argument must be array".to_string()
+                ));
+            }
+        };
+
+        // Compute similarities
+        let mut similarities: Vec<f32> = Vec::with_capacity(fp1_array.len());
+        for i in 0..fp1_array.len() {
+            let bytes1 = fp1_array.value(i);
+            let bytes2 = fp2_array.value(i);
+
+            let mut words1 = [0u64; HDR_WORDS];
+            let mut words2 = [0u64; HDR_WORDS];
+
+            for (j, chunk) in bytes1.chunks(8).enumerate().take(HDR_WORDS) {
+                if chunk.len() == 8 {
+                    words1[j] = u64::from_le_bytes(chunk.try_into().unwrap());
                 }
             }
+            for (j, chunk) in bytes2.chunks(8).enumerate().take(HDR_WORDS) {
+                if chunk.len() == 8 {
+                    words2[j] = u64::from_le_bytes(chunk.try_into().unwrap());
+                }
+            }
+
+            let dist = hamming_distance(&words1, &words2);
+            similarities.push(1.0 - (dist as f32 / MAX_BITS as f32));
         }
+
+        Ok(ColumnarValue::Array(Arc::new(Float32Array::from(similarities))))
     }
 }
 

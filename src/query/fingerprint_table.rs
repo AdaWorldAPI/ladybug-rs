@@ -32,8 +32,9 @@ use datafusion::execution::context::TaskContext;
 use datafusion::logical_expr::TableType;
 use datafusion::physical_expr::EquivalenceProperties;
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionMode, ExecutionPlan, PlanProperties,
+    DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties,
     RecordBatchStream, SendableRecordBatchStream, Partitioning,
+    execution_plan::{Boundedness, EmissionType},
 };
 use datafusion::prelude::*;
 use futures::Stream;
@@ -176,7 +177,8 @@ impl BindSpaceScan {
         let properties = PlanProperties::new(
             EquivalenceProperties::new(projected_schema.clone()),
             Partitioning::UnknownPartitioning(1),
-            ExecutionMode::Bounded,
+            EmissionType::Final,
+            Boundedness::Bounded,
         );
 
         Self {
@@ -339,7 +341,7 @@ fn bind_space_to_batch(
     // Build FixedSizeBinaryArray for fingerprints
     let mut fp_builder = FixedSizeBinaryBuilder::with_capacity(fingerprints.len(), FP_BYTES as i32);
     for fp in &fingerprints {
-        fp_builder.append_value(fp).map_err(|e| DataFusionError::ArrowError(e, None))?;
+        fp_builder.append_value(fp).map_err(|e| DataFusionError::ArrowError(Box::new(e), None))?;
     }
     let fp_array = fp_builder.finish();
 
@@ -372,7 +374,7 @@ fn bind_space_to_batch(
     };
 
     RecordBatch::try_new(projected_schema, columns)
-        .map_err(|e| DataFusionError::ArrowError(e, None))
+        .map_err(|e| DataFusionError::ArrowError(Box::new(e), None))
 }
 
 /// Helper to add a node to the arrays

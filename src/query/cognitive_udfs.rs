@@ -23,7 +23,7 @@ use arrow::array::*;
 use arrow::datatypes::{DataType, Field};
 use datafusion::common::Result;
 use datafusion::logical_expr::{
-    ColumnarValue, ScalarUDFImpl, Signature, TypeSignature, Volatility,
+    ColumnarValue, ScalarFunctionArgs, ScalarUDFImpl, Signature, TypeSignature, Volatility,
 };
 
 use crate::core::{DIM, scent_distance as core_scent_distance, extract_scent, SCENT_BYTES};
@@ -125,7 +125,7 @@ fn expand_to_arrays(a: &ColumnarValue, b: &ColumnarValue) -> Result<(ArrayRef, A
 // HAMMING DISTANCE UDF
 // =============================================================================
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct HammingUdf {
     signature: Signature,
 }
@@ -226,7 +226,8 @@ impl ScalarUDFImpl for HammingUdf {
         Ok(DataType::UInt32)
     }
 
-    fn invoke(&self, args: &[ColumnarValue]) -> Result<ColumnarValue> {
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
+        let args = &args.args;
         match (&args[0], &args[1]) {
             (ColumnarValue::Array(a), ColumnarValue::Array(b)) => {
                 let result = self.hamming_array(a.clone(), b.clone())?;
@@ -253,7 +254,7 @@ impl ScalarUDFImpl for HammingUdf {
 // SIMILARITY UDF
 // =============================================================================
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct SimilarityUdf {
     signature: Signature,
 }
@@ -339,7 +340,8 @@ impl ScalarUDFImpl for SimilarityUdf {
         Ok(DataType::Float32)
     }
 
-    fn invoke(&self, args: &[ColumnarValue]) -> Result<ColumnarValue> {
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
+        let args = &args.args;
         match (&args[0], &args[1]) {
             (ColumnarValue::Array(a), ColumnarValue::Array(b)) => {
                 let result = self.similarity_array(a.clone(), b.clone())?;
@@ -367,7 +369,7 @@ impl ScalarUDFImpl for SimilarityUdf {
 // POPCOUNT UDF
 // =============================================================================
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct PopcountUdf {
     signature: Signature,
 }
@@ -453,7 +455,8 @@ impl ScalarUDFImpl for PopcountUdf {
         Ok(DataType::UInt32)
     }
 
-    fn invoke(&self, args: &[ColumnarValue]) -> Result<ColumnarValue> {
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
+        let args = &args.args;
         match &args[0] {
             ColumnarValue::Array(arr) => {
                 let result = self.popcount_array(arr.clone())?;
@@ -483,7 +486,7 @@ impl ScalarUDFImpl for PopcountUdf {
 // XOR_BIND UDF
 // =============================================================================
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct XorBindUdf {
     signature: Signature,
 }
@@ -567,7 +570,8 @@ impl ScalarUDFImpl for XorBindUdf {
         Ok(arg_types[0].clone())
     }
 
-    fn invoke(&self, args: &[ColumnarValue]) -> Result<ColumnarValue> {
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
+        let args = &args.args;
         match (&args[0], &args[1]) {
             (ColumnarValue::Array(a), ColumnarValue::Array(b)) => {
                 let result = self.xor_array(a.clone(), b.clone())?;
@@ -594,7 +598,7 @@ impl ScalarUDFImpl for XorBindUdf {
 // SCENT UDFs
 // =============================================================================
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct ExtractScentUdf {
     signature: Signature,
 }
@@ -637,7 +641,8 @@ impl ScalarUDFImpl for ExtractScentUdf {
         Ok(DataType::FixedSizeBinary(SCENT_BYTES as i32))
     }
 
-    fn invoke(&self, args: &[ColumnarValue]) -> Result<ColumnarValue> {
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
+        let args = &args.args;
         match &args[0] {
             ColumnarValue::Array(arr) => {
                 let len = arr.len();
@@ -683,7 +688,7 @@ impl ScalarUDFImpl for ExtractScentUdf {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct ScentDistanceUdf {
     signature: Signature,
 }
@@ -728,7 +733,8 @@ impl ScalarUDFImpl for ScentDistanceUdf {
         Ok(DataType::UInt32)
     }
 
-    fn invoke(&self, args: &[ColumnarValue]) -> Result<ColumnarValue> {
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
+        let args = &args.args;
         match (&args[0], &args[1]) {
             (ColumnarValue::Array(a), ColumnarValue::Array(b)) => {
                 let len = a.len();
@@ -780,7 +786,7 @@ impl ScalarUDFImpl for ScentDistanceUdf {
 // =============================================================================
 
 /// NARS Deduction: A->B, B->C |- A->C
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct NarsDeductionUdf {
     signature: Signature,
 }
@@ -837,15 +843,15 @@ impl ScalarUDFImpl for NarsDeductionUdf {
         ))
     }
 
-    fn invoke(&self, args: &[ColumnarValue]) -> Result<ColumnarValue> {
-        let (f1, c1, f2, c2) = extract_nars_args(args)?;
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
+        let (f1, c1, f2, c2) = extract_nars_args(&args.args)?;
         let (f, c) = Self::deduction(f1, c1, f2, c2);
         Ok(nars_result_scalar(f, c))
     }
 }
 
 /// NARS Induction: A->B, A->C |- B->C
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct NarsInductionUdf {
     signature: Signature,
 }
@@ -904,15 +910,15 @@ impl ScalarUDFImpl for NarsInductionUdf {
         ))
     }
 
-    fn invoke(&self, args: &[ColumnarValue]) -> Result<ColumnarValue> {
-        let (f1, c1, f2, c2) = extract_nars_args(args)?;
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
+        let (f1, c1, f2, c2) = extract_nars_args(&args.args)?;
         let (f, c) = Self::induction(f1, c1, f2, c2);
         Ok(nars_result_scalar(f, c))
     }
 }
 
 /// NARS Abduction: A->B, C->B |- A->C
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct NarsAbductionUdf {
     signature: Signature,
 }
@@ -971,15 +977,15 @@ impl ScalarUDFImpl for NarsAbductionUdf {
         ))
     }
 
-    fn invoke(&self, args: &[ColumnarValue]) -> Result<ColumnarValue> {
-        let (f1, c1, f2, c2) = extract_nars_args(args)?;
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
+        let (f1, c1, f2, c2) = extract_nars_args(&args.args)?;
         let (f, c) = Self::abduction(f1, c1, f2, c2);
         Ok(nars_result_scalar(f, c))
     }
 }
 
 /// NARS Revision: Combine evidence
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct NarsRevisionUdf {
     signature: Signature,
 }
@@ -1044,8 +1050,8 @@ impl ScalarUDFImpl for NarsRevisionUdf {
         ))
     }
 
-    fn invoke(&self, args: &[ColumnarValue]) -> Result<ColumnarValue> {
-        let (f1, c1, f2, c2) = extract_nars_args(args)?;
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
+        let (f1, c1, f2, c2) = extract_nars_args(&args.args)?;
         let (f, c) = Self::revision(f1, c1, f2, c2);
         Ok(nars_result_scalar(f, c))
     }
@@ -1121,7 +1127,7 @@ use crate::cognitive::membrane::{Membrane, ConsciousnessParams};
 /// - tau (temporal) -> bits 0-3333
 /// - sigma (signal) -> bits 3334-6666
 /// - qualia (semantic) -> bits 6667-9999
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct MembraneEncodeUdf {
     signature: Signature,
 }
@@ -1160,7 +1166,8 @@ impl ScalarUDFImpl for MembraneEncodeUdf {
         Ok(DataType::FixedSizeBinary(FP_BYTES as i32))
     }
 
-    fn invoke(&self, args: &[ColumnarValue]) -> Result<ColumnarValue> {
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
+        let args = &args.args;
         // Extract scalar arguments
         let tau = match &args[0] {
             ColumnarValue::Scalar(datafusion::scalar::ScalarValue::Float32(Some(v))) => *v,
@@ -1200,7 +1207,7 @@ impl ScalarUDFImpl for MembraneEncodeUdf {
 ///
 /// Decodes a consciousness fingerprint back to approximate parameters.
 /// Note: qualia cannot be recovered (hash is one-way).
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct MembraneDecodeUdf {
     signature: Signature,
 }
@@ -1250,7 +1257,8 @@ impl ScalarUDFImpl for MembraneDecodeUdf {
         ))
     }
 
-    fn invoke(&self, args: &[ColumnarValue]) -> Result<ColumnarValue> {
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
+        let args = &args.args;
         let bytes = match &args[0] {
             ColumnarValue::Scalar(s) => scalar_to_bytes(s)?,
             _ => return Err(datafusion::error::DataFusionError::Execution(
