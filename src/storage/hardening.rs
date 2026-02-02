@@ -416,7 +416,7 @@ impl WriteAheadLog {
     /// Append entry to WAL
     pub fn append(&mut self, entry: &WalEntry) -> std::io::Result<()> {
         let bytes = entry.to_bytes();
-        if let Some(ref mut file) = self.file {
+        if let Some(file) = self.file.as_mut() {
             file.write_all(&bytes)?;
             self.size += bytes.len();
             self.entries_since_checkpoint += 1;
@@ -436,7 +436,7 @@ impl WriteAheadLog {
     /// Perform checkpoint (truncate WAL)
     pub fn checkpoint(&mut self) -> std::io::Result<()> {
         // Flush and close current file
-        if let Some(ref mut file) = self.file {
+        if let Some(file) = self.file.as_mut() {
             file.flush()?;
         }
         self.file = None;
@@ -752,7 +752,7 @@ impl HardenedBindSpace {
         }
 
         // WAL
-        if let Some(ref wal) = self.wal {
+        if let Some(wal) = self.wal.as_ref() {
             if let Ok(mut wal) = wal.lock() {
                 let entry = WalEntry::Write {
                     addr: addr.0,
@@ -786,7 +786,7 @@ impl HardenedBindSpace {
         }
 
         // WAL
-        if let Some(ref wal) = self.wal {
+        if let Some(wal) = self.wal.as_ref() {
             if let Ok(mut wal) = wal.lock() {
                 let entry = WalEntry::Delete { addr: addr.0 };
                 let _ = wal.append(&entry);
@@ -798,7 +798,7 @@ impl HardenedBindSpace {
     /// Record a link
     pub fn on_link(&self, from: Addr, verb: Addr, to: Addr) {
         // WAL
-        if let Some(ref wal) = self.wal {
+        if let Some(wal) = self.wal.as_ref() {
             if let Ok(mut wal) = wal.lock() {
                 let entry = WalEntry::Link {
                     from: from.0,
@@ -832,7 +832,7 @@ impl HardenedBindSpace {
         }
 
         // Check WAL
-        if let Some(ref wal) = self.wal {
+        if let Some(wal) = self.wal.as_ref() {
             if let Ok(wal) = wal.lock() {
                 needs_checkpoint = wal.needs_checkpoint();
             }
@@ -843,7 +843,7 @@ impl HardenedBindSpace {
 
     /// Perform WAL checkpoint
     pub fn checkpoint(&self) -> std::io::Result<()> {
-        if let Some(ref wal) = self.wal {
+        if let Some(wal) = self.wal.as_ref() {
             if let Ok(mut wal) = wal.lock() {
                 wal.checkpoint()?;
                 self.metrics.checkpoints.fetch_add(1, Ordering::Relaxed);
@@ -869,7 +869,7 @@ impl HardenedBindSpace {
 
     /// Recover from WAL
     pub fn recover(&self) -> std::io::Result<Vec<WalEntry>> {
-        if let Some(ref wal) = self.wal {
+        if let Some(wal) = self.wal.as_ref() {
             if let Ok(wal) = wal.lock() {
                 return wal.recover();
             }
