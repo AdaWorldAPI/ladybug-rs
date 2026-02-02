@@ -155,7 +155,7 @@ impl BenchResult {
         println!("║ RECALL                                                         ║");
         println!("║   Recall@{}: {:>6.2}%                                          ║", self.config.k, self.recall_at_k * 100.0);
 
-        if let Some(ref cmp) = self.comparison {
+        if let Some(cmp) = self.comparison.as_ref() {
             println!("╠════════════════════════════════════════════════════════════════╣");
             println!("║ VS FLOAT32 COSINE BASELINE                                    ║");
             println!("║   RAM savings:   {:>6.1}x less memory                         ║", cmp.ram_savings_factor);
