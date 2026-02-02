@@ -277,7 +277,7 @@ impl Database {
             .with_content(&thought.content);
         
         // Add fingerprint if available
-        let node = if let Some(ref fp) = thought.fingerprint {
+        let node = if let Some(fp) = thought.fingerprint.as_ref() {
             node.with_fingerprint(fp)
         } else {
             node
