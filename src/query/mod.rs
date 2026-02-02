@@ -44,6 +44,7 @@ mod cypher;
 mod datafusion;
 pub mod fingerprint_table;
 pub mod hybrid;
+pub mod scent_scan;
 
 pub use builder::{Query, QueryResult};
 pub use cypher::{
@@ -89,6 +90,13 @@ pub use fingerprint_table::{
     FingerprintTableProvider,
     BindSpaceScan,
     BindSpaceExt,
+};
+pub use scent_scan::{
+    ScentScanExec,
+    ScentPredicate,
+    HammingDistanceUdf,
+    SimilarityUdf as ScentSimilarityUdf,
+    ScentUdfExtension,
 };
 
 #[derive(thiserror::Error, Debug)]
