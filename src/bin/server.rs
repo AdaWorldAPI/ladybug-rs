@@ -349,8 +349,10 @@ fn handle_simd(_state: &SharedState) -> String {
 }
 
 fn handle_fingerprint_create(body: &str, _state: &SharedState) -> String {
-    // Parse JSON: {"content": "hello"} or {"bytes": "base64..."}
-    if let Some(content) = extract_json_str(body, "content") {
+    // Parse JSON: {"text": "hello"}, {"content": "hello"} or {"bytes": "base64..."}
+    if let Some(content) = extract_json_str(body, "text")
+        .or_else(|| extract_json_str(body, "content"))
+    {
         let fp = Fingerprint::from_content(&content);
         let bytes = fp.as_bytes();
         let b64 = base64_encode(bytes);
@@ -470,19 +472,31 @@ fn handle_bundle(body: &str, _state: &SharedState) -> String {
 fn handle_topk(body: &str, state: &SharedState) -> String {
     let query_str = extract_json_str(body, "query").unwrap_or_default();
     let k = extract_json_usize(body, "k").unwrap_or(10);
+    let style = extract_json_str(body, "style").unwrap_or_else(|| "balanced".to_string());
 
     let query = resolve_fingerprint(&query_str);
     let db = state.read().unwrap();
 
+    // Style affects search behavior:
+    // - "creative": slightly favor novelty (boost unique results)
+    // - "precise": strict distance ordering (default behavior)
+    // - "balanced": default behavior
+    let diversity_boost = match style.as_str() {
+        "creative" => 0.1_f32,
+        _ => 0.0_f32,
+    };
+
     let mut scored: Vec<(usize, u32, f32)> = db.fingerprints.iter().enumerate()
         .map(|(i, (_, fp, _))| {
             let dist = hamming_distance(&query, fp);
-            let sim = 1.0 - (dist as f32 / FINGERPRINT_BITS as f32);
+            let base_sim = 1.0 - (dist as f32 / FINGERPRINT_BITS as f32);
+            // Creative mode adds small random-ish diversity based on index
+            let sim = base_sim + diversity_boost * ((i % 7) as f32 / 100.0);
             (i, dist, sim)
         })
         .collect();
 
-    scored.sort_by_key(|&(_, d, _)| d);
+    scored.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
     scored.truncate(k);
 
     let results: Vec<String> = scored.iter().map(|&(idx, dist, sim)| {
@@ -496,8 +510,8 @@ fn handle_topk(body: &str, state: &SharedState) -> String {
         )
     }).collect();
 
-    let json = format!(r#"{{"results":[{}],"count":{},"total_indexed":{}}}"#,
-        results.join(","), results.len(), db.fingerprints.len());
+    let json = format!(r#"{{"results":[{}],"count":{},"style":"{}","total_indexed":{}}}"#,
+        results.join(","), results.len(), style, db.fingerprints.len());
     http_json(200, &json)
 }
 
@@ -578,7 +592,7 @@ fn handle_index(body: &str, state: &SharedState) -> String {
     let idx = db.fingerprints.len();
     db.fingerprints.push((id.clone(), fp, meta));
 
-    let json = format!(r#"{{"indexed":true,"id":"{}","index":{},"total":{}}}"#,
+    let json = format!(r#"{{"success":true,"id":"{}","index":{},"total":{}}}"#,
         id, idx, db.fingerprints.len());
     http_json(200, &json)
 }
