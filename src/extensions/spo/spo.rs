@@ -35,7 +35,7 @@ impl Fingerprint {
     fn zero() -> Self { Self { data: [0u64; N64] } }
     
     fn random() -> Self {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut data = [0u64; N64];
         for w in &mut data { *w = rng.gen(); }
         Self { data }
@@ -112,7 +112,7 @@ impl Fingerprint {
         let overlap = self.and(other);
         let flip_prob = (dot.abs() as f64 / N as f64).min(0.3);
         
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         for i in 0..N64 {
             for bit in 0..64 {
                 if (overlap.data[i] >> bit) & 1 == 1 && rng.gen::<f64>() < flip_prob {
