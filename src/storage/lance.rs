@@ -552,7 +552,7 @@ impl NodeRecord {
         let fp_builder = FixedSizeBinaryBuilder::new(FINGERPRINT_BYTES as i32);
         let mut fp_array = fp_builder;
         for node in nodes {
-            if let Some(ref fp) = node.fingerprint {
+            if let Some(fp) = node.fingerprint.as_ref() {
                 fp_array.append_value(fp)?;
             } else {
                 fp_array.append_null();
