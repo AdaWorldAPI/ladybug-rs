@@ -176,7 +176,9 @@ class Client:
         """Make HTTP request."""
         url = f"{self.url}{path}"
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
-        body = json.dumps(data).encode() if data else None
+        # CRITICAL: Server has non-conformant JSON parser that breaks on
+        # whitespace after ':'. Use compact separators to avoid spaces.
+        body = json.dumps(data, separators=(",", ":")).encode() if data else None
 
         req = Request(url, data=body, headers=headers, method=method)
 
