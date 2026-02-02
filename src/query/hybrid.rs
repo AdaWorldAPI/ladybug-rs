@@ -412,7 +412,7 @@ impl HybridEngine {
     fn execute_graph(&self, query: &HybridQuery, candidates: Vec<(Addr, f32)>) -> Result<Vec<(Addr, f32)>, String> {
         match &query.graph {
             Some(gc) => {
-                if let Some(ref parsed) = gc.parsed {
+                if let Some(parsed) = gc.parsed.as_ref() {
                     // Apply pattern constraints (simplified - check labels)
                     Ok(candidates
                         .into_iter()
@@ -432,13 +432,13 @@ impl HybridEngine {
     fn matches_pattern(&self, addr: Addr, query: &CypherQuery) -> bool {
         if let Some(node) = self.bind_space.read(addr) {
             // Check label matches if specified in pattern
-            if let Some(ref match_clause) = query.match_clause {
+            if let Some(match_clause) = query.match_clause.as_ref() {
                 for pattern in &match_clause.patterns {
                     for element in &pattern.elements {
                         if let PatternElement::Node(node_pat) = element {
                             for label in &node_pat.labels {
                                 // Check if node has matching label
-                                if let Some(ref node_label) = node.label {
+                                if let Some(node_label) = node.label.as_ref() {
                                     if !node_label.to_lowercase().contains(&label.to_lowercase()) {
                                         return false;
                                     }
@@ -482,14 +482,14 @@ impl HybridEngine {
         for (addr, similarity) in candidates {
             if let Some(node) = self.bind_space.read(addr) {
                 // Apply qualia filter
-                if let Some(ref qf) = query.qualia {
+                if let Some(qf) = query.qualia.as_ref() {
                     if !qf.matches(node.qidx) {
                         continue;
                     }
                 }
 
                 // Apply label filter
-                if let Some(ref label_filter) = query.label_filter {
+                if let Some(label_filter) = query.label_filter.as_ref() {
                     match &node.label {
                         Some(label) if label.contains(label_filter) => {}
                         _ => continue,
