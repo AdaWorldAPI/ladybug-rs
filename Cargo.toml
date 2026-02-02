@@ -2,7 +2,7 @@
 name = "ladybug"
 version = "0.3.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "Apache-2.0"
 description = "Crystal Lake: Unified Cognitive Database with 4096 CAM Operations, Quantum-Inspired Operators, and 144 Verb Graph Substrate"
 repository = "https://github.com/AdaWorldAPI/ladybug-rs"
@@ -55,25 +55,25 @@ full = [
 [dependencies]
 # -----------------------------------------------------------------------------
 # Storage: LanceDB + Arrow ecosystem
-# Arrow 56.x aligns with lance 1.0
+# Arrow 57.x aligns with DataFusion 52 / lance 1.0 (vendored)
 # -----------------------------------------------------------------------------
 lance = { version = "1.0", optional = true }
-arrow = { version = "56", features = ["ffi"] }
-arrow-array = "56"
-arrow-schema = "56"
-arrow-buffer = "56"
-arrow-data = "56"
-arrow-cast = "56"
-arrow-select = "56"
-parquet = { version = "56", features = ["snap", "lz4", "zstd"] }
+arrow = { version = "57", features = ["ffi"] }
+arrow-array = "57"
+arrow-schema = "57"
+arrow-buffer = "57"
+arrow-data = "57"
+arrow-cast = "57"
+arrow-select = "57"
+parquet = { version = "57", features = ["snap", "lz4", "zstd"] }
 bytes = "1.11"
 
 # -----------------------------------------------------------------------------
 # Query: DataFusion SQL engine
-# DataFusion 50.x aligns with arrow 56 / lance 1.0
+# DataFusion 52.x with sort pushdown for HDR cascade TopK
 # -----------------------------------------------------------------------------
-datafusion = "50"
-sqlparser = "0.58"
+datafusion = "51"
+sqlparser = "0.60"
 
 # -----------------------------------------------------------------------------
 # Graph: Neo4j driver
