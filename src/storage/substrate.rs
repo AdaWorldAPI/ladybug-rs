@@ -861,7 +861,7 @@ impl Substrate {
         // Promote candidates
         for (old_addr, fingerprint, label) in promote_candidates {
             // Write to node space
-            let new_addr = if let Some(ref lbl) = label {
+            let new_addr = if let Some(lbl) = label.as_ref() {
                 self.write_labeled(fingerprint, lbl)
             } else {
                 self.write(fingerprint)
@@ -895,7 +895,7 @@ impl Substrate {
         drop(bind_space);
 
         // Write to node space
-        let new_addr = if let Some(ref lbl) = label {
+        let new_addr = if let Some(lbl) = label.as_ref() {
             self.write_labeled(fingerprint, lbl)
         } else {
             self.write(fingerprint)
