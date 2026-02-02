@@ -1084,7 +1084,7 @@ impl CypherTranspiler {
         }
         
         // Build SELECT clause
-        let select_cols = if let Some(ref ret) = query.return_clause {
+        let select_cols = if let Some(ret) = query.return_clause.as_ref() {
             ret.items.iter()
                 .map(|item| Self::expr_to_sql(&item.expr))
                 .collect::<Vec<_>>()
@@ -1102,7 +1102,7 @@ impl CypherTranspiler {
         }
         
         // WHERE clause
-        if let Some(ref where_clause) = query.where_clause {
+        if let Some(where_clause) = query.where_clause.as_ref() {
             where_parts.push(Self::condition_to_sql(&where_clause.condition));
         }
         
@@ -1111,7 +1111,7 @@ impl CypherTranspiler {
         }
         
         // ORDER BY
-        if let Some(ref order) = query.order_by {
+        if let Some(order) = query.order_by.as_ref() {
             let order_sql = order.items.iter()
                 .map(|item| {
                     let dir = if item.direction == SortDirection::Desc { "DESC" } else { "ASC" };
@@ -1194,7 +1194,7 @@ ORDER BY t.depth, t.amplification DESC
             edge_type_filter = edge_type_filter,
             max_depth = edge.max_hops,
             min_depth = edge.min_hops,
-            end_label_filter = if let Some(ref end) = end_node {
+            end_label_filter = if let Some(end) = end_node.as_ref() {
                 if !end.labels.is_empty() {
                     format!("  AND n.label = '{}'", end.labels[0])
                 } else {
@@ -1203,7 +1203,7 @@ ORDER BY t.depth, t.amplification DESC
             } else {
                 String::new()
             },
-            user_where = if let Some(ref w) = query.where_clause {
+            user_where = if let Some(w) = query.where_clause.as_ref() {
                 format!("  AND ({})", Self::condition_to_sql(&w.condition))
             } else {
                 String::new()
