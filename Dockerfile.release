@@ -1,0 +1,121 @@
+# =============================================================================
+# LadybugDB — Release Dockerfile with cargo-chef Dependency Caching
+# =============================================================================
+# Layer strategy:
+#   Layer 1 (planner):  cargo-chef prepare → recipe.json (dep fingerprint)
+#   Layer 2 (deps):     cargo-chef cook → compile 586 crates (CACHED if deps unchanged)
+#   Layer 3 (build):    cargo build → compile only ladybug source (~73K lines)
+#   Layer 4 (runtime):  slim Debian + 3 binaries (~50MB)
+#
+# On source-only changes: Layer 2 is cached → build drops from ~8min to ~90sec
+# On Railway with pre-built image: 0 build time (just docker pull)
+# =============================================================================
+
+# --- Stage 0: Chef planner ---------------------------------------------------
+FROM rust:1.93-slim-bookworm AS chef
+RUN cargo install cargo-chef --locked
+WORKDIR /build
+
+# --- Stage 1: Dependency fingerprint -----------------------------------------
+FROM chef AS planner
+COPY Cargo.toml Cargo.lock* ./
+COPY src/ src/
+RUN cargo chef prepare --recipe-path recipe.json
+
+# --- Stage 2: Compile dependencies (CACHED unless Cargo.toml/lock change) ----
+FROM chef AS deps
+
+RUN apt-get update && apt-get install -y \
+    pkg-config libssl-dev cmake protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=planner /build/recipe.json recipe.json
+
+# Cook deps for all 3 target CPUs in one layer
+# AVX-512
+RUN RUSTFLAGS="-C target-cpu=x86-64-v4 -C link-arg=-s" \
+    cargo chef cook --release --recipe-path recipe.json \
+    --bin ladybug-server 2>/dev/null || true
+
+# AVX-2 (shares most compiled deps via target/release/deps)
+RUN RUSTFLAGS="-C target-cpu=x86-64-v3 -C link-arg=-s" \
+    cargo chef cook --release --recipe-path recipe.json \
+    --bin ladybug-server 2>/dev/null || true
+
+# Generic
+RUN RUSTFLAGS="-C link-arg=-s" \
+    cargo chef cook --release --recipe-path recipe.json \
+    --bin ladybug-server 2>/dev/null || true
+
+# --- Stage 3: Build ladybug source (fast — deps already compiled) ------------
+FROM deps AS builder
+
+# Copy full source
+COPY . .
+
+# AVX-512 binary
+RUN RUSTFLAGS="-C target-cpu=x86-64-v4 -C link-arg=-s" \
+    cargo build --release --bin ladybug-server && \
+    cp target/release/ladybug-server /build/ladybug-avx512 && \
+    cargo clean -p ladybug
+
+# AVX-2 binary
+RUN RUSTFLAGS="-C target-cpu=x86-64-v3 -C link-arg=-s" \
+    cargo build --release --bin ladybug-server && \
+    cp target/release/ladybug-server /build/ladybug-avx2 && \
+    cargo clean -p ladybug
+
+# Generic binary
+RUN RUSTFLAGS="-C link-arg=-s" \
+    cargo build --release --bin ladybug-server && \
+    cp target/release/ladybug-server /build/ladybug-generic
+
+# =============================================================================
+# Stage 4: Runtime (minimal ~50MB)
+# =============================================================================
+FROM debian:bookworm-slim AS runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl procps \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -m -s /bin/bash ladybug \
+    && mkdir -p /data && chown ladybug:ladybug /data
+
+# Copy all three binaries
+COPY --from=builder /build/ladybug-avx512 /usr/local/bin/
+COPY --from=builder /build/ladybug-avx2   /usr/local/bin/
+COPY --from=builder /build/ladybug-generic /usr/local/bin/
+
+# Copy docs
+COPY --from=builder /build/README.md /opt/ladybug/
+COPY --from=builder /build/docs/ /opt/ladybug/docs/
+
+# Auto-select entrypoint
+COPY <<'ENTRY' /usr/local/bin/ladybug-start
+#!/bin/sh
+set -e
+if grep -q "avx512f" /proc/cpuinfo 2>/dev/null; then
+  BIN=ladybug-avx512; LVL=AVX-512
+elif grep -q "avx2" /proc/cpuinfo 2>/dev/null; then
+  BIN=ladybug-avx2; LVL=AVX-2
+else
+  BIN=ladybug-generic; LVL=Generic
+fi
+echo "[ladybugdb] SIMD: ${LVL} → ${BIN}"
+exec "/usr/local/bin/${BIN}" "$@"
+ENTRY
+RUN chmod +x /usr/local/bin/ladybug-start
+
+USER ladybug
+WORKDIR /home/ladybug
+
+ENV LADYBUG_HOST=0.0.0.0
+ENV LADYBUG_PORT=8080
+ENV LADYBUG_DATA_DIR=/data
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:${LADYBUG_PORT}/health || exit 1
+
+ENTRYPOINT ["ladybug-start"]

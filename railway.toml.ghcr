@@ -1,0 +1,19 @@
+# =============================================================================
+# railway.toml — LadybugDB Railway Configuration
+# =============================================================================
+# Pulls pre-built image from GHCR (built by GitHub Actions CI)
+# Zero build time on Railway — just docker pull
+# =============================================================================
+
+[build]
+# Pull pre-built image from GitHub Container Registry
+# Built by .github/workflows/build-release.yml on every push to main
+dockerImage = "ghcr.io/adaworldapi/ladybug-rs:latest"
+
+[deploy]
+startCommand = "ladybug-start"
+healthcheckPath = "/health"
+healthcheckTimeout = 10
+numReplicas = 1
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
