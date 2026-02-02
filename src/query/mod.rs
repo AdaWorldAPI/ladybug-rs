@@ -42,6 +42,7 @@ mod builder;
 pub mod cognitive_udfs;
 mod cypher;
 mod datafusion;
+pub mod fingerprint_table;
 pub mod hybrid;
 
 pub use builder::{Query, QueryResult};
@@ -83,6 +84,11 @@ pub use cognitive_udfs::{
     NarsRevisionUdf,
     MembraneEncodeUdf,
     MembraneDecodeUdf,
+};
+pub use fingerprint_table::{
+    FingerprintTableProvider,
+    BindSpaceScan,
+    BindSpaceExt,
 };
 
 #[derive(thiserror::Error, Debug)]
