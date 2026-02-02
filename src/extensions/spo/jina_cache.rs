@@ -279,7 +279,7 @@ impl JinaCache {
     }
     
     fn save_to_disk(&self) {
-        if let Some(ref path) = self.cache_path {
+        if let Some(path) = self.cache_path.as_ref() {
             if let Ok(file) = File::create(path) {
                 let mut writer = BufWriter::new(file);
                 
@@ -299,7 +299,7 @@ impl JinaCache {
     }
     
     fn load_from_disk(&mut self) {
-        if let Some(ref path) = self.cache_path {
+        if let Some(path) = self.cache_path.as_ref() {
             if let Ok(file) = File::open(path) {
                 let mut reader = BufReader::new(file);
                 
