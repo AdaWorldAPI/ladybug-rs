@@ -335,7 +335,7 @@ impl UdpReceiver {
                     }
 
                     // Notify callback
-                    if let Some(ref callback) = self.on_result {
+                    if let Some(callback) = self.on_result.as_ref() {
                         callback(packet.from, result);
                     }
                 }
@@ -400,7 +400,7 @@ impl LaneRouter {
     pub fn route(&mut self, packet: FramePacket) -> ExecResult {
         let lane_id = packet.frame.header.lane_id as usize;
 
-        if let Some(Some(ref mut executor)) = self.lanes.get_mut(lane_id) {
+        if let Some(Some(executor)) = self.lanes.get_mut(lane_id) {
             executor.execute(&packet.frame)
         } else {
             ExecResult::Error(format!("lane {} not found", lane_id))
