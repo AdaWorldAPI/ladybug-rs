@@ -8,6 +8,7 @@
 mod builder;
 mod cypher;
 mod datafusion;
+pub mod hybrid;
 
 pub use builder::{Query, QueryResult};
 pub use cypher::{
@@ -19,6 +20,19 @@ pub use cypher::{
 pub use datafusion::{
     SqlEngine,
     QueryBuilder,
+};
+pub use hybrid::{
+    HybridQuery,
+    HybridResult,
+    HybridEngine,
+    HybridStats,
+    CausalMode,
+    TemporalConstraint,
+    VectorConstraint,
+    QualiaFilter,
+    TruthFilter,
+    parse_hybrid,
+    execute_hybrid_command,
 };
 
 #[derive(thiserror::Error, Debug)]

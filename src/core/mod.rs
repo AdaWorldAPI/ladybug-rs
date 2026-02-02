@@ -1,7 +1,7 @@
 //! Core primitives: Fingerprints, SIMD operations, VSA algebra.
 
 mod fingerprint;
-mod simd;
+pub mod simd;
 mod vsa;
 mod buffer;
 mod scent;
