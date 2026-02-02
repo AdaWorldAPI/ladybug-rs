@@ -70,9 +70,10 @@ bytes = "1.11"
 
 # -----------------------------------------------------------------------------
 # Query: DataFusion SQL engine
-# DataFusion 52.x with sort pushdown for HDR cascade TopK
+# DataFusion 51.x - upgrade to 52 when liblzma conflict fixed
+# To use DF 52: uncomment patch below and set datafusion = "52"
 # -----------------------------------------------------------------------------
-datafusion = "52"
+datafusion = "51"
 sqlparser = "0.60"
 
 # -----------------------------------------------------------------------------
@@ -222,3 +223,12 @@ panic = "abort"
 [profile.bench]
 lto = "thin"
 opt-level = 3
+
+# =============================================================================
+# PATCH: DataFusion 52 upgrade (when ready)
+# DataFusion 52 has internal liblzma conflict (0.4.4 vs 0.4.5)
+# To enable: change datafusion = "52" above and uncomment patch below
+# =============================================================================
+
+# [patch.crates-io]
+# datafusion = { git = "https://github.com/AdaWorldAPI/datafusion", branch = "liblzma-fix" }
