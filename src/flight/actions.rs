@@ -7,8 +7,9 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
 use crate::storage::BindSpace;
-use crate::search::HdrCascade;
-use crate::core::{Addr, Fingerprint};
+use crate::search::HdrIndex;
+use crate::storage::bind_space::Addr;
+use crate::core::Fingerprint;
 
 /// MCP Action types
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -125,7 +126,7 @@ pub async fn execute_action(
     action_type: &str,
     body: &[u8],
     bind_space: Arc<RwLock<BindSpace>>,
-    hdr_cascade: Arc<RwLock<HdrCascade>>,
+    hdr_cascade: Arc<RwLock<HdrIndex>>,
 ) -> Result<Vec<u8>, String> {
     // Parse JSON body into McpAction based on action_type
     let action: McpAction = match action_type {
@@ -221,7 +222,7 @@ pub async fn execute_action(
 async fn execute_mcp_action(
     action: McpAction,
     bind_space: Arc<RwLock<BindSpace>>,
-    _hdr_cascade: Arc<RwLock<HdrCascade>>,
+    _hdr_cascade: Arc<RwLock<HdrIndex>>,
 ) -> Result<McpResult, String> {
     match action {
         McpAction::Encode { text, data, style } => {
@@ -264,13 +265,19 @@ async fn execute_mcp_action(
         McpAction::Bind { address, fingerprint, label } => {
             let addr = Addr(address);
 
-            // Convert bytes to Fingerprint
-            let mut fp = Fingerprint::default();
-            for (i, chunk) in fingerprint.chunks(8).enumerate() {
-                if i < fp.len() && chunk.len() == 8 {
-                    fp[i] = u64::from_le_bytes(chunk.try_into().unwrap());
-                }
-            }
+            // Convert bytes to Fingerprint (pad if needed)
+            let padded = if fingerprint.len() < crate::FINGERPRINT_BYTES {
+                let mut buf = vec![0u8; crate::FINGERPRINT_BYTES];
+                buf[..fingerprint.len()].copy_from_slice(&fingerprint);
+                buf
+            } else {
+                fingerprint[..crate::FINGERPRINT_BYTES].to_vec()
+            };
+
+            let fp = match Fingerprint::from_bytes(&padded) {
+                Ok(f) => f,
+                Err(e) => return Ok(McpResult::Error { message: e.to_string() }),
+            };
 
             let mut space = bind_space.write();
             let success = space.write_fingerprint(addr, fp, label).is_ok();
@@ -297,7 +304,7 @@ async fn execute_mcp_action(
                 Ok(McpResult::Node {
                     address,
                     fingerprint,
-                    label: Some(node.label.clone()),
+                    label: node.label.clone(),
                     zone,
                 })
             } else {

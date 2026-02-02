@@ -78,8 +78,9 @@ pub mod python;
 #[cfg(feature = "bench")]
 pub mod bench;
 
-#[cfg(feature = "flight")]
-pub mod flight;
+// Flight module temporarily disabled - arrow-flight API compatibility issues
+// #[cfg(feature = "flight")]
+// pub mod flight;
 
 // === Re-exports for convenience ===
 
