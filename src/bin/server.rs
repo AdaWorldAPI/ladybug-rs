@@ -486,7 +486,7 @@ fn handle_topk(body: &str, state: &SharedState) -> String {
     scored.truncate(k);
 
     let results: Vec<String> = scored.iter().map(|&(idx, dist, sim)| {
-        let (ref id, _, ref meta): &(String, Fingerprint, HashMap<String, String>) = &db.fingerprints[idx];
+        let (id, _, meta) = &db.fingerprints[idx];
         let meta_json = meta.iter()
             .map(|(k, v)| format!(r#""{}":"{}""#, k, v))
             .collect::<Vec<_>>().join(",");
@@ -550,7 +550,7 @@ fn handle_resonate(body: &str, state: &SharedState) -> String {
     scored.truncate(limit);
 
     let results: Vec<String> = scored.iter().map(|&(idx, sim)| {
-        let (ref id, _, ref _meta): &(String, Fingerprint, HashMap<String, String>) = &db.fingerprints[idx];
+        let (id, _, _meta) = &db.fingerprints[idx];
         format!(r#"{{"index":{},"id":"{}","similarity":{:.6}}}"#, idx, id, sim)
     }).collect();
 
@@ -758,7 +758,7 @@ fn handle_lance_search(body: &str, state: &SharedState) -> String {
     scored.truncate(limit);
 
     let results: Vec<String> = scored.iter().map(|&(idx, dist, sim)| {
-        let (ref id, _, ref meta): &(String, Fingerprint, HashMap<String, String>) = &db.fingerprints[idx];
+        let (id, _, meta) = &db.fingerprints[idx];
         let text = meta.get("text").cloned().unwrap_or_default();
         format!(r#"{{"id":"{}","_distance":{},"_similarity":{:.6},"text":"{}"}}"#,
             id, dist, sim, text.replace('"', "'"))
