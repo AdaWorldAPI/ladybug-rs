@@ -37,14 +37,14 @@ impl Fingerprint {
     fn random() -> Self {
         let mut rng = rand::rng();
         let mut data = [0u64; N64];
-        for w in &mut data { *w = rng.gen(); }
+        for w in &mut data { *w = rng.r#gen(); }
         Self { data }
     }
     
     fn from_seed(seed: u64) -> Self {
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
         let mut data = [0u64; N64];
-        for w in &mut data { *w = rng.gen(); }
+        for w in &mut data { *w = rng.r#gen(); }
         Self { data }
     }
     
@@ -115,7 +115,7 @@ impl Fingerprint {
         let mut rng = rand::rng();
         for i in 0..N64 {
             for bit in 0..64 {
-                if (overlap.data[i] >> bit) & 1 == 1 && rng.gen::<f64>() < flip_prob {
+                if (overlap.data[i] >> bit) & 1 == 1 && rng.r#gen::<f64>() < flip_prob {
                     result.data[i] ^= 1 << bit;
                 }
             }
