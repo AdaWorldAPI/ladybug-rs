@@ -50,6 +50,7 @@
 pub mod hdr_cascade;
 pub mod causal;
 pub mod cognitive;
+pub mod scientific;
 
 pub use hdr_cascade::{
     // Core operations

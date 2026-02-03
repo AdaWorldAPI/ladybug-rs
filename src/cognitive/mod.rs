@@ -7,6 +7,7 @@
 //! - Collapse Gate (FLOW/HOLD/BLOCK)
 //! - Rung System (0-9 meaning depth levels)
 //! - Integrated Cognitive Fabric
+//! - Sigma-10 Membrane (tau/sigma/qualia -> 10K bits)
 
 mod thought;
 mod style;
@@ -17,6 +18,7 @@ mod rung;
 mod fabric;
 mod grammar_engine;
 mod substrate;
+pub mod membrane;
 
 pub use thought::{Thought, Concept, Belief};
 pub use style::*;
@@ -27,3 +29,8 @@ pub use rung::*;
 pub use fabric::*;
 pub use grammar_engine::*;
 pub use substrate::*;
+pub use membrane::{
+    Membrane, ConsciousnessParams,
+    encode_consciousness, decode_consciousness, consciousness_fingerprint,
+    TAU_START, TAU_END, SIGMA_START, SIGMA_END, QUALIA_START, QUALIA_END,
+};

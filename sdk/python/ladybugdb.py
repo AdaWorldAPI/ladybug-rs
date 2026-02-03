@@ -1,384 +1,941 @@
+#!/usr/bin/env python3
 """
 LadybugDB Python SDK
 ====================
 
-Unified client for LadybugDB cognitive database.
-Works with both:
-  1. HTTP REST API (ladybug-server running on Railway/Docker)
-  2. Native PyO3 bindings (import ladybug — compiled .so)
+Production-ready client for LadybugDB cognitive database.
 
-LanceDB-Compatible API:
-  db = ladybugdb.connect("http://localhost:8080")
-  table = db.create_table("thoughts", data=[...])
-  results = table.search("query text").limit(10).to_list()
+Endpoints (Railway: https://ladybug-rs-production.up.railway.app):
+    /health                      - Health check
+    /api/v1/info                 - Server info
+    POST /api/v1/fingerprint     - Create fingerprint
+    POST /api/v1/hamming         - Hamming distance
+    POST /api/v1/bind            - XOR bind
+    POST /api/v1/bundle          - Majority-vote bundle
+    POST /api/v1/search/topk     - Top-K search
+    POST /api/v1/search/threshold - Threshold search
+    POST /api/v1/search/resonate - Content resonance search
+    POST /api/v1/index           - Index fingerprint
+    POST /api/v1/sql             - SQL query
+    POST /api/v1/cypher          - Cypher graph query
+    POST /redis                  - Redis protocol
+    POST /api/v1/lance/search    - Lance vector search
+    POST /api/v1/nars/deduction  - NARS inference
 
-Low-Level API:
-  client = ladybugdb.Client("http://localhost:8080")
-  fp = client.fingerprint("hello world")
-  results = client.topk(fp, k=10)
-  dist = client.hamming(fp1, fp2)
+Quick Start:
+    from ladybugdb import LadybugDB
 
-Installation:
-  pip install requests  # only dependency for HTTP mode
-  # OR compile native: maturin develop --features python
+    db = LadybugDB("https://ladybug-rs-production.up.railway.app")
+
+    # Create fingerprints
+    fp1 = db.fingerprint("hello world")
+    fp2 = db.fingerprint("hello there")
+
+    # Compute similarity
+    result = db.hamming(fp1, fp2)
+    print(f"Similarity: {result['similarity']:.2%}")
+
+    # NARS inference
+    truth = db.nars.deduction(f1=0.9, c1=0.8, f2=0.85, c2=0.75)
+    print(f"Conclusion: f={truth['f']:.3f}, c={truth['c']:.3f}")
+
+LanceDB-Compatible:
+    db = LadybugDB.connect("https://ladybug-rs-production.up.railway.app")
+    table = db.create_table("thoughts", data=[{"text": "hello"}, {"text": "world"}])
+    results = table.search("hello").limit(10).to_list()
+
+Author: Ada Consciousness Project
+License: Apache-2.0
+Version: 0.3.0
 """
 
 from __future__ import annotations
 import json
 import base64
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union, Literal
+from dataclasses import dataclass, field
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 
+# Optional Arrow Flight support
 try:
-    import requests
-    HAS_REQUESTS = True
+    import pyarrow as pa
+    import pyarrow.flight as flight
+    HAS_FLIGHT = True
 except ImportError:
-    HAS_REQUESTS = False
+    HAS_FLIGHT = False
 
-try:
-    import ladybug as _native
-    HAS_NATIVE = True
-except ImportError:
-    HAS_NATIVE = False
+__version__ = "0.4.0"
+__all__ = [
+    "LadybugDB", "Client", "Fingerprint", "TruthValue",
+    "SearchResult", "NARSEngine", "connect",
+    "FINGERPRINT_BITS", "FINGERPRINT_BYTES", "PRODUCTION_URL"
+]
 
+# =============================================================================
+# CONSTANTS
+# =============================================================================
 
-__version__ = "0.2.0"
 FINGERPRINT_BITS = 10_000
-FINGERPRINT_BYTES = 1_256  # 157 × 8
+FINGERPRINT_BYTES = 1_256  # 157 × 8 bytes
+PRODUCTION_URL = "https://ladybug-rs-production.up.railway.app"
+
+# =============================================================================
+# DATA CLASSES
+# =============================================================================
+
+@dataclass
+class Fingerprint:
+    """10K-bit binary fingerprint for VSA operations."""
+    base64: str
+    popcount: int = 0
+    density: float = 0.0
+    hex_preview: str = ""
+
+    @property
+    def bits(self) -> int:
+        return FINGERPRINT_BITS
+
+    def __repr__(self) -> str:
+        return f"Fingerprint(popcount={self.popcount}, density={self.density:.3f})"
+
+    def to_bytes(self) -> bytes:
+        """Decode base64 to raw bytes."""
+        return base64.b64decode(self.base64)
+
+
+@dataclass
+class TruthValue:
+    """NARS truth value with frequency and confidence."""
+    f: float  # frequency [0, 1]
+    c: float  # confidence [0, 1]
+
+    @property
+    def frequency(self) -> float:
+        return self.f
+
+    @property
+    def confidence(self) -> float:
+        return self.c
+
+    @property
+    def expectation(self) -> float:
+        """E = c * (f - 0.5) + 0.5"""
+        return self.c * (self.f - 0.5) + 0.5
+
+    def __repr__(self) -> str:
+        return f"<{self.f:.3f}, {self.c:.3f}>"
+
+
+@dataclass
+class SearchResult:
+    """Result from similarity search."""
+    id: str
+    distance: int
+    similarity: float
+    fingerprint: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __repr__(self) -> str:
+        return f"SearchResult(id={self.id!r}, similarity={self.similarity:.3f})"
 
 
 # =============================================================================
-# HTTP CLIENT (REST API)
+# HTTP CLIENT
 # =============================================================================
+
+class LadybugError(Exception):
+    """Base exception for LadybugDB errors."""
+    pass
+
+
+class ConnectionError(LadybugError):
+    """Failed to connect to server."""
+    pass
+
+
+class APIError(LadybugError):
+    """Server returned an error."""
+    def __init__(self, message: str, status: int = 0, response: dict = None):
+        super().__init__(message)
+        self.status = status
+        self.response = response or {}
+
 
 class Client:
-    """Low-level HTTP client for LadybugDB REST API."""
+    """
+    Low-level HTTP client for LadybugDB REST API.
 
-    def __init__(self, url: str = "http://localhost:8080", timeout: float = 30.0):
-        if not HAS_REQUESTS:
-            raise ImportError("requests library required: pip install requests")
+    Use LadybugDB class for high-level operations.
+    """
+
+    def __init__(self, url: str = PRODUCTION_URL, timeout: float = 30.0):
+        """
+        Initialize client.
+
+        Args:
+            url: Server URL (default: Railway production)
+            timeout: Request timeout in seconds
+        """
         self.url = url.rstrip("/")
         self.timeout = timeout
-        self._session = requests.Session()
-        self._session.headers["Content-Type"] = "application/json"
 
-    def _post(self, path: str, data: dict) -> dict:
-        r = self._session.post(f"{self.url}{path}", json=data, timeout=self.timeout)
-        r.raise_for_status()
-        return r.json()
+    def _request(self, method: str, path: str, data: dict = None) -> dict:
+        """Make HTTP request."""
+        url = f"{self.url}{path}"
+        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        # CRITICAL: Server has non-conformant JSON parser that breaks on
+        # whitespace after ':'. Use compact separators to avoid spaces.
+        body = json.dumps(data, separators=(",", ":")).encode() if data else None
 
-    def _get(self, path: str) -> dict:
-        r = self._session.get(f"{self.url}{path}", timeout=self.timeout)
-        r.raise_for_status()
-        return r.json()
+        req = Request(url, data=body, headers=headers, method=method)
 
-    # --- Info ---
-    def health(self) -> dict:
-        return self._get("/health")
+        try:
+            with urlopen(req, timeout=self.timeout) as resp:
+                return json.loads(resp.read().decode())
+        except HTTPError as e:
+            try:
+                error_body = json.loads(e.read().decode())
+            except:
+                error_body = {"error": str(e)}
+            raise APIError(error_body.get("error", str(e)), e.code, error_body)
+        except URLError as e:
+            raise ConnectionError(f"Failed to connect to {url}: {e.reason}")
 
-    def info(self) -> dict:
-        return self._get("/api/v1/info")
+    def get(self, path: str) -> dict:
+        return self._request("GET", path)
 
-    def simd(self) -> dict:
-        return self._get("/api/v1/simd")
-
-    # --- Fingerprint operations ---
-    def fingerprint(self, content: str) -> str:
-        """Create fingerprint from content. Returns base64-encoded fingerprint."""
-        r = self._post("/api/v1/fingerprint", {"content": content})
-        return r["fingerprint"]
-
-    def fingerprint_random(self) -> str:
-        """Create random fingerprint."""
-        r = self._post("/api/v1/fingerprint", {})
-        return r["fingerprint"]
-
-    def fingerprint_batch(self, contents: List[str]) -> List[str]:
-        """Create fingerprints for multiple contents."""
-        r = self._post("/api/v1/fingerprint/batch", {"contents": contents})
-        return [fp["fingerprint"] for fp in r["fingerprints"]]
-
-    def hamming(self, a: str, b: str) -> dict:
-        """Compute Hamming distance between two fingerprints (base64 or content)."""
-        return self._post("/api/v1/hamming", {"a": a, "b": b})
-
-    def similarity(self, a: str, b: str) -> float:
-        """Compute similarity between two fingerprints."""
-        r = self.hamming(a, b)
-        return r["similarity"]
-
-    def bind(self, a: str, b: str) -> str:
-        """XOR bind two fingerprints."""
-        r = self._post("/api/v1/bind", {"a": a, "b": b})
-        return r["result"]
-
-    def bundle(self, fingerprints: List[str]) -> str:
-        """Majority-vote bundle of multiple fingerprints."""
-        r = self._post("/api/v1/bundle", {"fingerprints": fingerprints})
-        return r["result"]
-
-    # --- Search ---
-    def topk(self, query: str, k: int = 10) -> List[dict]:
-        """Top-k search by Hamming distance."""
-        r = self._post("/api/v1/search/topk", {"query": query, "k": k})
-        return r["results"]
-
-    def threshold(self, query: str, max_distance: int = 2000, limit: int = 100) -> List[dict]:
-        """Threshold search — all within Hamming distance."""
-        r = self._post("/api/v1/search/threshold", {
-            "query": query, "max_distance": max_distance, "limit": limit
-        })
-        return r["results"]
-
-    def resonate(self, content: str, threshold: float = 0.7, limit: int = 10) -> List[dict]:
-        """Content-based resonance search."""
-        r = self._post("/api/v1/search/resonate", {
-            "content": content, "threshold": threshold, "limit": limit
-        })
-        return r["results"]
-
-    # --- Index ---
-    def index(self, content: str = None, fingerprint: str = None,
-              id: str = None, metadata: dict = None) -> dict:
-        """Add a fingerprint to the index."""
-        data = {}
-        if id: data["id"] = id
-        if content: data["content"] = content
-        if fingerprint: data["fingerprint"] = fingerprint
-        if metadata: data["metadata"] = metadata
-        return self._post("/api/v1/index", data)
-
-    def index_count(self) -> int:
-        return self._get("/api/v1/index/count")["count"]
-
-    def index_clear(self) -> dict:
-        return self._session.delete(f"{self.url}/api/v1/index", timeout=self.timeout).json()
-
-    # --- NARS Inference ---
-    def deduction(self, f1: float, c1: float, f2: float, c2: float) -> dict:
-        return self._post("/api/v1/nars/deduction", {"f1": f1, "c1": c1, "f2": f2, "c2": c2})
-
-    def induction(self, f1: float, c1: float, f2: float, c2: float) -> dict:
-        return self._post("/api/v1/nars/induction", {"f1": f1, "c1": c1, "f2": f2, "c2": c2})
-
-    def abduction(self, f1: float, c1: float, f2: float, c2: float) -> dict:
-        return self._post("/api/v1/nars/abduction", {"f1": f1, "c1": c1, "f2": f2, "c2": c2})
-
-    def revision(self, f1: float, c1: float, f2: float, c2: float) -> dict:
-        return self._post("/api/v1/nars/revision", {"f1": f1, "c1": c1, "f2": f2, "c2": c2})
-
-    # --- SQL / Cypher ---
-    def sql(self, query: str) -> dict:
-        return self._post("/api/v1/sql", {"query": query})
-
-    def cypher(self, query: str) -> dict:
-        return self._post("/api/v1/cypher", {"query": query})
-
-    # --- Redis protocol ---
-    def redis(self, command: str) -> dict:
-        r = self._session.post(f"{self.url}/redis",
-                               data=command.encode(),
-                               headers={"Content-Type": "text/plain"},
-                               timeout=self.timeout)
-        return r.json()
+    def post(self, path: str, data: dict = None) -> dict:
+        return self._request("POST", path, data or {})
 
 
 # =============================================================================
-# LANCEDB-COMPATIBLE API
+# NARS ENGINE
 # =============================================================================
 
-class LadybugTable:
-    """LanceDB-compatible table interface backed by LadybugDB."""
+class NARSEngine:
+    """
+    Non-Axiomatic Reasoning System inference engine.
 
-    def __init__(self, client: Client, name: str, data: List[dict] = None):
-        self.client = client
+    Implements NAL (Non-Axiomatic Logic) truth functions:
+    - Deduction: A→B, B→C ⊢ A→C
+    - Induction: A→B, A→C ⊢ B→C
+    - Abduction: A→B, C→B ⊢ A→C
+    - Revision: Combine evidence for same statement
+
+    Example:
+        nars = db.nars
+
+        # Bird flies, penguin is bird → penguin flies?
+        result = nars.deduction(f1=0.9, c1=0.9, f2=0.01, c2=0.95)
+        print(f"Penguin flies: {result}")  # <0.009, 0.810>
+    """
+
+    def __init__(self, client: Client):
+        self._client = client
+
+    def deduction(self, f1: float, c1: float, f2: float, c2: float) -> TruthValue:
+        """
+        Deduction: A→B, B→C ⊢ A→C
+
+        Args:
+            f1, c1: Truth value of first premise (A→B)
+            f2, c2: Truth value of second premise (B→C)
+
+        Returns:
+            Truth value of conclusion (A→C)
+        """
+        r = self._client.post("/api/v1/nars/deduction", {
+            "f1": f1, "c1": c1, "f2": f2, "c2": c2
+        })
+        return TruthValue(f=r["f"], c=r["c"])
+
+    def induction(self, f1: float, c1: float, f2: float, c2: float) -> TruthValue:
+        """
+        Induction: A→B, A→C ⊢ B→C
+
+        Args:
+            f1, c1: Truth value of first premise (A→B)
+            f2, c2: Truth value of second premise (A→C)
+
+        Returns:
+            Truth value of conclusion (B→C)
+        """
+        r = self._client.post("/api/v1/nars/induction", {
+            "f1": f1, "c1": c1, "f2": f2, "c2": c2
+        })
+        return TruthValue(f=r["f"], c=r["c"])
+
+    def abduction(self, f1: float, c1: float, f2: float, c2: float) -> TruthValue:
+        """
+        Abduction: A→B, C→B ⊢ A→C
+
+        Args:
+            f1, c1: Truth value of first premise (A→B)
+            f2, c2: Truth value of second premise (C→B)
+
+        Returns:
+            Truth value of conclusion (A→C)
+        """
+        r = self._client.post("/api/v1/nars/abduction", {
+            "f1": f1, "c1": c1, "f2": f2, "c2": c2
+        })
+        return TruthValue(f=r["f"], c=r["c"])
+
+    def revision(self, f1: float, c1: float, f2: float, c2: float) -> TruthValue:
+        """
+        Revision: Combine evidence for same statement.
+
+        When you have two observations of the same thing,
+        revision merges them into a stronger belief.
+
+        Args:
+            f1, c1: First observation
+            f2, c2: Second observation
+
+        Returns:
+            Combined truth value
+        """
+        r = self._client.post("/api/v1/nars/revision", {
+            "f1": f1, "c1": c1, "f2": f2, "c2": c2
+        })
+        return TruthValue(f=r["f"], c=r["c"])
+
+
+# =============================================================================
+# SEARCH BUILDER (LanceDB-compatible)
+# =============================================================================
+
+class SearchBuilder:
+    """
+    Fluent search builder for LanceDB-compatible API.
+
+    Example:
+        results = table.search("query").limit(10).to_list()
+    """
+
+    def __init__(self, client: Client, query: str):
+        self._client = client
+        self._query = query
+        self._limit = 10
+        self._threshold = None
+        self._max_distance = None
+
+    def limit(self, n: int) -> SearchBuilder:
+        """Limit number of results."""
+        self._limit = n
+        return self
+
+    def threshold(self, similarity: float) -> SearchBuilder:
+        """Set minimum similarity threshold (0-1)."""
+        self._threshold = similarity
+        return self
+
+    def max_distance(self, distance: int) -> SearchBuilder:
+        """Set maximum Hamming distance."""
+        self._max_distance = distance
+        return self
+
+    def to_list(self) -> List[SearchResult]:
+        """Execute search and return results."""
+        if self._max_distance is not None:
+            r = self._client.post("/api/v1/search/threshold", {
+                "query": self._query,
+                "max_distance": self._max_distance,
+                "limit": self._limit
+            })
+        elif self._threshold is not None:
+            r = self._client.post("/api/v1/search/resonate", {
+                "content": self._query,
+                "threshold": self._threshold,
+                "limit": self._limit
+            })
+        else:
+            r = self._client.post("/api/v1/search/topk", {
+                "query": self._query,
+                "k": self._limit
+            })
+
+        return [
+            SearchResult(
+                id=m.get("id", m.get("addr", "")),
+                distance=m.get("distance", 0),
+                similarity=m.get("similarity", 0.0),
+                fingerprint=m.get("fingerprint"),
+                metadata=m.get("metadata", {})
+            )
+            for m in r.get("results", [])
+        ]
+
+    def to_pandas(self):
+        """Convert to pandas DataFrame (requires pandas)."""
+        import pandas as pd
+        results = self.to_list()
+        return pd.DataFrame([
+            {"id": r.id, "distance": r.distance, "similarity": r.similarity, **r.metadata}
+            for r in results
+        ])
+
+
+# =============================================================================
+# TABLE (LanceDB-compatible)
+# =============================================================================
+
+class Table:
+    """
+    LanceDB-compatible table for vector storage.
+
+    Example:
+        table = db.create_table("thoughts")
+        table.add([{"text": "hello"}, {"text": "world"}])
+        results = table.search("hello").limit(5).to_list()
+    """
+
+    def __init__(self, client: Client, name: str):
+        self._client = client
         self.name = name
-        if data:
-            for row in data:
-                text = row.get("text", row.get("content", str(row)))
-                meta = {k: str(v) for k, v in row.items() if k not in ("text", "content", "vector")}
-                self.client.index(content=text, id=row.get("id"), metadata=meta)
 
-    def add(self, data: List[dict]):
-        """Add rows to the table."""
+    def add(self, data: List[Dict[str, Any]]) -> int:
+        """
+        Add rows to the table.
+
+        Args:
+            data: List of dicts with 'text' or 'content' field
+
+        Returns:
+            Number of rows added
+        """
+        count = 0
         for row in data:
             text = row.get("text", row.get("content", str(row)))
-            meta = {k: str(v) for k, v in row.items() if k not in ("text", "content", "vector")}
-            self.client.index(content=text, id=row.get("id"), metadata=meta)
+            meta = {k: v for k, v in row.items() if k not in ("text", "content", "vector", "id")}
+            self._client.post("/api/v1/index", {
+                "content": text,
+                "id": row.get("id"),
+                "metadata": meta if meta else None
+            })
+            count += 1
+        return count
 
-    def search(self, query: str = None, vector: list = None) -> "SearchBuilder":
-        """Start a search query (LanceDB-compatible)."""
-        return SearchBuilder(self.client, query or "", self.name)
+    def search(self, query: str) -> SearchBuilder:
+        """Start a search query."""
+        return SearchBuilder(self._client, query)
 
     def count_rows(self) -> int:
-        return self.client.index_count()
+        """Get row count."""
+        try:
+            r = self._client.get("/api/v1/index/count")
+            return r.get("count", 0)
+        except:
+            return 0
 
     def __len__(self) -> int:
         return self.count_rows()
 
 
-class SearchBuilder:
-    """LanceDB-compatible search builder with method chaining."""
-
-    def __init__(self, client: Client, query: str, table: str):
-        self._client = client
-        self._query = query
-        self._table = table
-        self._limit = 10
-        self._threshold = None
-        self._metric = "hamming"
-
-    def limit(self, n: int) -> "SearchBuilder":
-        self._limit = n
-        return self
-
-    def metric(self, m: str) -> "SearchBuilder":
-        self._metric = m
-        return self
-
-    def where(self, condition: str) -> "SearchBuilder":
-        # Future: filter conditions
-        return self
-
-    def to_list(self) -> List[dict]:
-        """Execute search and return results."""
-        if self._threshold is not None:
-            return self._client.threshold(self._query, max_distance=self._threshold, limit=self._limit)
-        return self._client.topk(self._query, k=self._limit)
-
-    def to_pandas(self):
-        """Convert results to pandas DataFrame."""
-        import pandas as pd
-        return pd.DataFrame(self.to_list())
-
+# =============================================================================
+# MAIN DATABASE CLASS
+# =============================================================================
 
 class LadybugDB:
-    """LanceDB-compatible database connection."""
+    """
+    LadybugDB cognitive database client.
 
-    def __init__(self, uri: str = "http://localhost:8080"):
-        self.uri = uri
-        self.client = Client(uri)
-        self._tables: Dict[str, LadybugTable] = {}
+    High-level API for:
+    - 10K-bit fingerprint operations (VSA)
+    - Hamming distance similarity search
+    - NARS non-axiomatic reasoning
+    - SQL and Cypher queries
+    - Redis protocol
 
-    def create_table(self, name: str, data: List[dict] = None, **kwargs) -> LadybugTable:
-        """Create a new table (LanceDB-compatible)."""
-        table = LadybugTable(self.client, name, data)
+    Example:
+        db = LadybugDB()  # Connect to Railway production
+
+        # Or specify URL
+        db = LadybugDB("http://localhost:8080")
+
+        # Check connection
+        print(db.info())
+
+        # Create fingerprints
+        fp1 = db.fingerprint("hello world")
+        fp2 = db.fingerprint("hello there")
+
+        # Compute similarity
+        sim = db.similarity(fp1, fp2)
+        print(f"Similarity: {sim:.2%}")
+
+        # XOR binding
+        bound = db.bind(fp1, fp2)
+
+        # NARS inference
+        truth = db.nars.deduction(f1=0.9, c1=0.8, f2=0.7, c2=0.6)
+    """
+
+    def __init__(self, url: str = PRODUCTION_URL, timeout: float = 30.0):
+        """
+        Connect to LadybugDB.
+
+        Args:
+            url: Server URL (default: Railway production)
+            timeout: Request timeout in seconds
+        """
+        self._client = Client(url, timeout)
+        self._tables: Dict[str, Table] = {}
+        self.nars = NARSEngine(self._client)
+
+    @classmethod
+    def connect(cls, url: str = PRODUCTION_URL, **kwargs) -> LadybugDB:
+        """
+        Connect to LadybugDB (LanceDB-compatible entry point).
+
+        Args:
+            url: Server URL
+
+        Returns:
+            LadybugDB instance
+        """
+        return cls(url, **kwargs)
+
+    # -------------------------------------------------------------------------
+    # INFO / HEALTH
+    # -------------------------------------------------------------------------
+
+    def health(self) -> Dict[str, Any]:
+        """Check server health."""
+        return self._client.get("/health")
+
+    def info(self) -> Dict[str, Any]:
+        """
+        Get server information.
+
+        Returns:
+            Dict with name, version, fingerprint_bits, simd_level, etc.
+        """
+        return self._client.get("/api/v1/info")
+
+    @property
+    def version(self) -> str:
+        """Server version."""
+        return self.info().get("version", "unknown")
+
+    @property
+    def simd_level(self) -> str:
+        """SIMD acceleration level (avx512, avx2, or scalar)."""
+        return self.info().get("simd_level", "unknown")
+
+    # -------------------------------------------------------------------------
+    # FINGERPRINT OPERATIONS
+    # -------------------------------------------------------------------------
+
+    def fingerprint(self, content: str) -> Fingerprint:
+        """
+        Create a 10K-bit fingerprint from content.
+
+        Args:
+            content: Text to fingerprint
+
+        Returns:
+            Fingerprint object with base64, popcount, density
+
+        Example:
+            fp = db.fingerprint("hello world")
+            print(fp.popcount)  # ~5000 (half the bits set)
+        """
+        r = self._client.post("/api/v1/fingerprint", {"content": content})
+        return Fingerprint(
+            base64=r.get("fingerprint", r.get("base64", "")),
+            popcount=r.get("popcount", 0),
+            density=r.get("density", 0.0),
+            hex_preview=r.get("hex_preview", "")
+        )
+
+    def fingerprint_random(self) -> Fingerprint:
+        """Create a random fingerprint."""
+        r = self._client.post("/api/v1/fingerprint", {"random": True})
+        return Fingerprint(
+            base64=r.get("fingerprint", r.get("base64", "")),
+            popcount=r.get("popcount", 0),
+            density=r.get("density", 0.0)
+        )
+
+    def hamming(self, a: Union[str, Fingerprint], b: Union[str, Fingerprint]) -> Dict[str, Any]:
+        """
+        Compute Hamming distance between two fingerprints.
+
+        Args:
+            a: First fingerprint (base64 string, content, or Fingerprint)
+            b: Second fingerprint
+
+        Returns:
+            Dict with distance, similarity, bits_different
+
+        Example:
+            result = db.hamming("hello", "hallo")
+            print(f"Distance: {result['distance']}")
+            print(f"Similarity: {result['similarity']:.2%}")
+        """
+        a_str = a.base64 if isinstance(a, Fingerprint) else a
+        b_str = b.base64 if isinstance(b, Fingerprint) else b
+        return self._client.post("/api/v1/hamming", {"a": a_str, "b": b_str})
+
+    def similarity(self, a: Union[str, Fingerprint], b: Union[str, Fingerprint]) -> float:
+        """
+        Compute similarity between two fingerprints.
+
+        Args:
+            a: First fingerprint
+            b: Second fingerprint
+
+        Returns:
+            Similarity score (0.0 to 1.0)
+        """
+        return self.hamming(a, b).get("similarity", 0.0)
+
+    def bind(self, a: Union[str, Fingerprint], b: Union[str, Fingerprint]) -> Fingerprint:
+        """
+        XOR-bind two fingerprints (VSA binding operation).
+
+        Binding creates a new fingerprint that is dissimilar to both inputs
+        but can be unbound with either input to recover the other.
+
+        Args:
+            a: First fingerprint
+            b: Second fingerprint
+
+        Returns:
+            Bound fingerprint (a XOR b)
+
+        Example:
+            role = db.fingerprint("president")
+            filler = db.fingerprint("Lincoln")
+            bound = db.bind(role, filler)
+
+            # Unbind to query
+            recovered = db.bind(bound, role)  # Similar to filler
+        """
+        a_str = a.base64 if isinstance(a, Fingerprint) else a
+        b_str = b.base64 if isinstance(b, Fingerprint) else b
+        r = self._client.post("/api/v1/bind", {"a": a_str, "b": b_str})
+        return Fingerprint(
+            base64=r.get("result", r.get("fingerprint", "")),
+            popcount=r.get("popcount", 0),
+            density=r.get("density", 0.0)
+        )
+
+    def bundle(self, fingerprints: List[Union[str, Fingerprint]]) -> Fingerprint:
+        """
+        Bundle multiple fingerprints via majority vote.
+
+        Bundling creates a fingerprint similar to all inputs (superposition).
+
+        Args:
+            fingerprints: List of fingerprints to bundle
+
+        Returns:
+            Bundled fingerprint
+
+        Example:
+            colors = [db.fingerprint(c) for c in ["red", "blue", "green"]]
+            color_concept = db.bundle(colors)
+        """
+        fps = [fp.base64 if isinstance(fp, Fingerprint) else fp for fp in fingerprints]
+        r = self._client.post("/api/v1/bundle", {"fingerprints": fps})
+        return Fingerprint(
+            base64=r.get("result", r.get("fingerprint", "")),
+            popcount=r.get("popcount", 0),
+            density=r.get("density", 0.0)
+        )
+
+    # -------------------------------------------------------------------------
+    # SEARCH
+    # -------------------------------------------------------------------------
+
+    def search(self, query: str) -> SearchBuilder:
+        """
+        Start a similarity search.
+
+        Args:
+            query: Query content or fingerprint
+
+        Returns:
+            SearchBuilder for fluent configuration
+
+        Example:
+            results = db.search("hello world").limit(10).to_list()
+        """
+        return SearchBuilder(self._client, query)
+
+    def topk(self, query: Union[str, Fingerprint], k: int = 10) -> List[SearchResult]:
+        """
+        Top-K search by Hamming distance.
+
+        Args:
+            query: Query fingerprint or content
+            k: Number of results
+
+        Returns:
+            List of SearchResult ordered by similarity
+        """
+        q = query.base64 if isinstance(query, Fingerprint) else query
+        r = self._client.post("/api/v1/search/topk", {"query": q, "k": k})
+        return [
+            SearchResult(
+                id=m.get("id", m.get("addr", "")),
+                distance=m.get("distance", 0),
+                similarity=m.get("similarity", 0.0)
+            )
+            for m in r.get("results", [])
+        ]
+
+    def resonate(self, content: str, threshold: float = 0.7, limit: int = 10) -> List[SearchResult]:
+        """
+        Content-based resonance search.
+
+        Finds all indexed fingerprints similar to the query content.
+
+        Args:
+            content: Query text
+            threshold: Minimum similarity (0-1)
+            limit: Maximum results
+
+        Returns:
+            List of SearchResult
+        """
+        r = self._client.post("/api/v1/search/resonate", {
+            "content": content,
+            "threshold": threshold,
+            "limit": limit
+        })
+        return [
+            SearchResult(
+                id=m.get("id", m.get("addr", "")),
+                distance=m.get("distance", 0),
+                similarity=m.get("similarity", 0.0)
+            )
+            for m in r.get("results", [])
+        ]
+
+    # -------------------------------------------------------------------------
+    # INDEX
+    # -------------------------------------------------------------------------
+
+    def index(self, content: str = None, fingerprint: Union[str, Fingerprint] = None,
+              id: str = None, metadata: Dict = None) -> Dict:
+        """
+        Add a fingerprint to the search index.
+
+        Args:
+            content: Text content (will create fingerprint)
+            fingerprint: Pre-computed fingerprint
+            id: Optional ID for the entry
+            metadata: Optional metadata dict
+
+        Returns:
+            Index result with assigned address
+        """
+        data = {}
+        if content:
+            data["content"] = content
+        if fingerprint:
+            data["fingerprint"] = fingerprint.base64 if isinstance(fingerprint, Fingerprint) else fingerprint
+        if id:
+            data["id"] = id
+        if metadata:
+            data["metadata"] = metadata
+        return self._client.post("/api/v1/index", data)
+
+    # -------------------------------------------------------------------------
+    # SQL / CYPHER
+    # -------------------------------------------------------------------------
+
+    def sql(self, query: str) -> Dict[str, Any]:
+        """
+        Execute SQL query.
+
+        Args:
+            query: SQL query string
+
+        Returns:
+            Query results
+
+        Example:
+            result = db.sql("SELECT * FROM thoughts WHERE confidence > 0.7")
+        """
+        return self._client.post("/api/v1/sql", {"query": query})
+
+    def cypher(self, query: str) -> Dict[str, Any]:
+        """
+        Execute Cypher graph query.
+
+        Args:
+            query: Cypher query string
+
+        Returns:
+            Query results with nodes and relationships
+
+        Example:
+            result = db.cypher("MATCH (a)-[:CAUSES]->(b) RETURN b")
+        """
+        return self._client.post("/api/v1/cypher", {"query": query})
+
+    # -------------------------------------------------------------------------
+    # REDIS PROTOCOL
+    # -------------------------------------------------------------------------
+
+    def redis(self, command: str) -> Dict[str, Any]:
+        """
+        Execute Redis-like command.
+
+        Supported commands:
+            SET <content> [confidence]  - Store fingerprint
+            GET <addr>                  - Retrieve fingerprint
+            SCAN <cursor> [COUNT n]     - Scan entries
+            RESONATE <content> <k>      - Similarity search
+            CAM <operation> [args...]   - CAM operation
+
+        Args:
+            command: Redis command string
+
+        Returns:
+            Command result
+
+        Example:
+            db.redis("SET 'hello world'")
+            result = db.redis("RESONATE 'hello' 10")
+        """
+        return self._client.post("/redis", {"command": command})
+
+    # -------------------------------------------------------------------------
+    # LANCE SEARCH
+    # -------------------------------------------------------------------------
+
+    def lance_search(self, query: str, k: int = 10) -> Dict[str, Any]:
+        """
+        Lance vector search.
+
+        Args:
+            query: Query content
+            k: Number of results
+
+        Returns:
+            Search results
+        """
+        return self._client.post("/api/v1/lance/search", {"query": query, "k": k})
+
+    # -------------------------------------------------------------------------
+    # LANCEDB-COMPATIBLE TABLE API
+    # -------------------------------------------------------------------------
+
+    def create_table(self, name: str, data: List[Dict] = None, **kwargs) -> Table:
+        """
+        Create a table (LanceDB-compatible).
+
+        Args:
+            name: Table name
+            data: Optional initial data
+
+        Returns:
+            Table instance
+        """
+        table = Table(self._client, name)
+        if data:
+            table.add(data)
         self._tables[name] = table
         return table
 
-    def open_table(self, name: str) -> LadybugTable:
-        """Open an existing table."""
-        if name in self._tables:
-            return self._tables[name]
-        table = LadybugTable(self.client, name)
-        self._tables[name] = table
-        return table
+    def open_table(self, name: str) -> Table:
+        """Open existing table."""
+        if name not in self._tables:
+            self._tables[name] = Table(self._client, name)
+        return self._tables[name]
 
     def table_names(self) -> List[str]:
+        """List table names."""
         return list(self._tables.keys())
 
-    def drop_table(self, name: str):
-        self._tables.pop(name, None)
-        self.client.index_clear()
-
-
-def connect(uri: str = "http://localhost:8080") -> LadybugDB:
-    """Connect to LadybugDB (LanceDB-compatible entry point)."""
-    return LadybugDB(uri)
-
 
 # =============================================================================
-# NATIVE BINDINGS WRAPPER (if compiled with PyO3)
+# CONVENIENCE FUNCTIONS
 # =============================================================================
 
-class NativeClient:
-    """Wrapper around native PyO3 bindings for maximum performance."""
-
-    def __init__(self):
-        if not HAS_NATIVE:
-            raise ImportError("Native ladybug module not found. Compile with: maturin develop --features python")
-        self._native = _native
-
-    def fingerprint(self, content: str) -> "NativeFingerprint":
-        return NativeFingerprint(self._native.Fingerprint(content))
-
-    def fingerprint_random(self) -> "NativeFingerprint":
-        return NativeFingerprint(self._native.Fingerprint.random())
-
-    def hamming(self, a: bytes, b: bytes) -> int:
-        return self._native.hamming_bytes(a, b)
-
-    def batch_hamming(self, query: "NativeFingerprint", candidates: list) -> list:
-        return self._native.batch_hamming(query._fp, [c._fp for c in candidates])
-
-    def topk(self, query: "NativeFingerprint", candidates: list, k: int = 10) -> list:
-        return self._native.topk_hamming(query._fp, [c._fp for c in candidates], k)
-
-    def bundle(self, fingerprints: list) -> "NativeFingerprint":
-        return NativeFingerprint(self._native.bundle([fp._fp for fp in fingerprints]))
-
-    def simd_level(self) -> str:
-        return self._native.simd_level()
-
-    def open_db(self, path: str) -> Any:
-        return self._native.open(path)
-
-
-class NativeFingerprint:
-    """Wrapper around native Fingerprint."""
-
-    def __init__(self, fp):
-        self._fp = fp
-
-    @classmethod
-    def from_content(cls, content: str) -> "NativeFingerprint":
-        return cls(_native.Fingerprint(content))
-
-    @classmethod
-    def from_bytes(cls, data: bytes) -> "NativeFingerprint":
-        return cls(_native.Fingerprint.from_bytes(data))
-
-    @classmethod
-    def random(cls) -> "NativeFingerprint":
-        return cls(_native.Fingerprint.random())
-
-    def to_bytes(self) -> bytes:
-        return self._fp.to_bytes()
-
-    def to_base64(self) -> str:
-        return base64.b64encode(self.to_bytes()).decode()
-
-    def hamming(self, other: "NativeFingerprint") -> int:
-        return self._fp.hamming(other._fp)
-
-    def similarity(self, other: "NativeFingerprint") -> float:
-        return self._fp.similarity(other._fp)
-
-    def bind(self, other: "NativeFingerprint") -> "NativeFingerprint":
-        return NativeFingerprint(self._fp.bind(other._fp))
-
-    def popcount(self) -> int:
-        return self._fp.popcount()
-
-    def density(self) -> float:
-        return self._fp.density()
-
-    def __repr__(self) -> str:
-        return f"Fingerprint(popcount={self.popcount()}, density={self.density():.3f})"
-
-
-# =============================================================================
-# CONVENIENCE: auto-select best backend
-# =============================================================================
-
-def auto_client(url: str = None) -> Union[Client, NativeClient]:
-    """Auto-select the best available client.
-
-    - If url is provided → HTTP Client
-    - If native bindings available → NativeClient
-    - Otherwise → HTTP Client on localhost:8080
+def connect(url: str = PRODUCTION_URL, **kwargs) -> LadybugDB:
     """
-    if url:
-        return Client(url)
-    if HAS_NATIVE:
-        return NativeClient()
-    return Client("http://localhost:8080")
+    Connect to LadybugDB (LanceDB-compatible entry point).
+
+    Args:
+        url: Server URL (default: Railway production)
+
+    Returns:
+        LadybugDB instance
+
+    Example:
+        import ladybugdb
+        db = ladybugdb.connect()
+        print(db.info())
+    """
+    return LadybugDB(url, **kwargs)
+
+
+# =============================================================================
+# CLI / DEMO
+# =============================================================================
+
+if __name__ == "__main__":
+    import sys
+
+    url = sys.argv[1] if len(sys.argv) > 1 else PRODUCTION_URL
+
+    print(f"LadybugDB Python SDK v{__version__}")
+    print(f"Connecting to: {url}")
+    print("=" * 60)
+
+    try:
+        db = LadybugDB(url)
+
+        # 1. Server info
+        print("\n1. Server Info:")
+        info = db.info()
+        print(f"   Name: {info.get('name')}")
+        print(f"   Version: {info.get('version')}")
+        print(f"   SIMD: {info.get('simd_level')}")
+        print(f"   Fingerprint bits: {info.get('fingerprint_bits')}")
+
+        # 2. Fingerprint
+        print("\n2. Fingerprint Creation:")
+        fp1 = db.fingerprint("hello world")
+        fp2 = db.fingerprint("hello there")
+        print(f"   fp1: {fp1}")
+        print(f"   fp2: {fp2}")
+
+        # 3. Similarity
+        print("\n3. Similarity:")
+        result = db.hamming(fp1, fp2)
+        print(f"   Distance: {result.get('distance')}")
+        print(f"   Similarity: {result.get('similarity', 0):.2%}")
+
+        # 4. Binding
+        print("\n4. VSA Binding:")
+        bound = db.bind(fp1, fp2)
+        print(f"   bound = fp1 XOR fp2: {bound}")
+
+        # 5. NARS Inference
+        print("\n5. NARS Inference:")
+        truth = db.nars.deduction(f1=0.9, c1=0.8, f2=0.85, c2=0.75)
+        print(f"   Deduction: {truth}")
+
+        # 6. Index and search
+        print("\n6. Index & Search:")
+        db.index(content="The quick brown fox", id="fox")
+        db.index(content="The lazy dog", id="dog")
+        results = db.topk("quick fox", k=5)
+        print(f"   Found {len(results)} results")
+        for r in results:
+            print(f"   - {r}")
+
+        print("\n" + "=" * 60)
+        print("All tests passed!")
+
+    except Exception as e:
+        print(f"\nError: {e}")
+        sys.exit(1)

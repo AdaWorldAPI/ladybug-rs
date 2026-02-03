@@ -253,106 +253,129 @@ cat /proc/cpuinfo | grep -E "avx512|avx2"
 ### Installation
 
 ```bash
-# The SDK uses only Python stdlib - no pip install needed!
-cp sdk/python/ladybug_client.py your_project/
+# From PyPI (zero dependencies)
+pip install ladybug-vsa
 
-# Or for development
+# Or install from source
 cd sdk/python
-python ladybug_client.py http://localhost:8080
+pip install -e .
 ```
 
 ### Basic Usage
 
 ```python
-from ladybug_client import LadybugClient, LadybugVectorDB
+from ladybugdb import LadybugDB
 
-# Initialize client
-client = LadybugClient("http://localhost:8080")
+# Connect to Railway production (default)
+db = LadybugDB()
+
+# Or specify URL
+db = LadybugDB("http://localhost:8080")
 
 # Health check
-print(client.health())
+print(db.health())
 # {"status": "healthy", "service": "ladybug-rs"}
 
+# Server info
+print(db.info())
+# {"name": "LadybugDB", "version": "0.3.0", ...}
+
 # Create fingerprint
-fp = client.create_fingerprint("hello world")
-print(f"Popcount: {fp['popcount']}")
+fp = db.fingerprint("hello world")
+print(f"Popcount: {fp.popcount}, Density: {fp.density:.3f}")
 ```
 
-### LanceDB-Compatible Vector Search
+### Similarity & VSA Operations
 
 ```python
-from ladybug_client import LadybugVectorDB
+from ladybugdb import LadybugDB
 
-# Connect to database
-db = LadybugVectorDB("http://localhost:8080")
+db = LadybugDB()
 
-# Insert vectors
-db.insert([
-    {"content": "The quick brown fox"},
-    {"content": "Machine learning basics"},
-    {"content": "Neural network architectures"}
+# Create fingerprints
+fp1 = db.fingerprint("hello world")
+fp2 = db.fingerprint("hello there")
+
+# Compute Hamming distance
+result = db.hamming(fp1, fp2)
+print(f"Distance: {result['distance']}, Similarity: {result['similarity']:.2%}")
+
+# XOR Binding (role-filler pairs)
+role = db.fingerprint("president")
+filler = db.fingerprint("Lincoln")
+bound = db.bind(role, filler)
+
+# Unbind to query (XOR is self-inverse)
+recovered = db.bind(bound, role)
+print(db.similarity(recovered, filler))  # ~1.0
+
+# Bundle (majority-vote superposition)
+colors = [db.fingerprint(c) for c in ["red", "blue", "green"]]
+color_concept = db.bundle(colors)
+```
+
+### LanceDB-Compatible Table API
+
+```python
+from ladybugdb import LadybugDB
+
+db = LadybugDB()
+
+# Create table with data
+table = db.create_table("thoughts", data=[
+    {"text": "The quick brown fox"},
+    {"text": "Machine learning basics"},
+    {"text": "Neural network architectures"}
 ])
 
-# Search for similar content
-results = db.search("fast fox", k=5, threshold=0.5)
+# Fluent search
+results = table.search("fast fox").limit(5).to_list()
 for r in results:
-    print(f"Addr: {r.addr}, Similarity: {r.similarity:.4f}")
+    print(f"ID: {r.id}, Similarity: {r.similarity:.4f}")
 ```
 
-### Redis-Like Commands
+### NARS Inference
 
 ```python
-from ladybug_client import LadybugClient
+from ladybugdb import LadybugDB
 
-client = LadybugClient("http://localhost:8080")
+db = LadybugDB()
+nars = db.nars
 
-# SET command
-result = client.redis_command("SET hello_world 0.9")
+# Deduction: A→B, B→C ⊢ A→C
+# "Birds fly" (0.9, 0.8) + "Tweety is bird" (1.0, 0.9)
+result = nars.deduction(f1=0.9, c1=0.8, f2=1.0, c2=0.9)
+print(f"Tweety flies: {result}")  # <0.900, 0.648>
 
-# GET command
-result = client.redis_command("GET 0x0100")
-
-# SCAN command
-result = client.redis_command("SCAN 0 COUNT 100")
-
-# RESONATE (similarity search)
-result = client.redis_command("RESONATE quick_fox 10")
+# Revision: combine evidence
+result = nars.revision(f1=0.8, c1=0.6, f2=0.9, c2=0.7)
 ```
 
-### Graph Queries (Cypher)
+### Redis Protocol
 
 ```python
-from ladybug_client import CognitiveGraph
+from ladybugdb import LadybugDB
 
-graph = CognitiveGraph("http://localhost:8080")
+db = LadybugDB()
 
-# Create nodes
-graph.run("CREATE (n:Person {name: 'Alice'}) RETURN n")
-
-# Match patterns
-result = graph.run("MATCH (n:Person) RETURN n")
-
-# Create relationships
-graph.run("""
-    MATCH (a:Person {name: 'Alice'}), (b:Person {name: 'Bob'})
-    CREATE (a)-[:KNOWS]->(b)
-""")
+# Redis-like commands
+db.redis("SET 'hello world'")
+result = db.redis("RESONATE 'hello' 10")
+db.redis("SCAN 0 COUNT 100")
 ```
 
-### CAM Operations
+### SQL & Cypher Queries
 
 ```python
-from ladybug_client import LadybugClient
+from ladybugdb import LadybugDB
 
-client = LadybugClient("http://localhost:8080")
+db = LadybugDB()
 
-# BIND operation (VSA superposition)
-result = client.cam_operation("BIND", ["concept_a", "concept_b"])
+# SQL query
+result = db.sql("SELECT * FROM nodes WHERE confidence > 0.7")
 
-# UNBIND operation
-result = client.cam_operation("UNBIND", ["bound_result", "concept_a"])
-
-# Available CAM operations: BIND, UNBIND, PERMUTE, BUNDLE, RESONATE, etc.
+# Cypher graph query
+result = db.cypher("MATCH (a)-[:CAUSES]->(b) RETURN a, b")
 ```
 
 ---

@@ -2,7 +2,7 @@
 name = "ladybug"
 version = "0.3.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "Apache-2.0"
 description = "Crystal Lake: Unified Cognitive Database with 4096 CAM Operations, Quantum-Inspired Operators, and 144 Verb Graph Substrate"
 repository = "https://github.com/AdaWorldAPI/ladybug-rs"
@@ -40,6 +40,7 @@ spo = ["reqwest"]                # Subject-Predicate-Object triples
 compress = ["lz4"]               # Compression support
 quantum = []                     # Quantum-inspired operators
 bench = []                       # Benchmark suite (comparison vs Qdrant/Milvus)
+flight = ["arrow-flight", "tonic", "prost"]  # Arrow Flight MCP server
 
 # All features
 full = [
@@ -55,25 +56,31 @@ full = [
 [dependencies]
 # -----------------------------------------------------------------------------
 # Storage: LanceDB + Arrow ecosystem
-# Arrow 56.x aligns with lance 1.0
+# Arrow 57.x aligns with DataFusion 52 / lance 1.0 (vendored)
 # -----------------------------------------------------------------------------
 lance = { version = "1.0", optional = true }
-arrow = { version = "56", features = ["ffi"] }
-arrow-array = "56"
-arrow-schema = "56"
-arrow-buffer = "56"
-arrow-data = "56"
-arrow-cast = "56"
-arrow-select = "56"
-parquet = { version = "56", features = ["snap", "lz4", "zstd"] }
+arrow = { version = "57", features = ["ffi"] }
+arrow-array = "57"
+arrow-schema = "57"
+arrow-buffer = "57"
+arrow-data = "57"
+arrow-cast = "57"
+arrow-select = "57"
+parquet = { version = "57", features = ["snap", "lz4", "zstd"] }
+arrow-flight = { version = "57", features = ["flight-sql-experimental"], optional = true }
+arrow-ipc = "57"
+# tonic/prost must match arrow-flight's versions (0.14.1)
+tonic = { version = "0.14", optional = true }
+prost = { version = "0.14", optional = true }
 bytes = "1.11"
 
 # -----------------------------------------------------------------------------
 # Query: DataFusion SQL engine
-# DataFusion 50.x aligns with arrow 56 / lance 1.0
+# DataFusion 51.x - upgrade to 52 when liblzma conflict fixed
+# To use DF 52: uncomment patch below and set datafusion = "52"
 # -----------------------------------------------------------------------------
-datafusion = "50"
-sqlparser = "0.58"
+datafusion = "51"
+sqlparser = "0.60"
 
 # -----------------------------------------------------------------------------
 # Graph: Neo4j driver
@@ -121,6 +128,7 @@ smallvec = { version = "1.15", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 hex = "0.4"
 base64 = "0.22"
+sha2 = "0.10"
 rand = "0.9"
 num-traits = "0.2"
 num_cpus = "1.17"
@@ -221,3 +229,12 @@ panic = "abort"
 [profile.bench]
 lto = "thin"
 opt-level = 3
+
+# =============================================================================
+# PATCH: DataFusion 52 upgrade (when ready)
+# DataFusion 52 has internal liblzma conflict (0.4.4 vs 0.4.5)
+# To enable: change datafusion = "52" above and uncomment patch below
+# =============================================================================
+
+# [patch.crates-io]
+# datafusion = { git = "https://github.com/AdaWorldAPI/datafusion", branch = "liblzma-fix" }

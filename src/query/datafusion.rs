@@ -111,17 +111,10 @@ impl SqlEngine {
         Ok(engine)
     }
     
-    /// Register all custom UDFs
-    /// TODO: Rewrite using ScalarUDFImpl trait for DataFusion 43+
+    /// Register all cognitive UDFs (DataFusion 50+ ScalarUDFImpl)
     fn register_udfs(&mut self) {
-        // UDF registration disabled - DataFusion 43+ requires ScalarUDFImpl trait
-        // See: https://docs.rs/datafusion/latest/datafusion/logical_expr/struct.ScalarUDF.html
-        //
-        // Planned UDFs:
-        // - hamming(a, b) -> distance
-        // - similarity(a, b) -> 0.0-1.0
-        // - popcount(x) -> count
-        // - xor_bind(a, b) -> fingerprint
+        use super::cognitive_udfs::register_cognitive_udfs;
+        register_cognitive_udfs(&self.ctx);
     }
     
     /// Register Lance tables as DataFusion tables

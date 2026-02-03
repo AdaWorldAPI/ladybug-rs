@@ -1,22 +1,19 @@
-# ⚠️ PHASE 2 ACTIVE: Server Rewire
+# CLAUDE.md — Ladybug-RS
 
-**READ FIRST**: `.claude/PHASE2_SERVER_REWIRE.md`
+> **Last Updated**: 2026-02-02
+> **Branch**: claude/code-review-X0tu2
+> **Status**: Arrow Flight streaming complete, documentation in progress
 
-This branch exists to replace `CogRedis` with `RedisAdapter` in `src/bin/server.rs`.
+## Documentation
 
-**The full task specification is in `.claude/PHASE2_SERVER_REWIRE.md`. Read it before writing any code.**
-
-Quick summary:
-1. Change imports from `cog_redis::*` to `storage::{RedisAdapter, RedisResult, RedisCommand, ...}`
-2. Replace `DatabaseState.cog_redis: CogRedis` with `adapter: RedisAdapter`
-3. Update 6 endpoint handlers to use `adapter.execute()` / `adapter.execute_command()`
-4. Remove 157→156 truncation hacks and manual Hamming computation
-5. Build with `--features "simd,parallel,codebook,hologram,quantum"`
-6. Only `src/bin/server.rs` changes. Touch nothing else.
+See `docs/` for comprehensive documentation:
+- [Getting Started](docs/guides/GETTING_STARTED.md)
+- [Architecture Overview](docs/architecture/OVERVIEW.md)
+- [Flight API](docs/api/FLIGHT_ENDPOINTS.md)
+- [MCP Actions](docs/api/MCP_ACTIONS.md)
+- [Redis Commands](docs/api/REDIS_COMMANDS.md)
 
 ---
-
-# CLAUDE.md — Ladybug-RS
 
 ## Project Identity
 
@@ -62,23 +59,45 @@ Quick summary:
 
 ## Current State
 
-**Main branch**: ~37.5K lines of Rust (141 tests passing, 5 pre-existing failures)
-
-**Last updated**: 2026-01-31
+**Codebase**: ~40K lines of Rust
+**Last updated**: 2026-02-02
+**DataFusion**: 51 (DF 52 upgrade path documented)
+**Arrow**: 48.x / arrow-flight 57.2 / tonic 0.14
 
 ### ✅ Completed
 
-| Feature | Lines | Status |
-|---------|-------|--------|
-| 8+8 addressing (prefix:slot) | bind_space.rs (1142) | ✓ Merged |
+| Feature | Location | Status |
+|---------|----------|--------|
+| 8+8 addressing (prefix:slot) | bind_space.rs | ✓ Merged |
 | Universal BindSpace O(1) indexing | bind_space.rs | ✓ Merged |
-| 4096 CAM operations (16×256) | cam_ops.rs (3031) | ✓ Merged |
-| CAM execution bridge | cog_redis.rs | ✓ Merged (PR #26) |
-| Redis command executor | cog_redis.rs (2250) | ✓ Merged (PR #26) |
-| LanceDB/DataFusion mappings | datafusion.rs | ✓ Merged |
-| HDR Cascade Search | hdr_cascade.rs (1015) | ✓ ON MAIN |
-| Cognitive Redis commands | cog_redis.rs | ✓ Merged |
-| Wire Redis to BindSpace | cog_redis.rs | ✓ Merged (PR #25) |
+| 4096 CAM operations (16×256) | cam_ops.rs | ✓ Merged |
+| CAM execution bridge | cog_redis.rs | ✓ Merged |
+| Redis command executor | cog_redis.rs | ✓ Merged |
+| LanceDB/DataFusion 51 mappings | datafusion.rs | ✓ Merged |
+| HDR Cascade Search | hdr_cascade.rs | ✓ Merged |
+| **Arrow Flight Server** | flight/server.rs | ✓ Complete |
+| **Flight Streaming (DoGet)** | flight/server.rs | ✓ Complete |
+| **MCP Actions (DoAction)** | flight/actions.rs | ✓ Complete |
+| **Documentation skeleton** | docs/ | ✓ Created |
+
+### Recent Commits
+
+```
+376c685 feat: Implement full Arrow Flight streaming for fingerprints and search
+49956cc fix: Arrow Flight module compiles with correct tonic/prost versions
+f4a9054 fix: Temporarily disable flight module, fix action imports
+1821b91 feat: Add Arrow Flight MCP server with zero-copy support
+3f956c4 fix: Revert to DataFusion 51, document DF 52 upgrade path
+```
+
+### Key Files (Flight Module)
+
+```
+src/flight/
+├── mod.rs           # Module exports
+├── server.rs        # LadybugFlightService (717 lines)
+└── actions.rs       # MCP action handlers
+```
 
 ### 🔄 Open PRs
 
@@ -151,32 +170,33 @@ Algorithm fixes:
 - [ ] Implement `crystallize()` — promote fluid to node
 - [ ] Implement `evaporate()` — demote node to fluid
 
-**Recent Commits** (PR #26):
-```
-271f4a2 - Add Redis command executor with CAM operation routing
-3f329c5 - Add CAM execution bridge to CogRedis
-13e95d6 - Fix example field names
-07a1578 - Implement 4096 CAM operations
-```
-
 **Key files**:
 ```
-src/storage/
-├── bind_space.rs    # Universal DTO (8+8 addressing)
-├── cog_redis.rs     # Redis syntax adapter
-├── lance.rs         # LanceDB substrate
-└── database.rs      # Unified interface
+src/flight/           # Arrow Flight gRPC server
+├── mod.rs            # Module exports
+├── server.rs         # LadybugFlightService (717 lines)
+└── actions.rs        # MCP action handlers
 
-src/learning/
-├── cam_ops.rs       # 4096 CAM operations (NEEDS REFACTOR)
-├── quantum_ops.rs   # Quantum-style operators
-├── rl_ops.rs        # Reinforcement learning
-└── causal_ops.rs    # Pearl's 3 rungs
+src/storage/          # Storage layer
+├── bind_space.rs     # Universal DTO (8+8 addressing)
+├── cog_redis.rs      # Redis syntax adapter
+├── lance.rs          # LanceDB substrate
+└── database.rs       # Unified interface
 
-src/search/
-├── hdr_cascade.rs   # HDR filtering (float emulation via popcount)
-├── cognitive.rs     # NARS + Qualia + SPO
-└── causal.rs        # SEE/DO/IMAGINE
+src/search/           # Search & similarity
+├── hdr_cascade.rs    # HDR filtering (~7ns per candidate)
+├── cognitive.rs      # NARS + Qualia + SPO
+└── causal.rs         # SEE/DO/IMAGINE
+
+src/learning/         # CAM operations
+├── cam_ops.rs        # 4096 CAM operations
+├── quantum_ops.rs    # Quantum-style operators
+├── rl_ops.rs         # Reinforcement learning
+└── causal_ops.rs     # Pearl's 3 rungs
+
+src/core/             # Core primitives
+├── simd.rs           # AVX-512/AVX2/NEON Hamming
+└── fingerprint.rs    # 10K-bit fingerprint
 ```
 
 ---
@@ -413,17 +433,42 @@ Spawn when domain expertise needed.
 
 ---
 
+## DataFusion 52 Upgrade Path
+
+Currently on DF 51 to avoid dependency issues. For DF 52 upgrade:
+
+1. **Add to vendored fork Cargo.toml**:
+```toml
+[workspace.dependencies]
+lzma-sys = { version = "0.1", features = ["static"] }
+```
+
+2. **Update Arrow crates to 52.x**
+
+3. **Verify tonic/prost alignment** (currently 0.14)
+
+4. **Test parquet compression features**
+
+**Vendored forks** (when ready):
+- `vendor/arrow-datafusion/`
+- `vendor/datafusion-ballista/`
+- `vendor/datafusion-flight-sql-server/`
+- `vendor/datafusion-sqlparser-rs/`
+
+---
+
 ## Testing
 
 ```bash
-cd ladybug-rs
-cargo test --features "lancedb"
-cargo test --features "redis"
-cargo test --all-features
+# With recommended features
+cargo test --features "simd,parallel,codebook,hologram,quantum"
+
+# Flight module
+cargo check --features "flight"
 
 # Specific module
 cargo test storage::bind_space
-cargo test learning::cam_ops
+cargo test search::hdr_cascade
 ```
 
 ---
