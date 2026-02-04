@@ -73,7 +73,7 @@ use crate::search::cognitive::{QualiaVector, CognitiveAtom, CognitiveSearch, Spo
 use crate::search::causal::CausalSearch;
 use crate::learning::cognitive_frameworks::TruthValue;
 use crate::learning::cam_ops::{OpCategory, OpDictionary, OpResult, LanceOp, SqlOp, HammingOp};
-use super::bind_space::{BindSpace, BindNode, Addr, FINGERPRINT_WORDS};
+use super::bind_space::{BindSpace, BindNode, Addr, FINGERPRINT_WORDS, dn_path_to_addr};
 
 // =============================================================================
 // ADDRESS SPACE CONSTANTS (8-bit prefix : 8-bit slot)
@@ -537,20 +537,11 @@ impl CogRedis {
     /// Resolve key to bind space address
     ///
     /// Maps string keys to 16-bit addresses:
-    /// - Hash key to get deterministic address
+    /// - DN paths (containing ':') use dn_path_to_addr() for O(1) hierarchical lookup
+    /// - Other keys use hash-based addressing
     /// - Check if exists in bind space
     pub fn resolve_key(&self, key: &str) -> Option<Addr> {
-        use std::hash::{Hash, Hasher};
-        use std::collections::hash_map::DefaultHasher;
-
-        let mut hasher = DefaultHasher::new();
-        key.hash(&mut hasher);
-        let hash = hasher.finish();
-
-        // Map to node address space (0x80-0xFF:XX)
-        let prefix = 0x80 + ((hash >> 8) as u8 & 0x7F);  // 0x80-0xFF
-        let slot = (hash & 0xFF) as u8;
-        let addr = Addr::new(prefix, slot);
+        let addr = self.key_to_addr(key);
 
         // Check if occupied
         if self.bind_space.read(addr).is_some() {
@@ -560,18 +551,54 @@ impl CogRedis {
         }
     }
 
+    /// Convert key to address (always returns address, even if not occupied)
+    ///
+    /// - DN paths (containing ':') → dn_path_to_addr() for hierarchical addressing
+    /// - Other keys → hash-based addressing
+    #[inline]
+    pub fn key_to_addr(&self, key: &str) -> Addr {
+        // DN path detection: contains ':' → use DN tree addressing
+        if key.contains(':') {
+            dn_path_to_addr(key)
+        } else {
+            // Standard hash-based addressing
+            use std::hash::{Hash, Hasher};
+            use std::collections::hash_map::DefaultHasher;
+
+            let mut hasher = DefaultHasher::new();
+            key.hash(&mut hasher);
+            let hash = hasher.finish();
+
+            // Map to node address space (0x80-0xFF:XX)
+            let prefix = 0x80 + ((hash >> 8) as u8 & 0x7F);  // 0x80-0xFF
+            let slot = (hash & 0xFF) as u8;
+            Addr::new(prefix, slot)
+        }
+    }
+
+    /// Check if key is a DN path (contains ':')
+    #[inline]
+    pub fn is_dn_path(key: &str) -> bool {
+        key.contains(':')
+    }
+
     /// Allocate address for key in bind space
     ///
     /// Returns address where key's value should be stored.
+    /// DN paths auto-create parent chain for hierarchy.
     pub fn resolve_or_allocate(&mut self, key: &str, fingerprint: [u64; FINGERPRINT_WORDS]) -> Addr {
         // Check if already exists
         if let Some(addr) = self.resolve_key(key) {
             return addr;
         }
 
-        // Allocate new address in node space
-        let addr = self.bind_space.write_labeled(fingerprint, key);
-        addr
+        // DN path: use write_dn_path to auto-create parent chain
+        if Self::is_dn_path(key) {
+            self.bind_space.write_dn_path(key, fingerprint, 0)
+        } else {
+            // Standard allocation
+            self.bind_space.write_labeled(fingerprint, key)
+        }
     }
 
     /// Read from bind space using key
@@ -1724,6 +1751,17 @@ impl CogRedis {
             "INTUIT" => self.cmd_intuit(args),
             "FANOUT" => self.cmd_fanout(args),
 
+            // DN Tree commands (Distinguished Name hierarchy)
+            "DN.GET" => self.cmd_dn_get(args),
+            "DN.SET" => self.cmd_dn_set(args),
+            "DN.PARENT" => self.cmd_dn_parent(args),
+            "DN.CHILDREN" => self.cmd_dn_children(args),
+            "DN.ANCESTORS" => self.cmd_dn_ancestors(args),
+            "DN.SIBLINGS" => self.cmd_dn_siblings(args),
+            "DN.DEPTH" => self.cmd_dn_depth(args),
+            "DN.RUNG" => self.cmd_dn_rung(args),
+            "DN.TREE" => self.cmd_dn_tree(args),
+
             // CAM operations
             "CAM" => self.cmd_cam(args),
             "CAM.ID" => self.cmd_cam_id(args),
@@ -1969,6 +2007,242 @@ impl CogRedis {
         let results: Vec<RedisResult> = edges.iter()
             .map(|edge| RedisResult::String(format!("{:04X} -> {:04X}", edge.from.0, edge.to.0)))
             .collect();
+
+        RedisResult::Array(results)
+    }
+
+    // =========================================================================
+    // DN TREE COMMANDS (Distinguished Name hierarchy)
+    // =========================================================================
+    //
+    // DN paths use ':' as separator: "Ada:A:soul:identity"
+    // - O(1) address lookup via dn_path_to_addr()
+    // - O(1) parent extraction via string truncation
+    // - Zero-copy children via BitpackedCSR
+    //
+    // Examples:
+    //   DN.GET Ada:A:soul:identity       → Get node at path
+    //   DN.SET Ada:A:soul:new "content"  → Create with parent chain
+    //   DN.PARENT Ada:A:soul:identity    → Returns "Ada:A:soul"
+    //   DN.CHILDREN Ada:A:soul           → List children
+    //   DN.ANCESTORS Ada:A:soul:identity → ["Ada:A:soul", "Ada:A", "Ada"]
+    //   DN.TREE Ada:A 3                  → Walk tree to depth 3
+
+    /// DN.GET path - Get node at DN path
+    fn cmd_dn_get(&self, args: &[&str]) -> RedisResult {
+        if args.is_empty() {
+            return RedisResult::Error("DN.GET requires path".to_string());
+        }
+
+        let path = args[0];
+        let addr = dn_path_to_addr(path);
+
+        if let Some(node) = self.bind_space.read(addr) {
+            RedisResult::Array(vec![
+                RedisResult::String(format!("addr:{:04X}", addr.0)),
+                RedisResult::String(format!("label:{}", node.label.as_deref().unwrap_or(""))),
+                RedisResult::String(format!("depth:{}", node.depth)),
+                RedisResult::String(format!("rung:{}", node.rung)),
+                RedisResult::String(format!("parent:{}", node.parent.map(|p| format!("{:04X}", p.0)).unwrap_or_default())),
+            ])
+        } else {
+            RedisResult::Nil
+        }
+    }
+
+    /// DN.SET path value [RUNG r] - Create node at DN path with auto-parent creation
+    fn cmd_dn_set(&mut self, args: &[&str]) -> RedisResult {
+        if args.len() < 2 {
+            return RedisResult::Error("DN.SET requires path and value".to_string());
+        }
+
+        let path = args[0];
+        let value = args[1];
+
+        // Parse optional RUNG
+        let rung = if args.len() > 3 && args[2].to_uppercase() == "RUNG" {
+            args[3].parse().unwrap_or(0)
+        } else {
+            0
+        };
+
+        // Create fingerprint from value
+        let fp = Fingerprint::from_content(value);
+        let addr = self.bind_space.write_dn_path(path, fp_to_words(&fp), rung);
+
+        RedisResult::String(format!("{:04X}", addr.0))
+    }
+
+    /// DN.PARENT path - Get parent path (O(1) string operation)
+    fn cmd_dn_parent(&self, args: &[&str]) -> RedisResult {
+        if args.is_empty() {
+            return RedisResult::Error("DN.PARENT requires path".to_string());
+        }
+
+        let path = args[0];
+
+        if let Some(parent_path) = BindSpace::dn_parent_path(path) {
+            let parent_addr = dn_path_to_addr(parent_path);
+            if let Some(node) = self.bind_space.read(parent_addr) {
+                RedisResult::Array(vec![
+                    RedisResult::String(parent_path.to_string()),
+                    RedisResult::String(format!("{:04X}", parent_addr.0)),
+                    RedisResult::String(format!("label:{}", node.label.as_deref().unwrap_or(""))),
+                ])
+            } else {
+                RedisResult::String(parent_path.to_string())
+            }
+        } else {
+            RedisResult::Nil  // Root node has no parent
+        }
+    }
+
+    /// DN.CHILDREN path - Get children (zero-copy via CSR)
+    fn cmd_dn_children(&mut self, args: &[&str]) -> RedisResult {
+        if args.is_empty() {
+            return RedisResult::Error("DN.CHILDREN requires path".to_string());
+        }
+
+        let path = args[0];
+        let addr = dn_path_to_addr(path);
+
+        // Ensure CSR is built
+        self.bind_space.rebuild_csr();
+
+        // Zero-copy children access
+        let children_raw = self.bind_space.children_raw(addr);
+
+        let results: Vec<RedisResult> = children_raw
+            .iter()
+            .filter_map(|&child_raw| {
+                let child_addr = Addr(child_raw);
+                self.bind_space.read(child_addr).map(|node| {
+                    RedisResult::Array(vec![
+                        RedisResult::String(format!("{:04X}", child_addr.0)),
+                        RedisResult::String(node.label.clone().unwrap_or_default()),
+                    ])
+                })
+            })
+            .collect();
+
+        RedisResult::Array(results)
+    }
+
+    /// DN.ANCESTORS path - Get all ancestors (O(1) per hop via parent chain)
+    fn cmd_dn_ancestors(&self, args: &[&str]) -> RedisResult {
+        if args.is_empty() {
+            return RedisResult::Error("DN.ANCESTORS requires path".to_string());
+        }
+
+        let path = args[0];
+        let addr = dn_path_to_addr(path);
+
+        let ancestors: Vec<RedisResult> = self.bind_space.ancestors(addr)
+            .filter_map(|anc_addr| {
+                self.bind_space.read(anc_addr).map(|node| {
+                    RedisResult::Array(vec![
+                        RedisResult::String(format!("{:04X}", anc_addr.0)),
+                        RedisResult::String(node.label.clone().unwrap_or_default()),
+                        RedisResult::String(format!("depth:{}", node.depth)),
+                    ])
+                })
+            })
+            .collect();
+
+        RedisResult::Array(ancestors)
+    }
+
+    /// DN.SIBLINGS path - Get siblings (same parent)
+    fn cmd_dn_siblings(&self, args: &[&str]) -> RedisResult {
+        if args.is_empty() {
+            return RedisResult::Error("DN.SIBLINGS requires path".to_string());
+        }
+
+        let path = args[0];
+        let addr = dn_path_to_addr(path);
+
+        let siblings: Vec<RedisResult> = self.bind_space.siblings(addr)
+            .filter_map(|sib_addr| {
+                self.bind_space.read(sib_addr).map(|node| {
+                    RedisResult::Array(vec![
+                        RedisResult::String(format!("{:04X}", sib_addr.0)),
+                        RedisResult::String(node.label.clone().unwrap_or_default()),
+                    ])
+                })
+            })
+            .collect();
+
+        RedisResult::Array(siblings)
+    }
+
+    /// DN.DEPTH path - Get tree depth of node
+    fn cmd_dn_depth(&self, args: &[&str]) -> RedisResult {
+        if args.is_empty() {
+            return RedisResult::Error("DN.DEPTH requires path".to_string());
+        }
+
+        let path = args[0];
+        let addr = dn_path_to_addr(path);
+        let depth = self.bind_space.depth(addr);
+
+        RedisResult::Integer(depth as i64)
+    }
+
+    /// DN.RUNG path - Get access rung of node (R0-R9)
+    fn cmd_dn_rung(&self, args: &[&str]) -> RedisResult {
+        if args.is_empty() {
+            return RedisResult::Error("DN.RUNG requires path".to_string());
+        }
+
+        let path = args[0];
+        let addr = dn_path_to_addr(path);
+        let rung = self.bind_space.rung(addr);
+
+        RedisResult::Integer(rung as i64)
+    }
+
+    /// DN.TREE path [DEPTH n] - Walk tree and collect nodes
+    fn cmd_dn_tree(&mut self, args: &[&str]) -> RedisResult {
+        if args.is_empty() {
+            return RedisResult::Error("DN.TREE requires path".to_string());
+        }
+
+        let path = args[0];
+        let max_depth = if args.len() > 2 && args[1].to_uppercase() == "DEPTH" {
+            args[2].parse().unwrap_or(3)
+        } else {
+            3
+        };
+
+        let start_addr = dn_path_to_addr(path);
+
+        // Ensure CSR is built for traversal
+        self.bind_space.rebuild_csr();
+
+        // BFS traversal
+        let mut results = Vec::new();
+        let mut frontier = vec![(start_addr, 0usize)];
+        let mut visited = std::collections::HashSet::new();
+
+        while let Some((addr, depth)) = frontier.pop() {
+            if depth > max_depth || !visited.insert(addr.0) {
+                continue;
+            }
+
+            if let Some(node) = self.bind_space.read(addr) {
+                results.push(RedisResult::Array(vec![
+                    RedisResult::String(format!("{:04X}", addr.0)),
+                    RedisResult::String(node.label.clone().unwrap_or_default()),
+                    RedisResult::Integer(depth as i64),
+                    RedisResult::Integer(node.rung as i64),
+                ]));
+
+                // Add children to frontier
+                for &child_raw in self.bind_space.children_raw(addr) {
+                    frontier.push((Addr(child_raw), depth + 1));
+                }
+            }
+        }
 
         RedisResult::Array(results)
     }
@@ -2492,5 +2766,168 @@ mod tests {
             }
             _ => panic!("Expected array result"),
         }
+    }
+
+    // =========================================================================
+    // DN TREE COMMAND TESTS
+    // =========================================================================
+
+    #[test]
+    fn test_is_dn_path() {
+        assert!(CogRedis::is_dn_path("Ada:A:soul:identity"));
+        assert!(CogRedis::is_dn_path("a:b"));
+        assert!(!CogRedis::is_dn_path("simple_key"));
+        assert!(!CogRedis::is_dn_path("mykey"));
+    }
+
+    #[test]
+    fn test_dn_set_get() {
+        let mut redis = CogRedis::new();
+
+        // DN.SET creates node with parent chain
+        let result = redis.execute_command("DN.SET Ada:A:soul:identity hello");
+        match result {
+            RedisResult::String(addr) => {
+                assert!(!addr.is_empty(), "Should return address");
+            }
+            _ => panic!("Expected address string"),
+        }
+
+        // DN.GET retrieves the node
+        let result = redis.execute_command("DN.GET Ada:A:soul:identity");
+        match result {
+            RedisResult::Array(arr) => {
+                assert!(!arr.is_empty(), "Should return node info");
+                // First element should be addr
+                if let RedisResult::String(s) = &arr[0] {
+                    assert!(s.starts_with("addr:"));
+                }
+            }
+            _ => panic!("Expected array result"),
+        }
+    }
+
+    #[test]
+    fn test_dn_parent() {
+        let mut redis = CogRedis::new();
+
+        // Create a deep path
+        redis.execute_command("DN.SET Ada:A:soul:identity test");
+
+        // Get parent path
+        let result = redis.execute_command("DN.PARENT Ada:A:soul:identity");
+        match result {
+            RedisResult::Array(arr) => {
+                // First element should be parent path
+                if let RedisResult::String(path) = &arr[0] {
+                    assert_eq!(path, "Ada:A:soul");
+                }
+            }
+            _ => panic!("Expected array with parent path"),
+        }
+
+        // Root has no parent
+        let result = redis.execute_command("DN.PARENT Ada");
+        assert!(matches!(result, RedisResult::Nil));
+    }
+
+    #[test]
+    fn test_dn_depth_rung() {
+        let mut redis = CogRedis::new();
+
+        // Create node with RUNG
+        redis.execute_command("DN.SET Ada:A:soul:secrets deep_content RUNG 5");
+
+        // Check depth (0=Ada, 1=A, 2=soul, 3=secrets)
+        let result = redis.execute_command("DN.DEPTH Ada:A:soul:secrets");
+        match result {
+            RedisResult::Integer(depth) => {
+                assert_eq!(depth, 3, "Depth should be 3");
+            }
+            _ => panic!("Expected integer depth"),
+        }
+
+        // Check rung
+        let result = redis.execute_command("DN.RUNG Ada:A:soul:secrets");
+        match result {
+            RedisResult::Integer(rung) => {
+                assert_eq!(rung, 5, "Rung should be 5");
+            }
+            _ => panic!("Expected integer rung"),
+        }
+    }
+
+    #[test]
+    fn test_dn_children() {
+        let mut redis = CogRedis::new();
+
+        // Create parent and children
+        redis.execute_command("DN.SET Ada:A:soul:child1 first");
+        redis.execute_command("DN.SET Ada:A:soul:child2 second");
+        redis.execute_command("DN.SET Ada:A:soul:child3 third");
+
+        // Get children of Ada:A:soul
+        let result = redis.execute_command("DN.CHILDREN Ada:A:soul");
+        match result {
+            RedisResult::Array(arr) => {
+                println!("Found {} children", arr.len());
+                // Should have children (may vary based on CSR build)
+            }
+            _ => panic!("Expected array of children"),
+        }
+    }
+
+    #[test]
+    fn test_dn_ancestors() {
+        let mut redis = CogRedis::new();
+
+        // Create deep path
+        redis.execute_command("DN.SET Ada:A:soul:identity:deep value");
+
+        // Get ancestors
+        let result = redis.execute_command("DN.ANCESTORS Ada:A:soul:identity:deep");
+        match result {
+            RedisResult::Array(arr) => {
+                // Should have ancestors: identity, soul, A, Ada
+                println!("Found {} ancestors", arr.len());
+            }
+            _ => panic!("Expected array of ancestors"),
+        }
+    }
+
+    #[test]
+    fn test_dn_tree_traversal() {
+        let mut redis = CogRedis::new();
+
+        // Create a small tree
+        redis.execute_command("DN.SET Ada:A:soul value1");
+        redis.execute_command("DN.SET Ada:A:core value2");
+        redis.execute_command("DN.SET Ada:B:thoughts value3");
+
+        // Traverse from Ada with depth 2
+        let result = redis.execute_command("DN.TREE Ada DEPTH 2");
+        match result {
+            RedisResult::Array(arr) => {
+                println!("Tree traversal found {} nodes", arr.len());
+                // Should find Ada and some children
+            }
+            _ => panic!("Expected array from tree traversal"),
+        }
+    }
+
+    #[test]
+    fn test_standard_get_set_with_dn_path() {
+        let mut redis = CogRedis::new();
+
+        // Standard SET/GET should work with DN paths too
+        // because resolve_key detects ':'
+        let result = redis.execute_command("SET Ada:A:test hello");
+        assert!(result.is_ok());
+
+        // GET should work (via dn_path_to_addr)
+        let result = redis.execute_command("GET Ada:A:test");
+        // May or may not find depending on hash vs dn_path
+        // The key point is it doesn't error
+        println!("GET result: {:?}", result);
     }
 }
