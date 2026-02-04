@@ -87,11 +87,91 @@ pub fn unescape_payload(data: &[u8]) -> Vec<u8> {
 }
 ```
 
-### Format Byte 0x0_ Reserved for Escaping
+### Alternative: Escape Space as Feature Enable Bits
 
-The type nibble `0x0_` is reserved for escape handling:
-- `FF:00` = literal 0xFF byte follows
-- `FF:01` to `FF:0F` = reserved for future escape needs
+Instead of using FF:xx purely for data format encoding, the escape space can function as **feature enable bits** / **mode flags**:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     ESCAPE AS ENABLE BITS                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Each FF:xx address = enable/disable flag for feature xx                   │
+│                                                                             │
+│  Write to FF:00 → updates feature 0x00 state                               │
+│  Write to FF:01 → updates feature 0x01 state                               │
+│  ...                                                                        │
+│  Write to FF:FF → updates feature 0xFF state                               │
+│                                                                             │
+│  Backend writes to MULTIPLE prefixes:                                       │
+│  Every update is an implicit mode update to ONE feature prefix only        │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Feature Prefix Mapping:
+┌────────┬────────────────────────────────────────────────────────────────────┐
+│  FF:0x │  Core system modes (0=disable all, 1=enable, 2=reset, etc.)       │
+│  FF:1x │  Hamming mode flags (distance thresholds, search params)          │
+│  FF:2x │  CAM operation modes (4096 ops control)                           │
+│  FF:Bx │  Float backend modes (precision, quantization level)              │
+│  FF:Dx │  Dimensional sparse modes (bitmap compression settings)           │
+│  FF:Ex │  Extended address modes (48-bit expansion control)                │
+│  FF:Fx │  Full 10000D modes (XOR/RLE compression flags)                    │
+└────────┴────────────────────────────────────────────────────────────────────┘
+```
+
+### Multi-Backend Write Pattern
+
+```rust
+/// Backend writes to escape address to set feature mode
+pub fn set_feature_mode(space: &mut BindSpace, feature: u8, mode: &[u8]) {
+    let escape_addr = 0xFF00 | (feature as u16);
+    space.write_raw(Addr(escape_addr), mode);
+}
+
+/// Read current mode for a feature
+pub fn get_feature_mode(space: &BindSpace, feature: u8) -> Option<&[u8]> {
+    let escape_addr = 0xFF00 | (feature as u16);
+    space.read_raw(Addr(escape_addr))
+}
+
+/// Example: Enable dimensional sparse mode with specific settings
+pub fn enable_sparse_dim(space: &mut BindSpace, max_entries: u16, bitmap_size: u8) {
+    let mode = [
+        0x01,                           // Enabled
+        (max_entries >> 8) as u8,       // Max entries high
+        max_entries as u8,              // Max entries low
+        bitmap_size,                    // Bitmap size (20 default)
+    ];
+    set_feature_mode(space, 0xD0, &mode);  // FF:D0 = sparse dim mode
+}
+```
+
+### Implicit Mode Updates
+
+When writing data to a regular prefix (00:xx to FE:xx), the corresponding feature mode in FF:xx can be implicitly updated:
+
+```rust
+/// Write data and implicitly update feature mode
+pub fn write_with_mode_update(
+    space: &mut BindSpace,
+    addr: Addr,
+    data: &[u8],
+    feature_flags: u8,
+) {
+    // Write main data
+    space.write(addr, data);
+
+    // Implicitly update the feature prefix's mode
+    let prefix = (addr.0 >> 8) as u8;
+    let mode_addr = 0xFF00 | (prefix as u16);
+
+    // Merge with existing mode or set new
+    let current = space.read_raw(Addr(mode_addr)).unwrap_or(&[0]);
+    let new_mode = current[0] | feature_flags;
+    space.write_raw(Addr(mode_addr), &[new_mode]);
+}
+```
 
 ---
 
