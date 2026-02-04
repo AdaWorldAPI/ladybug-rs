@@ -1762,6 +1762,19 @@ impl CogRedis {
             "DN.RUNG" => self.cmd_dn_rung(args),
             "DN.TREE" => self.cmd_dn_tree(args),
 
+            // XOR DAG commands (ACID transactions, parity, time-travel)
+            "DAG.BEGIN" => self.cmd_dag_begin(args),
+            "DAG.READ" => self.cmd_dag_read(args),
+            "DAG.WRITE" => self.cmd_dag_write(args),
+            "DAG.COMMIT" => self.cmd_dag_commit(args),
+            "DAG.ABORT" => self.cmd_dag_abort(args),
+            "DAG.TIMETRAVEL" => self.cmd_dag_timetravel(args),
+            "DAG.DIFF" => self.cmd_dag_diff(args),
+            "DAG.PARITY.INIT" => self.cmd_dag_parity_init(args),
+            "DAG.PARITY.VERIFY" => self.cmd_dag_parity_verify(args),
+            "DAG.PARITY.RECOVER" => self.cmd_dag_parity_recover(args),
+            "DAG.STATS" => self.cmd_dag_stats(args),
+
             // CAM operations
             "CAM" => self.cmd_cam(args),
             "CAM.ID" => self.cmd_cam_id(args),
@@ -2245,6 +2258,295 @@ impl CogRedis {
         }
 
         RedisResult::Array(results)
+    }
+
+    // =========================================================================
+    // XOR DAG COMMANDS
+    // =========================================================================
+    //
+    // ACID transactions with XOR parity protection and time-travel.
+    // Integrates with vendored Arrow/Lance for zero-copy operations.
+    //
+    // Commands:
+    //   DAG.BEGIN [STRATEGY merge|reject|last]  → Start transaction, returns TXN_ID
+    //   DAG.READ TXN_ID key                     → Read within transaction
+    //   DAG.WRITE TXN_ID key fingerprint        → Stage write (committed on DAG.COMMIT)
+    //   DAG.COMMIT TXN_ID                       → Commit transaction
+    //   DAG.ABORT TXN_ID                        → Abort transaction
+    //   DAG.TIMETRAVEL key VERSION              → Read at historical version
+    //   DAG.DIFF key V1 V2                      → XOR diff between versions
+    //   DAG.PARITY.INIT                         → Initialize parity blocks
+    //   DAG.PARITY.VERIFY                       → Verify all parity blocks
+    //   DAG.PARITY.RECOVER key                  → Recover data from parity
+    //   DAG.STATS                               → DAG statistics
+
+    /// DAG.BEGIN [STRATEGY merge|reject|last] - Start ACID transaction
+    fn cmd_dag_begin(&mut self, args: &[&str]) -> RedisResult {
+        use super::xor_dag::{ConflictStrategy, XorDag, XorDagConfig};
+        use std::sync::{Arc, RwLock};
+
+        // Parse strategy if provided
+        let strategy = if args.len() >= 2 && args[0].to_uppercase() == "STRATEGY" {
+            match args[1].to_lowercase().as_str() {
+                "merge" | "xor" => ConflictStrategy::XorMerge,
+                "reject" => ConflictStrategy::Reject,
+                "last" | "lww" => ConflictStrategy::LastWriteWins,
+                "first" | "fww" => ConflictStrategy::FirstWriteWins,
+                _ => ConflictStrategy::XorMerge,
+            }
+        } else {
+            ConflictStrategy::XorMerge
+        };
+
+        // Get or create XOR DAG (lazy init)
+        let dag = self.get_or_create_dag();
+
+        match dag.begin() {
+            Ok(txn_id) => RedisResult::Integer(txn_id as i64),
+            Err(e) => RedisResult::Error(format!("DAG.BEGIN failed: {}", e)),
+        }
+    }
+
+    /// DAG.READ TXN_ID key - Read within transaction
+    fn cmd_dag_read(&mut self, args: &[&str]) -> RedisResult {
+        if args.len() < 2 {
+            return RedisResult::Error("DAG.READ requires TXN_ID and key".to_string());
+        }
+
+        let txn_id: u64 = args[0].parse().unwrap_or(0);
+        let key = args[1];
+        let addr = self.key_to_addr(key);
+
+        let dag = self.get_or_create_dag();
+
+        match dag.read(txn_id, addr) {
+            Ok(Some(node)) => {
+                let fp_hex = node.fingerprint.iter()
+                    .map(|w| format!("{:016x}", w))
+                    .collect::<Vec<_>>()
+                    .join("");
+                RedisResult::Array(vec![
+                    RedisResult::String(fp_hex),
+                    RedisResult::String(node.label.clone().unwrap_or_default()),
+                    RedisResult::Integer(node.access_count as i64),
+                ])
+            }
+            Ok(None) => RedisResult::Nil,
+            Err(e) => RedisResult::Error(format!("DAG.READ failed: {}", e)),
+        }
+    }
+
+    /// DAG.WRITE TXN_ID key fingerprint [label] - Stage write in transaction
+    fn cmd_dag_write(&mut self, args: &[&str]) -> RedisResult {
+        if args.len() < 3 {
+            return RedisResult::Error("DAG.WRITE requires TXN_ID, key, and fingerprint".to_string());
+        }
+
+        let txn_id: u64 = args[0].parse().unwrap_or(0);
+        let key = args[1];
+        let fp_str = args[2];
+        let label = args.get(3).map(|s| s.to_string());
+
+        let addr = self.key_to_addr(key);
+
+        // Parse fingerprint from hex
+        let mut fingerprint = [0u64; FINGERPRINT_WORDS];
+        let cleaned = fp_str.replace("0x", "");
+        for (i, chunk) in cleaned.as_bytes().chunks(16).enumerate() {
+            if i >= FINGERPRINT_WORDS {
+                break;
+            }
+            let chunk_str = std::str::from_utf8(chunk).unwrap_or("0");
+            fingerprint[i] = u64::from_str_radix(chunk_str, 16).unwrap_or(0);
+        }
+
+        let dag = self.get_or_create_dag();
+
+        match dag.write(txn_id, addr, fingerprint, label) {
+            Ok(()) => RedisResult::Ok,
+            Err(e) => RedisResult::Error(format!("DAG.WRITE failed: {}", e)),
+        }
+    }
+
+    /// DAG.COMMIT TXN_ID - Commit transaction
+    fn cmd_dag_commit(&mut self, args: &[&str]) -> RedisResult {
+        if args.is_empty() {
+            return RedisResult::Error("DAG.COMMIT requires TXN_ID".to_string());
+        }
+
+        let txn_id: u64 = args[0].parse().unwrap_or(0);
+
+        let dag = self.get_or_create_dag();
+
+        match dag.commit(txn_id) {
+            Ok(version) => RedisResult::Integer(version as i64),
+            Err(e) => RedisResult::Error(format!("DAG.COMMIT failed: {}", e)),
+        }
+    }
+
+    /// DAG.ABORT TXN_ID - Abort transaction
+    fn cmd_dag_abort(&mut self, args: &[&str]) -> RedisResult {
+        if args.is_empty() {
+            return RedisResult::Error("DAG.ABORT requires TXN_ID".to_string());
+        }
+
+        let txn_id: u64 = args[0].parse().unwrap_or(0);
+
+        let dag = self.get_or_create_dag();
+
+        match dag.abort(txn_id) {
+            Ok(()) => RedisResult::Ok,
+            Err(e) => RedisResult::Error(format!("DAG.ABORT failed: {}", e)),
+        }
+    }
+
+    /// DAG.TIMETRAVEL key VERSION - Read at historical version
+    fn cmd_dag_timetravel(&mut self, args: &[&str]) -> RedisResult {
+        if args.len() < 2 {
+            return RedisResult::Error("DAG.TIMETRAVEL requires key and VERSION".to_string());
+        }
+
+        let key = args[0];
+        let version: u64 = args[1].parse().unwrap_or(0);
+        let addr = self.key_to_addr(key);
+
+        let dag = self.get_or_create_dag();
+
+        match dag.read_at_version(addr, version) {
+            Ok(Some(fp)) => {
+                let fp_hex = fp.iter()
+                    .map(|w| format!("{:016x}", w))
+                    .collect::<Vec<_>>()
+                    .join("");
+                RedisResult::String(fp_hex)
+            }
+            Ok(None) => RedisResult::Nil,
+            Err(e) => RedisResult::Error(format!("DAG.TIMETRAVEL failed: {}", e)),
+        }
+    }
+
+    /// DAG.DIFF key V1 V2 - XOR diff between versions
+    fn cmd_dag_diff(&mut self, args: &[&str]) -> RedisResult {
+        if args.len() < 3 {
+            return RedisResult::Error("DAG.DIFF requires key, V1, and V2".to_string());
+        }
+
+        let key = args[0];
+        let v1: u64 = args[1].parse().unwrap_or(0);
+        let v2: u64 = args[2].parse().unwrap_or(0);
+        let addr = self.key_to_addr(key);
+
+        let dag = self.get_or_create_dag();
+
+        match dag.diff_versions(addr, v1, v2) {
+            Ok(Some(diff)) => {
+                // Count changed bits
+                let bits_changed: u32 = diff.iter().map(|w| w.count_ones()).sum();
+                let diff_hex = diff.iter()
+                    .map(|w| format!("{:016x}", w))
+                    .collect::<Vec<_>>()
+                    .join("");
+                RedisResult::Array(vec![
+                    RedisResult::String(diff_hex),
+                    RedisResult::Integer(bits_changed as i64),
+                ])
+            }
+            Ok(None) => RedisResult::Nil,
+            Err(e) => RedisResult::Error(format!("DAG.DIFF failed: {}", e)),
+        }
+    }
+
+    /// DAG.PARITY.INIT - Initialize parity blocks
+    fn cmd_dag_parity_init(&mut self, _args: &[&str]) -> RedisResult {
+        let dag = self.get_or_create_dag();
+
+        match dag.init_parity() {
+            Ok(()) => RedisResult::Ok,
+            Err(e) => RedisResult::Error(format!("DAG.PARITY.INIT failed: {}", e)),
+        }
+    }
+
+    /// DAG.PARITY.VERIFY - Verify all parity blocks
+    fn cmd_dag_parity_verify(&mut self, _args: &[&str]) -> RedisResult {
+        let dag = self.get_or_create_dag();
+
+        match dag.verify_parity() {
+            Ok(invalid) => {
+                if invalid.is_empty() {
+                    RedisResult::String("OK - all parity blocks valid".to_string())
+                } else {
+                    RedisResult::Array(
+                        invalid.into_iter()
+                            .map(|id| RedisResult::Integer(id as i64))
+                            .collect()
+                    )
+                }
+            }
+            Err(e) => RedisResult::Error(format!("DAG.PARITY.VERIFY failed: {}", e)),
+        }
+    }
+
+    /// DAG.PARITY.RECOVER key - Recover data from parity
+    fn cmd_dag_parity_recover(&mut self, args: &[&str]) -> RedisResult {
+        if args.is_empty() {
+            return RedisResult::Error("DAG.PARITY.RECOVER requires key".to_string());
+        }
+
+        let key = args[0];
+        let addr = self.key_to_addr(key);
+
+        let dag = self.get_or_create_dag();
+
+        match dag.recover_addr(addr) {
+            Ok(recovered) => {
+                let fp_hex = recovered.iter()
+                    .map(|w| format!("{:016x}", w))
+                    .collect::<Vec<_>>()
+                    .join("");
+                RedisResult::String(fp_hex)
+            }
+            Err(e) => RedisResult::Error(format!("DAG.PARITY.RECOVER failed: {}", e)),
+        }
+    }
+
+    /// DAG.STATS - Get DAG statistics
+    fn cmd_dag_stats(&mut self, _args: &[&str]) -> RedisResult {
+        let dag = self.get_or_create_dag();
+        let stats = dag.stats();
+
+        RedisResult::Array(vec![
+            RedisResult::String(format!("txns_started:{}", stats.txns_started)),
+            RedisResult::String(format!("txns_committed:{}", stats.txns_committed)),
+            RedisResult::String(format!("txns_aborted:{}", stats.txns_aborted)),
+            RedisResult::String(format!("conflicts_detected:{}", stats.conflicts_detected)),
+            RedisResult::String(format!("conflicts_merged:{}", stats.conflicts_merged)),
+            RedisResult::String(format!("parity_checks:{}", stats.parity_checks)),
+            RedisResult::String(format!("parity_recoveries:{}", stats.parity_recoveries)),
+            RedisResult::String(format!("work_stolen:{}", stats.work_stolen)),
+            RedisResult::String(format!("deltas_created:{}", stats.deltas_created)),
+            RedisResult::String(format!("active_txns:{}", stats.active_txns)),
+            RedisResult::String(format!("parity_blocks:{}", stats.parity_blocks)),
+            RedisResult::String(format!("delta_chain_length:{}", stats.delta_chain_length)),
+            RedisResult::String(format!("pending_work:{}", stats.pending_work)),
+            RedisResult::String(format!("current_epoch:{}", stats.current_epoch)),
+        ])
+    }
+
+    /// Get or create the XOR DAG (lazy initialization)
+    ///
+    /// Note: For production, the DAG should be a proper field on CogRedis.
+    /// This implementation uses OnceLock for safe lazy initialization.
+    fn get_or_create_dag(&self) -> &'static super::xor_dag::XorDag {
+        use super::xor_dag::{XorDag, XorDagConfig};
+        use std::sync::{Arc, RwLock, OnceLock};
+
+        static DAG: OnceLock<super::xor_dag::XorDag> = OnceLock::new();
+
+        DAG.get_or_init(|| {
+            // Create bind space wrapper for DAG
+            let bind_space = Arc::new(RwLock::new(BindSpace::new()));
+            XorDag::new(XorDagConfig::default(), bind_space)
+        })
     }
 
     // --- CAM operations ---
