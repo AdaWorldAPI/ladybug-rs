@@ -30,7 +30,7 @@ impl Fingerprint {
     pub fn from_seed(seed: u64) -> Self {
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
         let mut data = [0u64; N64];
-        for w in &mut data { *w = rng.gen(); }
+        for w in &mut data { *w = rng.r#gen(); }
         Self { data }
     }
     pub fn from_text(text: &str) -> Self {
@@ -178,7 +178,7 @@ impl CrystalCodebook {
                     (min_d as f64).powi(2)
                 }).collect();
             let total: f64 = distances.iter().sum();
-            let thresh = rng.gen::<f64>() * total;
+            let thresh = rng.r#gen::<f64>() * total;
             let mut cum = 0.0;
             for (i, d) in distances.iter().enumerate() {
                 cum += d;
@@ -280,7 +280,7 @@ impl BTRProcella {
     
     pub fn choose(&self, state: (f64, f64, f64)) -> RLAction {
         let mut rng = rand::rng();
-        if rng.gen::<f64>() < self.epsilon {
+        if rng.r#gen::<f64>() < self.epsilon {
             match rng.gen_range(0..4) {
                 0 => RLAction::IncreaseResidual,
                 1 => RLAction::DecreaseResidual,
