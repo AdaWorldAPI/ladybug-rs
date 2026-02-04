@@ -349,6 +349,46 @@ handover:
 
 ---
 
+## Extended Documentation
+
+The following documents provide deep-dive coverage of specific topics:
+
+### Storage Layer Hardening
+
+| Document | Purpose |
+|----------|---------|
+| [`docs/STORAGE_CONTRACTS.md`](docs/STORAGE_CONTRACTS.md) | **9 race conditions** identified in storage stack with root cause analysis |
+| [`docs/REWIRING_GUIDE.md`](docs/REWIRING_GUIDE.md) | **Copy-paste ready fixes** for each race condition |
+| [`docs/BACKUP_AND_SCHEMA.md`](docs/BACKUP_AND_SCHEMA.md) | XOR diff versioning, S3 integration, schema migrations |
+
+### Critical Race Conditions (Summary)
+
+| # | Location | Severity | Issue |
+|---|----------|----------|-------|
+| 1 | `hardening.rs:LruTracker` | HIGH | Duplicate entries in order queue |
+| 2 | `hardening.rs:WriteAheadLog` | CRITICAL | Write-behind (not write-ahead) |
+| 3 | `resilient.rs:WriteBuffer` | HIGH | ID allocated before buffered |
+| 4 | `resilient.rs:DependencyGraph` | MEDIUM | Partial map updates |
+| 5 | `xor_dag.rs:commit` | HIGH | TOCTOU in parity update |
+| 6 | `xor_dag.rs:EpochGuard` | MEDIUM | Work item orphan on epoch advance |
+| 7 | `snapshots.rs:TieredStorage` | MEDIUM | Eviction races with writes |
+| 8 | `snapshots.rs:SnapshotChain` | LOW | Chain length race |
+| 9 | `temporal.rs:commit` | HIGH | Serializable conflict detection gap |
+
+**Before touching storage code, read `docs/STORAGE_CONTRACTS.md`.**
+
+### Backup Strategy (Summary)
+
+```
+PRIMARY:   Redis (Railway)  - XOR deltas, <1ms latency
+SECONDARY: PostgreSQL       - Schema metadata, versions
+ARCHIVE:   S3 (via Lance)   - Full Parquet snapshots, 11 9s durability
+```
+
+**Before changing backup logic, read `docs/BACKUP_AND_SCHEMA.md`.**
+
+---
+
 ## Contact
 
 **Owner**: Jan Hübener (jahube)
