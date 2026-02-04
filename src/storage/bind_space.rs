@@ -304,7 +304,7 @@ pub enum ChunkContext {
 // =============================================================================
 
 /// A node in the bind space
-/// 
+///
 /// This is what ALL query languages read/write.
 #[derive(Clone)]
 pub struct BindNode {
@@ -318,6 +318,19 @@ pub struct BindNode {
     pub access_count: u32,
     /// Optional payload
     pub payload: Option<Vec<u8>>,
+
+    // =========================================================================
+    // DN TREE FIELDS (for zero-copy hierarchical traversal)
+    // =========================================================================
+
+    /// Parent node address (None = root). O(1) upward traversal.
+    pub parent: Option<Addr>,
+    /// Tree depth (0 = root, max 255)
+    pub depth: u8,
+    /// Access rung (R0=public, R9=soul-level)
+    pub rung: u8,
+    /// Sigma encoding (reasoning depth Σ)
+    pub sigma: u8,
 }
 
 impl BindNode {
@@ -328,19 +341,39 @@ impl BindNode {
             qidx: 0,
             access_count: 0,
             payload: None,
+            parent: None,
+            depth: 0,
+            rung: 0,
+            sigma: 0,
         }
     }
-    
+
     pub fn with_label(mut self, label: &str) -> Self {
         self.label = Some(label.to_string());
         self
     }
-    
+
     pub fn with_qidx(mut self, qidx: u8) -> Self {
         self.qidx = qidx;
         self
     }
-    
+
+    pub fn with_parent(mut self, parent: Addr, depth: u8) -> Self {
+        self.parent = Some(parent);
+        self.depth = depth;
+        self
+    }
+
+    pub fn with_rung(mut self, rung: u8) -> Self {
+        self.rung = rung.min(9); // R0-R9
+        self
+    }
+
+    pub fn with_sigma(mut self, sigma: u8) -> Self {
+        self.sigma = sigma;
+        self
+    }
+
     #[inline(always)]
     pub fn touch(&mut self) {
         self.access_count = self.access_count.saturating_add(1);
@@ -350,6 +383,115 @@ impl BindNode {
 impl Default for BindNode {
     fn default() -> Self {
         Self::new([0u64; FINGERPRINT_WORDS])
+    }
+}
+
+// =============================================================================
+// BITPACKED CSR - Zero-copy edge storage
+// =============================================================================
+
+/// Bitpacked CSR (Compressed Sparse Row) for zero-copy edge traversal
+///
+/// Traditional: `Vec<Vec<usize>>` = 64K vectors × ~24 bytes overhead = 1.5MB+ overhead
+/// Bitpacked:   `offsets[64K] + edges[N]` = 128KB + N×4 bytes (if <65K edges per node)
+///
+/// For DN tree with ~32K nodes and avg 2 children each:
+/// - Traditional: ~1.5MB overhead + 64K×2×8 = ~2.5MB
+/// - Bitpacked:   128KB + 64K×2 = ~256KB
+#[derive(Clone)]
+pub struct BitpackedCsr {
+    /// Offset into edges array for each address (64K entries)
+    /// offsets[addr] = start index, offsets[addr+1] = end index
+    offsets: Vec<u32>,
+    /// Flat array of target addresses (bitpacked as u16)
+    edges: Vec<u16>,
+    /// Verb for each edge (parallel to edges)
+    verbs: Vec<u16>,
+}
+
+impl BitpackedCsr {
+    pub fn new() -> Self {
+        Self {
+            offsets: vec![0u32; TOTAL_ADDRESSES + 1],
+            edges: Vec::new(),
+            verbs: Vec::new(),
+        }
+    }
+
+    /// Build CSR from edge list (call once after all edges added)
+    pub fn build_from_edges(edges: &[BindEdge]) -> Self {
+        // Count edges per source
+        let mut counts = vec![0u32; TOTAL_ADDRESSES];
+        for edge in edges {
+            counts[edge.from.0 as usize] += 1;
+        }
+
+        // Compute offsets (prefix sum)
+        let mut offsets = vec![0u32; TOTAL_ADDRESSES + 1];
+        for i in 0..TOTAL_ADDRESSES {
+            offsets[i + 1] = offsets[i] + counts[i];
+        }
+
+        // Allocate edge storage
+        let total_edges = offsets[TOTAL_ADDRESSES] as usize;
+        let mut edge_targets = vec![0u16; total_edges];
+        let mut edge_verbs = vec![0u16; total_edges];
+
+        // Fill edges (reset counts as write pointers)
+        counts.fill(0);
+        for edge in edges {
+            let src = edge.from.0 as usize;
+            let idx = (offsets[src] + counts[src]) as usize;
+            edge_targets[idx] = edge.to.0;
+            edge_verbs[idx] = edge.verb.0;
+            counts[src] += 1;
+        }
+
+        Self {
+            offsets,
+            edges: edge_targets,
+            verbs: edge_verbs,
+        }
+    }
+
+    /// Zero-copy children access: returns slice of target addresses
+    #[inline(always)]
+    pub fn children(&self, addr: Addr) -> &[u16] {
+        let start = self.offsets[addr.0 as usize] as usize;
+        let end = self.offsets[addr.0 as usize + 1] as usize;
+        &self.edges[start..end]
+    }
+
+    /// Zero-copy children with verb filter
+    #[inline(always)]
+    pub fn children_via(&self, addr: Addr, verb: Addr) -> impl Iterator<Item = Addr> + '_ {
+        let start = self.offsets[addr.0 as usize] as usize;
+        let end = self.offsets[addr.0 as usize + 1] as usize;
+        let verb_raw = verb.0;
+
+        self.edges[start..end]
+            .iter()
+            .zip(self.verbs[start..end].iter())
+            .filter(move |(_, v)| **v == verb_raw)
+            .map(|(e, _)| Addr(*e))
+    }
+
+    /// Number of outgoing edges from address
+    #[inline(always)]
+    pub fn out_degree(&self, addr: Addr) -> usize {
+        let start = self.offsets[addr.0 as usize] as usize;
+        let end = self.offsets[addr.0 as usize + 1] as usize;
+        end - start
+    }
+
+    /// Total edges in CSR
+    pub fn edge_count(&self) -> usize {
+        self.edges.len()
+    }
+
+    /// Memory usage in bytes
+    pub fn memory_bytes(&self) -> usize {
+        self.offsets.len() * 4 + self.edges.len() * 2 + self.verbs.len() * 2
     }
 }
 
@@ -440,24 +582,33 @@ pub struct BindSpace {
     
     /// Edge index: to.0 -> edge indices (reverse CSR)
     edge_in: Vec<Vec<usize>>,
-    
+
+    // =========================================================================
+    // BITPACKED CSR (zero-copy, Arrow-friendly adjacency)
+    // =========================================================================
+
+    /// Bitpacked CSR for zero-copy traversal (built on demand)
+    csr: Option<BitpackedCsr>,
+    /// CSR dirty flag (rebuild needed after edge modifications)
+    csr_dirty: bool,
+
     // =========================================================================
     // NODES: 128 prefixes (0x80-0xFF) × 256 slots = 32,768 addresses
     // =========================================================================
-    
+
     /// Node chunks - THE UNIVERSAL BIND SPACE
     nodes: Vec<Box<[Option<BindNode>; CHUNK_SIZE]>>,
-    
+
     // =========================================================================
     // STATE
     // =========================================================================
-    
+
     /// Current context
     context: ChunkContext,
-    
+
     /// Next fluid slot (prefix, slot)
     next_fluid: (u8, u8),
-    
+
     /// Next node slot (prefix, slot)
     next_node: (u8, u8),
 }
@@ -507,6 +658,8 @@ impl BindSpace {
             edges: Vec::new(),
             edge_out,
             edge_in,
+            csr: None,
+            csr_dirty: false,
             nodes,
             context: ChunkContext::Concepts,
             next_fluid: (PREFIX_FLUID_START, 0),
@@ -638,6 +791,15 @@ impl BindSpace {
             (0x19, "REFINES"),
             (0x1A, "CONTRADICTS"),
             (0x1B, "SUPPORTS"),
+            // DN Tree verbs (0x20-0x2F) for zero-copy hierarchical traversal
+            (0x20, "PARENT_OF"),     // Tree edge: parent -> child
+            (0x21, "CHILD_OF"),      // Reverse: child -> parent
+            (0x22, "SIBLING_OF"),    // Horizontal: sibling <-> sibling
+            (0x23, "ANCESTOR_OF"),   // Transitive up
+            (0x24, "DESCENDANT_OF"), // Transitive down
+            (0x25, "ROOT_OF"),       // Points to tree root
+            (0x26, "NEXT_SIBLING"),  // Ordered sibling (for Arrow adjacency)
+            (0x27, "PREV_SIBLING"),  // Previous sibling
         ];
         for (slot, label) in verb_ops {
             self.surfaces[PREFIX_VERBS as usize][slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
@@ -851,23 +1013,26 @@ impl BindSpace {
     /// Create an edge
     pub fn link(&mut self, from: Addr, verb: Addr, to: Addr) -> usize {
         let mut edge = BindEdge::new(from, verb, to);
-        
+
         // Bind fingerprints
-        if let (Some(from_node), Some(verb_node), Some(to_node)) = 
-            (self.read(from), self.read(verb), self.read(to)) 
+        if let (Some(from_node), Some(verb_node), Some(to_node)) =
+            (self.read(from), self.read(verb), self.read(to))
         {
             let from_fp = from_node.fingerprint;
             let verb_fp = verb_node.fingerprint;
             let to_fp = to_node.fingerprint;
             edge.bind(&from_fp, &verb_fp, &to_fp);
         }
-        
+
         let idx = self.edges.len();
-        
+
         // Update CSR indices
         self.edge_out[from.0 as usize].push(idx);
         self.edge_in[to.0 as usize].push(idx);
-        
+
+        // Mark bitpacked CSR as dirty
+        self.csr_dirty = true;
+
         self.edges.push(edge);
         idx
     }
@@ -931,11 +1096,176 @@ impl BindSpace {
         
         results
     }
-    
+
+    // =========================================================================
+    // ZERO-COPY DN TREE TRAVERSAL
+    // =========================================================================
+
+    /// Rebuild bitpacked CSR if dirty
+    pub fn rebuild_csr(&mut self) {
+        if self.csr_dirty || self.csr.is_none() {
+            self.csr = Some(BitpackedCsr::build_from_edges(&self.edges));
+            self.csr_dirty = false;
+        }
+    }
+
+    /// Get CSR reference (rebuilds if needed)
+    pub fn csr(&mut self) -> &BitpackedCsr {
+        self.rebuild_csr();
+        self.csr.as_ref().unwrap()
+    }
+
+    /// Zero-copy children slice (returns raw u16 addresses)
+    /// Use after rebuild_csr() for zero allocation traversal
+    #[inline(always)]
+    pub fn children_raw(&self, addr: Addr) -> &[u16] {
+        self.csr.as_ref().map(|c| c.children(addr)).unwrap_or(&[])
+    }
+
+    /// Zero-copy parent lookup via BindNode.parent field
+    #[inline(always)]
+    pub fn parent(&self, addr: Addr) -> Option<Addr> {
+        self.read(addr).and_then(|n| n.parent)
+    }
+
+    /// O(1) ancestors via parent chain (returns iterator, no allocation)
+    pub fn ancestors(&self, addr: Addr) -> impl Iterator<Item = Addr> + '_ {
+        std::iter::successors(self.parent(addr), |&a| self.parent(a))
+    }
+
+    /// Tree depth from BindNode (O(1))
+    #[inline(always)]
+    pub fn depth(&self, addr: Addr) -> u8 {
+        self.read(addr).map(|n| n.depth).unwrap_or(0)
+    }
+
+    /// Access rung from BindNode (O(1))
+    #[inline(always)]
+    pub fn rung(&self, addr: Addr) -> u8 {
+        self.read(addr).map(|n| n.rung).unwrap_or(0)
+    }
+
+    /// Create DN tree node with parent relationship
+    pub fn write_dn_node(
+        &mut self,
+        fingerprint: [u64; FINGERPRINT_WORDS],
+        label: &str,
+        parent: Option<Addr>,
+        rung: u8,
+    ) -> Addr {
+        let depth = parent
+            .and_then(|p| self.read(p))
+            .map(|n| n.depth.saturating_add(1))
+            .unwrap_or(0);
+
+        let addr = self.write(fingerprint);
+        if let Some(node) = self.read_mut(addr) {
+            node.label = Some(label.to_string());
+            node.parent = parent;
+            node.depth = depth;
+            node.rung = rung;
+        }
+
+        // Auto-link PARENT_OF edge
+        if let Some(parent_addr) = parent {
+            if let Some(parent_of) = self.verb("PARENT_OF") {
+                self.link(parent_addr, parent_of, addr);
+            }
+        }
+
+        addr
+    }
+
+    /// Parse DN path to address: "Ada:A:soul:identity" -> Addr
+    /// Returns None if path not found
+    pub fn dn_lookup(&self, path: &str) -> Option<Addr> {
+        // Hash the full path to get deterministic address
+        let addr = dn_path_to_addr(path);
+        // Verify it exists
+        if self.read(addr).is_some() {
+            Some(addr)
+        } else {
+            None
+        }
+    }
+
+    /// O(1) parent path extraction: "Ada:A:soul:identity" -> "Ada:A:soul"
+    /// Pure string operation, no lookup needed
+    #[inline]
+    pub fn dn_parent_path(path: &str) -> Option<&str> {
+        path.rfind(':').map(|i| &path[..i])
+    }
+
+    /// Create node from DN path, auto-creating parent chain
+    pub fn write_dn_path(
+        &mut self,
+        path: &str,
+        fingerprint: [u64; FINGERPRINT_WORDS],
+        rung: u8,
+    ) -> Addr {
+        let segments: Vec<&str> = path.split(':').collect();
+        let mut current_parent: Option<Addr> = None;
+        let mut current_path = String::new();
+
+        for (i, segment) in segments.iter().enumerate() {
+            if i > 0 {
+                current_path.push(':');
+            }
+            current_path.push_str(segment);
+
+            let addr = dn_path_to_addr(&current_path);
+
+            // Create node if it doesn't exist
+            if self.read(addr).is_none() {
+                let is_final = i == segments.len() - 1;
+                let fp = if is_final {
+                    fingerprint
+                } else {
+                    label_fingerprint(&current_path)
+                };
+
+                // Write at computed address
+                self.write_at(addr, fp);
+                if let Some(node) = self.read_mut(addr) {
+                    node.label = Some(current_path.clone());
+                    node.parent = current_parent;
+                    node.depth = i as u8;
+                    node.rung = rung;
+                }
+
+                // Link to parent
+                if let Some(parent_addr) = current_parent {
+                    if let Some(parent_of) = self.verb("PARENT_OF") {
+                        self.link(parent_addr, parent_of, addr);
+                    }
+                }
+            }
+
+            current_parent = Some(addr);
+        }
+
+        current_parent.unwrap()
+    }
+
+    /// Zero-copy sibling iteration (same parent)
+    pub fn siblings(&self, addr: Addr) -> impl Iterator<Item = Addr> + '_ {
+        let parent = self.parent(addr);
+        let parent_of = self.verb("PARENT_OF");
+
+        parent
+            .into_iter()
+            .flat_map(move |p| {
+                parent_of
+                    .into_iter()
+                    .flat_map(move |verb| self.traverse(p, verb))
+            })
+            .filter(move |&a| a != addr)
+    }
+
     // =========================================================================
     // CONTEXT
     // =========================================================================
-    
+
     pub fn set_context(&mut self, ctx: ChunkContext) {
         self.context = ctx;
     }
@@ -1033,21 +1363,75 @@ pub struct BindSpaceStats {
 fn label_fingerprint(label: &str) -> [u64; FINGERPRINT_WORDS] {
     let mut fp = [0u64; FINGERPRINT_WORDS];
     let bytes = label.as_bytes();
-    
+
     for (i, &b) in bytes.iter().enumerate() {
         let word = i % FINGERPRINT_WORDS;
         let bit = (b as usize * 7 + i * 13) % 64;
         fp[word] |= 1u64 << bit;
     }
-    
+
     // Spread bits
     for i in 0..FINGERPRINT_WORDS {
         let seed = fp[i];
         fp[(i + 1) % FINGERPRINT_WORDS] ^= seed.rotate_left(17);
         fp[(i + 3) % FINGERPRINT_WORDS] ^= seed.rotate_right(23);
     }
-    
+
     fp
+}
+
+/// Convert DN path to deterministic address
+///
+/// "Ada:A:soul:identity" -> Addr(0x80+prefix_hash, slot_hash)
+///
+/// This gives O(1) lookup AND implicit hierarchy:
+/// - "Ada:A:soul:identity" -> address X
+/// - "Ada:A:soul" (parent) -> different address Y (O(1) string truncate)
+pub fn dn_path_to_addr(path: &str) -> Addr {
+    use std::hash::{Hash, Hasher};
+    use std::collections::hash_map::DefaultHasher;
+
+    let mut hasher = DefaultHasher::new();
+    path.hash(&mut hasher);
+    let hash = hasher.finish();
+
+    // Map to node address space (0x80-0xFF:XX)
+    let prefix = PREFIX_NODE_START + ((hash >> 8) as u8 & 0x7F); // 0x80-0xFF
+    let slot = (hash & 0xFF) as u8;
+    Addr::new(prefix, slot)
+}
+
+/// Levenshtein distance for DN path horizontal awareness
+/// Used to find siblings with similar names
+pub fn dn_levenshtein(a: &str, b: &str) -> usize {
+    let a_chars: Vec<char> = a.chars().collect();
+    let b_chars: Vec<char> = b.chars().collect();
+    let m = a_chars.len();
+    let n = b_chars.len();
+
+    if m == 0 {
+        return n;
+    }
+    if n == 0 {
+        return m;
+    }
+
+    // Use two rows instead of full matrix
+    let mut prev = (0..=n).collect::<Vec<_>>();
+    let mut curr = vec![0; n + 1];
+
+    for i in 1..=m {
+        curr[0] = i;
+        for j in 1..=n {
+            let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
+            curr[j] = (prev[j] + 1)
+                .min(curr[j - 1] + 1)
+                .min(prev[j - 1] + cost);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+
+    prev[n]
 }
 
 /// Hamming distance
@@ -1207,13 +1591,117 @@ mod tests {
     #[test]
     fn test_verb_lookup() {
         let space = BindSpace::new();
-        
+
         let causes = space.verb("CAUSES");
         assert!(causes.is_some());
         assert_eq!(causes.unwrap(), Addr::new(PREFIX_VERBS, 0x00));
-        
+
         let becomes = space.verb("BECOMES");
         assert!(becomes.is_some());
         assert_eq!(becomes.unwrap(), Addr::new(PREFIX_VERBS, 0x01));
+    }
+
+    #[test]
+    fn test_tree_verbs() {
+        let space = BindSpace::new();
+
+        // Check tree verbs initialized
+        let parent_of = space.verb("PARENT_OF");
+        assert!(parent_of.is_some());
+        assert_eq!(parent_of.unwrap(), Addr::new(PREFIX_VERBS, 0x20));
+
+        let child_of = space.verb("CHILD_OF");
+        assert!(child_of.is_some());
+
+        let sibling_of = space.verb("SIBLING_OF");
+        assert!(sibling_of.is_some());
+    }
+
+    #[test]
+    fn test_dn_path_to_addr() {
+        // Same path should give same address
+        let a1 = dn_path_to_addr("Ada:A:soul:identity");
+        let a2 = dn_path_to_addr("Ada:A:soul:identity");
+        assert_eq!(a1, a2);
+
+        // Different paths should (likely) give different addresses
+        let b = dn_path_to_addr("Ada:A:soul:core");
+        assert_ne!(a1, b);
+
+        // Parent path is different
+        let parent = dn_path_to_addr("Ada:A:soul");
+        assert_ne!(a1, parent);
+    }
+
+    #[test]
+    fn test_dn_parent_path() {
+        // O(1) parent extraction from DN path
+        assert_eq!(BindSpace::dn_parent_path("Ada:A:soul:identity"), Some("Ada:A:soul"));
+        assert_eq!(BindSpace::dn_parent_path("Ada:A:soul"), Some("Ada:A"));
+        assert_eq!(BindSpace::dn_parent_path("Ada:A"), Some("Ada"));
+        assert_eq!(BindSpace::dn_parent_path("Ada"), None);
+    }
+
+    #[test]
+    fn test_dn_levenshtein() {
+        // Same string
+        assert_eq!(dn_levenshtein("Ada:A:soul", "Ada:A:soul"), 0);
+
+        // One char difference
+        assert_eq!(dn_levenshtein("Ada:A:soul:x", "Ada:A:soul:y"), 1);
+
+        // Different lengths
+        assert_eq!(dn_levenshtein("Ada", ""), 3);
+        assert_eq!(dn_levenshtein("", "Ada"), 3);
+    }
+
+    #[test]
+    fn test_write_dn_path() {
+        let mut space = BindSpace::new();
+        let fp = [123u64; FINGERPRINT_WORDS];
+
+        // Create DN path - this should create parent chain
+        let leaf = space.write_dn_path("Ada:A:soul:identity", fp, 5);
+        assert!(leaf.is_node());
+
+        // Check the node was created
+        let node = space.read(leaf);
+        assert!(node.is_some());
+        let node = node.unwrap();
+        assert_eq!(node.rung, 5);
+        assert_eq!(node.depth, 3); // Ada(0) -> A(1) -> soul(2) -> identity(3)
+
+        // Check parent exists
+        assert!(node.parent.is_some());
+        let parent_addr = node.parent.unwrap();
+        let parent = space.read(parent_addr);
+        assert!(parent.is_some());
+        assert_eq!(parent.unwrap().depth, 2);
+    }
+
+    #[test]
+    fn test_bitpacked_csr() {
+        let mut space = BindSpace::new();
+
+        let a = space.write([1u64; FINGERPRINT_WORDS]);
+        let b = space.write([2u64; FINGERPRINT_WORDS]);
+        let c = space.write([3u64; FINGERPRINT_WORDS]);
+
+        let causes = space.verb("CAUSES").unwrap();
+        space.link(a, causes, b);
+        space.link(a, causes, c);
+
+        // Rebuild CSR
+        space.rebuild_csr();
+
+        // Zero-copy children access
+        let children = space.children_raw(a);
+        assert_eq!(children.len(), 2);
+        assert!(children.contains(&b.0));
+        assert!(children.contains(&c.0));
+
+        // Check memory efficiency
+        let csr = space.csr.as_ref().unwrap();
+        assert!(csr.memory_bytes() < 300_000); // Should be ~260KB vs >1.5MB traditional
     }
 }
