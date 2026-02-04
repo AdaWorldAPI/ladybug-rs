@@ -8,10 +8,10 @@
 //! ├─────────────────┬───────────────────────────────────────────────────────────┤
 //! │  0x00-0x0F:XX   │  SURFACE (16 prefixes × 256 = 4,096)                      │
 //! │                 │  0x00: Lance/Kuzu    0x08: Concepts                       │
-//! │                 │  0x01: SQL           0x09: Qualia ops                     │
-//! │                 │  0x02: Neo4j/Cypher  0x0A: Memory ops                     │
+//! │                 │  0x01: SQL/CQL       0x09: Qualia ops                     │
+//! │                 │  0x02: Cypher/GQL    0x0A: Memory ops                     │
 //! │                 │  0x03: GraphQL       0x0B: Learning ops                   │
-//! │                 │  0x04: NARS          0x0C: NSM Primitives (65+191)        │
+//! │                 │  0x04: NARS/ACT-R    0x0C: NSM Primitives (65+191)        │
 //! │                 │  0x05: Causal        0x0D: Grammar Templates (256)        │
 //! │                 │  0x06: Meta          0x0E: Speech Acts (256)              │
 //! │                 │  0x07: Verbs         0x0F: User Calibration (256)         │
@@ -51,11 +51,15 @@ pub const SURFACE_PREFIXES: usize = 16;
 pub const SURFACE_SIZE: usize = 4096;
 
 /// Surface compartments - Query Languages (0x00-0x07)
+/// Some prefixes support slot subdivision for related languages (0x00-0x7F: primary, 0x80-0xFF: secondary)
 pub const PREFIX_LANCE: u8 = 0x00;     // Lance/Kuzu - vector ops
-pub const PREFIX_SQL: u8 = 0x01;       // SQL ops
-pub const PREFIX_CYPHER: u8 = 0x02;    // Neo4j/Cypher ops
+pub const PREFIX_SQL: u8 = 0x01;       // SQL/CQL (columnar languages)
+pub const PREFIX_CQL: u8 = 0x01;       // CQL shares prefix with SQL (slot 0x80+)
+pub const PREFIX_CYPHER: u8 = 0x02;    // Cypher/GQL (property graph languages)
+pub const PREFIX_GQL: u8 = 0x02;       // GQL shares prefix with Cypher (slot 0x80+)
 pub const PREFIX_GRAPHQL: u8 = 0x03;   // GraphQL ops
-pub const PREFIX_NARS: u8 = 0x04;      // NARS inference
+pub const PREFIX_NARS: u8 = 0x04;      // NARS/ACT-R (cognitive architectures)
+pub const PREFIX_ACTR: u8 = 0x04;      // ACT-R shares prefix with NARS (slot 0x80+)
 pub const PREFIX_CAUSAL: u8 = 0x05;    // Causal reasoning (Pearl)
 pub const PREFIX_META: u8 = 0x06;      // Meta-cognition
 pub const PREFIX_VERBS: u8 = 0x07;     // Verbs (CAUSES, BECOMES...)
@@ -71,6 +75,11 @@ pub const PREFIX_NSM: u8 = 0x0C;           // NSM Primitives (65 Wierzbicka + 19
 pub const PREFIX_TEMPLATES: u8 = 0x0D;     // Grammar Templates (construction grammar)
 pub const PREFIX_SPEECH_ACTS: u8 = 0x0E;   // Speech Acts (pragmatics)
 pub const PREFIX_CALIBRATION: u8 = 0x0F;   // User Calibration (per-user quirks)
+
+// Slot subdivision boundary for shared prefixes
+// Slots 0x00-0x7F: primary language (SQL, Cypher, NARS)
+// Slots 0x80-0xFF: secondary language (CQL, GQL, ACT-R)
+pub const SLOT_SUBDIVISION: u8 = 0x80;
 
 // -----------------------------------------------------------------------------
 // NSM Slots (0x0C:00-0xFF)
@@ -584,6 +593,43 @@ pub enum SurfaceCompartment {
     Templates,
     SpeechActs,
     Calibration,
+}
+
+/// Sublanguage within a shared prefix (slot-based discrimination)
+/// Slots 0x00-0x7F map to primary language, 0x80-0xFF to secondary
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sublanguage {
+    // Columnar (prefix 0x01)
+    Sql,
+    Cql,  // Cassandra Query Language
+    // Graph (prefix 0x02)
+    Cypher,
+    Gql,  // ISO Graph Query Language
+    // Cognitive (prefix 0x04)
+    Nars,
+    ActR, // ACT-R cognitive architecture
+}
+
+impl Sublanguage {
+    /// Determine sublanguage from address (for shared prefixes)
+    /// Returns None for non-subdivided compartments
+    pub fn from_addr(addr: Addr) -> Option<Self> {
+        let prefix = addr.prefix();
+        let slot = addr.slot();
+        let is_secondary = slot >= SLOT_SUBDIVISION;
+
+        match prefix {
+            PREFIX_SQL => Some(if is_secondary { Sublanguage::Cql } else { Sublanguage::Sql }),
+            PREFIX_CYPHER => Some(if is_secondary { Sublanguage::Gql } else { Sublanguage::Cypher }),
+            PREFIX_NARS => Some(if is_secondary { Sublanguage::ActR } else { Sublanguage::Nars }),
+            _ => None,
+        }
+    }
+
+    /// Check if a compartment supports sublanguages
+    pub fn compartment_has_sublanguages(comp: SurfaceCompartment) -> bool {
+        matches!(comp, SurfaceCompartment::Sql | SurfaceCompartment::Cypher | SurfaceCompartment::Nars)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
