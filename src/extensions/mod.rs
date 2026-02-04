@@ -32,5 +32,8 @@ pub mod cognitive_codebook;
 #[cfg(feature = "spo")]
 pub mod crystal_lm;
 
+#[cfg(feature = "spo")]
+pub mod sentence_crystal;
+
 #[cfg(feature = "compress")]
 pub mod compress;

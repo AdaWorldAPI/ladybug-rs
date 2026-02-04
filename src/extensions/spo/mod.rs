@@ -6,5 +6,5 @@ mod jina_api;
 mod jina_cache;
 
 pub use spo::*;
-pub use jina_api::JinaClient;
+pub use jina_api::{JinaClient, jina_embed_curl};
 pub use jina_cache::JinaCache;
