@@ -1,115 +1,219 @@
 # Delta Encoding Formats
 
-> **Document Version**: 1.0.0
+> **Document Version**: 3.0.0
 > **Last Updated**: 2026-02-04
 > **Applies To**: XOR diff versioning, Redis backup, S3 archival
 
 ---
 
-## Prefix Envelope Architecture
+## Prefix Reservation and Blocking
 
-The magic bytes are embedded in the **prefix envelope**, extending the 8+8 addressing model:
+**Critical**: Once the `0xFF` prefix is used for escape sequences, it is **permanently blocked** for all other uses in the address space.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                     PREFIX ENVELOPE FORMAT                                  │
+│                     PREFIX BLOCKING                                         │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  Standard Address:   [PREFIX:8][SLOT:8]   = 16-bit (2^16 = 65,536)         │
-│                       └── 0x00-0xFE valid prefixes                          │
+│  8+8 Address Model Tiers:                                                   │
+│    0x00-0x0F:xx  SURFACE (16 prefixes × 256 slots = 4,096 addresses)       │
+│    0x10-0x7F:xx  FLUID   (112 prefixes × 256 slots = 28,672 addresses)     │
+│    0x80-0xFE:xx  NODES   (127 prefixes × 256 slots = 32,512 addresses)     │
+│    0xFF:xx       BLOCKED (256 slots reserved for escape formats)           │
+│                  ═══════                                                    │
 │                                                                             │
-│  Escape to Extended: [FF:FF]              = Magic byte, read more          │
-│                                                                             │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  [FF:FF]                    → Sparse Bitpacked follows (16-bit space)      │
-│  [FF:FF][FF:FF]             → 32-bit format (Hamming/Float32)              │
-│  [FF:FF][FF:FF][FF:FF]      → 48-bit format (10000D XOR compressed)        │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                     PREFIX ENVELOPE IN BINARY                               │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  Normal:       [PP][SS]                                                    │
-│                 │   │                                                       │
-│                 │   └── Slot (0x00-0xFF)                                   │
-│                 └────── Prefix (0x00-0xFE), NOT 0xFF                       │
-│                                                                             │
-│  Format 1:     [FF][FF] [entry_count:16] [sparse_entries...]               │
-│                ════════                                                     │
-│                Envelope                                                     │
-│                                                                             │
-│  Format 2:     [FF][FF] [FF][FF] [variant:8] [payload...]                  │
-│                ════════════════                                             │
-│                Extended Envelope                                            │
-│                                                                             │
-│  Format 3:     [FF][FF] [FF][FF] [FF][FF] [variant:8] [payload...]         │
-│                ══════════════════════════                                   │
-│                Full Extended Envelope (48-bit space)                        │
+│  Total usable addresses: 65,280 (not 65,536)                               │
+│  Reserved for escapes:   256                                               │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Why FF:FF as Escape?
+### Why This Works
 
-- `0xFF` prefix is **reserved** in the 8+8 model (not a valid tier)
-- `0xFF:0xFF` = 65535 = highest possible 16-bit value
-- Self-synchronizing: scanner can detect format by checking first 2 bytes
-- Backward compatible: old readers see invalid address, skip
+The 8+8 model already reserves `0xFF` as an invalid tier. No valid cognitive address uses prefix `0xFF`. This is by design:
 
 ```rust
-/// Check if data starts with prefix envelope escape
+/// Validate address - 0xFF prefix is NEVER valid for data
+pub fn is_valid_address(addr: u16) -> bool {
+    (addr >> 8) != 0xFF
+}
+
+/// Address ranges
+pub const SURFACE_START: u16 = 0x0000;
+pub const SURFACE_END: u16   = 0x0FFF;  // 0x00-0x0F prefixes
+pub const FLUID_START: u16   = 0x1000;
+pub const FLUID_END: u16     = 0x7FFF;  // 0x10-0x7F prefixes
+pub const NODES_START: u16   = 0x8000;
+pub const NODES_END: u16     = 0xFEFF;  // 0x80-0xFE prefixes
+pub const ESCAPE_START: u16  = 0xFF00;  // 0xFF prefix = escape
+pub const ESCAPE_END: u16    = 0xFFFF;
+```
+
+### Handling Literal 0xFF in Data
+
+If raw data (not addresses) contains byte 0xFF, it must be escaped within the payload:
+
+```rust
+/// Escape 0xFF bytes in payload data
+pub fn escape_payload(data: &[u8]) -> Vec<u8> {
+    let mut result = Vec::with_capacity(data.len() * 2);
+    for &byte in data {
+        if byte == 0xFF {
+            // FF in payload → FF:00 (escape + null = literal FF)
+            result.push(0xFF);
+            result.push(0x00);
+        } else {
+            result.push(byte);
+        }
+    }
+    result
+}
+
+/// Unescape payload
+pub fn unescape_payload(data: &[u8]) -> Vec<u8> {
+    let mut result = Vec::new();
+    let mut i = 0;
+    while i < data.len() {
+        if data[i] == 0xFF && i + 1 < data.len() && data[i + 1] == 0x00 {
+            // FF:00 = literal 0xFF
+            result.push(0xFF);
+            i += 2;
+        } else {
+            result.push(data[i]);
+            i += 1;
+        }
+    }
+    result
+}
+```
+
+### Format Byte 0x0_ Reserved for Escaping
+
+The type nibble `0x0_` is reserved for escape handling:
+- `FF:00` = literal 0xFF byte follows
+- `FF:01` to `FF:0F` = reserved for future escape needs
+
+---
+
+## Bit-Efficient Prefix Envelope
+
+Every bit counts. The format indicator is encoded in the **upper nibble** of the escape byte, with data beginning immediately after.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     BIT-PACKED FORMAT ENCODING                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Normal Address (16-bit):                                                   │
+│  [PPPP PPPP][SSSS SSSS]    where PP ≠ 0xFF                                 │
+│                                                                             │
+│  Extended Format (FF escape):                                               │
+│  [1111 1111][TTTT DDDD][...]                                               │
+│   └─ FF ─┘  │    │                                                         │
+│             │    └── First 4 data bits (not wasted)                        │
+│             └─────── Type nibble (0-F format selector)                     │
+│                                                                             │
+│  Type nibble values:                                                        │
+│     0x0_ = ESCAPE (FF:00 = literal 0xFF byte)                              │
+│     0x1_ = Hamming bit positions (16-bit addr space)                       │
+│     0x2_ - 0x9_ = Reserved for future                                      │
+│     0xA_ = Archive reference (Parquet pointer)                             │
+│     0xB_ = Binary float (f32 quantized)                                    │
+│     0xC_ = Codebook (learned quantization)                                 │
+│     0xD_ = Dimensional sparse (16-bit addr space)                          │
+│     0xE_ = Extended (48-bit addr space)                                    │
+│     0xF_ = Full (10000D XOR, RLE compressed)                               │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### The Lower Nibble is DATA
+
+The lower nibble of byte[1] is NOT wasted - it's the first 4 bits of the payload:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     NIBBLE PACKING                                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  [FF][Dn][data...]  where n = first data nibble                            │
+│                                                                             │
+│  Example: FF:D3 means:                                                      │
+│    - Format D (Dimensional sparse)                                          │
+│    - First data nibble = 0x3 (e.g., entry count high bits)                 │
+│                                                                             │
+│  Example: FF:FF means:                                                      │
+│    - Format F (Full 10000D)                                                 │
+│    - First data nibble = 0xF                                               │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Detection Code
+
+```rust
+/// Detect format - type is in upper nibble
 pub fn detect_format(data: &[u8]) -> DeltaFormat {
+    if data.is_empty() {
+        return DeltaFormat::Invalid;
+    }
+
+    // Not escape? Normal 16-bit data
+    if data[0] != 0xFF {
+        return DeltaFormat::Raw16Bit;
+    }
+
     if data.len() < 2 {
         return DeltaFormat::Invalid;
     }
 
-    // Check first envelope
-    if data[0] != 0xFF || data[1] != 0xFF {
-        // Normal 16-bit address, raw data follows
-        return DeltaFormat::Raw16Bit;
-    }
+    // Upper nibble = format type
+    let type_nibble = data[1] >> 4;
 
-    // FF:FF detected, check for extended envelope
-    if data.len() < 4 {
-        return DeltaFormat::SparseBitpacked;  // FF:FF only
+    match type_nibble {
+        0x1 => DeltaFormat::Hamming,      // 1x = Hamming bit positions
+        0xB => DeltaFormat::Float32,      // Bx = Binary float
+        0xD => DeltaFormat::SparseDim,    // Dx = Dimensional sparse
+        0xE => DeltaFormat::Extended48,   // Ex = Extended 48-bit
+        0xF => DeltaFormat::Full10000D,   // Fx = Full 10000D XOR
+        _ => DeltaFormat::Unknown,
     }
+}
 
-    if data[2] != 0xFF || data[3] != 0xFF {
-        return DeltaFormat::SparseBitpacked;  // FF:FF, then data
-    }
+/// Extract first data nibble (lower nibble of byte[1])
+pub fn first_data_nibble(data: &[u8]) -> u8 {
+    data[1] & 0x0F
+}
 
-    // FF:FF:FF:FF detected, check for full extended
-    if data.len() < 6 {
-        return DeltaFormat::HammingFloat32;  // FF:FF:FF:FF only
-    }
-
-    if data[4] != 0xFF || data[5] != 0xFF {
-        return DeltaFormat::HammingFloat32;  // FF:FF:FF:FF, then data
-    }
-
-    // FF:FF:FF:FF:FF:FF = full 48-bit / 10000D
-    DeltaFormat::Xor10000D
+pub enum DeltaFormat {
+    Invalid,
+    Raw16Bit,       // No escape, normal address
+    Hamming,        // FF:1x - bit position deltas
+    Float32,        // FF:Bx - binary float
+    SparseDim,      // FF:Dx - dimensional sparse
+    Extended48,     // FF:Ex - extended 48-bit
+    Full10000D,     // FF:Fx - full 10000D XOR
+    Unknown,
 }
 ```
 
 ---
 
-## Format 1: Sparse Bitpacked (`FFFF`)
+## Format FF:Dx - Sparse Dimensional
 
-**Magic**: `0xFFFF` (2 bytes)
-**Address Space**: 2^16 = 65,536 addresses
-**Use Case**: Most delta backups (typically <5% addresses change)
+**Escape**: `FF` + upper nibble `D`
+**Lower nibble**: Entry count high 4 bits
+**Total overhead**: 12 bits (1.5 bytes), not 16
 
 ### Structure
 
 ```
-┌──────────┬───────────────┬────────────────────────────────────────────────┐
-│  FFFF    │  Entry Count  │  Sparse Entries...                             │
-│  2 bytes │  2 bytes      │  Variable                                      │
-└──────────┴───────────────┴────────────────────────────────────────────────┘
+┌────────────┬───────────────────┬────────────────────────────────────────────┐
+│  FF:Dn     │  Entry Count Low  │  Sparse Entries...                         │
+│  12+4 bits │  8 bits           │  Variable                                  │
+└────────────┴───────────────────┴────────────────────────────────────────────┘
+
+Entry count = (n << 8) | low_byte = 12-bit count (0-4095 entries)
 
 Each Sparse Entry:
 ┌──────────┬──────────┬────────────────────────────────────────────────────┐
@@ -118,361 +222,200 @@ Each Sparse Entry:
 └──────────┴──────────┴────────────────────────────────────────────────────┘
 ```
 
-### Bitmap Encoding
-
-The 20-byte bitmap indicates which of the 156 fingerprint words are non-zero:
-- Bit N set → word N is stored
-- Bit N clear → word N is zero (not stored)
-
 ```rust
-/// Format 1: Sparse Bitpacked (FFFF header)
-pub struct SparseBitpacked {
-    pub magic: u16,           // Always 0xFFFF
-    pub entry_count: u16,     // Number of changed addresses
-    pub entries: Vec<SparseEntry>,
-}
+/// Format FF:Dx - Sparse Dimensional
+/// Entry count encoded: upper nibble in byte[1], lower 8 bits in byte[2]
+pub fn encode_sparse_dim(entries: &[SparseEntry]) -> Vec<u8> {
+    let count = entries.len() as u16;
+    assert!(count <= 4095, "Max 4095 entries in sparse format");
 
-pub struct SparseEntry {
-    pub addr: u16,                      // 16-bit address
-    pub bitmap: [u8; 20],               // 156 bits = which words present
-    pub non_zero_words: Vec<u64>,       // Only non-zero words
-}
+    let mut buf = Vec::new();
 
-impl SparseEntry {
-    /// Decode to full fingerprint
-    pub fn to_fingerprint(&self) -> [u64; 156] {
-        let mut fp = [0u64; 156];
-        let mut word_idx = 0;
+    // FF escape
+    buf.push(0xFF);
 
-        for i in 0..156 {
-            if self.bitmap[i / 8] & (1 << (i % 8)) != 0 {
-                fp[i] = self.non_zero_words[word_idx];
-                word_idx += 1;
-            }
-        }
+    // Upper nibble D + high 4 bits of count
+    buf.push(0xD0 | ((count >> 8) as u8 & 0x0F));
 
-        fp
-    }
+    // Low 8 bits of count
+    buf.push(count as u8);
 
-    /// Encode from XOR delta (only store non-zero)
-    pub fn from_delta(addr: u16, delta: &[u64; 156]) -> Self {
-        let mut bitmap = [0u8; 20];
-        let mut non_zero_words = Vec::new();
-
-        for (i, &word) in delta.iter().enumerate() {
-            if word != 0 {
-                bitmap[i / 8] |= 1 << (i % 8);
-                non_zero_words.push(word);
-            }
-        }
-
-        Self { addr, bitmap, non_zero_words }
-    }
-}
-```
-
-### Compression Ratio
-
-For typical cognitive data (sparse XOR deltas):
-- Average non-zero words per delta: ~15-20 (of 156)
-- Compression: **80-90%** vs full fingerprint
-
----
-
-## Format 2: Float32 / 32-bit Hamming Delta (`FFFF FFFF`)
-
-**Magic**: `0xFFFF_FFFF` (4 bytes)
-**Address Space**: Extended or compressed representation
-**Use Case**: Hamming distance deltas, float32 quantized vectors
-
-### Variant A: 32-bit Hamming Detail Delta
-
-```
-┌──────────────┬───────────┬────────────────────────────────────────────────┐
-│  FFFF FFFF   │  Variant  │  Payload                                       │
-│  4 bytes     │  1 byte   │  Variable                                      │
-└──────────────┴───────────┴────────────────────────────────────────────────┘
-
-Variant 0x01: Hamming Delta
-┌──────────┬──────────┬──────────┬────────────────────────────────────────┐
-│  Addr    │  Hamming │  Bit Pos │  (only changed bit positions stored)   │
-│  2 bytes │  2 bytes │  Variable│                                        │
-└──────────┴──────────┴──────────┴────────────────────────────────────────┘
-```
-
-For fingerprints where only a few bits changed:
-- Store Hamming distance (number of changed bits)
-- Store list of bit positions that flipped
-
-```rust
-/// Format 2A: Hamming Detail Delta
-pub struct HammingDelta {
-    pub magic: u32,             // Always 0xFFFF_FFFF
-    pub variant: u8,            // 0x01 for Hamming
-    pub addr: u16,
-    pub hamming_distance: u16,  // Number of bits changed
-    pub bit_positions: Vec<u16>, // Which bits flipped (0..10000)
-}
-
-impl HammingDelta {
-    /// Apply to previous fingerprint
-    pub fn apply(&self, prev: &mut [u64; 156]) {
-        for &bit_pos in &self.bit_positions {
-            let word_idx = (bit_pos / 64) as usize;
-            let bit_idx = bit_pos % 64;
-            prev[word_idx] ^= 1u64 << bit_idx;
+    // Entries
+    for entry in entries {
+        buf.extend_from_slice(&entry.addr.to_le_bytes());
+        buf.extend_from_slice(&entry.bitmap);
+        for word in &entry.non_zero_words {
+            buf.extend_from_slice(&word.to_le_bytes());
         }
     }
 
-    /// Create from two fingerprints
-    pub fn compute(addr: u16, old: &[u64; 156], new: &[u64; 156]) -> Self {
-        let mut bit_positions = Vec::new();
-
-        for (i, (&o, &n)) in old.iter().zip(new.iter()).enumerate() {
-            let diff = o ^ n;
-            for bit in 0..64 {
-                if diff & (1u64 << bit) != 0 {
-                    bit_positions.push((i * 64 + bit) as u16);
-                }
-            }
-        }
-
-        Self {
-            magic: 0xFFFF_FFFF,
-            variant: 0x01,
-            addr,
-            hamming_distance: bit_positions.len() as u16,
-            bit_positions,
-        }
-    }
+    buf
 }
-```
 
-### Variant B: Float32 Compressed
-
-For vector embeddings that need floating-point precision:
-
-```
-Variant 0x02: Float32 Quantized
-┌──────────┬──────────┬──────────┬────────────────────────────────────────┐
-│  Addr    │  Scale   │  Offset  │  Quantized Values (f32 × dims)         │
-│  2 bytes │  4 bytes │  4 bytes │  4 × D bytes                           │
-└──────────┴──────────┴──────────┴────────────────────────────────────────┘
+pub fn decode_sparse_dim_header(data: &[u8]) -> u16 {
+    let high = (data[1] & 0x0F) as u16;
+    let low = data[2] as u16;
+    (high << 8) | low
+}
 ```
 
 ---
 
-## Format 3: Non-Sparse Full (`FFFF FFFF FFFF`)
+## Format FF:1x - Hamming Delta
 
-**Magic**: `0xFFFF_FFFF_FFFF` (6 bytes)
-**Address Space**: 2^48 or full 10000D vectors
-**Use Case**: Full snapshots, non-sparse data, high-dimensional vectors
+**Escape**: `FF` + upper nibble `1`
+**Lower nibble**: Entry count high 4 bits
 
-### Variant A: 48-bit Extended Address Space
-
-For future expansion beyond 65,536 addresses:
+### Structure
 
 ```
-┌────────────────────┬───────────┬─────────────────────────────────────────┐
-│  FFFF FFFF FFFF    │  Variant  │  Payload                                │
-│  6 bytes           │  1 byte   │  Variable                               │
-└────────────────────┴───────────┴─────────────────────────────────────────┘
+┌────────────┬───────────────────┬────────────────────────────────────────────┐
+│  FF:1n     │  Entry Count Low  │  Hamming Entries...                        │
+│  12+4 bits │  8 bits           │  Variable                                  │
+└────────────┴───────────────────┴────────────────────────────────────────────┘
 
-Variant 0x01: Extended Address Space
-┌──────────┬──────────────────────────────────────────────────────────────┐
-│  Addr    │  Full Fingerprint (no compression)                           │
-│  6 bytes │  156 × 8 = 1248 bytes                                        │
-└──────────┴──────────────────────────────────────────────────────────────┘
-```
-
-### Variant B: 10000D XOR Compressed
-
-For full 10,000-bit fingerprints with XOR delta compression:
-
-```
-Variant 0x02: 10000D XOR Block
+Each Hamming Entry:
 ┌──────────┬──────────┬────────────────────────────────────────────────────┐
-│  Version │  Count   │  XOR Blocks...                                     │
-│  8 bytes │  4 bytes │  Variable                                          │
+│  Addr    │  BitCnt  │  Bit Positions (14-bit each, packed)               │
+│  2 bytes │  7 bits  │  Variable                                          │
 └──────────┴──────────┴────────────────────────────────────────────────────┘
+```
+
+Bit positions are 14-bit (max 9999), packed without byte boundaries.
+
+```rust
+/// Bit-pack 14-bit positions (0-9999 fits in 14 bits)
+pub fn pack_bit_positions(positions: &[u16]) -> Vec<u8> {
+    let mut bits = Vec::new();
+
+    for &pos in positions {
+        assert!(pos < 10000);
+        // Pack 14 bits
+        for i in (0..14).rev() {
+            bits.push((pos >> i) & 1 == 1);
+        }
+    }
+
+    // Convert bits to bytes
+    let mut bytes = Vec::new();
+    for chunk in bits.chunks(8) {
+        let mut byte = 0u8;
+        for (i, &bit) in chunk.iter().enumerate() {
+            if bit {
+                byte |= 1 << (7 - i);
+            }
+        }
+        bytes.push(byte);
+    }
+
+    bytes
+}
+```
+
+---
+
+## Format FF:Bx - Float32 (Binary float)
+
+**Escape**: `FF` + upper nibble `B`
+**Lower nibble**: Dimensions high 4 bits
+
+```
+┌────────────┬───────────────────┬────────────────────────────────────────────┐
+│  FF:Bn     │  Dims Low + Count │  Float Entries...                          │
+│  12+4 bits │  16 bits          │  Variable                                  │
+└────────────┴───────────────────┴────────────────────────────────────────────┘
+```
+
+---
+
+## Format FF:Ex - Extended 48-bit
+
+**Escape**: `FF` + upper nibble `E`
+**Lower nibble**: Reserved (0)
+
+48-bit addresses are atomic - 6 bytes each, no splitting.
+
+```
+┌────────────┬───────────────────┬────────────────────────────────────────────┐
+│  FF:E0     │  Entry Count      │  Extended Entries...                       │
+│  12+4 bits │  32 bits          │  Variable                                  │
+└────────────┴───────────────────┴────────────────────────────────────────────┘
+
+Each Extended Entry:
+┌──────────────┬────────────────────────────────────────────────────────────┐
+│  Addr        │  Full Fingerprint (no compression)                         │
+│  48 bits     │  156 × 64 = 9984 bits                                      │
+└──────────────┴────────────────────────────────────────────────────────────┘
+```
+
+The 48-bit address is stored as a contiguous 6-byte value.
+
+---
+
+## Format FF:Fx - Full 10000D XOR
+
+**Escape**: `FF` + upper nibble `F`
+**Lower nibble**: Compression flags
+
+```
+┌────────────┬───────────────────┬────────────────────────────────────────────┐
+│  FF:Fn     │  Version + Count  │  XOR Blocks...                             │
+│  12+4 bits │  96 bits          │  Variable                                  │
+└────────────┴───────────────────┴────────────────────────────────────────────┘
+
+Flags (lower nibble n):
+  bit 0: RLE enabled
+  bit 1: word-aligned
+  bit 2: reserved
+  bit 3: reserved
 
 Each XOR Block:
 ┌──────────┬──────────┬────────────────────────────────────────────────────┐
-│  Addr    │  Length  │  XOR Mask (variable, run-length encoded)           │
-│  6 bytes │  2 bytes │  Variable                                          │
+│  Addr    │  Length  │  XOR Mask (optionally RLE encoded)                 │
+│  16 bits │  12 bits │  Variable                                          │
 └──────────┴──────────┴────────────────────────────────────────────────────┘
 ```
 
-```rust
-/// Format 3B: 10000D XOR Compressed
-pub struct XorCompressed10000D {
-    pub magic: [u8; 6],         // Always 0xFF × 6
-    pub variant: u8,            // 0x02 for 10000D XOR
-    pub version: u64,           // Target version
-    pub block_count: u32,
-    pub blocks: Vec<XorBlock10000D>,
-}
-
-pub struct XorBlock10000D {
-    pub addr: u64,              // 48-bit address (padded to 64)
-    pub rle_xor: Vec<u8>,       // Run-length encoded XOR mask
-}
-
-impl XorBlock10000D {
-    /// RLE encode XOR mask (good for sparse changes)
-    pub fn rle_encode(xor: &[u64; 156]) -> Vec<u8> {
-        let mut result = Vec::new();
-        let bytes: &[u8] = bytemuck::cast_slice(xor);
-
-        let mut i = 0;
-        while i < bytes.len() {
-            let byte = bytes[i];
-            let mut count = 1u8;
-
-            while i + count as usize < bytes.len()
-                && bytes[i + count as usize] == byte
-                && count < 255
-            {
-                count += 1;
-            }
-
-            if count >= 3 || byte == 0xFF {
-                // RLE: marker + count + byte
-                result.push(0xFF);
-                result.push(count);
-                result.push(byte);
-            } else {
-                // Literal
-                for _ in 0..count {
-                    result.push(byte);
-                }
-            }
-
-            i += count as usize;
-        }
-
-        result
-    }
-}
-```
-
 ---
 
-## Format Selection Logic
+## Format Selection
 
 ```rust
-/// Auto-select best format for delta
-pub fn select_format(
-    old: &BindSpace,
-    new: &BindSpace,
-) -> DeltaFormat {
-    let mut changed_addrs = 0;
-    let mut total_hamming = 0u64;
-    let mut max_hamming = 0u32;
-
-    // Analyze changes
-    for addr in 0..65536u16 {
-        let old_fp = old.read(Addr(addr));
-        let new_fp = new.read(Addr(addr));
-
-        match (old_fp, new_fp) {
-            (Some(o), Some(n)) if o.fingerprint != n.fingerprint => {
-                changed_addrs += 1;
-                let h = hamming_distance(&o.fingerprint, &n.fingerprint);
-                total_hamming += h as u64;
-                max_hamming = max_hamming.max(h);
-            }
-            (None, Some(_)) | (Some(_), None) => {
-                changed_addrs += 1;
-                max_hamming = 10000; // Full fingerprint change
-            }
-            _ => {}
-        }
-    }
-
-    // Decision tree
-    if changed_addrs == 0 {
-        DeltaFormat::None // No changes
-    } else if changed_addrs < 1000 && max_hamming < 100 {
-        // Few addresses with small Hamming changes
-        DeltaFormat::HammingDelta  // FFFF FFFF
-    } else if changed_addrs < 5000 {
-        // Moderate changes, use sparse
-        DeltaFormat::SparseBitpacked  // FFFF
+pub fn select_format(changed: usize, max_hamming: u32) -> DeltaFormat {
+    if changed == 0 {
+        DeltaFormat::Raw16Bit
+    } else if changed < 1000 && max_hamming < 100 {
+        DeltaFormat::Hamming      // FF:1x
+    } else if changed < 4096 {
+        DeltaFormat::SparseDim    // FF:Dx
     } else {
-        // Many changes, use full XOR compressed
-        DeltaFormat::Xor10000D  // FFFF FFFF FFFF
+        DeltaFormat::Full10000D   // FF:Fx
     }
 }
-
-pub enum DeltaFormat {
-    None,
-    SparseBitpacked,    // FFFF
-    HammingDelta,       // FFFF FFFF (variant 0x01)
-    Float32Quantized,   // FFFF FFFF (variant 0x02)
-    ExtendedAddress,    // FFFF FFFF FFFF (variant 0x01)
-    Xor10000D,          // FFFF FFFF FFFF (variant 0x02)
-}
 ```
 
 ---
 
-## Redis Key Schema with Format Tags
+## Redis Key Schema
 
 ```
-# Key includes format indicator
-ladybug:delta:sparse:{from}:{to}      → Format 1 (FFFF)
-ladybug:delta:hamming:{from}:{to}     → Format 2A (FFFF FFFF, 0x01)
-ladybug:delta:float32:{from}:{to}     → Format 2B (FFFF FFFF, 0x02)
-ladybug:delta:full:{from}:{to}        → Format 3 (FFFF FFFF FFFF)
-ladybug:snapshot:{version}            → Full snapshot (Parquet)
+# Self-describing (format in first 12 bits after FF)
+ladybug:delta:{from}:{to}             → [FF][Tx][payload...]
 
-# Or self-describing with magic in payload
-ladybug:delta:{from}:{to}             → Magic bytes determine format
+# Snapshots (no escape prefix)
+ladybug:snapshot:{version}            → Parquet blob
 ```
 
 ---
 
-## Encoding/Decoding Pipeline
+## Bit Efficiency Summary
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         ENCODING PIPELINE                                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  BindSpace₁ ─┬─► Diff ─► Analyze ─► Select Format ─► Encode ─► Store       │
-│  BindSpace₂ ─┘                                                              │
-│                                                                             │
-│  Analysis:                                                                  │
-│  ├─ changed_addrs < 1000 AND max_hamming < 100 → Hamming Delta (FFFF FFFF) │
-│  ├─ changed_addrs < 5000 → Sparse Bitpacked (FFFF)                         │
-│  └─ else → Full XOR Compressed (FFFF FFFF FFFF)                            │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+| Format | Header | Type | Savings vs 16-bit escape |
+|--------|--------|------|--------------------------|
+| Hamming | `FF:1x` | 12 bits + 4 data | 4 bits saved |
+| Float32 | `FF:Bx` | 12 bits + 4 data | 4 bits saved |
+| Sparse | `FF:Dx` | 12 bits + 4 data | 4 bits saved |
+| Extended | `FF:Ex` | 12 bits + 4 reserved | 4 bits saved |
+| Full | `FF:Fx` | 12 bits + 4 flags | 4 bits used for flags |
 
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         DECODING PIPELINE                                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  Load ─► Read Magic ─► Dispatch:                                           │
-│                        ├─ FFFF → SparseBitpacked::decode()                 │
-│                        ├─ FFFF FFFF → match variant { 0x01, 0x02 }         │
-│                        └─ FFFF FFFF FFFF → match variant { 0x01, 0x02 }    │
-│                                                                             │
-│  Apply to previous snapshot → Reconstructed BindSpace                       │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Size Comparison
-
-| Format | Typical Delta | Full Snapshot | Compression |
-|--------|---------------|---------------|-------------|
-| Sparse (FFFF) | 5-50 KB | 80 MB | 99%+ |
-| Hamming (FFFF FFFF) | 1-10 KB | 80 MB | 99.9%+ |
-| Full XOR (FFFF FFFF FFFF) | 20-200 KB | 80 MB | 95%+ |
-| Uncompressed | N/A | 80 MB | 0% |
-
-**Note**: 80 MB = 65,536 addresses × 1,248 bytes/fingerprint
+The lower nibble is **never wasted** - it's either data or flags.
