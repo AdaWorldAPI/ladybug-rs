@@ -44,6 +44,7 @@ pub mod service;
 pub mod substrate;
 pub mod redis_adapter;
 pub mod lance_zero_copy;
+pub mod xor_dag;
 
 #[cfg(feature = "lancedb")]
 pub use lance::{LanceStore, NodeRecord, EdgeRecord};
@@ -225,6 +226,24 @@ pub use lance_zero_copy::{
     Temperature, ScentAwareness,
     // Bubbling operations
     BubbleResult, ZeroCopyBubbler,
+};
+
+// XOR DAG exports (ACID transactions, parity protection, work stealing)
+pub use xor_dag::{
+    // Zero-copy XOR operations
+    xor_slices, xor_slices_inplace, xor_fingerprints, xor_fingerprints_multi,
+    // Parity protection
+    ParityBlock, ParityTier,
+    // Epoch-based work stealing
+    EpochGuard, EpochTicket, WorkItem, WorkOperation,
+    // Conflict resolution (aliased to avoid conflict with concurrency module)
+    ConflictStrategy, StateSnapshot, WriteConflict as DagWriteConflict,
+    // ACID transactions (aliased to avoid conflict with temporal module)
+    TxnState as DagTxnState, DagTransaction, WriteIntent as DagWriteIntent,
+    // XOR DAG store
+    XorDagConfig, XorDag, XorDelta, XorDagStatsSnapshot,
+    // Errors
+    DagError,
 };
 
 // Redis Adapter exports (Redis syntax interface)
