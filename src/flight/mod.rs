@@ -32,11 +32,19 @@
 mod server;
 #[cfg(feature = "flight")]
 mod actions;
+mod capabilities;
 
 #[cfg(feature = "flight")]
 pub use server::LadybugFlightService;
 #[cfg(feature = "flight")]
 pub use actions::execute_action;
+
+// Capabilities and transport selection (always available)
+pub use capabilities::{
+    Transport, Capabilities, CapabilitiesChecker,
+    TransportAdapter, TransportError,
+    PythonClientConfig,
+};
 
 // Legacy JSON types are only available with json_fallback feature
 #[cfg(all(feature = "flight", feature = "json_fallback"))]

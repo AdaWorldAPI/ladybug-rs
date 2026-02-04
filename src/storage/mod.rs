@@ -45,6 +45,7 @@ pub mod substrate;
 pub mod redis_adapter;
 pub mod lance_zero_copy;
 pub mod xor_dag;
+pub mod unified_engine;
 
 #[cfg(feature = "lancedb")]
 pub use lance::{LanceStore, NodeRecord, EdgeRecord};
@@ -254,4 +255,16 @@ pub use redis_adapter::{
     RedisCommand, SetOptions as RedisSetOptions, DeleteMode,
     // Main adapter
     RedisAdapter,
+};
+
+// Unified Engine exports (all features through BindSpace)
+pub use unified_engine::{
+    // Configuration
+    UnifiedConfig,
+    // Main engine
+    UnifiedEngine,
+    // Statistics
+    UnifiedStatsSnapshot,
+    // Errors
+    UnifiedError,
 };
