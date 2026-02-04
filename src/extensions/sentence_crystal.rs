@@ -336,7 +336,7 @@ impl SentenceCrystal {
         
         // Try Jina API if key is available
         let embedding = if let Some(ref api_key) = self.jina_api_key {
-            match super::spo::jina_api::jina_embed_curl(api_key, &[text]) {
+            match super::spo::jina_embed_curl(api_key, &[text]) {
                 Ok(embeddings) if !embeddings.is_empty() => embeddings[0].clone(),
                 _ => generate_pseudo_embedding(text),
             }
@@ -362,9 +362,8 @@ impl SentenceCrystal {
         // Project to crystal coordinates
         let coords = self.projection.project(&embedding);
         
-        // Generate NSM fingerprint
-        let decomposition = self.codebook.decompose(text);
-        let fingerprint = self.codebook.encode_decomposition(&decomposition);
+        // Generate NSM fingerprint (encode combines decompose + encoding)
+        let fingerprint = self.codebook.encode(text);
         
         // Bundle into cell
         let idx = coords.to_index();
@@ -381,8 +380,7 @@ impl SentenceCrystal {
         let coords = self.projection.project(&embedding);
         
         // Get query fingerprint
-        let decomposition = self.codebook.decompose(text);
-        let query_fp = self.codebook.encode_decomposition(&decomposition);
+        let query_fp = self.codebook.encode(text);
         
         // Search neighborhood
         let neighborhood = coords.neighborhood(radius);
@@ -424,12 +422,9 @@ impl SentenceCrystal {
     
     /// Compute resonance between two texts
     pub fn resonance(&mut self, text_a: &str, text_b: &str) -> f32 {
-        let decomp_a = self.codebook.decompose(text_a);
-        let decomp_b = self.codebook.decompose(text_b);
-        
-        let fp_a = self.codebook.encode_decomposition(&decomp_a);
-        let fp_b = self.codebook.encode_decomposition(&decomp_b);
-        
+        let fp_a = self.codebook.encode(text_a);
+        let fp_b = self.codebook.encode(text_b);
+
         fp_a.similarity(&fp_b)
     }
     
@@ -480,16 +475,7 @@ pub struct CrystalStats {
 fn bundle_pair(a: &Fingerprint, b: &Fingerprint) -> Fingerprint {
     // Simple OR for binary (approximates majority with 2 inputs)
     // For true majority voting with many inputs, use weighted counting
-    let mut result = Fingerprint::zero();
-    let raw_a = a.as_raw();
-    let raw_b = b.as_raw();
-    let raw_r = result.as_raw_mut();
-    
-    for i in 0..raw_a.len() {
-        raw_r[i] = raw_a[i] | raw_b[i];
-    }
-    
-    result
+    a.or(b)
 }
 
 /// Generate deterministic pseudo-embedding for testing
