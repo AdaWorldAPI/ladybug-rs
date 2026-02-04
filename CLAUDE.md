@@ -360,6 +360,16 @@ The following documents provide deep-dive coverage of specific topics:
 | [`docs/STORAGE_CONTRACTS.md`](docs/STORAGE_CONTRACTS.md) | **9 race conditions** identified in storage stack with root cause analysis |
 | [`docs/REWIRING_GUIDE.md`](docs/REWIRING_GUIDE.md) | **Copy-paste ready fixes** for each race condition |
 | [`docs/BACKUP_AND_SCHEMA.md`](docs/BACKUP_AND_SCHEMA.md) | XOR diff versioning, S3 integration, schema migrations |
+| [`docs/DELTA_ENCODING_FORMATS.md`](docs/DELTA_ENCODING_FORMATS.md) | Multi-format delta encoding with prefix envelope headers |
+
+### Delta Encoding (Prefix Envelope)
+
+Magic bytes in prefix envelope determine format:
+```
+Prefix FF:FF              → Sparse Bitpacked (2^16 addr space)
+Prefix FF:FF + FF:FF      → Float32/32-bit Hamming Delta
+Prefix FF:FF + FF:FF + FF:FF → Non-Sparse 48-bit / 10000D XOR
+```
 
 ### Critical Race Conditions (Summary)
 
