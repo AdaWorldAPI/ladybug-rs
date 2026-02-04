@@ -334,14 +334,14 @@ impl CapabilitiesChecker {
         let mut client = FlightServiceClient::new(channel);
 
         // Try to list flights to verify connectivity
-        let request = tonic::Request::new(Criteria { expression: vec![] });
+        let request = tonic::Request::new(Criteria { expression: bytes::Bytes::new() });
         let response = client.list_flights(request).await;
 
         if response.is_ok() {
             // Flight is available, try to get info
             let info_request = tonic::Request::new(arrow_flight::FlightDescriptor {
                 r#type: arrow_flight::flight_descriptor::DescriptorType::Cmd as i32,
-                cmd: b"capabilities".to_vec(),
+                cmd: bytes::Bytes::from_static(b"capabilities"),
                 path: vec![],
             });
 

@@ -1,17 +1,121 @@
 # CLAUDE.md — Ladybug-RS
 
-> **Last Updated**: 2026-02-02
+> **Last Updated**: 2026-02-04
 > **Branch**: claude/code-review-X0tu2
-> **Status**: Arrow Flight streaming complete, documentation in progress
+> **Status**: Flight + CogRedis wired, Arrow zero-copy WORKING
 
-## Documentation
+---
 
-See `docs/` for comprehensive documentation:
-- [Getting Started](docs/guides/GETTING_STARTED.md)
-- [Architecture Overview](docs/architecture/OVERVIEW.md)
-- [Flight API](docs/api/FLIGHT_ENDPOINTS.md)
-- [MCP Actions](docs/api/MCP_ACTIONS.md)
-- [Redis Commands](docs/api/REDIS_COMMANDS.md)
+# ⚠️ STOP. READ THIS FIRST. DO NOT SKIP. ⚠️
+
+## CRITICAL: Understand What Already Exists BEFORE Touching Anything
+
+**Every session MUST read this section completely before making ANY changes.**
+
+### The Storage Architecture You MUST NOT Break
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    WHAT WORKS NOW (default features)                        │
+│                    ════════════════════════════════════                     │
+│                                                                             │
+│  CogRedis ──────────────► BindSpace (8+8 addressing, O(1) lookup)          │
+│      │                         │                                           │
+│      │ DN.SET/GET              │ 65,536 addresses                          │
+│      │ CAM.* (4096 ops)        │ 3-5 cycles per lookup                     │
+│      │ DAG.* (ACID)            │ No HashMap, pure arrays                   │
+│      │                         │                                           │
+│  UnifiedEngine ◄───────────────┤                                           │
+│      │                         │                                           │
+│      ├── XorDag ───────────────┤ ACID transactions + XOR parity            │
+│      ├── MVCC ─────────────────┤ Concurrent writes                         │
+│      ├── BitpackedCSR ─────────┤ Zero-copy edge traversal                  │
+│      └── ArrowZeroCopy ◄───────┘ Pure Arrow buffers (NO lance crate!)      │
+│              │                                                             │
+│              │  src/storage/lance_zero_copy/mod.rs                         │
+│              │  ════════════════════════════════════                       │
+│              │  This is the Arrow integration layer.                       │
+│              │  It does NOT depend on the lance crate.                     │
+│              │  It uses arrow_array, arrow_buffer directly.                │
+│              │  IT ALREADY WORKS. DO NOT REWRITE IT.                       │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    OPTIONAL (lancedb feature, currently broken)             │
+│                    ════════════════════════════════════════════             │
+│                                                                             │
+│  src/storage/lance.rs ─── Direct Lance Dataset API                         │
+│  src/storage/database.rs ── Abstraction over LanceStore                    │
+│                                                                             │
+│  Status: API mismatch. Cargo.toml says lance="1.0" but vendor has 2.1.0.   │
+│  To fix: Add patch to use vendor, then update API calls.                   │
+│  NOT CRITICAL: ArrowZeroCopy works without this.                           │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Feature Flags - Know What They Enable
+
+```toml
+# Cargo.toml
+default = ["simd", "parallel"]     # ← Core functionality
+
+# THESE WORK:
+simd = []                          # AVX-512/AVX2 Hamming distance
+parallel = ["rayon"]               # Parallel processing
+flight = ["arrow-flight", ...]     # Arrow Flight gRPC server
+
+# THIS IS BROKEN (API mismatch):
+lancedb = ["lance"]                # Direct Lance Dataset API
+                                   # lance.rs needs updating for 2.1 API
+```
+
+### Vendor Directory Structure
+
+```
+vendor/
+├── lance/           # Lance 2.1.0-beta.0 (NOT currently used by Cargo.toml!)
+│   └── rust/lance/  # The actual crate
+└── lancedb/         # LanceDB (NOT currently used)
+
+# Cargo.toml currently pulls from crates.io:
+lance = { version = "1.0", optional = true }  # ← MISMATCH with vendor
+
+# To use vendor instead, add to Cargo.toml:
+[patch.crates-io]
+lance = { path = "vendor/lance/rust/lance" }
+```
+
+### Dockerfile Build Features
+
+```dockerfile
+ARG FEATURES="simd,parallel,flight"  # ← Current production build
+# lancedb NOT included because lance.rs has API issues
+```
+
+---
+
+## What Each Storage Module Does
+
+| Module | Purpose | Dependencies | Status |
+|--------|---------|--------------|--------|
+| `bind_space.rs` | 8+8 addressing, O(1) arrays | None | ✅ Working |
+| `cog_redis.rs` | Redis syntax (DN.*, CAM.*, DAG.*) | bind_space | ✅ Working |
+| `unified_engine.rs` | ACID + CSR + MVCC + ArrowZeroCopy | All below | ✅ Working |
+| `xor_dag.rs` | ACID transactions, XOR parity | bind_space | ✅ Working |
+| `lance_zero_copy/` | **Pure Arrow buffers** | arrow_* only | ✅ Working |
+| `lance.rs` | Direct Lance Dataset API | lance crate | ❌ API mismatch |
+| `database.rs` | Abstraction over lance.rs | lance.rs | ❌ Blocked |
+
+### The Key Insight
+
+**`lance_zero_copy/` is NOT the same as `lance.rs`.**
+
+- `lance_zero_copy/` = Pure Arrow integration, NO lance crate dependency
+- `lance.rs` = Direct Lance Dataset API, REQUIRES lance crate
+
+The owner already built the Arrow zero-copy layer. It feeds data back to BindSpace through `ArrowZeroCopy`, `FingerprintBuffer`, `LanceView`, and `ZeroCopyBubbler`. This is the production path.
 
 ---
 
@@ -27,7 +131,7 @@ See `docs/` for comprehensive documentation:
 
 ---
 
-## The Architecture You MUST Understand
+## The 8+8 Address Model
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -51,244 +155,162 @@ See `docs/` for comprehensive documentation:
 ```
 
 **Critical**: The 16-bit address is NOT a hash. It's direct array indexing.
-- `let prefix = (addr >> 8) as u8;`
-- `let slot = (addr & 0xFF) as u8;`
-- 3-5 cycles. No HashMap. No FPU. Works on embedded/WASM.
+```rust
+let prefix = (addr >> 8) as u8;
+let slot = (addr & 0xFF) as u8;
+// 3-5 cycles. No HashMap. No FPU. Works on embedded/WASM.
+```
 
 ---
 
 ## Current State
 
 **Codebase**: ~40K lines of Rust
-**Last updated**: 2026-02-02
+**Last updated**: 2026-02-04
+**Rust**: 1.93 (edition 2024)
 **DataFusion**: 51 (DF 52 upgrade path documented)
-**Arrow**: 48.x / arrow-flight 57.2 / tonic 0.14
+**Arrow**: 57.x / arrow-flight 57 / tonic 0.14
 
 ### ✅ Completed
 
 | Feature | Location | Status |
 |---------|----------|--------|
-| 8+8 addressing (prefix:slot) | bind_space.rs | ✓ Merged |
-| Universal BindSpace O(1) indexing | bind_space.rs | ✓ Merged |
-| 4096 CAM operations (16×256) | cam_ops.rs | ✓ Merged |
-| CAM execution bridge | cog_redis.rs | ✓ Merged |
-| Redis command executor | cog_redis.rs | ✓ Merged |
-| LanceDB/DataFusion 51 mappings | datafusion.rs | ✓ Merged |
-| HDR Cascade Search | hdr_cascade.rs | ✓ Merged |
-| **Arrow Flight Server** | flight/server.rs | ✓ Complete |
-| **Flight Streaming (DoGet)** | flight/server.rs | ✓ Complete |
-| **MCP Actions (DoAction)** | flight/actions.rs | ✓ Complete |
-| **Documentation skeleton** | docs/ | ✓ Created |
+| 8+8 addressing (prefix:slot) | bind_space.rs | ✓ Working |
+| Universal BindSpace O(1) indexing | bind_space.rs | ✓ Working |
+| 4096 CAM operations (16×256) | cam_ops.rs | ✓ Working |
+| CogRedis command executor | cog_redis.rs | ✓ Working |
+| DN.* tree commands | cog_redis.rs | ✓ Working |
+| DAG.* ACID transactions | cog_redis.rs | ✓ Working |
+| UnifiedEngine | unified_engine.rs | ✓ Working |
+| ArrowZeroCopy | lance_zero_copy/ | ✓ Working |
+| HDR Cascade Search | hdr_cascade.rs | ✓ Working |
+| Arrow Flight Server | flight/server.rs | ✓ Working |
+| Flight Streaming (DoGet) | flight/server.rs | ✓ Working |
+| MCP Actions (DoAction) | flight/actions.rs | ✓ Working |
+| HTTP server with CogRedis | bin/server.rs | ✓ Working |
+| Flight gRPC binary | bin/flight_server.rs | ✓ Working |
+
+### ❌ Known Issues
+
+| Issue | Location | Status |
+|-------|----------|--------|
+| lance.rs API mismatch | storage/lance.rs | Vendor=2.1, Cargo=1.0 |
+| 10 test failures | Various | See test section below |
 
 ### Recent Commits
 
 ```
-376c685 feat: Implement full Arrow Flight streaming for fingerprints and search
-49956cc fix: Arrow Flight module compiles with correct tonic/prost versions
-f4a9054 fix: Temporarily disable flight module, fix action imports
-1821b91 feat: Add Arrow Flight MCP server with zero-copy support
-3f956c4 fix: Revert to DataFusion 51, document DF 52 upgrade path
-```
-
-### Key Files (Flight Module)
-
-```
-src/flight/
-├── mod.rs           # Module exports
-├── server.rs        # LadybugFlightService (717 lines)
-└── actions.rs       # MCP action handlers
-```
-
-### 🔄 Open PRs
-
-| PR | Description | Action |
-|----|-------------|--------|
-| #24 | [REFERENCE] 64-bit CAM index | Old code for visibility - don't merge |
-| #16 | Grammar engine | Audit recovery |
-| #15 | Crystal extension | Review |
-| #14 | ARCHITECTURE.md | Review + Merge |
-| #12 | Dependencies | Merge when needed |
-| #11 | Reconstructed files | ⚠️ AUDIT FIRST |
-
-### 🔴 Test Failures (10 total with crystal features)
-
-**Run with:** `cargo test --features "spo,quantum,codebook"`
-
-**Results:** 173 pass, 10 fail
-
-#### Original 5 (logic/algorithm issues)
-
-| Test | Error | Root Cause |
-|------|-------|------------|
-| `collapse_gate::test_sd_calculation` | `sd_spread > SD_BLOCK_THRESHOLD` | Threshold calculation logic |
-| `quantum_ops::test_permute_adjoint` | `left != right` | Permute/unpermute not inverse |
-| `cypher::test_variable_length` | `ParseFloatError` | Tokenizer can't parse number |
-| `causal_ops::test_store_query_correlation` | SPO substrate | CausalEngine query issue |
-| `causal::test_correlation_store` | `results.is_empty()` | Query returns no results |
-
-#### New 5 (crystal initialization/serialization)
-
-| Test | Error | Root Cause |
-|------|-------|------------|
-| `context_crystal::test_temporal_flow` | `popcount() == 0` | Crystal cells all zero after insert |
-| `nsm_substrate::test_codebook_initialization` | `primes.len() < 60` | Codebook not populating primes |
-| `nsm_substrate::test_learning` | `vocabulary_size() < 65` | Learning not adding to vocabulary |
-| `jina_cache::test_cache_hit_rate` | `left=4, right=5` | Off-by-one in cache hit counting |
-| `crystal_lm::test_serialize` | `unwrap() on None` | `from_bytes()` validation too strict |
-
-**Fix priority:**
-1. `jina_cache` — trivial off-by-one
-2. `crystal_lm` — serialization roundtrip
-3. `context_crystal` — crystal insert not persisting
-4. `nsm_substrate` — codebook initialization
-5. Original 5 — algorithm logic fixes
-
-### 📋 TODO (Next Session)
-
-**Priority 1: Fix 10 Test Failures**
-
-Quick wins:
-- [ ] `jina_cache` — fix off-by-one in hit counting
-- [ ] `crystal_lm` — relax `from_bytes()` validation or fix test data
-
-Crystal initialization:
-- [ ] `context_crystal` — debug why insert doesn't persist to cells
-- [ ] `nsm_substrate` — ensure codebook loads 60+ primes on init
-
-Algorithm fixes:
-- [ ] `collapse_gate` — review SD threshold calculation
-- [ ] `quantum_ops` — fix permute/unpermute to be true inverses
-- [ ] `cypher` — fix tokenizer number parsing
-- [ ] `causal_ops` + `causal` — debug SPO query returning empty
-
-**Priority 2: Wire HDR to RESONATE**
-- [ ] Connect hdr_cascade.rs to CogRedis RESONATE command
-- [ ] Add similarity search through BindSpace
-
-**Priority 3: Fluid Zone Lifecycle**
-- [ ] Implement TTL expiration (`tick()`)
-- [ ] Implement `crystallize()` — promote fluid to node
-- [ ] Implement `evaporate()` — demote node to fluid
-
-**Key files**:
-```
-src/flight/           # Arrow Flight gRPC server
-├── mod.rs            # Module exports
-├── server.rs         # LadybugFlightService (717 lines)
-└── actions.rs        # MCP action handlers
-
-src/storage/          # Storage layer
-├── bind_space.rs     # Universal DTO (8+8 addressing)
-├── cog_redis.rs      # Redis syntax adapter
-├── lance.rs          # LanceDB substrate
-└── database.rs       # Unified interface
-
-src/search/           # Search & similarity
-├── hdr_cascade.rs    # HDR filtering (~7ns per candidate)
-├── cognitive.rs      # NARS + Qualia + SPO
-└── causal.rs         # SEE/DO/IMAGINE
-
-src/learning/         # CAM operations
-├── cam_ops.rs        # 4096 CAM operations
-├── quantum_ops.rs    # Quantum-style operators
-├── rl_ops.rs         # Reinforcement learning
-└── causal_ops.rs     # Pearl's 3 rungs
-
-src/core/             # Core primitives
-├── simd.rs           # AVX-512/AVX2/NEON Hamming
-└── fingerprint.rs    # 10K-bit fingerprint
+f3f455f feat: Wire Flight gRPC, CogRedis DN commands, and fix deployment features
+15fb4d9 feat: Add unified storage engine with ACID, CSR, DAG, work stealing
+db22a5e fix: Replace JSON with Arrow IPC as default serialization format
+a11a0f4 feat: Add XOR DAG storage with ACID transactions and parity protection
+4a4af54 feat: Wire DN tree as CogRedis addresses for Redis-syntax tree traversal
 ```
 
 ---
 
-## YOUR MISSION
+## Key Files
 
-### Priority 1: Fix Remaining Test Failures
+```
+src/bin/
+├── server.rs           # HTTP server (port 8080)
+└── flight_server.rs    # Arrow Flight gRPC (port 50051)
 
-5 tests still failing. Run and investigate:
+src/storage/
+├── bind_space.rs       # Universal DTO (8+8 addressing) ← THE CORE
+├── cog_redis.rs        # Redis syntax adapter ← DN.*, CAM.*, DAG.*
+├── unified_engine.rs   # Composes all storage features
+├── xor_dag.rs          # ACID + XOR parity
+├── lance_zero_copy/    # Pure Arrow integration (NO lance crate!) ← WORKS
+│   └── mod.rs          # ArrowZeroCopy, FingerprintBuffer, LanceView
+├── lance.rs            # Direct Lance API (BROKEN - API mismatch)
+└── database.rs         # Over lance.rs (BLOCKED)
+
+src/flight/
+├── mod.rs              # Module exports
+├── server.rs           # LadybugFlightService
+├── actions.rs          # MCP action handlers
+└── capabilities.rs     # Transport negotiation
+
+src/search/
+├── hdr_cascade.rs      # HDR filtering (~7ns per candidate)
+├── cognitive.rs        # NARS + Qualia + SPO
+└── causal.rs           # SEE/DO/IMAGINE
+
+src/learning/
+├── cam_ops.rs          # 4096 CAM operations
+├── quantum_ops.rs      # Quantum-style operators
+└── causal_ops.rs       # Pearl's 3 rungs
+```
+
+---
+
+## Testing
 
 ```bash
-cargo test 2>&1 | grep -E "FAILED|failures:"
+# Default features (what works)
+cargo test
+
+# With all working features
+cargo test --features "simd,parallel,flight"
+
+# With experimental features (some failures expected)
+cargo test --features "simd,parallel,codebook,hologram,quantum,spo"
+
+# Check compilation only
+cargo check --features "simd,parallel,flight"
 ```
 
-### Priority 2: Merge HDR Cascade (PR #21)
+### 🔴 Test Failures (10 total with experimental features)
 
-This is the "alien magic" — O(1) bind vector search via popcount stacking:
+| Test | Error | Root Cause |
+|------|-------|------------|
+| `collapse_gate::test_sd_calculation` | threshold | Algorithm logic |
+| `quantum_ops::test_permute_adjoint` | not inverse | Permute logic |
+| `cypher::test_variable_length` | ParseFloatError | Tokenizer |
+| `causal_ops::test_store_query_correlation` | empty | Query issue |
+| `causal::test_correlation_store` | empty | Query issue |
+| `context_crystal::test_temporal_flow` | popcount=0 | Insert not persisting |
+| `nsm_substrate::test_codebook_initialization` | primes<60 | Init issue |
+| `nsm_substrate::test_learning` | vocab<65 | Learning issue |
+| `jina_cache::test_cache_hit_rate` | off-by-one | Trivial fix |
+| `crystal_lm::test_serialize` | None unwrap | Validation strict |
 
-```
-Level 0: 1-bit sketch  → 90% filtered
-Level 1: 4-bit count   → 90% of survivors
-Level 2: 8-bit count   → 90% of survivors  
-Level 3: Full popcount → exact distance
+---
 
-~7ns per candidate vs ~100ns for float cosine
-```
+## DataFusion 51 → 52 Upgrade Path
 
-Review and merge, then wire to BindSpace.
+Currently on DF 51 to avoid liblzma conflict. For DF 52:
 
-### Priority 3: Wire HDR to BindSpace
+```toml
+# In Cargo.toml, change:
+datafusion = "52"
 
-Connect the HDR cascade search to the fluid zone for similarity queries:
-
-```rust
-// In cog_redis.rs RESONATE command
-pub fn resonate(&mut self, query: &Fingerprint, k: usize) -> Vec<(Addr, f32)> {
-    // Use HDR cascade for fast filtering
-    let candidates = self.hdr_index.search(query, k * 10);
-    
-    // Return top k with similarity scores
-    candidates.into_iter()
-        .take(k)
-        .map(|m| (m.addr, m.similarity))
-        .collect()
-}
-```
-
-### Priority 4: Implement Fluid Zone Lifecycle
-
-The fluid zone (0x10-0x7F) needs:
-
-```rust
-// TTL expiration
-pub fn tick(&mut self) {
-    let now = timestamp();
-    for chunk in &mut self.fluid {
-        for slot in chunk.iter_mut() {
-            if let Some(node) = slot {
-                if node.ttl.map(|t| t < now).unwrap_or(false) {
-                    *slot = None;  // Evaporate
-                }
-            }
-        }
-    }
-}
-
-// Promote to node space
-pub fn crystallize(&mut self, fluid_addr: Addr) -> Option<Addr> {
-    let node = self.read(fluid_addr)?;
-    let node_addr = self.allocate_node()?;
-    self.write(node_addr, node.clone());
-    self.delete(fluid_addr);
-    Some(node_addr)
-}
-
-// Demote from node space  
-pub fn evaporate(&mut self, node_addr: Addr, ttl: u32) -> Option<Addr> {
-    let node = self.read(node_addr)?;
-    let fluid_addr = self.allocate_fluid()?;
-    let mut node = node.clone();
-    node.ttl = Some(timestamp() + ttl);
-    self.write(fluid_addr, node);
-    self.delete(node_addr);
-    Some(fluid_addr)
-}
+# And uncomment:
+[patch.crates-io]
+datafusion = { git = "https://github.com/AdaWorldAPI/datafusion", branch = "liblzma-fix" }
 ```
 
 ---
 
-## Key Principles
+## Lance Vendor Integration (When Ready)
 
-### Two-Layer Architecture: Addressing vs Compute
+To use the vendored Lance 2.1.0-beta.0:
+
+```toml
+# Add to Cargo.toml:
+[patch.crates-io]
+lance = { path = "vendor/lance/rust/lance" }
+```
+
+Then update `src/storage/lance.rs` for the 2.1 API:
+- `Dataset::query()` method changed
+- Schema types moved to `lance::datatypes::Schema`
+- RecordBatchReader trait requirements changed
+
+---
+
+## Two-Layer Architecture: Addressing vs Compute
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -304,101 +326,10 @@ pub fn evaporate(&mut self, node_addr: Addr, ttl: u32) -> Option<Addr> {
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                       LAYER 2: COMPUTE (adaptive)                           │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  AVX-512 (Railway, modern Xeon):                                           │
-│    → 8×64-bit popcount per instruction                                     │
-│    → 10K-bit fingerprint in 20 ops                                         │
-│    → ~2ns per comparison                                                   │
-│                                                                             │
-│  AVX2 (NUC 14, most laptops):                                              │
-│    → 4×64-bit via _mm256 intrinsics                                        │
-│    → ~4ns per comparison                                                   │
-│                                                                             │
-│  Fallback (WASM, ARM, old x86):                                            │
-│    → u64::count_ones() loop                                                │
-│    → ~50ns per comparison                                                  │
-│    → Still works, just slower                                              │
+│  AVX-512 (Railway, modern Xeon): ~2ns per comparison                       │
+│  AVX2 (most laptops): ~4ns per comparison                                  │
+│  Fallback (WASM, ARM): ~50ns per comparison                                │
 └─────────────────────────────────────────────────────────────────────────────┘
-```
-
-| What | How | Why |
-|------|-----|-----|
-| Address decode | `u8` shift/mask | Universal, no feature detect |
-| Bucket lookup | `[prefix][slot]` | Array index, no hash |
-| Hamming distance | `#[cfg(target_feature)]` | Best available SIMD |
-| Batch compare | AVX-512 if available | 8 fingerprints parallel |
-| HDR cascade | Popcount at each level | Adaptive precision |
-
-### Addressing: ALWAYS Simple (int8)
-
-```rust
-// This runs everywhere, no feature detection
-#[inline(always)]
-fn lookup(addr: u16) -> (u8, u8) {
-    ((addr >> 8) as u8, (addr & 0xFF) as u8)
-}
-
-// Array indexing, not HashMap
-let prefix = (addr >> 8) as usize;
-let slot = (addr & 0xFF) as usize;
-let result = &arrays[prefix][slot];  // 3-5 cycles, not 30-100
-```
-
-### Compute: ADAPTIVE (use best available)
-
-```rust
-// AVX-512 path (Railway, Xeon): ~2ns per candidate
-#[cfg(target_feature = "avx512vpopcntdq")]
-#[target_feature(enable = "avx512f,avx512vpopcntdq")]
-unsafe fn hamming_batch_8(query: &[u64; 156], candidates: &[[u64; 156]; 8]) -> [u32; 8] {
-    use std::arch::x86_64::*;
-    // 8 fingerprints in parallel, 20 AVX-512 ops each
-    // ...
-}
-
-// AVX2 path (most laptops, NUC): ~4ns per candidate
-#[cfg(all(target_feature = "avx2", not(target_feature = "avx512vpopcntdq")))]
-fn hamming_batch_4(query: &[u64; 156], candidates: &[[u64; 156]; 4]) -> [u32; 4] {
-    // 4 fingerprints in parallel
-    // ...
-}
-
-// Fallback (WASM, ARM, old x86): ~50ns but works everywhere
-#[cfg(not(any(target_feature = "avx2", target_feature = "avx512vpopcntdq")))]
-fn hamming_scalar(a: &[u64; 156], b: &[u64; 156]) -> u32 {
-    a.iter().zip(b).map(|(x, y)| (x ^ y).count_ones()).sum()
-}
-```
-
-### Float Only at API Boundary
-
-```rust
-// Internal: pure integer
-let distance: u32 = hamming(a, b);  // 0-10000
-
-// API boundary only: convert for user
-let similarity: f32 = 1.0 - (distance as f32 / 10000.0);  // 0.0-1.0
-```
-
-### Fluid Zone is Context Selector
-
-The fluid zone (0x10-0x7F) determines what the node space MEANS:
-- Different context = different interpretation of same node address
-- Hot edges live here with TTL
-- Promote to nodes when crystallized
-
-### Universal DTO
-
-All query languages hit the same `BindNode`:
-
-```rust
-pub struct BindNode {
-    pub addr: u16,                    // WHERE
-    pub fingerprint: [u8; 48],        // WHAT (384 bits, truncated from 10K)
-    pub qualia: [i8; 8],              // HOW IT FEELS
-    pub truth: (u8, u8),              // NARS <f, c>
-    pub created_at: u32,              // WHEN
-    pub ttl: Option<u32>,             // FORGET WHEN
-}
 ```
 
 ---
@@ -409,117 +340,62 @@ When context window > 60%, spawn continuation with state:
 
 ```yaml
 handover:
-  current_task: "Implementing surface 0x02 (Cypher) ops"
-  files_modified:
-    - src/learning/cam_ops.rs
-    - src/storage/cog_redis.rs
-  decisions:
-    - "Using recursive CTEs for path traversal"
-    - "shortestPath maps to Dijkstra via window functions"
-  next_steps:
-    - "Complete 0x02:08-0x02:FF"
-    - "Wire to cog_redis GRAPH.QUERY command"
+  current_task: "Description"
+  files_modified: [...]
+  decisions: [...]
+  next_steps: [...]
   blockers: []
 ```
 
-### Specialist Agents
-
-- **🔬 LanceExpert**: Deep knowledge of LanceDB, Arrow, DataFusion
-- **🕸️ GraphSage**: Cypher semantics, path algorithms, CSR
-- **🧠 CognitiveArch**: NARS, qualia, truth maintenance
-- **⚡ SIMDWizard**: AVX-512, popcount, batch ops
-
-Spawn when domain expertise needed.
-
 ---
 
-## DataFusion 52 Upgrade Path
+## Extended Documentation
 
-Currently on DF 51 to avoid dependency issues. For DF 52 upgrade:
+The following documents provide deep-dive coverage of specific topics:
 
-1. **Add to vendored fork Cargo.toml**:
-```toml
-[workspace.dependencies]
-lzma-sys = { version = "0.1", features = ["static"] }
+### Storage Layer Hardening
+
+| Document | Purpose |
+|----------|---------|
+| [`docs/STORAGE_CONTRACTS.md`](docs/STORAGE_CONTRACTS.md) | **9 race conditions** identified in storage stack with root cause analysis |
+| [`docs/REWIRING_GUIDE.md`](docs/REWIRING_GUIDE.md) | **Copy-paste ready fixes** for each race condition |
+| [`docs/BACKUP_AND_SCHEMA.md`](docs/BACKUP_AND_SCHEMA.md) | XOR diff versioning, S3 integration, schema migrations |
+| [`docs/DELTA_ENCODING_FORMATS.md`](docs/DELTA_ENCODING_FORMATS.md) | Multi-format delta encoding with prefix envelope headers |
+
+### Delta Encoding (Prefix Envelope)
+
+Magic bytes in prefix envelope determine format:
+```
+Prefix FF:FF              → Sparse Bitpacked (2^16 addr space)
+Prefix FF:FF + FF:FF      → Float32/32-bit Hamming Delta
+Prefix FF:FF + FF:FF + FF:FF → Non-Sparse 48-bit / 10000D XOR
 ```
 
-2. **Update Arrow crates to 52.x**
+### Critical Race Conditions (Summary)
 
-3. **Verify tonic/prost alignment** (currently 0.14)
+| # | Location | Severity | Issue |
+|---|----------|----------|-------|
+| 1 | `hardening.rs:LruTracker` | HIGH | Duplicate entries in order queue |
+| 2 | `hardening.rs:WriteAheadLog` | CRITICAL | Write-behind (not write-ahead) |
+| 3 | `resilient.rs:WriteBuffer` | HIGH | ID allocated before buffered |
+| 4 | `resilient.rs:DependencyGraph` | MEDIUM | Partial map updates |
+| 5 | `xor_dag.rs:commit` | HIGH | TOCTOU in parity update |
+| 6 | `xor_dag.rs:EpochGuard` | MEDIUM | Work item orphan on epoch advance |
+| 7 | `snapshots.rs:TieredStorage` | MEDIUM | Eviction races with writes |
+| 8 | `snapshots.rs:SnapshotChain` | LOW | Chain length race |
+| 9 | `temporal.rs:commit` | HIGH | Serializable conflict detection gap |
 
-4. **Test parquet compression features**
+**Before touching storage code, read `docs/STORAGE_CONTRACTS.md`.**
 
-**Vendored forks** (when ready):
-- `vendor/arrow-datafusion/`
-- `vendor/datafusion-ballista/`
-- `vendor/datafusion-flight-sql-server/`
-- `vendor/datafusion-sqlparser-rs/`
-
----
-
-## Testing
-
-```bash
-# With recommended features
-cargo test --features "simd,parallel,codebook,hologram,quantum"
-
-# Flight module
-cargo check --features "flight"
-
-# Specific module
-cargo test storage::bind_space
-cargo test search::hdr_cascade
-```
-
----
-
-## Quick Start
-
-```bash
-# Clone
-git clone https://github.com/AdaWorldAPI/ladybug-rs.git
-cd ladybug-rs
-
-# Check current state
-find src -name "*.rs" | wc -l
-wc -l src/learning/cam_ops.rs
-wc -l src/storage/bind_space.rs
-
-# Key files to understand first
-cat src/storage/bind_space.rs | head -100
-cat src/learning/cam_ops.rs | head -100
-```
-
----
-
-## Open PRs (Review Before Merge)
-
-| PR | Status | Notes |
-|----|--------|-------|
-| #17 | Open | Cognitive operation enums |
-| #16 | Open | Grammar engine (audit recovery) |
-| #15 | Open | Crystal extension |
-| #14 | Open | ARCHITECTURE.md |
-| #12 | Open | Dependencies |
-| #11 | Open | ⚠️ Reconstructed files - AUDIT FIRST |
-| #10 | Open | ⚠️ Old 64-bit model - may conflict with 8+8 |
-| #9 | Open | ⚠️ Kuzu stubs - FALSE BELIEF, close it |
-
----
-
-## The Learning Loop
+### Backup Strategy (Summary)
 
 ```
-1. ENCOUNTER → Read existing code, understand schema
-2. STRUGGLE  → Hit type mismatches, address conflicts
-3. BREAKTHROUGH → See how 8+8 maps to LanceDB
-4. CONSOLIDATE → Implement ops, test, commit
-5. APPLY → Use ops from cog_redis commands
-6. META-LEARN → Capture patterns for future sessions
+PRIMARY:   Redis (Railway)  - XOR deltas, <1ms latency
+SECONDARY: PostgreSQL       - Schema metadata, versions
+ARCHIVE:   S3 (via Lance)   - Full Parquet snapshots, 11 9s durability
 ```
 
-**Capture moments**: When you figure something out, log it.
-The learning curve IS the knowledge.
+**Before changing backup logic, read `docs/BACKUP_AND_SCHEMA.md`.**
 
 ---
 

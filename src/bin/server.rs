@@ -37,6 +37,7 @@ use ladybug::core::Fingerprint;
 use ladybug::core::simd::{self, hamming_distance};
 use ladybug::nars::TruthValue;
 use ladybug::storage::service::{CognitiveService, ServiceConfig, CpuFeatures};
+use ladybug::storage::{CogRedis, RedisResult};
 use ladybug::{FINGERPRINT_BITS, FINGERPRINT_BYTES, VERSION};
 
 // =============================================================================
@@ -241,8 +242,10 @@ fn encode_to_ipc(batch: &RecordBatch) -> Result<Vec<u8>, String> {
 struct DbState {
     /// Indexed fingerprints with metadata
     fingerprints: Vec<(String, Fingerprint, HashMap<String, String>)>,
-    /// Key-value store (CogRedis surface)
+    /// Key-value store (simple fallback)
     kv: HashMap<String, String>,
+    /// Full CogRedis interface (DN commands, CAM ops, etc.)
+    cog_redis: CogRedis,
     /// Service container
     service: CognitiveService,
     /// CPU features
@@ -264,6 +267,7 @@ impl DbState {
         Self {
             fingerprints: Vec::new(),
             kv: HashMap::new(),
+            cog_redis: CogRedis::new(),
             service,
             cpu: CpuFeatures::detect(),
             start_time: Instant::now(),
@@ -539,7 +543,7 @@ fn handle_fingerprint_create(body: &str, format: ResponseFormat) -> Vec<u8> {
         match base64_decode(&b64) {
             Ok(bytes) => match Fingerprint::from_bytes(&bytes) {
                 Ok(fp) => fp,
-                Err(e) => return http_error(400, "invalid_fingerprint", &e, format),
+                Err(e) => return http_error(400, "invalid_fingerprint", &e.to_string(), format),
             }
             Err(e) => return http_error(400, "invalid_base64", &e, format),
         }
@@ -1084,66 +1088,45 @@ fn handle_cypher(body: &str, format: ResponseFormat) -> Vec<u8> {
     }
 }
 
-// CogRedis handler - always uses Redis wire protocol (not Arrow or JSON)
+// CogRedis handler - uses full CogRedis command set including DN.*, CAM.*, DAG.* etc.
 fn handle_redis_command(body: &str, state: &SharedState) -> Vec<u8> {
-    let parts: Vec<&str> = body.trim().split_whitespace().collect();
-    if parts.is_empty() {
+    let cmd = body.trim();
+    if cmd.is_empty() {
         return http_json(400, r#"{"error":"empty_command"}"#);
     }
 
-    let cmd = parts[0].to_uppercase();
-    let response = match cmd.as_str() {
-        "PING" => "+PONG\r\n".to_string(),
-        "SET" if parts.len() >= 3 => {
-            let key = parts[1].to_string();
-            let val = parts[2..].join(" ");
-            state.write().unwrap().kv.insert(key, val);
-            "+OK\r\n".to_string()
-        }
-        "GET" if parts.len() >= 2 => {
-            let key = parts[1];
-            let db = state.read().unwrap();
-            match db.kv.get(key) {
-                Some(v) => format!("${}\r\n{}\r\n", v.len(), v),
-                None => "$-1\r\n".to_string(),
-            }
-        }
-        "DEL" if parts.len() >= 2 => {
-            let key = parts[1];
-            let removed = state.write().unwrap().kv.remove(key).is_some();
-            format!(":{}\r\n", if removed { 1 } else { 0 })
-        }
-        "KEYS" => {
-            let pattern = if parts.len() >= 2 { parts[1] } else { "*" };
-            let db = state.read().unwrap();
-            let keys: Vec<&String> = if pattern == "*" {
-                db.kv.keys().collect()
-            } else {
-                db.kv.keys().filter(|k| k.contains(pattern.trim_matches('*'))).collect()
-            };
-            let mut resp = format!("*{}\r\n", keys.len());
-            for k in keys {
-                resp.push_str(&format!("${}\r\n{}\r\n", k.len(), k));
-            }
-            resp
-        }
-        "INFO" => {
-            let db = state.read().unwrap();
-            let info = format!(
-                "ladybugdb v{}\nsimd:{}\nindexed:{}\nkeys:{}\nuptime:{}s",
-                VERSION, simd::simd_level(), db.fingerprints.len(),
-                db.kv.len(), db.start_time.elapsed().as_secs()
-            );
-            format!("${}\r\n{}\r\n", info.len(), info)
-        }
-        _ => format!("-ERR unknown command '{}'\r\n", cmd),
-    };
+    // Execute through full CogRedis interface (supports DN.*, CAM.*, DAG.*, etc.)
+    let result = state.write().unwrap().cog_redis.execute_command(cmd);
+    let response = cog_redis_result_to_wire(&result);
 
     // Wrap Redis response in HTTP
     format!(
         "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         response.len(), response
     ).into_bytes()
+}
+
+/// Convert CogRedis result to Redis wire protocol (RESP)
+fn cog_redis_result_to_wire(result: &RedisResult) -> String {
+    match result {
+        RedisResult::Ok => "+OK\r\n".to_string(),
+        RedisResult::String(s) => format!("+{}\r\n", s),
+        RedisResult::Integer(i) => format!(":{}\r\n", i),
+        RedisResult::Bulk(bytes) => {
+            // Return as hex-encoded bulk string
+            let hex = hex::encode(bytes);
+            format!("${}\r\n{}\r\n", hex.len(), hex)
+        }
+        RedisResult::Array(items) => {
+            let mut resp = format!("*{}\r\n", items.len());
+            for item in items {
+                resp.push_str(&cog_redis_result_to_wire(item));
+            }
+            resp
+        }
+        RedisResult::Nil => "$-1\r\n".to_string(),
+        RedisResult::Error(e) => format!("-ERR {}\r\n", e),
+    }
 }
 
 // LanceDB-compatible handlers
