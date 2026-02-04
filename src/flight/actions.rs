@@ -7,7 +7,7 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 
 use arrow_array::{
-    ArrayRef, BinaryArray, FixedSizeBinaryArray, Float32Array, RecordBatch,
+    Array, ArrayRef, BinaryArray, FixedSizeBinaryArray, Float32Array, RecordBatch,
     StringArray, UInt16Array, UInt32Array, UInt8Array, BooleanArray,
 };
 use arrow_ipc::{reader::StreamReader, writer::StreamWriter};
@@ -480,7 +480,8 @@ fn execute_xor_bind(params: &std::collections::HashMap<String, Vec<u8>>) -> Resu
 
     // Pad to full fingerprint size if needed
     let mut full_fp = vec![0u8; FINGERPRINT_WORDS * 8];
-    full_fp[..fingerprint.len().min(full_fp.len())].copy_from_slice(&fingerprint[..fingerprint.len().min(full_fp.len())]);
+    let copy_len = fingerprint.len().min(FINGERPRINT_WORDS * 8);
+    full_fp[..copy_len].copy_from_slice(&fingerprint[..copy_len]);
 
     let schema = xor_result_schema();
     let fp_array: ArrayRef = Arc::new(

@@ -212,6 +212,11 @@ name = "ladybug-server"
 path = "src/bin/server.rs"
 
 [[bin]]
+name = "ladybug-flight"
+path = "src/bin/flight_server.rs"
+required-features = ["flight"]
+
+[[bin]]
 name = "ladybug-bench"
 path = "src/bin/bench.rs"
 required-features = ["bench"]

@@ -85,6 +85,7 @@ pub use cog_redis::{
     
     // Results
     GetResult, SetOptions, ResonateResult, DeduceResult,
+    RedisResult,
 
     // Production-hardened version
     HardenedCogRedis,
@@ -249,8 +250,8 @@ pub use xor_dag::{
 
 // Redis Adapter exports (Redis syntax interface)
 pub use redis_adapter::{
-    // Result types
-    RedisResult, NodeResult, SearchHit, EdgeResult, CamResult,
+    // Result types (aliased to avoid conflict with cog_redis::RedisResult)
+    RedisResult as AdapterRedisResult, NodeResult, SearchHit, EdgeResult, CamResult,
     // Command types
     RedisCommand, SetOptions as RedisSetOptions, DeleteMode,
     // Main adapter

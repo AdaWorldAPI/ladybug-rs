@@ -40,22 +40,31 @@ RUN mkdir -p src/bin && \
 # --- Full source ---
 COPY . .
 
+# Features to enable (flight enables Arrow Flight gRPC)
+# NOTE: lancedb feature has API compatibility issues - enable after fixing lance module
+ARG FEATURES="simd,parallel,flight"
+
 # --- AVX-512 binary (Railway, cloud servers) ---
 RUN RUSTFLAGS="-C target-cpu=x86-64-v4 -C link-arg=-s" \
-    cargo build --release --bin ladybug-server && \
+    cargo build --release --bin ladybug-server --features "$FEATURES" && \
     cp target/release/ladybug-server /build/ladybug-avx512 && \
     cargo clean -p ladybug
 
 # --- AVX-2 binary (most modern x86-64) ---
 RUN RUSTFLAGS="-C target-cpu=x86-64-v3 -C link-arg=-s" \
-    cargo build --release --bin ladybug-server && \
+    cargo build --release --bin ladybug-server --features "$FEATURES" && \
     cp target/release/ladybug-server /build/ladybug-avx2 && \
     cargo clean -p ladybug
 
 # --- Generic binary (any x86-64) ---
 RUN RUSTFLAGS="-C link-arg=-s" \
-    cargo build --release --bin ladybug-server && \
+    cargo build --release --bin ladybug-server --features "$FEATURES" && \
     cp target/release/ladybug-server /build/ladybug-generic
+
+# --- Flight gRPC binary (single build, runtime selects SIMD) ---
+RUN RUSTFLAGS="-C target-cpu=x86-64-v3 -C link-arg=-s" \
+    cargo build --release --bin ladybug-flight --features "$FEATURES" && \
+    cp target/release/ladybug-flight /build/ladybug-flight
 
 # =============================================================================
 # STAGE 2: Runtime (minimal ~50MB)
@@ -68,10 +77,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && useradd -m -s /bin/bash ladybug \
     && mkdir -p /data && chown ladybug:ladybug /data
 
-# Copy all three binaries
+# Copy all server binaries (HTTP)
 COPY --from=builder /build/ladybug-avx512 /usr/local/bin/
 COPY --from=builder /build/ladybug-avx2   /usr/local/bin/
 COPY --from=builder /build/ladybug-generic /usr/local/bin/
+
+# Copy Flight gRPC binary
+COPY --from=builder /build/ladybug-flight /usr/local/bin/
 
 # Copy docs
 COPY --from=builder /build/README.md /opt/ladybug/
@@ -98,9 +110,13 @@ WORKDIR /home/ladybug
 
 ENV LADYBUG_HOST=0.0.0.0
 ENV LADYBUG_PORT=8080
+ENV LADYBUG_FLIGHT_PORT=50051
 ENV LADYBUG_DATA_DIR=/data
 
+# HTTP REST API
 EXPOSE 8080
+# Arrow Flight gRPC
+EXPOSE 50051
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:${LADYBUG_PORT}/health || exit 1
