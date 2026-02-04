@@ -1,394 +1,572 @@
 //! MCP Actions for Arrow Flight
 //!
-//! Implements the MCP tool interface via Flight DoAction.
+//! Implements the MCP tool interface via Flight DoAction using Arrow IPC.
+//! All serialization uses Arrow RecordBatch - JSON is NOT used.
 
 use std::sync::Arc;
 use parking_lot::RwLock;
-use serde::{Deserialize, Serialize};
+
+use arrow_array::{
+    ArrayRef, BinaryArray, FixedSizeBinaryArray, Float32Array, RecordBatch,
+    StringArray, UInt16Array, UInt32Array, UInt8Array, BooleanArray,
+};
+use arrow_ipc::{reader::StreamReader, writer::StreamWriter};
+use arrow_schema::{DataType, Field, Schema, SchemaRef};
 
 use crate::storage::BindSpace;
 use crate::search::HdrIndex;
 use crate::storage::bind_space::{Addr, FINGERPRINT_WORDS};
 
-/// MCP Action types
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "action", rename_all = "snake_case")]
-pub enum McpAction {
-    /// Encode text/data to fingerprint
-    Encode {
-        text: Option<String>,
-        data: Option<Vec<u8>>,
-        style: Option<String>, // creative, balanced, precise
-    },
-    /// Bind fingerprint to address
-    Bind {
-        address: u16,
-        fingerprint: Vec<u8>,
-        label: Option<String>,
-    },
-    /// Read from address
-    Read {
-        address: u16,
-    },
-    /// Find similar fingerprints
-    Resonate {
-        query: Vec<u8>,
-        k: usize,
-        threshold: Option<u32>,
-    },
-    /// Compute Hamming distance
-    Hamming {
-        a: Vec<u8>,
-        b: Vec<u8>,
-    },
-    /// XOR bind two fingerprints
-    XorBind {
-        a: Vec<u8>,
-        b: Vec<u8>,
-    },
-    /// Get BindSpace statistics
-    Stats,
+// =============================================================================
+// ARROW SCHEMAS FOR MCP RESULTS
+// =============================================================================
+
+/// Schema for fingerprint encoding result
+fn fingerprint_result_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("fingerprint", DataType::FixedSizeBinary((FINGERPRINT_WORDS * 8) as i32), false),
+        Field::new("bits_set", DataType::UInt32, false),
+        Field::new("encoding_style", DataType::Utf8, false),
+    ]))
 }
 
-/// MCP Action result
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum McpResult {
-    /// Encoded fingerprint
-    Fingerprint {
-        fingerprint: Vec<u8>,
-        bits_set: u32,
-        encoding_style: String,
-    },
-    /// Bind confirmation
-    Bound {
-        address: u16,
-        success: bool,
-    },
-    /// Read result
-    Node {
-        address: u16,
-        fingerprint: Vec<u8>,
-        label: Option<String>,
-        zone: String,
-    },
-    /// Search results
-    Matches {
-        results: Vec<MatchResult>,
-        query_time_ns: u64,
-        cascade_stats: CascadeStats,
-    },
-    /// Hamming distance
-    Distance {
-        distance: u32,
-        similarity: f32,
-        max_bits: u32,
-    },
-    /// XOR result
-    Combined {
-        fingerprint: Vec<u8>,
-        bits_set: u32,
-    },
-    /// Statistics
-    Stats {
-        total_nodes: usize,
-        surface_nodes: usize,
-        fluid_nodes: usize,
-        node_space_nodes: usize,
-    },
-    /// Error
-    Error {
-        message: String,
-    },
+/// Schema for bind result
+fn bind_result_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("address", DataType::UInt16, false),
+        Field::new("success", DataType::Boolean, false),
+    ]))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MatchResult {
-    pub address: u16,
-    pub fingerprint: Vec<u8>,
-    pub label: Option<String>,
-    pub distance: u32,
-    pub similarity: f32,
-    pub cascade_level: u8,
+/// Schema for node read result
+fn node_result_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("address", DataType::UInt16, false),
+        Field::new("fingerprint", DataType::FixedSizeBinary((FINGERPRINT_WORDS * 8) as i32), false),
+        Field::new("label", DataType::Utf8, true),
+        Field::new("zone", DataType::Utf8, false),
+    ]))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CascadeStats {
-    pub l0_candidates: usize,
-    pub l1_candidates: usize,
-    pub l2_candidates: usize,
-    pub final_candidates: usize,
+/// Schema for search/resonate results
+fn search_result_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("address", DataType::UInt16, false),
+        Field::new("fingerprint", DataType::FixedSizeBinary((FINGERPRINT_WORDS * 8) as i32), false),
+        Field::new("label", DataType::Utf8, true),
+        Field::new("distance", DataType::UInt32, false),
+        Field::new("similarity", DataType::Float32, false),
+        Field::new("cascade_level", DataType::UInt8, false),
+        Field::new("query_time_ns", DataType::UInt64, false),
+        Field::new("l0_candidates", DataType::UInt32, false),
+        Field::new("l1_candidates", DataType::UInt32, false),
+        Field::new("l2_candidates", DataType::UInt32, false),
+        Field::new("final_candidates", DataType::UInt32, false),
+    ]))
 }
 
-/// Execute an MCP action
+/// Schema for distance result
+fn distance_result_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("distance", DataType::UInt32, false),
+        Field::new("similarity", DataType::Float32, false),
+        Field::new("max_bits", DataType::UInt32, false),
+    ]))
+}
+
+/// Schema for XOR bind result
+fn xor_result_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("fingerprint", DataType::FixedSizeBinary((FINGERPRINT_WORDS * 8) as i32), false),
+        Field::new("bits_set", DataType::UInt32, false),
+    ]))
+}
+
+/// Schema for stats result
+fn stats_result_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("total_nodes", DataType::UInt32, false),
+        Field::new("surface_nodes", DataType::UInt32, false),
+        Field::new("fluid_nodes", DataType::UInt32, false),
+        Field::new("node_space_nodes", DataType::UInt32, false),
+    ]))
+}
+
+/// Schema for error result
+fn error_result_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("error", DataType::Boolean, false),
+        Field::new("message", DataType::Utf8, false),
+    ]))
+}
+
+/// Schema for action input parameters (Arrow IPC request)
+fn action_input_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("param_name", DataType::Utf8, false),
+        Field::new("param_value", DataType::Binary, false),
+    ]))
+}
+
+// =============================================================================
+// ARROW IPC HELPERS
+// =============================================================================
+
+/// Encode a RecordBatch to Arrow IPC stream bytes
+fn encode_to_ipc(batch: &RecordBatch) -> Result<Vec<u8>, String> {
+    let mut buffer = Vec::new();
+    {
+        let mut writer = StreamWriter::try_new(&mut buffer, batch.schema().as_ref())
+            .map_err(|e| e.to_string())?;
+        writer.write(batch).map_err(|e| e.to_string())?;
+        writer.finish().map_err(|e| e.to_string())?;
+    }
+    Ok(buffer)
+}
+
+/// Decode Arrow IPC stream bytes to get parameters
+/// Returns a map of param_name -> param_value (as bytes)
+fn decode_ipc_params(data: &[u8]) -> Result<std::collections::HashMap<String, Vec<u8>>, String> {
+    if data.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    let cursor = std::io::Cursor::new(data);
+    let reader = StreamReader::try_new(cursor, None)
+        .map_err(|e| format!("Failed to read Arrow IPC: {}", e))?;
+
+    let mut params = std::collections::HashMap::new();
+
+    for batch_result in reader {
+        let batch = batch_result.map_err(|e| e.to_string())?;
+
+        // Get param_name and param_value columns
+        let names = batch.column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .ok_or("Expected StringArray for param_name")?;
+        let values = batch.column(1)
+            .as_any()
+            .downcast_ref::<BinaryArray>()
+            .ok_or("Expected BinaryArray for param_value")?;
+
+        for i in 0..names.len() {
+            if let (Some(name), Some(value)) = (names.value(i).into(), values.value(i).into()) {
+                params.insert(name.to_string(), value.to_vec());
+            }
+        }
+    }
+
+    Ok(params)
+}
+
+/// Extract string parameter from decoded params
+fn get_string_param(params: &std::collections::HashMap<String, Vec<u8>>, key: &str) -> Option<String> {
+    params.get(key).and_then(|v| String::from_utf8(v.clone()).ok())
+}
+
+/// Extract u16 parameter from decoded params
+fn get_u16_param(params: &std::collections::HashMap<String, Vec<u8>>, key: &str) -> Option<u16> {
+    params.get(key).and_then(|v| {
+        if v.len() >= 2 {
+            Some(u16::from_le_bytes([v[0], v[1]]))
+        } else {
+            None
+        }
+    })
+}
+
+/// Extract usize parameter from decoded params
+fn get_usize_param(params: &std::collections::HashMap<String, Vec<u8>>, key: &str) -> Option<usize> {
+    params.get(key).and_then(|v| {
+        if v.len() >= 8 {
+            Some(u64::from_le_bytes(v[..8].try_into().unwrap()) as usize)
+        } else if v.len() >= 4 {
+            Some(u32::from_le_bytes(v[..4].try_into().unwrap()) as usize)
+        } else {
+            None
+        }
+    })
+}
+
+/// Extract u32 parameter from decoded params
+fn get_u32_param(params: &std::collections::HashMap<String, Vec<u8>>, key: &str) -> Option<u32> {
+    params.get(key).and_then(|v| {
+        if v.len() >= 4 {
+            Some(u32::from_le_bytes(v[..4].try_into().unwrap()))
+        } else {
+            None
+        }
+    })
+}
+
+/// Extract bytes parameter from decoded params
+fn get_bytes_param(params: &std::collections::HashMap<String, Vec<u8>>, key: &str) -> Option<Vec<u8>> {
+    params.get(key).cloned()
+}
+
+// =============================================================================
+// ACTION EXECUTION
+// =============================================================================
+
+/// Execute an MCP action and return Arrow IPC encoded result
 pub async fn execute_action(
     action_type: &str,
     body: &[u8],
     bind_space: Arc<RwLock<BindSpace>>,
     hdr_cascade: Arc<RwLock<HdrIndex>>,
 ) -> Result<Vec<u8>, String> {
-    // Parse JSON body into McpAction based on action_type
-    let action: McpAction = match action_type {
-        "encode" => {
-            let params: serde_json::Value = serde_json::from_slice(body)
-                .map_err(|e| e.to_string())?;
-            McpAction::Encode {
-                text: params.get("text").and_then(|v| v.as_str()).map(String::from),
-                data: params.get("data").and_then(|v| {
-                    v.as_str().and_then(|s| hex::decode(s).ok())
-                }),
-                style: params.get("style").and_then(|v| v.as_str()).map(String::from),
-            }
-        }
-        "bind" => {
-            let params: serde_json::Value = serde_json::from_slice(body)
-                .map_err(|e| e.to_string())?;
-            McpAction::Bind {
-                address: params.get("address")
-                    .and_then(|v| v.as_u64())
-                    .ok_or("missing address")? as u16,
-                fingerprint: params.get("fingerprint")
-                    .and_then(|v| v.as_str())
-                    .and_then(|s| hex::decode(s).ok())
-                    .ok_or("missing fingerprint")?,
-                label: params.get("label").and_then(|v| v.as_str()).map(String::from),
-            }
-        }
-        "read" => {
-            let params: serde_json::Value = serde_json::from_slice(body)
-                .map_err(|e| e.to_string())?;
-            McpAction::Read {
-                address: params.get("address")
-                    .and_then(|v| v.as_u64())
-                    .ok_or("missing address")? as u16,
-            }
-        }
-        "resonate" => {
-            let params: serde_json::Value = serde_json::from_slice(body)
-                .map_err(|e| e.to_string())?;
-            McpAction::Resonate {
-                query: params.get("query")
-                    .and_then(|v| v.as_str())
-                    .and_then(|s| hex::decode(s).ok())
-                    .ok_or("missing query")?,
-                k: params.get("k")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(10) as usize,
-                threshold: params.get("threshold")
-                    .and_then(|v| v.as_u64())
-                    .map(|v| v as u32),
-            }
-        }
-        "hamming" => {
-            let params: serde_json::Value = serde_json::from_slice(body)
-                .map_err(|e| e.to_string())?;
-            McpAction::Hamming {
-                a: params.get("a")
-                    .and_then(|v| v.as_str())
-                    .and_then(|s| hex::decode(s).ok())
-                    .ok_or("missing a")?,
-                b: params.get("b")
-                    .and_then(|v| v.as_str())
-                    .and_then(|s| hex::decode(s).ok())
-                    .ok_or("missing b")?,
-            }
-        }
-        "xor_bind" => {
-            let params: serde_json::Value = serde_json::from_slice(body)
-                .map_err(|e| e.to_string())?;
-            McpAction::XorBind {
-                a: params.get("a")
-                    .and_then(|v| v.as_str())
-                    .and_then(|s| hex::decode(s).ok())
-                    .ok_or("missing a")?,
-                b: params.get("b")
-                    .and_then(|v| v.as_str())
-                    .and_then(|s| hex::decode(s).ok())
-                    .ok_or("missing b")?,
-            }
-        }
-        "stats" => McpAction::Stats,
-        _ => return Err(format!("Unknown action: {}", action_type)),
-    };
+    // Parse Arrow IPC body to get parameters
+    let params = decode_ipc_params(body)?;
 
-    // Execute the action
-    let result = execute_mcp_action(action, bind_space, hdr_cascade).await?;
-
-    // Serialize result to JSON
-    serde_json::to_vec(&result).map_err(|e| e.to_string())
+    match action_type {
+        "encode" => execute_encode(&params),
+        "bind" => execute_bind(&params, bind_space),
+        "read" => execute_read(&params, bind_space),
+        "resonate" => execute_resonate(&params, bind_space, hdr_cascade),
+        "hamming" => execute_hamming(&params),
+        "xor_bind" => execute_xor_bind(&params),
+        "stats" => execute_stats(bind_space),
+        _ => {
+            let schema = error_result_schema();
+            let batch = RecordBatch::try_new(
+                schema.clone(),
+                vec![
+                    Arc::new(BooleanArray::from(vec![true])) as ArrayRef,
+                    Arc::new(StringArray::from(vec![format!("Unknown action: {}", action_type)])) as ArrayRef,
+                ],
+            ).map_err(|e| e.to_string())?;
+            encode_to_ipc(&batch)
+        }
+    }
 }
 
-async fn execute_mcp_action(
-    action: McpAction,
+/// Encode text/data to fingerprint
+fn execute_encode(params: &std::collections::HashMap<String, Vec<u8>>) -> Result<Vec<u8>, String> {
+    let text = get_string_param(params, "text");
+    let data = get_bytes_param(params, "data");
+    let style = get_string_param(params, "style").unwrap_or_else(|| "balanced".to_string());
+
+    let input = if let Some(t) = text {
+        t.into_bytes()
+    } else if let Some(d) = data {
+        d
+    } else {
+        return Err("Either text or data required".to_string());
+    };
+
+    // Sigma-10 membrane encoding (simplified: SHA256-based expansion)
+    use sha2::{Sha256, Digest};
+    let mut hasher = Sha256::new();
+    hasher.update(&input);
+    let hash = hasher.finalize();
+
+    // Expand to full fingerprint size (1248 bytes = 156 * 8)
+    let mut fingerprint = vec![0u8; FINGERPRINT_WORDS * 8];
+    for (i, chunk) in fingerprint.chunks_mut(32).enumerate() {
+        let mut h = Sha256::new();
+        h.update(&hash);
+        h.update(&[i as u8]);
+        chunk.copy_from_slice(&h.finalize()[..chunk.len().min(32)]);
+    }
+
+    let bits_set: u32 = fingerprint.iter()
+        .map(|b| b.count_ones())
+        .sum();
+
+    // Build Arrow result
+    let schema = fingerprint_result_schema();
+    let fp_array: ArrayRef = Arc::new(
+        FixedSizeBinaryArray::try_from_iter(std::iter::once(fingerprint.as_slice()))
+            .map_err(|e| e.to_string())?
+    );
+    let bits_array: ArrayRef = Arc::new(UInt32Array::from(vec![bits_set]));
+    let style_array: ArrayRef = Arc::new(StringArray::from(vec![style]));
+
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![fp_array, bits_array, style_array],
+    ).map_err(|e| e.to_string())?;
+
+    encode_to_ipc(&batch)
+}
+
+/// Bind fingerprint to address
+fn execute_bind(
+    params: &std::collections::HashMap<String, Vec<u8>>,
     bind_space: Arc<RwLock<BindSpace>>,
+) -> Result<Vec<u8>, String> {
+    let address = get_u16_param(params, "address")
+        .ok_or("missing address")?;
+    let fingerprint = get_bytes_param(params, "fingerprint")
+        .ok_or("missing fingerprint")?;
+    let label = get_string_param(params, "label");
+
+    let addr = Addr(address);
+
+    // Convert bytes to [u64; FINGERPRINT_WORDS]
+    let mut fp_array = [0u64; FINGERPRINT_WORDS];
+    for (i, chunk) in fingerprint.chunks(8).enumerate() {
+        if i >= FINGERPRINT_WORDS {
+            break;
+        }
+        if chunk.len() == 8 {
+            fp_array[i] = u64::from_le_bytes(chunk.try_into().unwrap());
+        } else {
+            let mut buf = [0u8; 8];
+            buf[..chunk.len()].copy_from_slice(chunk);
+            fp_array[i] = u64::from_le_bytes(buf);
+        }
+    }
+
+    let mut space = bind_space.write();
+    let success = space.write_at(addr, fp_array);
+
+    if success {
+        if let Some(lbl) = label {
+            if let Some(node) = space.read_mut(addr) {
+                node.label = Some(lbl);
+            }
+        }
+    }
+
+    // Build Arrow result
+    let schema = bind_result_schema();
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(UInt16Array::from(vec![address])) as ArrayRef,
+            Arc::new(BooleanArray::from(vec![success])) as ArrayRef,
+        ],
+    ).map_err(|e| e.to_string())?;
+
+    encode_to_ipc(&batch)
+}
+
+/// Read node from address
+fn execute_read(
+    params: &std::collections::HashMap<String, Vec<u8>>,
+    bind_space: Arc<RwLock<BindSpace>>,
+) -> Result<Vec<u8>, String> {
+    let address = get_u16_param(params, "address")
+        .ok_or("missing address")?;
+
+    let addr = Addr(address);
+    let space = bind_space.read();
+
+    if let Some(node) = space.read(addr) {
+        let fingerprint: Vec<u8> = node.fingerprint
+            .iter()
+            .flat_map(|w| w.to_le_bytes())
+            .collect();
+
+        let zone = match addr.prefix() {
+            0x00..=0x0F => "surface",
+            0x10..=0x7F => "fluid",
+            _ => "node",
+        };
+
+        let schema = node_result_schema();
+        let fp_array: ArrayRef = Arc::new(
+            FixedSizeBinaryArray::try_from_iter(std::iter::once(fingerprint.as_slice()))
+                .map_err(|e| e.to_string())?
+        );
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(UInt16Array::from(vec![address])) as ArrayRef,
+                fp_array,
+                Arc::new(StringArray::from(vec![node.label.as_deref()])) as ArrayRef,
+                Arc::new(StringArray::from(vec![zone])) as ArrayRef,
+            ],
+        ).map_err(|e| e.to_string())?;
+
+        encode_to_ipc(&batch)
+    } else {
+        // Return error via error schema
+        let schema = error_result_schema();
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(BooleanArray::from(vec![true])) as ArrayRef,
+                Arc::new(StringArray::from(vec![format!("No node at address {:#06x}", address)])) as ArrayRef,
+            ],
+        ).map_err(|e| e.to_string())?;
+        encode_to_ipc(&batch)
+    }
+}
+
+/// Find similar fingerprints via HDR cascade
+fn execute_resonate(
+    params: &std::collections::HashMap<String, Vec<u8>>,
+    _bind_space: Arc<RwLock<BindSpace>>,
     _hdr_cascade: Arc<RwLock<HdrIndex>>,
-) -> Result<McpResult, String> {
-    match action {
-        McpAction::Encode { text, data, style } => {
-            // Use Sigma-10 membrane encoding
-            let input = if let Some(t) = text {
-                t.into_bytes()
-            } else if let Some(d) = data {
-                d
-            } else {
-                return Err("Either text or data required".to_string());
-            };
+) -> Result<Vec<u8>, String> {
+    let _query = get_bytes_param(params, "query")
+        .ok_or("missing query")?;
+    let _k = get_usize_param(params, "k").unwrap_or(10);
+    let _threshold = get_u32_param(params, "threshold");
 
-            // TODO: Call actual Sigma-10 membrane encoder
-            // For now, simple hash-based fingerprint
-            use sha2::{Sha256, Digest};
-            let mut hasher = Sha256::new();
-            hasher.update(&input);
-            let hash = hasher.finalize();
+    let start = std::time::Instant::now();
 
-            // Expand to full fingerprint size (1248 bytes = 156 * 8)
-            let mut fingerprint = vec![0u8; 1248];
-            for (i, chunk) in fingerprint.chunks_mut(32).enumerate() {
-                let mut h = Sha256::new();
-                h.update(&hash);
-                h.update(&[i as u8]);
-                chunk.copy_from_slice(&h.finalize()[..chunk.len().min(32)]);
-            }
+    // TODO: Implement HDR cascade search
+    // Placeholder: return empty results
 
-            let bits_set: u32 = fingerprint.iter()
-                .map(|b| b.count_ones())
-                .sum();
+    let schema = search_result_schema();
 
-            Ok(McpResult::Fingerprint {
-                fingerprint,
-                bits_set,
-                encoding_style: style.unwrap_or_else(|| "balanced".to_string()),
-            })
-        }
+    // Empty batch with correct schema
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(UInt16Array::from(Vec::<u16>::new())) as ArrayRef,
+            Arc::new(FixedSizeBinaryArray::from(Vec::<Option<&[u8]>>::new())) as ArrayRef,
+            Arc::new(StringArray::from(Vec::<Option<&str>>::new())) as ArrayRef,
+            Arc::new(UInt32Array::from(Vec::<u32>::new())) as ArrayRef,
+            Arc::new(Float32Array::from(Vec::<f32>::new())) as ArrayRef,
+            Arc::new(UInt8Array::from(Vec::<u8>::new())) as ArrayRef,
+            Arc::new(arrow_array::UInt64Array::from(vec![start.elapsed().as_nanos() as u64])) as ArrayRef,
+            Arc::new(UInt32Array::from(vec![0u32])) as ArrayRef,
+            Arc::new(UInt32Array::from(vec![0u32])) as ArrayRef,
+            Arc::new(UInt32Array::from(vec![0u32])) as ArrayRef,
+            Arc::new(UInt32Array::from(vec![0u32])) as ArrayRef,
+        ],
+    ).map_err(|e| e.to_string())?;
 
-        McpAction::Bind { address, fingerprint, label } => {
-            let addr = Addr(address);
+    encode_to_ipc(&batch)
+}
 
-            // Convert bytes to [u64; FINGERPRINT_WORDS] (156 words = 1248 bytes)
-            let mut fp_array = [0u64; FINGERPRINT_WORDS];
-            for (i, chunk) in fingerprint.chunks(8).enumerate() {
-                if i >= FINGERPRINT_WORDS {
-                    break;
-                }
-                if chunk.len() == 8 {
-                    fp_array[i] = u64::from_le_bytes(chunk.try_into().unwrap());
-                } else {
-                    // Partial chunk - pad with zeros
-                    let mut buf = [0u8; 8];
-                    buf[..chunk.len()].copy_from_slice(chunk);
-                    fp_array[i] = u64::from_le_bytes(buf);
-                }
-            }
+/// Compute Hamming distance between two fingerprints
+fn execute_hamming(params: &std::collections::HashMap<String, Vec<u8>>) -> Result<Vec<u8>, String> {
+    let a = get_bytes_param(params, "a").ok_or("missing a")?;
+    let b = get_bytes_param(params, "b").ok_or("missing b")?;
 
-            let mut space = bind_space.write();
-            let success = space.write_at(addr, fp_array);
+    let max_len = a.len().min(b.len());
+    let distance: u32 = a.iter().zip(b.iter())
+        .map(|(x, y)| (x ^ y).count_ones())
+        .sum();
 
-            // Set label if provided and write succeeded
-            if success {
-                if let Some(lbl) = label {
-                    if let Some(node) = space.read_mut(addr) {
-                        node.label = Some(lbl);
-                    }
-                }
-            }
+    let max_bits = (max_len * 8) as u32;
+    let similarity = if max_bits > 0 {
+        1.0 - (distance as f32 / max_bits as f32)
+    } else {
+        0.0
+    };
 
-            Ok(McpResult::Bound { address, success })
-        }
+    let schema = distance_result_schema();
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(UInt32Array::from(vec![distance])) as ArrayRef,
+            Arc::new(Float32Array::from(vec![similarity])) as ArrayRef,
+            Arc::new(UInt32Array::from(vec![max_bits])) as ArrayRef,
+        ],
+    ).map_err(|e| e.to_string())?;
 
-        McpAction::Read { address } => {
-            let addr = Addr(address);
-            let space = bind_space.read();
+    encode_to_ipc(&batch)
+}
 
-            if let Some(node) = space.read(addr) {
-                let fingerprint: Vec<u8> = node.fingerprint
-                    .iter()
-                    .flat_map(|w| w.to_le_bytes())
-                    .collect();
+/// XOR bind two fingerprints
+fn execute_xor_bind(params: &std::collections::HashMap<String, Vec<u8>>) -> Result<Vec<u8>, String> {
+    let a = get_bytes_param(params, "a").ok_or("missing a")?;
+    let b = get_bytes_param(params, "b").ok_or("missing b")?;
 
-                let zone = match addr.prefix() {
-                    0x00..=0x0F => "surface",
-                    0x10..=0x7F => "fluid",
-                    0x80..=0xFF => "node",
-                }.to_string();
+    let fingerprint: Vec<u8> = a.iter().zip(b.iter())
+        .map(|(x, y)| x ^ y)
+        .collect();
 
-                Ok(McpResult::Node {
-                    address,
-                    fingerprint,
-                    label: node.label.clone(),
-                    zone,
-                })
-            } else {
-                Ok(McpResult::Error {
-                    message: format!("No node at address {:#06x}", address),
-                })
-            }
-        }
+    let bits_set: u32 = fingerprint.iter()
+        .map(|b| b.count_ones())
+        .sum();
 
-        McpAction::Resonate { query, k, threshold } => {
-            // TODO: Implement HDR cascade search
-            let start = std::time::Instant::now();
+    // Pad to full fingerprint size if needed
+    let mut full_fp = vec![0u8; FINGERPRINT_WORDS * 8];
+    full_fp[..fingerprint.len().min(full_fp.len())].copy_from_slice(&fingerprint[..fingerprint.len().min(full_fp.len())]);
 
-            // Placeholder results
-            let results = vec![];
-            let cascade_stats = CascadeStats {
-                l0_candidates: 0,
-                l1_candidates: 0,
-                l2_candidates: 0,
-                final_candidates: 0,
-            };
+    let schema = xor_result_schema();
+    let fp_array: ArrayRef = Arc::new(
+        FixedSizeBinaryArray::try_from_iter(std::iter::once(full_fp.as_slice()))
+            .map_err(|e| e.to_string())?
+    );
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            fp_array,
+            Arc::new(UInt32Array::from(vec![bits_set])) as ArrayRef,
+        ],
+    ).map_err(|e| e.to_string())?;
 
-            Ok(McpResult::Matches {
-                results,
-                query_time_ns: start.elapsed().as_nanos() as u64,
-                cascade_stats,
-            })
-        }
+    encode_to_ipc(&batch)
+}
 
-        McpAction::Hamming { a, b } => {
-            let max_len = a.len().min(b.len());
-            let distance: u32 = a.iter().zip(b.iter())
-                .map(|(x, y)| (x ^ y).count_ones())
-                .sum();
+/// Get BindSpace statistics
+fn execute_stats(bind_space: Arc<RwLock<BindSpace>>) -> Result<Vec<u8>, String> {
+    let space = bind_space.read();
+    let stats = space.stats();
 
-            let max_bits = (max_len * 8) as u32;
-            let similarity = if max_bits > 0 {
-                1.0 - (distance as f32 / max_bits as f32)
-            } else {
-                0.0
-            };
+    let schema = stats_result_schema();
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(UInt32Array::from(vec![(stats.surface_count + stats.fluid_count + stats.node_count) as u32])) as ArrayRef,
+            Arc::new(UInt32Array::from(vec![stats.surface_count as u32])) as ArrayRef,
+            Arc::new(UInt32Array::from(vec![stats.fluid_count as u32])) as ArrayRef,
+            Arc::new(UInt32Array::from(vec![stats.node_count as u32])) as ArrayRef,
+        ],
+    ).map_err(|e| e.to_string())?;
 
-            Ok(McpResult::Distance {
-                distance,
-                similarity,
-                max_bits,
-            })
-        }
+    encode_to_ipc(&batch)
+}
 
-        McpAction::XorBind { a, b } => {
-            let fingerprint: Vec<u8> = a.iter().zip(b.iter())
-                .map(|(x, y)| x ^ y)
-                .collect();
+// =============================================================================
+// LEGACY JSON FALLBACK (for backwards compatibility only)
+// =============================================================================
 
-            let bits_set: u32 = fingerprint.iter()
-                .map(|b| b.count_ones())
-                .sum();
+#[cfg(feature = "json_fallback")]
+mod json_fallback {
+    use serde::{Deserialize, Serialize};
 
-            Ok(McpResult::Combined {
-                fingerprint,
-                bits_set,
-            })
-        }
+    /// MCP Action types (legacy JSON format)
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[serde(tag = "action", rename_all = "snake_case")]
+    pub enum McpAction {
+        Encode { text: Option<String>, data: Option<Vec<u8>>, style: Option<String> },
+        Bind { address: u16, fingerprint: Vec<u8>, label: Option<String> },
+        Read { address: u16 },
+        Resonate { query: Vec<u8>, k: usize, threshold: Option<u32> },
+        Hamming { a: Vec<u8>, b: Vec<u8> },
+        XorBind { a: Vec<u8>, b: Vec<u8> },
+        Stats,
+    }
 
-        McpAction::Stats => {
-            let space = bind_space.read();
-            let stats = space.stats();
+    /// MCP Action result (legacy JSON format)
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[serde(tag = "type", rename_all = "snake_case")]
+    pub enum McpResult {
+        Fingerprint { fingerprint: Vec<u8>, bits_set: u32, encoding_style: String },
+        Bound { address: u16, success: bool },
+        Node { address: u16, fingerprint: Vec<u8>, label: Option<String>, zone: String },
+        Matches { results: Vec<MatchResult>, query_time_ns: u64, cascade_stats: CascadeStats },
+        Distance { distance: u32, similarity: f32, max_bits: u32 },
+        Combined { fingerprint: Vec<u8>, bits_set: u32 },
+        Stats { total_nodes: usize, surface_nodes: usize, fluid_nodes: usize, node_space_nodes: usize },
+        Error { message: String },
+    }
 
-            Ok(McpResult::Stats {
-                total_nodes: stats.surface_count + stats.fluid_count + stats.node_count,
-                surface_nodes: stats.surface_count,
-                fluid_nodes: stats.fluid_count,
-                node_space_nodes: stats.node_count,
-            })
-        }
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct MatchResult {
+        pub address: u16,
+        pub fingerprint: Vec<u8>,
+        pub label: Option<String>,
+        pub distance: u32,
+        pub similarity: f32,
+        pub cascade_level: u8,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct CascadeStats {
+        pub l0_candidates: usize,
+        pub l1_candidates: usize,
+        pub l2_candidates: usize,
+        pub final_candidates: usize,
     }
 }

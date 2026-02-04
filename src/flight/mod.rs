@@ -36,4 +36,8 @@ mod actions;
 #[cfg(feature = "flight")]
 pub use server::LadybugFlightService;
 #[cfg(feature = "flight")]
-pub use actions::{McpAction, McpResult};
+pub use actions::execute_action;
+
+// Legacy JSON types are only available with json_fallback feature
+#[cfg(all(feature = "flight", feature = "json_fallback"))]
+pub use actions::json_fallback::{McpAction, McpResult};
