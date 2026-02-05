@@ -17,6 +17,7 @@ use crate::storage::bind_space::{
     Addr, BindSpace, FINGERPRINT_WORDS,
     PREFIX_BLACKBOARD, PREFIX_AGENTS,
 };
+use super::handover::FlowState;
 
 /// Agent awareness state — what the agent knows about itself and its context
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -37,6 +38,11 @@ pub struct AgentAwareness {
     pub resonance_hits: Vec<u16>,
     /// Number of A2A messages pending
     pub pending_messages: u32,
+    /// Flow state — mirrors GateState semantics with momentum tracking
+    pub flow_state: FlowState,
+    /// Self-reported confidence in current task (0.0-1.0)
+    /// Used by Dunning-Kruger guard: if confidence >> coherence → metacognitive review
+    pub confidence: f32,
 }
 
 impl Default for AgentAwareness {
@@ -50,6 +56,8 @@ impl Default for AgentAwareness {
             available_tools: Vec::new(),
             resonance_hits: Vec::new(),
             pending_messages: 0,
+            flow_state: FlowState::default(),
+            confidence: 0.5,
         }
     }
 }
@@ -135,6 +143,42 @@ impl AgentBlackboard {
         }
     }
 
+    /// Update flow state from a gate evaluation
+    pub fn update_flow(&mut self, gate: crate::cognitive::GateState) {
+        self.awareness.flow_state = FlowState::from_gate(gate, &self.awareness.flow_state);
+    }
+
+    /// Set flow state directly (e.g., from MetaOrchestrator handover)
+    pub fn set_flow(&mut self, state: FlowState) {
+        self.awareness.flow_state = state;
+    }
+
+    /// Set confidence level
+    pub fn set_confidence(&mut self, confidence: f32) {
+        self.awareness.confidence = confidence.clamp(0.0, 1.0);
+    }
+
+    /// Check if the agent is in flow
+    pub fn is_in_flow(&self) -> bool {
+        self.awareness.flow_state.is_flow()
+    }
+
+    /// Check if the agent is blocked
+    pub fn is_blocked(&self) -> bool {
+        self.awareness.flow_state.is_blocked()
+    }
+
+    /// Get flow momentum (0.0 if not in flow)
+    pub fn flow_momentum(&self) -> f32 {
+        self.awareness.flow_state.momentum()
+    }
+
+    /// Dunning-Kruger gap: confidence - coherence
+    /// Positive values indicate overconfidence relative to actual coherence
+    pub fn dk_gap(&self) -> f32 {
+        self.awareness.confidence - self.awareness.coherence
+    }
+
     /// Advance cycle counter
     pub fn tick(&mut self) {
         self.cycle += 1;
@@ -147,12 +191,14 @@ impl AgentBlackboard {
         use sha2::{Sha256, Digest};
 
         let state = format!(
-            "{}:{}:{}:{}:{}",
+            "{}:{}:{}:{}:{}:{:?}:{}",
             self.agent_id,
             self.awareness.active_style,
             self.awareness.coherence,
             self.cycle,
-            self.knowledge_addrs.len()
+            self.knowledge_addrs.len(),
+            self.awareness.flow_state,
+            self.awareness.confidence,
         );
 
         let mut hasher = Sha256::new();
@@ -283,5 +329,46 @@ mod tests {
         let yaml = bb.to_yaml();
         assert!(yaml.contains("agent_slot: 5"));
         assert!(yaml.contains("agent-5"));
+    }
+
+    #[test]
+    fn test_flow_state_integration() {
+        let mut bb = AgentBlackboard::new(0, "test");
+        assert!(!bb.is_in_flow());
+
+        // Enter flow via gate
+        bb.update_flow(crate::cognitive::GateState::Flow);
+        assert!(bb.is_in_flow());
+        assert!(bb.flow_momentum() > 0.0);
+
+        // Accumulate momentum
+        for _ in 0..5 {
+            bb.update_flow(crate::cognitive::GateState::Flow);
+        }
+        assert!(bb.flow_momentum() >= 0.5);
+
+        // Block
+        bb.update_flow(crate::cognitive::GateState::Block);
+        assert!(bb.is_blocked());
+        assert!(!bb.is_in_flow());
+    }
+
+    #[test]
+    fn test_dk_gap() {
+        let mut bb = AgentBlackboard::new(0, "test");
+        bb.awareness.coherence = 0.3;
+        bb.set_confidence(0.9);
+        // DK gap: 0.9 - 0.3 = 0.6 — overconfident
+        assert!((bb.dk_gap() - 0.6).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_flow_state_affects_fingerprint() {
+        let mut bb = AgentBlackboard::new(0, "test");
+        let fp1 = bb.state_fingerprint();
+
+        bb.update_flow(crate::cognitive::GateState::Flow);
+        let fp2 = bb.state_fingerprint();
+        assert_ne!(fp1, fp2);
     }
 }

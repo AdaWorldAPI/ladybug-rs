@@ -521,6 +521,161 @@ pub fn execute_crew_action(
             }
         }
 
+        // === Handover Actions ===
+        "handover.evaluate" => {
+            #[derive(serde::Deserialize)]
+            struct EvalReq { agent_slot: u8, task_description: Option<String> }
+            let req: EvalReq = serde_json::from_slice(body)
+                .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            let mut bridge = bridge.write();
+            let decision = bridge.evaluate_handover(
+                req.agent_slot,
+                req.task_description.as_deref(),
+            );
+            let json = serde_json::to_vec(&decision).map_err(|e| e.to_string())?;
+            Ok(json)
+        }
+
+        "handover.execute" => {
+            let decision: crate::orchestration::handover::HandoverDecision =
+                serde_json::from_slice(body)
+                    .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            let mut bridge = bridge.write();
+            let mut space = bind_space.write();
+            let status = bridge.execute_handover(&decision, &mut space);
+            let json = serde_json::json!({
+                "executed": status.is_some(),
+                "delivery_status": status.map(|s| format!("{:?}", s)),
+            });
+            Ok(serde_json::to_vec(&json).map_err(|e| e.to_string())?)
+        }
+
+        "handover.update_flow" => {
+            #[derive(serde::Deserialize)]
+            struct FlowReq { agent_slot: u8, gate_state: String }
+            let req: FlowReq = serde_json::from_slice(body)
+                .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            let gate = match req.gate_state.to_lowercase().as_str() {
+                "flow" => crate::cognitive::GateState::Flow,
+                "hold" => crate::cognitive::GateState::Hold,
+                "block" => crate::cognitive::GateState::Block,
+                _ => return error_result(&format!("Unknown gate state: {}", req.gate_state)),
+            };
+
+            let mut bridge = bridge.write();
+            bridge.update_flow(req.agent_slot, gate);
+            ok_message(&format!("Flow updated for agent slot {}", req.agent_slot))
+        }
+
+        // === Orchestrator Actions ===
+        "orchestrator.status" => {
+            let bridge = bridge.read();
+            let status = bridge.orchestrator.status();
+            let json = serde_json::to_vec(&status).map_err(|e| e.to_string())?;
+            Ok(json)
+        }
+
+        "orchestrator.route_task" => {
+            let description = std::str::from_utf8(body)
+                .map_err(|e| format!("Invalid UTF-8: {}", e))?;
+
+            let mut bridge = bridge.write();
+            match bridge.route_task(description) {
+                Some((slot, score)) => {
+                    let json = serde_json::json!({
+                        "agent_slot": slot,
+                        "resonance_score": score,
+                    });
+                    Ok(serde_json::to_vec(&json).map_err(|e| e.to_string())?)
+                }
+                None => ok_message("No suitable agent found for task"),
+            }
+        }
+
+        "orchestrator.tick" => {
+            let mut bridge = bridge.write();
+            let decisions = bridge.tick_orchestrator();
+            let json = serde_json::to_vec(&decisions).map_err(|e| e.to_string())?;
+            Ok(json)
+        }
+
+        "orchestrator.affinity" => {
+            #[derive(serde::Deserialize)]
+            struct AffReq { agent_a: u8, agent_b: u8 }
+            let req: AffReq = serde_json::from_slice(body)
+                .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            let bridge = bridge.read();
+            let affinity = bridge.orchestrator.affinity(req.agent_a, req.agent_b);
+            let json = serde_json::json!({
+                "agent_a": req.agent_a,
+                "agent_b": req.agent_b,
+                "affinity": affinity,
+            });
+            Ok(serde_json::to_vec(&json).map_err(|e| e.to_string())?)
+        }
+
+        "orchestrator.awareness" => {
+            let bridge = bridge.read();
+            let awareness = bridge.total_awareness();
+            let json = serde_json::json!({
+                "total_awareness": awareness,
+                "a2a_channels": bridge.a2a.channels().len(),
+            });
+            Ok(serde_json::to_vec(&json).map_err(|e| e.to_string())?)
+        }
+
+        // === Kernel Actions ===
+        "kernel.describe" => {
+            let bridge = bridge.read();
+            let desc = bridge.kernel.describe();
+            let json = serde_json::to_vec(&desc).map_err(|e| e.to_string())?;
+            Ok(json)
+        }
+
+        "kernel.introspect" => {
+            let bridge = bridge.read();
+            let space = bind_space.read();
+            let intro = bridge.kernel.introspect(&space);
+            let json = serde_json::to_vec(&intro).map_err(|e| e.to_string())?;
+            Ok(json)
+        }
+
+        "kernel.zone_density" => {
+            #[derive(serde::Deserialize)]
+            struct ZoneReq { prefix: u8 }
+            let req: ZoneReq = serde_json::from_slice(body)
+                .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            let bridge = bridge.read();
+            let space = bind_space.read();
+            let zone = crate::orchestration::semantic_kernel::KernelZone::from_prefix(req.prefix);
+            let density = bridge.kernel.zone_density(&space, &zone);
+            let json = serde_json::json!({
+                "prefix": req.prefix,
+                "zone": format!("{:?}", zone),
+                "populated_slots": density,
+            });
+            Ok(serde_json::to_vec(&json).map_err(|e| e.to_string())?)
+        }
+
+        "kernel.expansion" => {
+            let bridge = bridge.read();
+            let summary = bridge.kernel.expansion.summary();
+            let json = serde_json::to_vec(&summary).map_err(|e| e.to_string())?;
+            Ok(json)
+        }
+
+        "kernel.prefix_map" => {
+            let bridge = bridge.read();
+            let prefixes = bridge.kernel.expansion.all_prefixes();
+            let json = serde_json::to_vec(&prefixes).map_err(|e| e.to_string())?;
+            Ok(json)
+        }
+
         _ => error_result(&format!("Unknown crew action: {}", action_type)),
     }
 }

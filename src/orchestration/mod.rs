@@ -60,6 +60,9 @@ pub mod a2a;
 pub mod blackboard_agent;
 pub mod crew_bridge;
 pub mod persona;
+pub mod handover;
+pub mod meta_orchestrator;
+pub mod semantic_kernel;
 
 pub use agent_card::{
     AgentCard, AgentCapability, AgentRole, AgentGoal,
@@ -91,4 +94,26 @@ pub use persona::{
     CommunicationStyle, FeatureAd,
     PersonaExchange, VolitionSummary,
     PersonaRegistry,
+};
+
+pub use handover::{
+    FlowState, FlowTransition,
+    HandoverAction, HandoverDecision, HandoverReason,
+    HandoverPolicy,
+};
+
+pub use meta_orchestrator::{
+    MetaOrchestrator, AffinityEdge,
+    OrchestratorEvent, OrchestratorStatus,
+};
+
+pub use semantic_kernel::{
+    SemanticKernel, KernelOp, KernelZone,
+    KernelTruth, CausalRung, EscalationResult,
+    KernelIntrospection, PrefixStats,
+    DataFusionMapping, DataFusionColumn,
+    ExpansionRegistry, ExpansionSummary, KernelDescription,
+    PrefixAllocation,
+    CrystalPlugin, RungEscalationStrategy,
+    KernelOperator, ProtocolExtension, CollapseStrategy,
 };

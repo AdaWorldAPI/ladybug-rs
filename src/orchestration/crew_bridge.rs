@@ -39,6 +39,9 @@ use super::thinking_template::{ThinkingTemplate, ThinkingTemplateRegistry};
 use super::blackboard_agent::{AgentBlackboard, BlackboardRegistry};
 use super::a2a::{A2AProtocol, A2AMessage, DeliveryStatus};
 use super::persona::{Persona, PersonaRegistry};
+use super::meta_orchestrator::MetaOrchestrator;
+use super::semantic_kernel::SemanticKernel;
+use super::handover::{HandoverDecision, HandoverPolicy};
 
 /// Task status in the dispatch pipeline
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -95,6 +98,8 @@ pub struct CrewBridge {
     pub blackboards: BlackboardRegistry,
     pub personas: PersonaRegistry,
     pub a2a: A2AProtocol,
+    pub orchestrator: MetaOrchestrator,
+    pub kernel: SemanticKernel,
     task_queue: Vec<CrewTask>,
     completed: Vec<DispatchResult>,
 }
@@ -107,8 +112,18 @@ impl CrewBridge {
             blackboards: BlackboardRegistry::new(),
             personas: PersonaRegistry::new(),
             a2a: A2AProtocol::new(),
+            orchestrator: MetaOrchestrator::default(),
+            kernel: SemanticKernel::new(),
             task_queue: Vec::new(),
             completed: Vec::new(),
+        }
+    }
+
+    /// Create with a custom handover policy
+    pub fn with_policy(policy: HandoverPolicy) -> Self {
+        Self {
+            orchestrator: MetaOrchestrator::new(policy),
+            ..Self::new()
         }
     }
 
@@ -122,10 +137,16 @@ impl CrewBridge {
         // Create matching blackboard
         self.blackboards.create(slot, &id);
 
+        // Register with meta-orchestrator for flow tracking
+        self.orchestrator.register_agent(slot);
+
         // Attach persona if provided
         if let Some(p) = persona {
             self.personas.attach(slot, p);
         }
+
+        // Refresh affinity graph with new persona
+        self.orchestrator.refresh_affinities(&self.personas);
 
         Ok(addr)
     }
@@ -267,6 +288,48 @@ impl CrewBridge {
     /// Receive A2A messages for an agent
     pub fn receive_a2a(&mut self, agent_slot: u8) -> Vec<A2AMessage> {
         self.a2a.receive(agent_slot)
+    }
+
+    /// Evaluate handover for an agent via the meta-orchestrator
+    pub fn evaluate_handover(&mut self, source_slot: u8, task_desc: Option<&str>) -> HandoverDecision {
+        self.orchestrator.evaluate_handover(
+            source_slot,
+            &self.blackboards,
+            &self.personas,
+            task_desc,
+        )
+    }
+
+    /// Execute a handover decision via A2A
+    pub fn execute_handover(
+        &mut self,
+        decision: &HandoverDecision,
+        space: &mut BindSpace,
+    ) -> Option<DeliveryStatus> {
+        self.orchestrator.execute_handover(decision, &mut self.a2a, space)
+    }
+
+    /// Update an agent's flow state from a gate evaluation
+    pub fn update_flow(&mut self, slot: u8, gate: crate::cognitive::GateState) {
+        self.orchestrator.update_flow(slot, gate);
+        if let Some(bb) = self.blackboards.get_mut(slot) {
+            bb.update_flow(gate);
+        }
+    }
+
+    /// Route a task to the best available agent using resonance scoring
+    pub fn route_task(&mut self, task_description: &str) -> Option<(u8, f32)> {
+        self.orchestrator.route_task(task_description, &self.personas)
+    }
+
+    /// Tick the orchestrator — evaluate all agents and return non-Continue decisions
+    pub fn tick_orchestrator(&mut self) -> Vec<HandoverDecision> {
+        self.orchestrator.tick(&self.blackboards, &self.personas)
+    }
+
+    /// Get total awareness across all A2A channels
+    pub fn total_awareness(&self) -> f32 {
+        self.a2a.total_awareness()
     }
 
     /// Bind all state into BindSpace (agents, templates, blackboards, personas)
