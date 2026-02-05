@@ -45,6 +45,7 @@ mod datafusion;
 pub mod fingerprint_table;
 pub mod hybrid;
 pub mod scent_scan;
+pub mod graph_provider;
 
 pub use builder::{Query, QueryResult};
 pub use cypher::{
@@ -97,6 +98,13 @@ pub use scent_scan::{
     HammingDistanceUdf,
     SimilarityUdf as ScentSimilarityUdf,
     ScentUdfExtension,
+};
+pub use graph_provider::{
+    EdgeTableProvider,
+    GraphTraversalExec,
+    TraversalConfig,
+    TraversalDirection,
+    GraphExt,
 };
 
 #[derive(thiserror::Error, Debug)]

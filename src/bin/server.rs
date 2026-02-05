@@ -1,13 +1,26 @@
-//! LadybugDB HTTP Server
+//! LadybugDB Multi-Protocol Server
 //!
-//! Multi-interface cognitive database server exposing:
+//! Three transport layers — one BindSpace:
+//!
+//! ## HTTP (JSON + Arrow IPC)
 //! - REST API with Arrow IPC (default) or JSON (fallback) on /api/*
+//! - Graph traversal: /api/v1/graph/{traverse,edges,neighbors,hydrate,search}
 //! - Redis-compatible text protocol on /redis/*
-//! - SQL endpoint on /sql
-//! - Cypher endpoint on /cypher
+//! - SQL/Cypher endpoints on /sql, /cypher
 //! - Health/readiness on /health, /ready
 //!
-//! # Content Negotiation
+//! ## gRPC (Flight Arrow)
+//! - Via `flight_server` binary on port 50051
+//! - Tickets: all, surface, fluid, nodes, edges, traverse:..., neighbors:...
+//! - DoAction: encode, bind, resonate, search, traverse, hydrate
+//!
+//! ## UDP (Bitpacked Hamming)
+//! - Binary protocol for ultra-low-latency fingerprint operations
+//! - Header: 222 bytes | Payload: 1256 bytes (SIMD-padded) | Total: 1478 bytes (MTU-safe)
+//! - Ops: PING, SEARCH, TRAVERSE, HYDRATE, EDGES
+//! - Fingerprint: 156×u64 = 1248 bytes raw, padded to 1256 for AVX-512 alignment
+//!
+//! # Content Negotiation (HTTP)
 //!
 //! All API endpoints return Arrow IPC by default (`application/vnd.apache.arrow.stream`).
 //! JSON is only returned when explicitly requested via `Accept: application/json` header.
@@ -16,13 +29,13 @@
 //!
 //! - Railway: detects `RAILWAY_*` env vars → binds 0.0.0.0:8080
 //! - Claude Code: detects `CLAUDE_*` env vars → binds 127.0.0.1:5432
-//! - Custom: set `LADYBUG_HOST` and `LADYBUG_PORT`
-//! - Default: 127.0.0.1:8080
+//! - Custom: set `LADYBUG_HOST`, `LADYBUG_PORT`, `LADYBUG_UDP_PORT`
+//! - Default: 127.0.0.1:8080 (HTTP), 127.0.0.1:8081 (UDP)
 
 use std::collections::HashMap;
 use std::env;
 use std::io::{BufRead, BufReader, Write};
-use std::net::{TcpListener, TcpStream, SocketAddr};
+use std::net::{TcpListener, TcpStream, SocketAddr, UdpSocket};
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
@@ -37,7 +50,7 @@ use ladybug::core::Fingerprint;
 use ladybug::core::simd::{self, hamming_distance};
 use ladybug::nars::TruthValue;
 use ladybug::storage::service::{CognitiveService, ServiceConfig, CpuFeatures};
-use ladybug::storage::{CogRedis, RedisResult};
+use ladybug::storage::{Addr, BindSpace, CogRedis, RedisResult, FINGERPRINT_WORDS};
 use ladybug::{FINGERPRINT_BITS, FINGERPRINT_BYTES, VERSION};
 
 // =============================================================================
@@ -49,6 +62,161 @@ const ARROW_MIME: &str = "application/vnd.apache.arrow.stream";
 
 /// JSON MIME type (legacy fallback only)
 const JSON_MIME: &str = "application/json";
+
+// =============================================================================
+// UDP BITPACKED HAMMING PROTOCOL
+// =============================================================================
+
+/// UDP magic bytes
+const UDP_MAGIC: [u8; 4] = *b"LDBG";
+/// Protocol version
+const UDP_VERSION: u8 = 1;
+/// Header size in bytes
+const UDP_HEADER_SIZE: usize = 222;
+/// Raw fingerprint payload: 156 × u64 = 1248 bytes
+const UDP_FP_RAW: usize = FINGERPRINT_WORDS * 8;
+/// SIMD-padded fingerprint payload: 1248 + 8 = 1256 bytes (64-byte aligned blocks)
+const UDP_FP_PADDED: usize = 1256;
+/// Maximum datagram size: header + padded fingerprint = 1478 (fits 1500 MTU)
+const UDP_MAX_DATAGRAM: usize = UDP_HEADER_SIZE + UDP_FP_PADDED;
+/// Result slots in header reserved area (190 bytes / 2 = 95 u16 addresses)
+const UDP_MAX_RESULT_ADDRS: usize = 95;
+
+/// UDP operation codes
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum UdpOp {
+    Ping      = 0,
+    Pong      = 1,
+    Search    = 2,
+    Traverse  = 3,
+    Result    = 4,
+    Edges     = 5,
+    Hydrate   = 6,
+}
+
+impl UdpOp {
+    fn from_byte(b: u8) -> Option<Self> {
+        match b {
+            0 => Some(Self::Ping),
+            1 => Some(Self::Pong),
+            2 => Some(Self::Search),
+            3 => Some(Self::Traverse),
+            4 => Some(Self::Result),
+            5 => Some(Self::Edges),
+            6 => Some(Self::Hydrate),
+            _ => None,
+        }
+    }
+}
+
+/// UDP header flags
+const UDP_FLAG_SIMD_ALIGNED: u16   = 0x0001;
+const UDP_FLAG_HAS_FINGERPRINT: u16 = 0x0002;
+const UDP_FLAG_HAS_POPCOUNT: u16   = 0x0004;
+
+/// UDP packet header (222 bytes)
+///
+/// Layout:
+///   [0..4]    magic: b"LDBG"
+///   [4]       version: u8
+///   [5]       op: u8
+///   [6..8]    flags: u16 LE
+///   [8..12]   sequence: u32 LE
+///   [12..14]  source_addr: u16 LE (prefix:slot)
+///   [14..16]  query_addr: u16 LE
+///   [16]      max_hops: u8
+///   [17..19]  verb_filter: u16 LE
+///   [19]      top_k: u8
+///   [20..24]  max_distance: u32 LE
+///   [24..28]  popcount_hint: u32 LE
+///   [28..30]  result_count: u16 LE
+///   [30..32]  payload_len: u16 LE
+///   [32..222] reserved/result_addrs (190 bytes)
+struct UdpHeader {
+    op: UdpOp,
+    flags: u16,
+    sequence: u32,
+    source_addr: u16,
+    query_addr: u16,
+    max_hops: u8,
+    verb_filter: u16,
+    top_k: u8,
+    max_distance: u32,
+    popcount_hint: u32,
+    result_count: u16,
+    payload_len: u16,
+    result_addrs: Vec<u16>,
+}
+
+impl UdpHeader {
+    fn parse(buf: &[u8]) -> Option<Self> {
+        if buf.len() < UDP_HEADER_SIZE { return None; }
+        if &buf[0..4] != &UDP_MAGIC { return None; }
+        if buf[4] != UDP_VERSION { return None; }
+
+        let op = UdpOp::from_byte(buf[5])?;
+        let flags = u16::from_le_bytes([buf[6], buf[7]]);
+        let sequence = u32::from_le_bytes([buf[8], buf[9], buf[10], buf[11]]);
+        let source_addr = u16::from_le_bytes([buf[12], buf[13]]);
+        let query_addr = u16::from_le_bytes([buf[14], buf[15]]);
+        let max_hops = buf[16];
+        let verb_filter = u16::from_le_bytes([buf[17], buf[18]]);
+        let top_k = buf[19];
+        let max_distance = u32::from_le_bytes([buf[20], buf[21], buf[22], buf[23]]);
+        let popcount_hint = u32::from_le_bytes([buf[24], buf[25], buf[26], buf[27]]);
+        let result_count = u16::from_le_bytes([buf[28], buf[29]]);
+        let payload_len = u16::from_le_bytes([buf[30], buf[31]]);
+
+        // Parse result addresses from reserved area
+        let n = (result_count as usize).min(UDP_MAX_RESULT_ADDRS);
+        let mut result_addrs = Vec::with_capacity(n);
+        for i in 0..n {
+            let off = 32 + i * 2;
+            if off + 1 < UDP_HEADER_SIZE {
+                result_addrs.push(u16::from_le_bytes([buf[off], buf[off + 1]]));
+            }
+        }
+
+        Some(Self {
+            op, flags, sequence, source_addr, query_addr,
+            max_hops, verb_filter, top_k, max_distance,
+            popcount_hint, result_count, payload_len, result_addrs,
+        })
+    }
+
+    fn encode(&self, result_buf: &mut [u8]) {
+        debug_assert!(result_buf.len() >= UDP_HEADER_SIZE);
+        result_buf[0..4].copy_from_slice(&UDP_MAGIC);
+        result_buf[4] = UDP_VERSION;
+        result_buf[5] = self.op as u8;
+        result_buf[6..8].copy_from_slice(&self.flags.to_le_bytes());
+        result_buf[8..12].copy_from_slice(&self.sequence.to_le_bytes());
+        result_buf[12..14].copy_from_slice(&self.source_addr.to_le_bytes());
+        result_buf[14..16].copy_from_slice(&self.query_addr.to_le_bytes());
+        result_buf[16] = self.max_hops;
+        result_buf[17..19].copy_from_slice(&self.verb_filter.to_le_bytes());
+        result_buf[19] = self.top_k;
+        result_buf[20..24].copy_from_slice(&self.max_distance.to_le_bytes());
+        result_buf[24..28].copy_from_slice(&self.popcount_hint.to_le_bytes());
+        result_buf[28..30].copy_from_slice(&self.result_count.to_le_bytes());
+        result_buf[30..32].copy_from_slice(&self.payload_len.to_le_bytes());
+
+        // Write result addresses
+        for (i, &addr) in self.result_addrs.iter().enumerate().take(UDP_MAX_RESULT_ADDRS) {
+            let off = 32 + i * 2;
+            if off + 1 < UDP_HEADER_SIZE {
+                result_buf[off..off + 2].copy_from_slice(&addr.to_le_bytes());
+            }
+        }
+
+        // Zero remaining reserved bytes
+        let written = 32 + self.result_addrs.len().min(UDP_MAX_RESULT_ADDRS) * 2;
+        for b in result_buf[written..UDP_HEADER_SIZE].iter_mut() {
+            *b = 0;
+        }
+    }
+}
 
 // =============================================================================
 // CONFIGURATION
@@ -216,6 +384,40 @@ fn health_schema() -> SchemaRef {
 fn count_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
         Field::new("count", DataType::UInt32, false),
+    ]))
+}
+
+/// Schema for graph edge responses
+fn graph_edge_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("source", DataType::UInt32, false),
+        Field::new("target", DataType::UInt32, false),
+        Field::new("verb", DataType::UInt32, false),
+        Field::new("source_label", DataType::Utf8, true),
+        Field::new("target_label", DataType::Utf8, true),
+        Field::new("verb_label", DataType::Utf8, true),
+        Field::new("weight", DataType::Float32, false),
+    ]))
+}
+
+/// Schema for graph traversal responses
+fn graph_traversal_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("hop", DataType::UInt32, false),
+        Field::new("address", DataType::UInt32, false),
+        Field::new("label", DataType::Utf8, true),
+        Field::new("popcount", DataType::UInt32, false),
+        Field::new("distance_from_source", DataType::UInt32, true),
+    ]))
+}
+
+/// Schema for hydration responses (sparse addr → full fingerprint)
+fn hydrate_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("address", DataType::UInt32, false),
+        Field::new("label", DataType::Utf8, true),
+        Field::new("fingerprint", DataType::FixedSizeBinary(FINGERPRINT_BYTES as i32), false),
+        Field::new("popcount", DataType::UInt32, false),
     ]))
 }
 
@@ -400,6 +602,14 @@ fn route(method: &str, path: &str, body: &str, state: &SharedState, format: Resp
 
         // CogRedis text protocol - always uses Redis wire protocol
         ("POST", "/redis") => handle_redis_command(body, state),
+
+        // Graph traversal endpoints (BindSpace CSR + edges)
+        ("POST", "/api/v1/graph/traverse") => handle_graph_traverse(body, state, format),
+        ("POST", "/api/v1/graph/edges") => handle_graph_edges(body, state, format),
+        ("GET", "/api/v1/graph/edges") => handle_graph_edges(body, state, format),
+        ("POST", "/api/v1/graph/neighbors") => handle_graph_neighbors(body, state, format),
+        ("POST", "/api/v1/graph/hydrate") => handle_graph_hydrate(body, state, format),
+        ("POST", "/api/v1/graph/search") => handle_graph_search(body, state, format),
 
         // LanceDB-compatible API
         ("POST", "/api/v1/lance/table") => handle_lance_create_table(body, format),
@@ -1234,6 +1444,720 @@ fn handle_lance_search(body: &str, state: &SharedState, format: ResponseFormat) 
 }
 
 // =============================================================================
+// GRAPH TRAVERSAL HANDLERS (BindSpace native)
+// =============================================================================
+
+/// Helper: compute popcount of a fingerprint word array
+fn fp_popcount(fp: &[u64; FINGERPRINT_WORDS]) -> u32 {
+    fp.iter().map(|w| w.count_ones()).sum()
+}
+
+/// Helper: get label for an address from BindSpace
+fn addr_label(bs: &BindSpace, addr: Addr) -> Option<String> {
+    bs.read(addr).and_then(|n| n.label.clone())
+}
+
+/// POST /api/v1/graph/traverse
+/// BFS traversal from source address through BindSpace edges.
+/// Body: {"source": "0x8000", "max_hops": 3, "verb": "0x0700", "limit": 100}
+fn handle_graph_traverse(body: &str, state: &SharedState, format: ResponseFormat) -> Vec<u8> {
+    let source_raw = extract_json_hex_u16(body, "source").unwrap_or(0x8000);
+    let max_hops = extract_json_usize(body, "max_hops").unwrap_or(3) as usize;
+    let verb_raw = extract_json_hex_u16(body, "verb");
+    let limit = extract_json_usize(body, "limit").unwrap_or(1000);
+
+    let db = state.read().unwrap();
+    let bs = db.cog_redis.bind_space();
+    let source = Addr(source_raw);
+
+    // BFS traversal
+    let mut results: Vec<(u32, u16, Option<String>, u32, Option<u32>)> = Vec::new();
+    let mut frontier = vec![source];
+    let mut visited = std::collections::HashSet::new();
+    visited.insert(source_raw);
+
+    let source_fp = bs.read(source).map(|n| n.fingerprint);
+
+    for hop in 0..max_hops {
+        let mut next_frontier = Vec::new();
+        for &addr in &frontier {
+            let edges: Vec<_> = bs.edges_out(addr).collect();
+            for edge in edges {
+                if visited.contains(&edge.to.0) { continue; }
+                visited.insert(edge.to.0);
+
+                // If verb filter set, skip non-matching edges
+                if let Some(vf) = verb_raw {
+                    if edge.verb.0 != vf { continue; }
+                }
+
+                let label = addr_label(bs, edge.to);
+                let pc = bs.read(edge.to).map(|n| fp_popcount(&n.fingerprint)).unwrap_or(0);
+
+                // Distance from source (Hamming) if source has fingerprint
+                let dist = source_fp.and_then(|sfp| {
+                    bs.read(edge.to).map(|n| {
+                        let mut d = 0u32;
+                        for i in 0..FINGERPRINT_WORDS {
+                            d += (sfp[i] ^ n.fingerprint[i]).count_ones();
+                        }
+                        d
+                    })
+                });
+
+                results.push(((hop + 1) as u32, edge.to.0, label, pc, dist));
+                next_frontier.push(edge.to);
+
+                if results.len() >= limit { break; }
+            }
+            if results.len() >= limit { break; }
+        }
+        frontier = next_frontier;
+        if frontier.is_empty() || results.len() >= limit { break; }
+    }
+
+    match format {
+        ResponseFormat::Arrow => {
+            let schema = graph_traversal_schema();
+            let batch = RecordBatch::try_new(
+                schema,
+                vec![
+                    Arc::new(UInt32Array::from(results.iter().map(|r| r.0).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(UInt32Array::from(results.iter().map(|r| r.1 as u32).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(StringArray::from(results.iter().map(|r| r.2.as_deref()).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(UInt32Array::from(results.iter().map(|r| r.3).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(UInt32Array::from(results.iter().map(|r| r.4.unwrap_or(0)).collect::<Vec<_>>())) as ArrayRef,
+                ],
+            ).unwrap();
+            http_arrow(200, &batch)
+        }
+        ResponseFormat::Json => {
+            let items: Vec<String> = results.iter().map(|(hop, addr, label, pc, dist)| {
+                format!(
+                    r#"{{"hop":{},"address":"0x{:04X}","label":{},"popcount":{},"distance":{}}}"#,
+                    hop, addr,
+                    label.as_ref().map(|l| format!(r#""{}""#, l)).unwrap_or("null".to_string()),
+                    pc,
+                    dist.map(|d| d.to_string()).unwrap_or("null".to_string()),
+                )
+            }).collect();
+            http_json(200, &format!(
+                r#"{{"source":"0x{:04X}","max_hops":{},"count":{},"results":[{}]}}"#,
+                source_raw, max_hops, results.len(), items.join(",")
+            ))
+        }
+    }
+}
+
+/// POST /api/v1/graph/edges
+/// List edges from BindSpace. Optionally filter by source/target/verb.
+/// Body: {"source": "0x8000", "verb": "0x0700", "limit": 100}
+fn handle_graph_edges(body: &str, state: &SharedState, format: ResponseFormat) -> Vec<u8> {
+    let source_raw = extract_json_hex_u16(body, "source");
+    let verb_raw = extract_json_hex_u16(body, "verb");
+    let limit = extract_json_usize(body, "limit").unwrap_or(500);
+
+    let db = state.read().unwrap();
+    let bs = db.cog_redis.bind_space();
+
+    // Collect edges
+    let mut edges: Vec<(u16, u16, u16, Option<String>, Option<String>, Option<String>, f32)> = Vec::new();
+
+    if let Some(src) = source_raw {
+        // Edges from specific source
+        for edge in bs.edges_out(Addr(src)) {
+            if let Some(vf) = verb_raw {
+                if edge.verb.0 != vf { continue; }
+            }
+            edges.push((
+                edge.from.0, edge.to.0, edge.verb.0,
+                addr_label(bs, edge.from),
+                addr_label(bs, edge.to),
+                addr_label(bs, edge.verb),
+                edge.weight,
+            ));
+            if edges.len() >= limit { break; }
+        }
+    } else {
+        // Scan all node addresses (0x80..0xFF prefixes)
+        for prefix in 0x80u8..=0xFF {
+            for slot in 0..=255u8 {
+                let addr = Addr::new(prefix, slot);
+                for edge in bs.edges_out(addr) {
+                    if let Some(vf) = verb_raw {
+                        if edge.verb.0 != vf { continue; }
+                    }
+                    edges.push((
+                        edge.from.0, edge.to.0, edge.verb.0,
+                        addr_label(bs, edge.from),
+                        addr_label(bs, edge.to),
+                        addr_label(bs, edge.verb),
+                        edge.weight,
+                    ));
+                    if edges.len() >= limit { break; }
+                }
+                if edges.len() >= limit { break; }
+            }
+            if edges.len() >= limit { break; }
+        }
+    }
+
+    match format {
+        ResponseFormat::Arrow => {
+            let schema = graph_edge_schema();
+            let batch = RecordBatch::try_new(
+                schema,
+                vec![
+                    Arc::new(UInt32Array::from(edges.iter().map(|e| e.0 as u32).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(UInt32Array::from(edges.iter().map(|e| e.1 as u32).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(UInt32Array::from(edges.iter().map(|e| e.2 as u32).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(StringArray::from(edges.iter().map(|e| e.3.as_deref()).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(StringArray::from(edges.iter().map(|e| e.4.as_deref()).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(StringArray::from(edges.iter().map(|e| e.5.as_deref()).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(Float32Array::from(edges.iter().map(|e| e.6).collect::<Vec<_>>())) as ArrayRef,
+                ],
+            ).unwrap();
+            http_arrow(200, &batch)
+        }
+        ResponseFormat::Json => {
+            let items: Vec<String> = edges.iter().map(|(src, tgt, vrb, sl, tl, vl, w)| {
+                format!(
+                    r#"{{"source":"0x{:04X}","target":"0x{:04X}","verb":"0x{:04X}","source_label":{},"target_label":{},"verb_label":{},"weight":{:.4}}}"#,
+                    src, tgt, vrb,
+                    sl.as_ref().map(|l| format!(r#""{}""#, l)).unwrap_or("null".to_string()),
+                    tl.as_ref().map(|l| format!(r#""{}""#, l)).unwrap_or("null".to_string()),
+                    vl.as_ref().map(|l| format!(r#""{}""#, l)).unwrap_or("null".to_string()),
+                    w,
+                )
+            }).collect();
+            http_json(200, &format!(r#"{{"count":{},"edges":[{}]}}"#, edges.len(), items.join(",")))
+        }
+    }
+}
+
+/// POST /api/v1/graph/neighbors
+/// Get immediate neighbors (1-hop) of an address with their fingerprint popcounts.
+/// Body: {"address": "0x8000", "direction": "out|in|both"}
+fn handle_graph_neighbors(body: &str, state: &SharedState, format: ResponseFormat) -> Vec<u8> {
+    let addr_raw = extract_json_hex_u16(body, "address").unwrap_or(0x8000);
+    let direction = extract_json_str(body, "direction").unwrap_or_else(|| "out".to_string());
+
+    let db = state.read().unwrap();
+    let bs = db.cog_redis.bind_space();
+    let addr = Addr(addr_raw);
+
+    // Collect neighbors: (address, label, popcount, via_verb, weight)
+    let mut neighbors: Vec<(u16, Option<String>, u32, u16, f32)> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    if direction == "out" || direction == "both" {
+        for edge in bs.edges_out(addr) {
+            if seen.insert(edge.to.0) {
+                let pc = bs.read(edge.to).map(|n| fp_popcount(&n.fingerprint)).unwrap_or(0);
+                neighbors.push((edge.to.0, addr_label(bs, edge.to), pc, edge.verb.0, edge.weight));
+            }
+        }
+    }
+    if direction == "in" || direction == "both" {
+        for edge in bs.edges_in(addr) {
+            if seen.insert(edge.from.0) {
+                let pc = bs.read(edge.from).map(|n| fp_popcount(&n.fingerprint)).unwrap_or(0);
+                neighbors.push((edge.from.0, addr_label(bs, edge.from), pc, edge.verb.0, edge.weight));
+            }
+        }
+    }
+
+    match format {
+        ResponseFormat::Arrow => {
+            let schema = Arc::new(Schema::new(vec![
+                Field::new("address", DataType::UInt32, false),
+                Field::new("label", DataType::Utf8, true),
+                Field::new("popcount", DataType::UInt32, false),
+                Field::new("via_verb", DataType::UInt32, false),
+                Field::new("weight", DataType::Float32, false),
+            ]));
+            let batch = RecordBatch::try_new(
+                schema,
+                vec![
+                    Arc::new(UInt32Array::from(neighbors.iter().map(|n| n.0 as u32).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(StringArray::from(neighbors.iter().map(|n| n.1.as_deref()).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(UInt32Array::from(neighbors.iter().map(|n| n.2).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(UInt32Array::from(neighbors.iter().map(|n| n.3 as u32).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(Float32Array::from(neighbors.iter().map(|n| n.4).collect::<Vec<_>>())) as ArrayRef,
+                ],
+            ).unwrap();
+            http_arrow(200, &batch)
+        }
+        ResponseFormat::Json => {
+            let items: Vec<String> = neighbors.iter().map(|(a, l, pc, v, w)| {
+                format!(
+                    r#"{{"address":"0x{:04X}","label":{},"popcount":{},"via_verb":"0x{:04X}","weight":{:.4}}}"#,
+                    a,
+                    l.as_ref().map(|s| format!(r#""{}""#, s)).unwrap_or("null".to_string()),
+                    pc, v, w,
+                )
+            }).collect();
+            http_json(200, &format!(
+                r#"{{"address":"0x{:04X}","direction":"{}","count":{},"neighbors":[{}]}}"#,
+                addr_raw, direction, neighbors.len(), items.join(",")
+            ))
+        }
+    }
+}
+
+/// POST /api/v1/graph/hydrate
+/// Hydrate sparse 16-bit addresses to full 10K-bit fingerprints.
+/// Body: {"addresses": ["0x8000", "0x8001"]} or {"address": "0x8000"}
+fn handle_graph_hydrate(body: &str, state: &SharedState, format: ResponseFormat) -> Vec<u8> {
+    let db = state.read().unwrap();
+    let bs = db.cog_redis.bind_space();
+
+    // Single or batch
+    let addrs: Vec<u16> = if let Some(single) = extract_json_hex_u16(body, "address") {
+        vec![single]
+    } else {
+        extract_json_str_array(body, "addresses")
+            .iter()
+            .filter_map(|s| u16::from_str_radix(s.trim_start_matches("0x").trim_start_matches("0X"), 16).ok())
+            .collect()
+    };
+
+    if addrs.is_empty() {
+        return http_error(400, "missing_field", "need address or addresses", format);
+    }
+
+    // Hydrate each address
+    let mut results: Vec<(u16, Option<String>, Vec<u8>, u32)> = Vec::new();
+    for &raw in &addrs {
+        let addr = Addr(raw);
+        if let Some(node) = bs.read(addr) {
+            let mut fp_bytes = vec![0u8; FINGERPRINT_BYTES];
+            for (i, &word) in node.fingerprint.iter().enumerate() {
+                let offset = i * 8;
+                if offset + 8 <= FINGERPRINT_BYTES {
+                    fp_bytes[offset..offset + 8].copy_from_slice(&word.to_le_bytes());
+                }
+            }
+            let pc = fp_popcount(&node.fingerprint);
+            results.push((raw, node.label.clone(), fp_bytes, pc));
+        } else {
+            // Address not occupied - return zero fingerprint
+            results.push((raw, None, vec![0u8; FINGERPRINT_BYTES], 0));
+        }
+    }
+
+    match format {
+        ResponseFormat::Arrow => {
+            let schema = hydrate_schema();
+            let fp_refs: Vec<&[u8]> = results.iter().map(|r| r.2.as_slice()).collect();
+            let batch = RecordBatch::try_new(
+                schema,
+                vec![
+                    Arc::new(UInt32Array::from(results.iter().map(|r| r.0 as u32).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(StringArray::from(results.iter().map(|r| r.1.as_deref()).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(FixedSizeBinaryArray::try_from_iter(fp_refs.into_iter()).unwrap()) as ArrayRef,
+                    Arc::new(UInt32Array::from(results.iter().map(|r| r.3).collect::<Vec<_>>())) as ArrayRef,
+                ],
+            ).unwrap();
+            http_arrow(200, &batch)
+        }
+        ResponseFormat::Json => {
+            let items: Vec<String> = results.iter().map(|(addr, label, fp_bytes, pc)| {
+                let b64 = base64_encode(fp_bytes);
+                format!(
+                    r#"{{"address":"0x{:04X}","label":{},"fingerprint":"{}","popcount":{}}}"#,
+                    addr,
+                    label.as_ref().map(|l| format!(r#""{}""#, l)).unwrap_or("null".to_string()),
+                    b64, pc,
+                )
+            }).collect();
+            http_json(200, &format!(r#"{{"count":{},"results":[{}]}}"#, results.len(), items.join(",")))
+        }
+    }
+}
+
+/// POST /api/v1/graph/search
+/// Search BindSpace using popcount pre-filtering + Hamming distance.
+/// Body: {"query": "<base64_fp>", "max_distance": 2000, "top_k": 10}
+fn handle_graph_search(body: &str, state: &SharedState, format: ResponseFormat) -> Vec<u8> {
+    let query_str = extract_json_str(body, "query").unwrap_or_default();
+    let max_distance = extract_json_usize(body, "max_distance").map(|d| d as u32);
+    let top_k = extract_json_usize(body, "top_k").unwrap_or(10);
+
+    let query = resolve_fingerprint(&query_str);
+    let query_words: [u64; FINGERPRINT_WORDS] = {
+        let mut w = [0u64; FINGERPRINT_WORDS];
+        let bytes = query.as_bytes();
+        for i in 0..FINGERPRINT_WORDS {
+            let offset = i * 8;
+            if offset + 8 <= bytes.len() {
+                w[i] = u64::from_le_bytes([
+                    bytes[offset], bytes[offset+1], bytes[offset+2], bytes[offset+3],
+                    bytes[offset+4], bytes[offset+5], bytes[offset+6], bytes[offset+7],
+                ]);
+            }
+        }
+        w
+    };
+    let query_pc = fp_popcount(&query_words);
+
+    let db = state.read().unwrap();
+    let bs = db.cog_redis.bind_space();
+
+    // 3-stage search: popcount triangle inequality → full Hamming
+    let pc_tolerance = max_distance.unwrap_or(2000);
+    let mut scored: Vec<(u16, u32, Option<String>)> = Vec::new();
+
+    // Scan all node addresses
+    for prefix in 0x80u8..=0xFF {
+        for slot in 0..=255u8 {
+            let addr = Addr::new(prefix, slot);
+            if let Some(node) = bs.read(addr) {
+                let node_pc = fp_popcount(&node.fingerprint);
+
+                // Stage 1: popcount triangle inequality pre-filter
+                let pc_diff = (query_pc as i64 - node_pc as i64).unsigned_abs() as u32;
+                if pc_diff > pc_tolerance { continue; }
+
+                // Stage 2: full Hamming distance
+                let mut dist = 0u32;
+                for i in 0..FINGERPRINT_WORDS {
+                    dist += (query_words[i] ^ node.fingerprint[i]).count_ones();
+                }
+
+                if let Some(max_d) = max_distance {
+                    if dist > max_d { continue; }
+                }
+
+                scored.push((addr.0, dist, node.label.clone()));
+            }
+        }
+    }
+
+    // Sort by distance and take top_k
+    scored.sort_by_key(|&(_, d, _)| d);
+    scored.truncate(top_k);
+
+    match format {
+        ResponseFormat::Arrow => {
+            let schema = Arc::new(Schema::new(vec![
+                Field::new("address", DataType::UInt32, false),
+                Field::new("distance", DataType::UInt32, false),
+                Field::new("similarity", DataType::Float32, false),
+                Field::new("label", DataType::Utf8, true),
+            ]));
+            let batch = RecordBatch::try_new(
+                schema,
+                vec![
+                    Arc::new(UInt32Array::from(scored.iter().map(|r| r.0 as u32).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(UInt32Array::from(scored.iter().map(|r| r.1).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(Float32Array::from(scored.iter().map(|r| 1.0 - (r.1 as f32 / FINGERPRINT_BITS as f32)).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(StringArray::from(scored.iter().map(|r| r.2.as_deref()).collect::<Vec<_>>())) as ArrayRef,
+                ],
+            ).unwrap();
+            http_arrow(200, &batch)
+        }
+        ResponseFormat::Json => {
+            let items: Vec<String> = scored.iter().map(|(addr, dist, label)| {
+                let sim = 1.0 - (*dist as f32 / FINGERPRINT_BITS as f32);
+                format!(
+                    r#"{{"address":"0x{:04X}","distance":{},"similarity":{:.6},"label":{}}}"#,
+                    addr, dist, sim,
+                    label.as_ref().map(|l| format!(r#""{}""#, l)).unwrap_or("null".to_string()),
+                )
+            }).collect();
+            http_json(200, &format!(
+                r#"{{"query_popcount":{},"count":{},"results":[{}]}}"#,
+                query_pc, scored.len(), items.join(",")
+            ))
+        }
+    }
+}
+
+// =============================================================================
+// UDP BITPACKED HAMMING HANDLER
+// =============================================================================
+
+/// Handle a single UDP datagram. Returns response bytes to send back.
+fn handle_udp_packet(buf: &[u8], len: usize, state: &SharedState) -> Option<Vec<u8>> {
+    if len < UDP_HEADER_SIZE { return None; }
+
+    let header = UdpHeader::parse(buf)?;
+
+    match header.op {
+        UdpOp::Ping => {
+            // PONG: echo back with op changed
+            let mut resp = vec![0u8; UDP_HEADER_SIZE];
+            let pong = UdpHeader {
+                op: UdpOp::Pong,
+                sequence: header.sequence,
+                ..UdpHeader {
+                    op: UdpOp::Pong, flags: 0, sequence: header.sequence,
+                    source_addr: 0, query_addr: 0, max_hops: 0,
+                    verb_filter: 0, top_k: 0, max_distance: 0,
+                    popcount_hint: 0, result_count: 0, payload_len: 0,
+                    result_addrs: Vec::new(),
+                }
+            };
+            pong.encode(&mut resp);
+            Some(resp)
+        }
+
+        UdpOp::Search => {
+            // Extract fingerprint from payload (after header)
+            if len < UDP_HEADER_SIZE + UDP_FP_RAW { return None; }
+
+            let fp_payload = &buf[UDP_HEADER_SIZE..UDP_HEADER_SIZE + UDP_FP_RAW];
+            let mut query_words = [0u64; FINGERPRINT_WORDS];
+            for i in 0..FINGERPRINT_WORDS {
+                let off = i * 8;
+                query_words[i] = u64::from_le_bytes([
+                    fp_payload[off], fp_payload[off+1], fp_payload[off+2], fp_payload[off+3],
+                    fp_payload[off+4], fp_payload[off+5], fp_payload[off+6], fp_payload[off+7],
+                ]);
+            }
+
+            let query_pc = fp_popcount(&query_words);
+            let max_dist = if header.max_distance > 0 { header.max_distance } else { 2000 };
+            let top_k = if header.top_k > 0 { header.top_k as usize } else { 10 };
+
+            let db = state.read().unwrap();
+            let bs = db.cog_redis.bind_space();
+
+            // Search with popcount pre-filter
+            let mut scored: Vec<(u16, u32)> = Vec::new();
+            for prefix in 0x80u8..=0xFF {
+                for slot in 0..=255u8 {
+                    let addr = Addr::new(prefix, slot);
+                    if let Some(node) = bs.read(addr) {
+                        let node_pc = fp_popcount(&node.fingerprint);
+                        let pc_diff = (query_pc as i64 - node_pc as i64).unsigned_abs() as u32;
+                        if pc_diff > max_dist { continue; }
+
+                        let mut dist = 0u32;
+                        for i in 0..FINGERPRINT_WORDS {
+                            dist += (query_words[i] ^ node.fingerprint[i]).count_ones();
+                        }
+                        if dist <= max_dist {
+                            scored.push((addr.0, dist));
+                        }
+                    }
+                }
+            }
+            scored.sort_by_key(|&(_, d)| d);
+            scored.truncate(top_k.min(UDP_MAX_RESULT_ADDRS));
+
+            // Build result datagram
+            let mut resp = vec![0u8; UDP_HEADER_SIZE];
+            let result_addrs: Vec<u16> = scored.iter().map(|&(a, _)| a).collect();
+            let result_header = UdpHeader {
+                op: UdpOp::Result,
+                flags: 0,
+                sequence: header.sequence,
+                source_addr: 0,
+                query_addr: 0,
+                max_hops: 0,
+                verb_filter: 0,
+                top_k: top_k as u8,
+                max_distance: max_dist,
+                popcount_hint: query_pc,
+                result_count: result_addrs.len() as u16,
+                payload_len: 0,
+                result_addrs,
+            };
+            result_header.encode(&mut resp);
+            Some(resp)
+        }
+
+        UdpOp::Traverse => {
+            let source = Addr(header.source_addr);
+            let max_hops = if header.max_hops > 0 { header.max_hops as usize } else { 3 };
+
+            let db = state.read().unwrap();
+            let bs = db.cog_redis.bind_space();
+
+            let verb_filter = if header.verb_filter != 0 { Some(header.verb_filter) } else { None };
+
+            // BFS
+            let mut found: Vec<u16> = Vec::new();
+            let mut frontier = vec![source];
+            let mut visited = std::collections::HashSet::new();
+            visited.insert(header.source_addr);
+
+            for _hop in 0..max_hops {
+                let mut next = Vec::new();
+                for &addr in &frontier {
+                    for edge in bs.edges_out(addr) {
+                        if visited.contains(&edge.to.0) { continue; }
+                        visited.insert(edge.to.0);
+                        if let Some(vf) = verb_filter {
+                            if edge.verb.0 != vf { continue; }
+                        }
+                        found.push(edge.to.0);
+                        next.push(edge.to);
+                        if found.len() >= UDP_MAX_RESULT_ADDRS { break; }
+                    }
+                    if found.len() >= UDP_MAX_RESULT_ADDRS { break; }
+                }
+                frontier = next;
+                if frontier.is_empty() || found.len() >= UDP_MAX_RESULT_ADDRS { break; }
+            }
+
+            let mut resp = vec![0u8; UDP_HEADER_SIZE];
+            let result_header = UdpHeader {
+                op: UdpOp::Result,
+                flags: 0,
+                sequence: header.sequence,
+                source_addr: header.source_addr,
+                query_addr: 0,
+                max_hops: max_hops as u8,
+                verb_filter: verb_filter.unwrap_or(0),
+                top_k: 0,
+                max_distance: 0,
+                popcount_hint: 0,
+                result_count: found.len() as u16,
+                payload_len: 0,
+                result_addrs: found,
+            };
+            result_header.encode(&mut resp);
+            Some(resp)
+        }
+
+        UdpOp::Hydrate => {
+            // Hydrate: send back full fingerprint for the query_addr
+            let addr = Addr(header.query_addr);
+
+            let db = state.read().unwrap();
+            let bs = db.cog_redis.bind_space();
+
+            let mut resp = vec![0u8; UDP_MAX_DATAGRAM];
+
+            if let Some(node) = bs.read(addr) {
+                let pc = fp_popcount(&node.fingerprint);
+
+                let resp_header = UdpHeader {
+                    op: UdpOp::Result,
+                    flags: UDP_FLAG_SIMD_ALIGNED | UDP_FLAG_HAS_FINGERPRINT | UDP_FLAG_HAS_POPCOUNT,
+                    sequence: header.sequence,
+                    source_addr: 0,
+                    query_addr: header.query_addr,
+                    max_hops: 0,
+                    verb_filter: 0,
+                    top_k: 0,
+                    max_distance: 0,
+                    popcount_hint: pc,
+                    result_count: 1,
+                    payload_len: UDP_FP_PADDED as u16,
+                    result_addrs: vec![header.query_addr],
+                };
+                resp_header.encode(&mut resp);
+
+                // Write fingerprint payload (1248 bytes raw + 8 padding zeros)
+                for (i, &word) in node.fingerprint.iter().enumerate() {
+                    let off = UDP_HEADER_SIZE + i * 8;
+                    resp[off..off + 8].copy_from_slice(&word.to_le_bytes());
+                }
+                // Remaining 8 bytes (1248..1256) are already zero from vec init
+
+                Some(resp)
+            } else {
+                // Address not occupied
+                let resp_header = UdpHeader {
+                    op: UdpOp::Result,
+                    flags: 0,
+                    sequence: header.sequence,
+                    source_addr: 0,
+                    query_addr: header.query_addr,
+                    max_hops: 0,
+                    verb_filter: 0,
+                    top_k: 0,
+                    max_distance: 0,
+                    popcount_hint: 0,
+                    result_count: 0,
+                    payload_len: 0,
+                    result_addrs: Vec::new(),
+                };
+                resp_header.encode(&mut resp);
+                resp.truncate(UDP_HEADER_SIZE);
+                Some(resp)
+            }
+        }
+
+        UdpOp::Edges => {
+            let source = Addr(header.source_addr);
+
+            let db = state.read().unwrap();
+            let bs = db.cog_redis.bind_space();
+
+            let mut targets: Vec<u16> = Vec::new();
+            for edge in bs.edges_out(source) {
+                if header.verb_filter != 0 && edge.verb.0 != header.verb_filter {
+                    continue;
+                }
+                targets.push(edge.to.0);
+                if targets.len() >= UDP_MAX_RESULT_ADDRS { break; }
+            }
+
+            let mut resp = vec![0u8; UDP_HEADER_SIZE];
+            let result_header = UdpHeader {
+                op: UdpOp::Result,
+                flags: 0,
+                sequence: header.sequence,
+                source_addr: header.source_addr,
+                query_addr: 0,
+                max_hops: 0,
+                verb_filter: header.verb_filter,
+                top_k: 0,
+                max_distance: 0,
+                popcount_hint: 0,
+                result_count: targets.len() as u16,
+                payload_len: 0,
+                result_addrs: targets,
+            };
+            result_header.encode(&mut resp);
+            Some(resp)
+        }
+
+        _ => None, // Pong/Result are client-side, not server-handled
+    }
+}
+
+/// Spawn UDP bitpacked Hamming listener on a separate thread.
+fn spawn_udp_listener(host: &str, port: u16, state: SharedState) {
+    let addr: SocketAddr = format!("{}:{}", host, port)
+        .parse()
+        .expect("Invalid UDP address");
+
+    std::thread::spawn(move || {
+        let socket = match UdpSocket::bind(addr) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("UDP bind failed on {}: {}", addr, e);
+                return;
+            }
+        };
+
+        println!("UDP bitpacked Hamming listener on udp://{}", addr);
+        println!("  Header: {} bytes | Payload: {} bytes (SIMD-padded) | Max datagram: {} bytes",
+            UDP_HEADER_SIZE, UDP_FP_PADDED, UDP_MAX_DATAGRAM);
+
+        let mut buf = vec![0u8; UDP_MAX_DATAGRAM];
+        loop {
+            match socket.recv_from(&mut buf) {
+                Ok((len, src)) => {
+                    if let Some(resp) = handle_udp_packet(&buf, len, &state) {
+                        let _ = socket.send_to(&resp, src);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("UDP recv error: {}", e);
+                }
+            }
+        }
+    });
+}
+
+// =============================================================================
 // HTTP RESPONSE UTILITIES
 // =============================================================================
 
@@ -1387,6 +2311,12 @@ fn extract_json_object(json: &str, key: &str) -> HashMap<String, String> {
     map
 }
 
+fn extract_json_hex_u16(json: &str, key: &str) -> Option<u16> {
+    let s = extract_json_str(json, key)?;
+    let s = s.trim_start_matches("0x").trim_start_matches("0X");
+    u16::from_str_radix(s, 16).ok()
+}
+
 fn uuid_v4() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
@@ -1418,18 +2348,27 @@ fn base64_decode(s: &str) -> std::result::Result<Vec<u8>, String> {
 fn main() {
     let config = ServerConfig::from_env();
 
+    let udp_port = env::var("LADYBUG_UDP_PORT")
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(config.port + 1);
+
     println!("╔═══════════════════════════════════════════════════════════════╗");
     println!("║              LadybugDB v{:<38}║", VERSION);
     println!("╠═══════════════════════════════════════════════════════════════╣");
     println!("║  Environment: {:>45}  ║", format!("{:?}", config.environment));
-    println!("║  Binding:     {:>45}  ║", format!("{}:{}", config.host, config.port));
+    println!("║  HTTP:        {:>45}  ║", format!("{}:{}", config.host, config.port));
+    println!("║  UDP:         {:>45}  ║", format!("{}:{}", config.host, udp_port));
     println!("║  Data dir:    {:>45}  ║", config.data_dir);
     println!("║  SIMD:        {:>45}  ║", simd::simd_level());
     println!("║  Workers:     {:>45}  ║", config.workers);
     println!("║  FP bits:     {:>45}  ║", FINGERPRINT_BITS);
     println!("╠═══════════════════════════════════════════════════════════════╣");
-    println!("║  Default format: Arrow IPC (application/vnd.apache.arrow.stream) ║");
-    println!("║  JSON fallback:  Accept: application/json                       ║");
+    println!("║  Protocols:                                                     ║");
+    println!("║    HTTP  → Arrow IPC (default) + JSON (Accept header)          ║");
+    println!("║    gRPC  → Flight Arrow (port 50051 via flight_server binary)  ║");
+    println!("║    UDP   → Bitpacked Hamming ({}B hdr + {}B fp = {}B)     ║",
+        UDP_HEADER_SIZE, UDP_FP_PADDED, UDP_MAX_DATAGRAM);
     println!("╚═══════════════════════════════════════════════════════════════╝");
 
     let addr: SocketAddr = format!("{}:{}", config.host, config.port)
@@ -1438,6 +2377,9 @@ fn main() {
 
     let state: SharedState = Arc::new(RwLock::new(DbState::new(&config)));
 
+    // Spawn UDP bitpacked Hamming listener
+    spawn_udp_listener(&config.host, udp_port, Arc::clone(&state));
+
     let listener = TcpListener::bind(addr)
         .unwrap_or_else(|e| {
             eprintln!("Failed to bind {}: {}", addr, e);
@@ -1445,6 +2387,7 @@ fn main() {
         });
 
     println!("Listening on http://{}", addr);
+    println!("UDP Hamming on udp://{}:{}", config.host, udp_port);
 
     // Accept connections
     for stream in listener.incoming() {

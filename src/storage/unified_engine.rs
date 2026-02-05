@@ -92,6 +92,7 @@ use super::lance_zero_copy::{
     Temperature, ScentAwareness, LanceView, ZeroCopyBubbler,
 };
 use super::temporal::Version;
+use super::fingerprint_dict::FingerprintDict;
 
 // =============================================================================
 // CONFIGURATION
@@ -232,6 +233,9 @@ pub struct UnifiedEngine {
     /// Edge changes since last CSR rebuild
     edges_changed: AtomicU64,
 
+    /// Fingerprint dictionary for sparse hydration and popcount pre-filter
+    fingerprint_dict: Arc<RwLock<FingerprintDict>>,
+
     /// Statistics
     stats: UnifiedStats,
 }
@@ -276,6 +280,12 @@ impl UnifiedEngine {
         // Parallel executor
         let executor = Some(Arc::new(ParallelExecutor::new(config.parallel.clone())));
 
+        // Build fingerprint dictionary from initial BindSpace state
+        let fingerprint_dict = {
+            let bs = bind_space.read().unwrap();
+            Arc::new(RwLock::new(FingerprintDict::from_bind_space(&bs)))
+        };
+
         Self {
             config,
             bind_space,
@@ -288,6 +298,7 @@ impl UnifiedEngine {
             arrow,
             executor,
             edges_changed: AtomicU64::new(0),
+            fingerprint_dict,
             stats: UnifiedStats::default(),
         }
     }
@@ -769,6 +780,218 @@ impl UnifiedEngine {
     /// Get memory pool reference
     pub fn memory_pool(&self) -> &Arc<MemoryPool> {
         &self.memory_pool
+    }
+
+    // =========================================================================
+    // FINGERPRINT DICTIONARY (sparse hydration, popcount pre-filter)
+    // =========================================================================
+
+    /// Get reference to fingerprint dictionary
+    pub fn fingerprint_dict(&self) -> &Arc<RwLock<FingerprintDict>> {
+        &self.fingerprint_dict
+    }
+
+    /// Rebuild the fingerprint dictionary from current BindSpace state
+    pub fn rebuild_dict(&self) -> Result<(), UnifiedError> {
+        let bind_space = self.bind_space.read()
+            .map_err(|_| UnifiedError::LockPoisoned)?;
+
+        let new_dict = FingerprintDict::from_bind_space(&bind_space);
+        let mut dict = self.fingerprint_dict.write()
+            .map_err(|_| UnifiedError::LockPoisoned)?;
+        *dict = new_dict;
+
+        Ok(())
+    }
+
+    /// Update dictionary entry for a single address (after write/delete)
+    pub fn update_dict(&self, addr: Addr) -> Result<(), UnifiedError> {
+        let bind_space = self.bind_space.read()
+            .map_err(|_| UnifiedError::LockPoisoned)?;
+
+        let mut dict = self.fingerprint_dict.write()
+            .map_err(|_| UnifiedError::LockPoisoned)?;
+        dict.update(addr.0, &bind_space);
+
+        Ok(())
+    }
+
+    /// Hydrate sparse address list into full fingerprints
+    ///
+    /// Core "dictionary lookup": sparse addrs → dense fingerprints.
+    /// Uses the pre-computed dictionary for O(1) per lookup.
+    pub fn hydrate(&self, addrs: &[u16]) -> Result<Vec<(u16, [u64; FINGERPRINT_WORDS])>, UnifiedError> {
+        let bind_space = self.bind_space.read()
+            .map_err(|_| UnifiedError::LockPoisoned)?;
+
+        let dict = self.fingerprint_dict.read()
+            .map_err(|_| UnifiedError::LockPoisoned)?;
+
+        Ok(dict.hydrate_batch(addrs, &bind_space))
+    }
+
+    /// Dictionary-backed Hamming search with popcount pre-filter
+    ///
+    /// Three-stage pipeline:
+    /// 1. Popcount filter (no fingerprint access, O(N) on dict entries)
+    /// 2. L0 sketch filter (~90% reject rate)
+    /// 3. Full Hamming distance (only survivors)
+    pub fn dict_search(
+        &self,
+        query: &[u64; FINGERPRINT_WORDS],
+        max_hamming: u32,
+    ) -> Result<Vec<(u16, u32)>, UnifiedError> {
+        let bind_space = self.bind_space.read()
+            .map_err(|_| UnifiedError::LockPoisoned)?;
+
+        let dict = self.fingerprint_dict.read()
+            .map_err(|_| UnifiedError::LockPoisoned)?;
+
+        Ok(dict.search(query, max_hamming, &bind_space))
+    }
+
+    /// Convert sparse addresses to Arrow RecordBatch via dictionary
+    pub fn dict_to_arrow(
+        &self,
+        addrs: &[u16],
+    ) -> Result<arrow_array::RecordBatch, UnifiedError> {
+        let bind_space = self.bind_space.read()
+            .map_err(|_| UnifiedError::LockPoisoned)?;
+
+        let dict = self.fingerprint_dict.read()
+            .map_err(|_| UnifiedError::LockPoisoned)?;
+
+        dict.to_record_batch(addrs, &bind_space)
+            .map_err(|e| UnifiedError::Io(e.to_string()))
+    }
+
+    // =========================================================================
+    // GRAPH TRAVERSAL (DataFusion-native via CSR)
+    // =========================================================================
+
+    /// BFS traversal returning Arrow RecordBatch (DataFusion-compatible)
+    ///
+    /// This is the "Neo4j on DataFusion" path:
+    /// - Uses BitpackedCSR for O(1) children per hop
+    /// - Results stream directly into DataFusion pipeline
+    /// - Can be JOINed with fingerprint table for similarity-gated traversal
+    pub fn graph_traverse(
+        &self,
+        sources: &[u16],
+        max_hops: u32,
+        verb_filter: Option<&str>,
+    ) -> Result<Vec<(usize, Addr)>, UnifiedError> {
+        let bind_space = self.bind_space.read()
+            .map_err(|_| UnifiedError::LockPoisoned)?;
+
+        // Resolve verb name to address
+        let verb_addr = match verb_filter {
+            Some(name) => bind_space.verb(name),
+            None => None,
+        };
+
+        let mut all_results = Vec::new();
+
+        for &source in sources {
+            let addr = Addr(source);
+            let results = match verb_addr {
+                Some(verb) => bind_space.traverse_n_hops(addr, verb, max_hops as usize),
+                None => {
+                    // Without verb filter, traverse all edges via children_raw
+                    let mut results = Vec::new();
+                    let mut frontier = vec![addr];
+                    let mut visited = std::collections::HashSet::new();
+                    visited.insert(source);
+
+                    for hop in 1..=max_hops as usize {
+                        let mut next_frontier = Vec::new();
+                        for &node in &frontier {
+                            for target_raw in bind_space.children_raw(node) {
+                                if visited.insert(*target_raw) {
+                                    results.push((hop, Addr(*target_raw)));
+                                    next_frontier.push(Addr(*target_raw));
+                                }
+                            }
+                        }
+                        if next_frontier.is_empty() { break; }
+                        frontier = next_frontier;
+                    }
+                    results
+                }
+            };
+            all_results.extend(results);
+        }
+
+        Ok(all_results)
+    }
+
+    /// Similarity-gated graph traversal: BFS + Hamming filter per hop
+    ///
+    /// Only follows edges where the target fingerprint is within max_hamming
+    /// distance of the query fingerprint. Uses the dictionary popcount
+    /// pre-filter to avoid touching fingerprints for clearly dissimilar nodes.
+    pub fn graph_traverse_similar(
+        &self,
+        sources: &[u16],
+        query_fp: &[u64; FINGERPRINT_WORDS],
+        max_hops: u32,
+        max_hamming: u32,
+    ) -> Result<Vec<(usize, Addr, u32)>, UnifiedError> {
+        let bind_space = self.bind_space.read()
+            .map_err(|_| UnifiedError::LockPoisoned)?;
+
+        let dict = self.fingerprint_dict.read()
+            .map_err(|_| UnifiedError::LockPoisoned)?;
+
+        let query_pop: u32 = query_fp.iter().map(|w| w.count_ones()).sum();
+        let mut results = Vec::new();
+        let mut visited = std::collections::HashSet::new();
+
+        for &source in sources {
+            let mut frontier = vec![Addr(source)];
+            visited.insert(source);
+
+            for hop in 1..=max_hops as usize {
+                let mut next_frontier = Vec::new();
+
+                for &node in &frontier {
+                    for &target_raw in bind_space.children_raw(node) {
+                        if !visited.insert(target_raw) {
+                            continue;
+                        }
+
+                        // Pre-filter: popcount triangle inequality
+                        if let Some(target_pop) = dict.popcount(target_raw) {
+                            let pop_diff = if target_pop > query_pop {
+                                target_pop - query_pop
+                            } else {
+                                query_pop - target_pop
+                            };
+
+                            if pop_diff > max_hamming {
+                                continue; // Skip: popcount too far
+                            }
+                        }
+
+                        // Full Hamming check
+                        if let Some(target_node) = bind_space.read(Addr(target_raw)) {
+                            let dist = super::bind_space::hamming_distance(query_fp, &target_node.fingerprint);
+                            if dist <= max_hamming {
+                                results.push((hop, Addr(target_raw), dist));
+                                next_frontier.push(Addr(target_raw));
+                            }
+                        }
+                    }
+                }
+
+                if next_frontier.is_empty() { break; }
+                frontier = next_frontier;
+            }
+        }
+
+        // Sort by distance
+        results.sort_by_key(|&(_, _, d)| d);
+        Ok(results)
     }
 }
 
