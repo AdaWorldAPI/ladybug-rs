@@ -42,6 +42,9 @@ use super::persona::{Persona, PersonaRegistry};
 use super::meta_orchestrator::MetaOrchestrator;
 use super::semantic_kernel::SemanticKernel;
 use super::handover::{HandoverDecision, HandoverPolicy};
+use super::kernel_extensions::{
+    FilterPipeline, KernelGuardrail, MemoryBank, ObservabilityManager, VerificationEngine,
+};
 
 /// Task status in the dispatch pipeline
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -100,6 +103,11 @@ pub struct CrewBridge {
     pub a2a: A2AProtocol,
     pub orchestrator: MetaOrchestrator,
     pub kernel: SemanticKernel,
+    pub filters: FilterPipeline,
+    pub guardrail: KernelGuardrail,
+    pub memory: MemoryBank,
+    pub observability: ObservabilityManager,
+    pub verification: VerificationEngine,
     task_queue: Vec<CrewTask>,
     completed: Vec<DispatchResult>,
 }
@@ -114,6 +122,12 @@ impl CrewBridge {
             a2a: A2AProtocol::new(),
             orchestrator: MetaOrchestrator::default(),
             kernel: SemanticKernel::new(),
+            filters: FilterPipeline::new(),
+            guardrail: KernelGuardrail::new(),
+            // Memory bank uses Fluid zone prefixes 0x20-0x22
+            memory: MemoryBank::new(0x20, 0x21, 0x22),
+            observability: ObservabilityManager::new(),
+            verification: VerificationEngine::new(),
             task_queue: Vec::new(),
             completed: Vec::new(),
         }
@@ -360,6 +374,11 @@ impl CrewBridge {
             tasks_in_progress: self.task_queue.iter().filter(|t| t.status == TaskStatus::InProgress).count(),
             tasks_completed: self.completed.len(),
             a2a_channels: self.a2a.channels().len(),
+            filters_registered: self.filters.count(),
+            guardrail_topics: self.guardrail.denied_topics.len(),
+            memories_stored: self.memory.count(None),
+            verification_rules: self.verification.count(),
+            observability: self.observability.summary(),
         }
     }
 }
@@ -380,6 +399,11 @@ pub struct BridgeStatus {
     pub tasks_in_progress: usize,
     pub tasks_completed: usize,
     pub a2a_channels: usize,
+    pub filters_registered: usize,
+    pub guardrail_topics: usize,
+    pub memories_stored: usize,
+    pub verification_rules: usize,
+    pub observability: super::kernel_extensions::ObservabilitySummary,
 }
 
 #[cfg(test)]

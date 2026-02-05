@@ -63,6 +63,7 @@ pub mod persona;
 pub mod handover;
 pub mod meta_orchestrator;
 pub mod semantic_kernel;
+pub mod kernel_extensions;
 
 pub use agent_card::{
     AgentCard, AgentCapability, AgentRole, AgentGoal,
@@ -116,4 +117,18 @@ pub use semantic_kernel::{
     PrefixAllocation,
     CrystalPlugin, RungEscalationStrategy,
     KernelOperator, ProtocolExtension, CollapseStrategy,
+};
+
+pub use kernel_extensions::{
+    FilterPipeline, KernelFilter, FilterPhase, FilterContext, FilterResult,
+    KernelGuardrail, GuardrailResult, GuardrailAction,
+    ContentCategory, GuardrailSeverity, DeniedTopic,
+    GroundingResult, ClaimGrounding,
+    WorkflowNode, WorkflowStep, WorkflowOp, WorkflowResult,
+    execute_workflow,
+    MemoryBank, KernelMemory, MemoryKind,
+    ObservabilityManager, ObservabilitySummary,
+    KernelSession, KernelTrace, KernelSpan,
+    GroundingMetadata, GroundingSource,
+    VerificationEngine, VerificationRule, VerificationKind, VerificationResult,
 };

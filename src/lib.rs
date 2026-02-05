@@ -123,6 +123,13 @@ pub use crate::orchestration::{
     CommunicationStyle, FeatureAd,
     PersonaExchange, VolitionSummary,
     PersonaRegistry,
+    // Kernel extensions (cross-platform best practices)
+    FilterPipeline, KernelFilter, FilterPhase,
+    KernelGuardrail, GuardrailResult, GuardrailAction,
+    MemoryBank, KernelMemory, MemoryKind,
+    ObservabilityManager, KernelSession, KernelTrace, KernelSpan,
+    VerificationEngine, VerificationRule, VerificationKind,
+    WorkflowNode, WorkflowStep, WorkflowOp, execute_workflow,
 };
 
 // === Error types ===

@@ -474,6 +474,12 @@ impl FlightService for LadybugFlightService {
             || action_type.starts_with("handover.")
             || action_type.starts_with("orchestrator.")
             || action_type.starts_with("kernel.")
+            || action_type.starts_with("filter.")
+            || action_type.starts_with("guardrail.")
+            || action_type.starts_with("workflow.")
+            || action_type.starts_with("memory.")
+            || action_type.starts_with("observability.")
+            || action_type.starts_with("verification.")
         {
             let result = super::crew_actions::execute_crew_action(
                 action_type,
@@ -682,6 +688,96 @@ impl FlightService for LadybugFlightService {
                 ActionType {
                     r#type: "kernel.prefix_map".to_string(),
                     description: "Get full prefix allocation map. No args".to_string(),
+                },
+                // Filter pipeline actions (Microsoft SK pattern)
+                ActionType {
+                    r#type: "filter.add".to_string(),
+                    description: "Add filter to pipeline. Body: JSON KernelFilter".to_string(),
+                },
+                ActionType {
+                    r#type: "filter.remove".to_string(),
+                    description: "Remove filter by name. Body: filter name string".to_string(),
+                },
+                ActionType {
+                    r#type: "filter.list".to_string(),
+                    description: "List all filters in pipeline. No args".to_string(),
+                },
+                ActionType {
+                    r#type: "filter.apply".to_string(),
+                    description: "Apply filter pipeline to context. Body: JSON FilterContext".to_string(),
+                },
+                // Guardrail actions (Amazon Bedrock pattern)
+                ActionType {
+                    r#type: "guardrail.apply".to_string(),
+                    description: "Apply guardrails to fingerprint. Body: JSON {fingerprint, source_addrs?}".to_string(),
+                },
+                ActionType {
+                    r#type: "guardrail.add_topic".to_string(),
+                    description: "Add denied topic. Body: JSON DeniedTopic".to_string(),
+                },
+                ActionType {
+                    r#type: "guardrail.enable_grounding".to_string(),
+                    description: "Enable grounding checks. Body: JSON {threshold}".to_string(),
+                },
+                ActionType {
+                    r#type: "guardrail.add_content_filter".to_string(),
+                    description: "Add content filter. Body: JSON {category, max_severity}".to_string(),
+                },
+                // Workflow actions (Google ADK + MS Process)
+                ActionType {
+                    r#type: "workflow.execute".to_string(),
+                    description: "Execute workflow DAG. Body: JSON WorkflowNode".to_string(),
+                },
+                // Memory bank actions (Google Memory Bank)
+                ActionType {
+                    r#type: "memory.store".to_string(),
+                    description: "Store memory. Body: JSON {kind, content, fingerprint, cycle, source_agent?}".to_string(),
+                },
+                ActionType {
+                    r#type: "memory.retrieve".to_string(),
+                    description: "Retrieve memories by similarity. Body: JSON {query, kind?, threshold, limit, cycle}".to_string(),
+                },
+                ActionType {
+                    r#type: "memory.extract_semantic".to_string(),
+                    description: "Extract semantic memories from episodic. Body: JSON {cycle}".to_string(),
+                },
+                ActionType {
+                    r#type: "memory.list".to_string(),
+                    description: "List memories. Body: JSON {kind?}".to_string(),
+                },
+                // Observability actions (Amazon Session>Trace>Span)
+                ActionType {
+                    r#type: "observability.start_session".to_string(),
+                    description: "Start observability session. Body: JSON {agent_slot?, cycle}".to_string(),
+                },
+                ActionType {
+                    r#type: "observability.start_trace".to_string(),
+                    description: "Start trace in active session. Body: JSON {operation, cycle}".to_string(),
+                },
+                ActionType {
+                    r#type: "observability.add_span".to_string(),
+                    description: "Add span to trace. Body: JSON {trace_id, span}".to_string(),
+                },
+                ActionType {
+                    r#type: "observability.complete_trace".to_string(),
+                    description: "Complete trace. Body: JSON {trace_id, cycle, grounding?}".to_string(),
+                },
+                ActionType {
+                    r#type: "observability.summary".to_string(),
+                    description: "Get observability summary. No args".to_string(),
+                },
+                // Verification actions (Amazon Automated Reasoning)
+                ActionType {
+                    r#type: "verification.add_rule".to_string(),
+                    description: "Add verification rule. Body: JSON VerificationRule".to_string(),
+                },
+                ActionType {
+                    r#type: "verification.verify".to_string(),
+                    description: "Verify fingerprint against rules. Body: JSON {fingerprint, addr}".to_string(),
+                },
+                ActionType {
+                    r#type: "verification.list_rules".to_string(),
+                    description: "List verification rules. No args".to_string(),
                 },
             ];
             actions.extend(crew_actions);
