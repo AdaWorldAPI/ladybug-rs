@@ -107,15 +107,25 @@ An operation that needs only compartment C3 reads exactly one cache line. No mor
 
 ## 2. Compartment Byte Layouts (All Integer, No Float)
 
-### C0: Key + DN Tree + Routing (words 0-7)
+### C0: Key + DN Tree + Routing (words 0-7) — Addr Is Primary Citizen
+
+The key insight: **Addr(u16) is the primary key everywhere.** When you `DN.SET domain:tree:branch:twig:leaf`, the path hashes to an Addr. That Addr IS the record's identity — in BindSpace arrays, in Arrow columns, in DataFusion predicates, in Redis GET/SET. No secondary lookup. No foreign key. The record lives at `words[addr.prefix()][addr.slot()]` and that's it.
+
+The DN tree uses **left-child right-sibling (LCRS)** encoding — three u16 pointers embedded in the record that give O(1) traversal in every direction:
 
 ```
-word 0:  ROUTING KEY (the 8+8+48 bits)
+word 0:  PRIMARY KEY (Addr) + ROUTING
   ┌─────────┬─────────┬───────────────────────────────────────────────┐
   │ [0:7]   │ [8:15]  │ [16:63]                                      │
   │ prefix  │ slot    │ group48: hash(T1:T2:T3:T4)                   │
   │ u8      │ u8      │ u48 frozen path hash                         │
   └─────────┴─────────┴───────────────────────────────────────────────┘
+  ↑                     ↑
+  └── THIS IS Addr ──┘  └── Sort prefix for DN subtree locality
+
+  Addr = (prefix << 8) | slot.  That's the record's identity.
+  group48 = hash of the frozen T1:T2:T3:T4 path.
+  Sort on (T1,T2,T3,T4,group48) clusters the DN subtree.
 
 word 1:  ROUTING KEY continued (the 64+128 bits start here)
   ┌───────────────────────────────────────────────────────────────────┐
@@ -135,35 +145,243 @@ word 3:  ROUTING KEY continued
   │ ext_key_hi: u64 (second half of 128-bit extension)                │
   └───────────────────────────────────────────────────────────────────┘
 
-word 4:  DN TREE
+word 4:  DN TIER SLOTS (T1-T8: the path decomposed into tiers)
   ┌──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┐
   │ T1   │ T2   │ T3   │ T4   │ T5   │ T6   │ T7   │ T8   │
   │ u8   │ u8   │ u8   │ u8   │ u8   │ u8   │ u8   │ u8   │
-  │frozen│frozen│frozen│frozen│ephemeral│ephemeral│ephemeral│ephemeral│
+  │domain│tree  │branch│twig  │leaf  │sub   │sub   │sub   │
+  │FROZEN│FROZEN│FROZEN│FROZEN│ ephemeral ──────────────── │
   └──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┘
 
-word 5:  CONTEXT + HIERARCHY
-  ┌────────────┬──────┬───────┬───────┬──────────────────────┐
-  │ [0:15]     │[16:23]│[24:31]│[32:39]│ [40:63]              │
-  │ context_id │ rung  │ sigma │ depth │ parent_prefix_slot   │
-  │ u16        │ u8    │ u8    │ u8    │ u24 (prefix:slot:sub)│
-  └────────────┴──────┴───────┴───────┴──────────────────────┘
+  "Ada:A:soul:identity:core" →
+    T1=hash("Ada")&0xFF, T2=hash("A")&0xFF, T3=hash("soul")&0xFF,
+    T4=hash("identity")&0xFF, T5=hash("core")&0xFF, T6-T8=0x00
 
-word 6:  COUNTS
-  ┌────────────────┬────────────────┬────────────────┬────────────────┐
-  │ [0:15]         │ [16:31]        │ [32:47]        │ [48:63]        │
-  │ edge_count_out │ edge_count_in  │ access_count   │ entity_type_id │
-  │ u16            │ u16            │ u16            │ u16            │
-  └────────────────┴────────────────┴────────────────┴────────────────┘
+word 5:  O(1) DN TREE POINTERS (LCRS encoding)
+  ┌────────────────┬────────────────┬──────────────────┬──────────────────┐
+  │ [0:15]         │ [16:31]        │ [32:47]          │ [48:63]          │
+  │ parent_addr    │ first_child    │ next_sibling     │ prev_sibling     │
+  │ u16 (Addr)     │ u16 (Addr)     │ u16 (Addr)       │ u16 (Addr)       │
+  │ 0xFFFF = none  │ 0xFFFF = none  │ 0xFFFF = none    │ 0xFFFF = none    │
+  └────────────────┴────────────────┴──────────────────┴──────────────────┘
 
-word 7:  TIMESTAMP
-  ┌───────────────────────────────────────────┬───────────────────────┐
-  │ [0:47]                                    │ [48:63]               │
-  │ updated_at: u48 (microseconds, ~8.9 yr)   │ flags: u16            │
-  └───────────────────────────────────────────┴───────────────────────┘
+  FOUR Addr pointers. Every tree operation is O(1):
+  ┌─────────────────────────────────────────────────────────────────┐
+  │ Operation               │ How                    │ Cost         │
+  ├─────────────────────────┼────────────────────────┼──────────────┤
+  │ Go to parent            │ words[5] & 0xFFFF      │ 1 read       │
+  │ Go to first child       │ words[5] >> 16 & 0xFFFF│ 1 read       │
+  │ Go to next sibling      │ words[5] >> 32 & 0xFFFF│ 1 read       │
+  │ Go to prev sibling      │ words[5] >> 48 & 0xFFFF│ 1 read       │
+  │ Enumerate children      │ first_child, then      │ O(k) for k   │
+  │                         │ follow next_sibling    │ children     │
+  │ Insert child            │ new.next_sib = parent  │ 3 writes     │
+  │                         │   .first_child         │              │
+  │                         │ old_first.prev_sib =   │              │
+  │                         │   new                  │              │
+  │                         │ parent.first_child =   │              │
+  │                         │   new                  │              │
+  │ Delete node             │ relink prev/next sib,  │ 4 writes     │
+  │                         │ update parent if first │              │
+  │ Count children          │ word 6 child_count     │ 1 read       │
+  │ Is leaf?                │ first_child == 0xFFFF  │ 1 compare    │
+  │ Is root?                │ parent_addr == 0xFFFF  │ 1 compare    │
+  └─────────────────────────┴────────────────────────┴──────────────┘
+
+  No CSR rebuild. No edge table scan. No PARENT_OF verb lookup.
+  The tree IS the data. The pointers are IN the record.
+
+word 6:  CONTEXT + HIERARCHY + COUNTS
+  ┌──────────┬──────┬───────┬───────┬──────────┬──────────┬──────────┐
+  │ [0:15]   │[16:23]│[24:31]│[32:39]│ [40:47]  │ [48:55]  │ [56:63]  │
+  │context_id│ rung  │ sigma │ depth │child_cnt │ out_deg  │ in_deg   │
+  │ u16      │ u8    │ u8    │ u8    │ u8       │ u8       │ u8       │
+  └──────────┴──────┴───────┴───────┴──────────┴──────────┴──────────┘
+
+  context_id: 0 = base BindSpace, >0 = exploration overlay
+  rung: R0-R9 access control
+  sigma: reasoning depth Σ
+  depth: tree depth (0=root, max 255)
+  child_cnt: number of direct children (saturates at 255)
+  out_deg: outgoing graph edges (not tree; saturates at 255)
+  in_deg: incoming graph edges (saturates at 255)
+
+word 7:  TIMESTAMP + FLAGS + ACCESS
+  ┌─────────────────────────────────────┬──────────┬──────────────────┐
+  │ [0:39]                              │ [40:55]  │ [56:63]          │
+  │ updated_at: u40 (~34.8 yr at 1ms)   │access_cnt│ entity_type_id   │
+  │                                     │ u16      │ u8               │
+  └─────────────────────────────────────┴──────────┴──────────────────┘
 ```
 
-**Every field is an integer.** No float in C0. `context_id` at a fixed bit offset means `WHERE context_id = 0` is a 2-byte read at byte offset 40 of any record.
+**Every field is an integer.** No float in C0. `Addr` at bytes [0:1] of word 0. `context_id` at bytes [0:1] of word 6. `parent_addr` at bytes [0:1] of word 5. All fixed offsets, all pointer arithmetic.
+
+### The Self-Organizing DN Tree
+
+When you execute `DN.SET domain:tree:branch:twig:leaf`, the record self-hydrates:
+
+```
+Step 1: Path → Addr
+  "Ada:A:soul:identity" → dn_path_to_addr() → Addr(0xA3, 0x7B)
+  That IS the record. No lookup table. No secondary index.
+
+Step 2: Path → Tier slots (T1-T8)
+  T1 = hash("Ada")    & 0xFF   (domain — frozen)
+  T2 = hash("A")      & 0xFF   (tree — frozen)
+  T3 = hash("soul")   & 0xFF   (branch — frozen)
+  T4 = hash("identity") & 0xFF (twig — frozen)
+  T5-T8 = 0x00                 (no deeper levels)
+  → Written into word 4.
+
+Step 3: Parent chain auto-links
+  parent_path = "Ada:A:soul" → dn_path_to_addr() → Addr(0xB1, 0x22)
+  IF parent doesn't exist → create it first (recursive).
+  THEN:
+    self.parent_addr   = parent_addr         // word 5 [0:15]
+    self.next_sibling  = parent.first_child  // word 5 [32:47]
+    IF parent.first_child != 0xFFFF:
+      old_first.prev_sibling = self_addr     // update old first child
+    parent.first_child = self_addr           // word 5 [16:31] of PARENT
+    parent.child_count += 1                  // word 6 [40:47] of PARENT
+    self.depth         = parent.depth + 1    // word 6 [32:39]
+
+Step 4: Context resonance markers
+  C5 (NARS) inherits parent's belief if no override.
+  C4 (SPO) gets role bits from parent's predicate context.
+  C1/C2 (adjacency) get bucket bits from PARENT_OF edge.
+  C3 (verb mask) gets PARENT_OF bit set.
+
+Step 5: Sort key for Arrow
+  sort_key = (T1, T2, T3, T4, scent[0..2], context_id, disambig)
+  → Adjacent records in Arrow share DN subtree → XOR delta compresses.
+
+Result: ONE write, ZERO subsequent computation.
+  Any reader does pointer arithmetic on the Addr.
+  parent() = 1 read. first_child() = 1 read. siblings() = chase list.
+  No CSR. No edge table. No HashMap. No verb lookup for tree structure.
+```
+
+### Addr Flows Through Everything
+
+```
+                    DN.SET Ada:A:soul:identity
+                              │
+                              ▼
+                     dn_path_to_addr()
+                              │
+                              ▼
+                       Addr(0xA3, 0x7B)        ◄── PRIMARY KEY
+                              │
+              ┌───────────────┼───────────────────┐
+              ▼               ▼                   ▼
+         BindSpace        CogRedis            DataFusion
+         array[0xA3]      DN.GET 0xA3:7B      WHERE addr = 0xA37B
+          [0x7B]          → reads record       → UInt16 filter
+           │               at array[0xA3][0x7B]  → Arrow column[row]
+           │               → returns CogRecord   → same bytes
+           ▼                                      │
+       CogRecord                                  ▼
+       words[0..255]                          Arrow RecordBatch
+           │                                  addr: UInt16
+           ├── word 0: prefix=0xA3 slot=0x7B  structure: FixedSizeBinary(512)
+           ├── word 5: parent=0xB122           fingerprint: FixedSizeBinary(1536)
+           │           first_child=0xFFFF
+           │           next_sib=0xC455
+           │           prev_sib=0xFFFF
+           └── ...
+
+  Redis path:   DN.GET Ada:A:soul:identity → addr lookup → array read
+  SQL path:     SELECT * FROM nodes WHERE addr = 0xA37B → same array
+  Flight path:  DoGet(addr=0xA37B) → same record, zero-copy via Arrow
+  GQL path:     MATCH (n) WHERE n.addr = 0xA37B → same record
+
+  ONE record. ONE address. ALL paths converge.
+```
+
+### Redis Self-Organization Example
+
+```
+> DN.SET Ada:A:soul:identity <fingerprint>
+
+  Internal:
+    addr = dn_path_to_addr("Ada:A:soul:identity") = 0xA37B
+    parent_addr = dn_path_to_addr("Ada:A:soul") = 0xB122
+    // Auto-create parent chain if needed:
+    //   "Ada" → Addr(0x8F, 0x01) [depth=0, root]
+    //   "Ada:A" → Addr(0x92, 0x44) [depth=1, first_child of 0x8F01]
+    //   "Ada:A:soul" → Addr(0xB1, 0x22) [depth=2, first_child of 0x9244]
+
+    record[0xA37B].words[5] = pack(
+      parent_addr: 0xB122,
+      first_child: 0xFFFF,   // leaf: no children yet
+      next_sibling: <whatever B122.first_child was>,
+      prev_sibling: 0xFFFF   // new head of sibling list
+    );
+    record[0xB122].words[5].first_child = 0xA37B;  // parent points to new child
+    record[0xA37B].words[4] = pack(T1,T2,T3,T4,0,0,0,0);  // tier slots
+    record[0xA37B].words[6].depth = 3;
+    record[0xA37B].words[6].context_id = 0;  // base context
+
+  Now:
+> DN.CHILDREN Ada:A:soul
+    addr = 0xB122
+    child = record[0xB122].first_child   // 0xA37B — O(1)
+    while child != 0xFFFF:
+      emit child
+      child = record[child].next_sibling  // chase the list
+    // No CSR. No edge scan. No rebuild.
+
+> DN.PARENT Ada:A:soul:identity
+    addr = 0xA37B
+    parent = record[0xA37B].parent_addr   // 0xB122 — O(1)
+
+> DN.SIBLINGS Ada:A:soul:identity
+    addr = 0xA37B
+    sib = record[0xA37B].next_sibling     // chase forward
+    sib = record[0xA37B].prev_sibling     // chase backward
+    // Doubly-linked: can go either direction
+
+> DN.ANCESTORS Ada:A:soul:identity
+    addr = 0xA37B
+    while addr.parent_addr != 0xFFFF:
+      emit addr.parent_addr
+      addr = addr.parent_addr
+    // 0xB122 → 0x9244 → 0x8F01 → done (3 reads, O(depth))
+
+> DN.ISLEAF Ada:A:soul:identity
+    record[0xA37B].first_child == 0xFFFF   // true — O(1)
+```
+
+### How DN Tree Pointers (C0) Relate to Graph Adjacency (C1-C3)
+
+The DN tree (C0 word 5) and the graph adjacency (C1-C3) are **separate structures that serve different purposes**:
+
+```
+DN Tree (C0 word 5):
+  Structural hierarchy. "Ada:A:soul" is parent of "Ada:A:soul:identity".
+  This is the namespace, the organizational skeleton.
+  Pointers: parent, first_child, next_sibling, prev_sibling.
+  Operations: path lookup, subtree enumeration, depth queries.
+
+Graph Adjacency (C1-C3):
+  Semantic relationships. "Ada:A:soul:identity" CAUSES "Ada:A:behavior:response".
+  This is the knowledge graph, the causal/associative web.
+  Bitvectors: 512 bits OUT (C1), 512 bits IN (C2), 512 verb bits (C3).
+  Operations: BFS, pattern matching, GQL MATCH, SPARQL BGP.
+
+They coexist:
+  A node at Addr 0xA37B has BOTH:
+    - A tree position (parent=0xB122, children via LCRS)
+    - Graph edges (CAUSES → bucket 0x1A3, INHIBITS → bucket 0x0FF)
+
+  Tree operations use C0 word 5 (O(1) pointer chase).
+  Graph operations use C1-C3 (O(1) bitvector ops).
+  Neither interferes with the other.
+
+  When you add a child via DN.SET, ONLY C0 word 5 is updated.
+  When you add a CAUSES edge, ONLY C1/C3 are updated.
+  The tree doesn't pollute the graph. The graph doesn't pollute the tree.
+```
 
 ### C1: Adjacency-OUT (words 8-15)
 
@@ -571,25 +789,61 @@ Decode at ingress: XOR with previous row. One pass. Then everything downstream i
 
 ---
 
-## 6. Arrow Schema
+## 6. Arrow Schema — Addr Is Column Zero
 
 ```rust
 fn cognitive_256_schema() -> Schema {
     Schema::new(vec![
-        // Extracted scalars for DataFusion pushdown (< 40 bytes/row)
-        Field::new("key",          DataType::FixedSizeBinary(16), false),
-        Field::new("dn_anchor",    DataType::FixedSizeBinary(4),  false),
-        Field::new("dn_leaf",      DataType::FixedSizeBinary(4),  false),
+        // ══════════════════════════════════════════════════════════════
+        // PRIMARY KEY: Addr(u16). This is the record's identity.
+        // Every Redis command, every SQL query, every Flight RPC, every
+        // GQL pattern match resolves to this column first.
+        // ══════════════════════════════════════════════════════════════
+        Field::new("addr",         DataType::UInt16,               false),
+
+        // Extracted scalars for DataFusion pushdown (< 30 bytes/row)
+        Field::new("dn_anchor",    DataType::FixedSizeBinary(4),  false), // T1-T4
+        Field::new("dn_leaf",      DataType::FixedSizeBinary(4),  false), // T5-T8
         Field::new("context_id",   DataType::UInt16,              false),
         Field::new("rung",         DataType::UInt8,               false),
+        Field::new("depth",        DataType::UInt8,               false),
+        Field::new("parent_addr",  DataType::UInt16,              false), // DN tree up
+        Field::new("first_child",  DataType::UInt16,              false), // DN tree down
         Field::new("popcount",     DataType::UInt16,              false),
         Field::new("label",        DataType::Utf8,                true),
 
-        // The compartmentalized record
+        // The compartmentalized record (SIMD-aligned bulk columns)
         Field::new("structure",    DataType::FixedSizeBinary(512),  false), // C0-C7
         Field::new("fingerprint",  DataType::FixedSizeBinary(1536), false), // C8-C31
     ])
 }
+```
+
+**Why `addr: UInt16` is column zero:**
+
+1. **BindSpace → Arrow**: `addr` is already the array index. Converting BindSpace to Arrow is `for i in 0..65536 { batch.addr[row] = i as u16; }`. No transformation.
+2. **DataFusion filter pushdown**: `WHERE addr = 0xA37B` is a direct UInt16 equality filter — Arrow dictionary encoding makes this O(1).
+3. **DN tree in DataFusion**: `SELECT * FROM nodes WHERE parent_addr = 0xB122` returns all children. No join. No edge table. Just a filter on an extracted u16 column.
+4. **Redis → Arrow round-trip**: `DN.GET Ada:A:soul:identity` → `addr = dn_path_to_addr()` → `SELECT * FROM nodes WHERE addr = ?`. Same key, same path, same record.
+5. **Flight DoGet**: Client sends `addr` as ticket. Server does `array[addr.prefix()][addr.slot()]`. Zero-copy RecordBatch out.
+6. **GQL MATCH**: `MATCH (a)-[:CAUSES]->(b)` internally resolves `a.addr` and `b.addr`. The pattern match result is a pair of UInt16 columns.
+
+**Tree operations as SQL (because why not):**
+
+```sql
+-- All children of a node (O(k) via sibling chain, or via extracted column):
+SELECT * FROM nodes WHERE parent_addr = 0xB122;
+
+-- Subtree scan (T1-T4 sort adjacency, O(log n + k)):
+SELECT * FROM nodes
+WHERE dn_anchor = X'A37B0000'  -- same T1-T4
+  AND depth > 3;
+
+-- Leaf nodes only:
+SELECT addr FROM nodes WHERE first_child = 0xFFFF;
+
+-- All roots:
+SELECT addr FROM nodes WHERE parent_addr = 0xFFFF AND depth = 0;
 ```
 
 Two SIMD columns (`structure` and `fingerprint`) plus extracted scalars. A query that only needs graph structure reads only the `structure` column (512 bytes/row). A query that only needs similarity reads only the `fingerprint` column (1,536 bytes/row). A combined query reads both.
@@ -696,23 +950,132 @@ impl CogRecord {
         unsafe { &*(self.words.as_ptr().add(64) as *const [u64; 192]) }
     }
 
-    // === C0 field accessors ===
+    // ═══════════════════════════════════════════════════════════════════
+    // C0: PRIMARY KEY + ROUTING
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// The primary key. This IS the record's identity everywhere.
+    #[inline(always)] pub fn addr(&self) -> u16 {
+        (self.words[0] & 0xFFFF) as u16  // prefix:slot packed
+    }
     #[inline(always)] pub fn prefix(&self)     -> u8  { self.words[0] as u8 }
     #[inline(always)] pub fn slot(&self)       -> u8  { (self.words[0] >> 8) as u8 }
     #[inline(always)] pub fn group48(&self)    -> u64 { self.words[0] >> 16 }
     #[inline(always)] pub fn disambig(&self)   -> u64 { self.words[1] }
-    #[inline(always)] pub fn context_id(&self) -> u16 { (self.words[5] & 0xFFFF) as u16 }
-    #[inline(always)] pub fn rung(&self)       -> u8  { (self.words[5] >> 16) as u8 }
-    #[inline(always)] pub fn dn_anchor(&self)  -> [u8; 4] {
+
+    /// DN tier slots (T1-T8), word 4
+    #[inline(always)] pub fn dn_anchor(&self) -> [u8; 4] {
         let b = self.words[4].to_le_bytes();
-        [b[0], b[1], b[2], b[3]]
+        [b[0], b[1], b[2], b[3]]  // T1, T2, T3, T4 (frozen)
     }
     #[inline(always)] pub fn dn_leaf(&self) -> [u8; 4] {
         let b = self.words[4].to_le_bytes();
-        [b[4], b[5], b[6], b[7]]
+        [b[4], b[5], b[6], b[7]]  // T5, T6, T7, T8 (ephemeral)
     }
 
-    // === C5 NARS (integer only) ===
+    // ═══════════════════════════════════════════════════════════════════
+    // C0 word 5: O(1) DN TREE (LCRS pointers)
+    //
+    // Parent is derived: strip last segment from DN path, hash again.
+    //   "Ada:A:soul:identity" → parent = dn_path_to_addr("Ada:A:soul")
+    // Siblings are derived: same parent, different leaf.
+    // But we ALSO store the pointers for O(1) chasing without string ops.
+    // ═══════════════════════════════════════════════════════════════════
+
+    const NONE_ADDR: u16 = 0xFFFF;
+
+    #[inline(always)] pub fn parent_addr(&self)    -> u16 {
+        (self.words[5] & 0xFFFF) as u16
+    }
+    #[inline(always)] pub fn first_child(&self)    -> u16 {
+        ((self.words[5] >> 16) & 0xFFFF) as u16
+    }
+    #[inline(always)] pub fn next_sibling(&self)   -> u16 {
+        ((self.words[5] >> 32) & 0xFFFF) as u16
+    }
+    #[inline(always)] pub fn prev_sibling(&self)   -> u16 {
+        ((self.words[5] >> 48) & 0xFFFF) as u16
+    }
+    #[inline(always)] pub fn is_leaf(&self) -> bool {
+        self.first_child() == Self::NONE_ADDR
+    }
+    #[inline(always)] pub fn is_root(&self) -> bool {
+        self.parent_addr() == Self::NONE_ADDR
+    }
+
+    /// Pack LCRS pointers into word 5
+    #[inline(always)]
+    pub fn set_tree_pointers(&mut self, parent: u16, first_child: u16,
+                              next_sib: u16, prev_sib: u16) {
+        self.words[5] = (parent as u64)
+            | ((first_child as u64) << 16)
+            | ((next_sib as u64) << 32)
+            | ((prev_sib as u64) << 48);
+    }
+
+    /// Insert self as first child of parent. O(1) pointer surgery.
+    /// Returns the old first_child (so caller can update its prev_sib).
+    pub fn insert_as_child(
+        records: &mut [CogRecord],  // the full 64K BindSpace
+        parent_idx: usize,
+        child_idx: usize,
+    ) {
+        let old_first = records[parent_idx].first_child();
+
+        // New child points to parent, old first child as next sibling
+        let child_parent = records[parent_idx].addr();
+        records[child_idx].set_tree_pointers(
+            child_parent,
+            Self::NONE_ADDR,  // new child has no children yet
+            old_first,        // next_sibling = parent's old first_child
+            Self::NONE_ADDR,  // prev_sibling = none (we're the new head)
+        );
+
+        // Old first child's prev_sibling = new child
+        if old_first != Self::NONE_ADDR {
+            let old_w5 = records[old_first as usize].words[5];
+            records[old_first as usize].words[5] =
+                (old_w5 & 0x0000_FFFF_FFFF_FFFF)
+                | ((records[child_idx].addr() as u64) << 48);
+        }
+
+        // Parent's first_child = new child
+        let p_w5 = records[parent_idx].words[5];
+        records[parent_idx].words[5] =
+            (p_w5 & 0xFFFF_FFFF_0000_FFFF)
+            | ((records[child_idx].addr() as u64) << 16);
+
+        // Increment child count in word 6
+        let w6 = records[parent_idx].words[6];
+        let old_cnt = ((w6 >> 40) & 0xFF) as u8;
+        records[parent_idx].words[6] =
+            (w6 & !(0xFF << 40)) | (((old_cnt.saturating_add(1)) as u64) << 40);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // C0 word 6: CONTEXT + HIERARCHY + COUNTS
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[inline(always)] pub fn context_id(&self) -> u16 {
+        (self.words[6] & 0xFFFF) as u16
+    }
+    #[inline(always)] pub fn rung(&self) -> u8 {
+        ((self.words[6] >> 16) & 0xFF) as u8
+    }
+    #[inline(always)] pub fn sigma(&self) -> u8 {
+        ((self.words[6] >> 24) & 0xFF) as u8
+    }
+    #[inline(always)] pub fn depth(&self) -> u8 {
+        ((self.words[6] >> 32) & 0xFF) as u8
+    }
+    #[inline(always)] pub fn child_count(&self) -> u8 {
+        ((self.words[6] >> 40) & 0xFF) as u8
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // C5: NARS (integer only, Q16.16 fixed-point)
+    // ═══════════════════════════════════════════════════════════════════
+
     #[inline(always)]
     pub fn nars_f_fp(&self) -> u32 { self.words[40] as u32 }
     #[inline(always)]
@@ -722,7 +1085,10 @@ impl CogRecord {
     #[inline(always)]
     pub fn evidence_neg(&self) -> u32 { (self.words[41] >> 32) as u32 }
 
-    // === C1 graph operations ===
+    // ═══════════════════════════════════════════════════════════════════
+    // C1-C3: GRAPH ADJACENCY + VERB MASK (separate from DN tree)
+    // ═══════════════════════════════════════════════════════════════════
+
     #[inline(always)]
     pub fn has_edge_to_bucket(&self, b: u16) -> bool {
         let w = self.words[8 + (b / 64) as usize];  // C1 starts at word 8
@@ -735,7 +1101,10 @@ impl CogRecord {
         w & (1u64 << (v % 64)) != 0
     }
 
-    // === Fingerprint SIMD operations ===
+    // ═══════════════════════════════════════════════════════════════════
+    // C8-C31: FINGERPRINT (192 words, 12,288 bits)
+    // ═══════════════════════════════════════════════════════════════════
+
     pub fn hamming_fp(&self, other: &CogRecord) -> u32 {
         let a = self.fingerprint();
         let b = other.fingerprint();
@@ -752,17 +1121,49 @@ impl CogRecord {
         r
     }
 
-    // === Scent from C7 ===
+    // ═══════════════════════════════════════════════════════════════════
+    // C7: SCENT + POPCOUNT + PARITY
+    // ═══════════════════════════════════════════════════════════════════
+
     pub fn scent_distance(&self, other: &CogRecord) -> u32 {
         let a = self.comp(Comp::ScentParity);
         let b = other.comp(Comp::ScentParity);
-        // Words 0-5 of C7 are expanded scent (48 bytes)
         let mut dist = 0u32;
         for i in 0..6 { dist += (a[i] ^ b[i]).count_ones(); }
         dist
     }
 
     pub fn popcount(&self) -> u16 { (self.words[62] & 0xFFFF) as u16 }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // DN TREE ITERATION (all O(1) per step, no external structures)
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// Iterate children: first_child → next_sibling → next_sibling → ...
+    pub fn children_iter<'a>(records: &'a [CogRecord], addr: u16)
+        -> impl Iterator<Item = u16> + 'a
+    {
+        let mut cursor = records[addr as usize].first_child();
+        std::iter::from_fn(move || {
+            if cursor == Self::NONE_ADDR { return None; }
+            let current = cursor;
+            cursor = records[current as usize].next_sibling();
+            Some(current)
+        })
+    }
+
+    /// Iterate ancestors: parent → parent → parent → ... → root
+    pub fn ancestors_iter<'a>(records: &'a [CogRecord], addr: u16)
+        -> impl Iterator<Item = u16> + 'a
+    {
+        let mut cursor = records[addr as usize].parent_addr();
+        std::iter::from_fn(move || {
+            if cursor == Self::NONE_ADDR { return None; }
+            let current = cursor;
+            cursor = records[current as usize].parent_addr();
+            Some(current)
+        })
+    }
 }
 ```
 
@@ -773,17 +1174,49 @@ impl CogRecord {
 | Step | What | Files touched |
 |------|------|---------------|
 | 1 | Define `CogRecord` struct + `Comp` enum | New: `src/storage/cog_record.rs` |
-| 2 | Add `fp_mul` and fixed-point NARS to `nars/truth.rs` | Existing: add `TruthValueFp` type |
-| 3 | Change `FINGERPRINT_WORDS` to 192, `FINGERPRINT_BYTES` to 1536 | `bind_space.rs`, `lib.rs` |
-| 4 | Update `FingerprintBuffer` to 1,536-byte fingerprints | `lance_zero_copy/mod.rs` |
-| 5 | Populate C1-C3 (adjacency, verb mask) on edge insert | `bind_space.rs` add_edge() |
-| 6 | Populate C4 (SPO sketch) on triple insert | `extensions/spo/spo.rs` |
-| 7 | Populate C5 (NARS) on inference | `nars/truth.rs`, `cog_redis.rs` |
-| 8 | Populate C6 (kernel memo) on node classification | `orchestration/semantic_kernel.rs` |
-| 9 | Populate C7 (scent, popcount) on fingerprint write | `core/scent.rs` |
-| 10 | Update `HdrCascadeExec` constants (WORDS=192) | `search/hdr_cascade.rs` |
-| 11 | Update `FingerprintTableProvider` → `CogRecordProvider` | `query/fingerprint_table.rs` |
-| 12 | Add `GraphTraversalExec` reading C1-C3 | New: `query/graph_traverse_exec.rs` |
-| 13 | Add `NarsFilterExec` reading C5 | New: `query/nars_filter_exec.rs` |
+| 2 | Replace `BindNode` with `CogRecord` in BindSpace arrays | `bind_space.rs` |
+| 3 | Add LCRS tree pointers to `write_dn_path()` | `bind_space.rs:1218` — call `insert_as_child()` |
+| 4 | Remove `BitpackedCsr` for DN tree ops (keep for edge-verb lookup) | `bind_space.rs` |
+| 5 | Add `fp_mul` and fixed-point NARS to `nars/truth.rs` | Existing: add `TruthValueFp` type |
+| 6 | Change `FINGERPRINT_WORDS` to 192, `FINGERPRINT_BYTES` to 1536 | `bind_space.rs`, `lib.rs` |
+| 7 | Update `FingerprintBuffer` to 1,536-byte fingerprints | `lance_zero_copy/mod.rs` |
+| 8 | Populate C1-C3 (adjacency, verb mask) on edge insert | `bind_space.rs` add_edge() |
+| 9 | Populate C4 (SPO sketch) on triple insert | `extensions/spo/spo.rs` |
+| 10 | Populate C5 (NARS) on inference | `nars/truth.rs`, `cog_redis.rs` |
+| 11 | Populate C6 (kernel memo) on node classification | `orchestration/semantic_kernel.rs` |
+| 12 | Populate C7 (scent, popcount) on fingerprint write | `core/scent.rs` |
+| 13 | Update `HdrCascadeExec` constants (WORDS=192) | `search/hdr_cascade.rs` |
+| 14 | Update `FingerprintTableProvider` → `CogRecordProvider` | `query/fingerprint_table.rs` |
+| 15 | Add `addr: UInt16` as primary column in Arrow schema | `query/fingerprint_table.rs` |
+| 16 | Extract `parent_addr`, `first_child` as Arrow columns | `query/fingerprint_table.rs` |
+| 17 | Add `GraphTraversalExec` reading C1-C3 | New: `query/graph_traverse_exec.rs` |
+| 18 | Add `NarsFilterExec` reading C5 | New: `query/nars_filter_exec.rs` |
 
-`BindSpace` arrays, `Addr(u16)`, `CogRedis` commands, Flight protocol, DN path parsing — all unchanged.
+**What changes:** `BindNode` → `CogRecord`. LCRS pointers replace CSR for tree ops. `addr` becomes Arrow column zero.
+
+**What doesn't change:** `Addr(u16)` semantics, `dn_path_to_addr()`, `CogRedis` command syntax, Flight protocol, DN path parsing. The path `"Ada:A:soul:identity"` still hashes to the same address. The address still indexes the same array. Everything converges to the same record — it just has more pre-computed state now.
+
+### The Path-Derived Insight
+
+The parent is free. The siblings are free. No traversal cost:
+
+```rust
+// Parent = strip last segment, hash again. O(1) string op.
+fn parent_path(path: &str) -> Option<&str> {
+    path.rfind(':').map(|i| &path[..i])
+}
+
+// "Ada:A:soul:identity" → "Ada:A:soul" → dn_path_to_addr() → parent Addr
+// No pointer chase needed to FIND the parent. The path IS the hierarchy.
+// But we STORE the pointer anyway (word 5) so that:
+//   - Records without their path string can still navigate
+//   - Arrow queries can do WHERE parent_addr = X without string parsing
+//   - Iterator chains (children, ancestors) work on raw Addr arrays
+//   - The tree structure survives serialization/deserialization
+//
+// Two paths to the same truth:
+//   1. String path: strip segment, hash → O(1), needs the path string
+//   2. Stored pointer: read word 5 → O(1), needs only the record
+//
+// Both return the same Addr. Always.
+```
