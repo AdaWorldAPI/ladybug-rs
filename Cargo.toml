@@ -59,7 +59,7 @@ full = [
 # Storage: LanceDB + Arrow ecosystem
 # Arrow 57.x aligns with DataFusion 52 / lance 1.0 (vendored)
 # -----------------------------------------------------------------------------
-lance = { version = "1.0", optional = true }
+lance = { version = "2.1.0-beta.0", optional = true, default-features = false }
 arrow = { version = "57", features = ["ffi"] }
 arrow-array = "57"
 arrow-schema = "57"
@@ -242,5 +242,19 @@ opt-level = 3
 # To enable: change datafusion = "52" above and uncomment patch below
 # =============================================================================
 
-# [patch.crates-io]
+[patch.crates-io]
+lance = { path = "vendor/lance/rust/lance", default-features = false }
+lance-core = { path = "vendor/lance/rust/lance-core" }
+lance-io = { path = "vendor/lance/rust/lance-io", default-features = false }
+lance-file = { path = "vendor/lance/rust/lance-file" }
+lance-encoding = { path = "vendor/lance/rust/lance-encoding" }
+lance-table = { path = "vendor/lance/rust/lance-table" }
+lance-index = { path = "vendor/lance/rust/lance-index" }
+lance-arrow = { path = "vendor/lance/rust/lance-arrow" }
+lance-linalg = { path = "vendor/lance/rust/lance-linalg" }
+lance-datafusion = { path = "vendor/lance/rust/lance-datafusion" }
+lance-namespace = { path = "vendor/lance/rust/lance-namespace" }
+lance-geo = { path = "vendor/lance/rust/lance-geo" }
+lance-bitpacking = { path = "vendor/lance/rust/compression/bitpacking" }
+fsst = { path = "vendor/lance/rust/compression/fsst" }
 # datafusion = { git = "https://github.com/AdaWorldAPI/datafusion", branch = "liblzma-fix" }
