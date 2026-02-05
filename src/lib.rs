@@ -170,6 +170,13 @@ impl From<query::QueryError> for Error {
     }
 }
 
+#[cfg(feature = "lancedb")]
+impl From<lance::Error> for Error {
+    fn from(e: lance::Error) -> Self {
+        Error::Storage(e.to_string())
+    }
+}
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 // === Constants ===

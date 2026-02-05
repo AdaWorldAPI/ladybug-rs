@@ -274,15 +274,9 @@ impl Database {
     pub async fn add_thought(&self, thought: &Thought) -> Result<String> {
         let node = NodeRecord::new(&thought.id, "Thought")
             .with_qidx(thought.qidx)
-            .with_content(&thought.content);
-        
-        // Add fingerprint if available
-        let node = if let Some(ref fp) = thought.fingerprint {
-            node.with_fingerprint(fp)
-        } else {
-            node
-        };
-        
+            .with_content(&thought.content)
+            .with_fingerprint(&thought.fingerprint);
+
         self.add_node(node).await?;
         Ok(thought.id.clone())
     }

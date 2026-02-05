@@ -120,30 +120,34 @@ impl SqlEngine {
     /// Register Lance tables as DataFusion tables
     #[cfg(feature = "lancedb")]
     async fn register_lance_tables(&mut self, db_path: &str) -> Result<()> {
-        use lance::dataset::Dataset;
+        use lance::Dataset;
         use datafusion::datasource::MemTable;
+        use arrow::datatypes::Schema as ArrowSchema;
 
         // Register nodes table
         let nodes_path = format!("{}/nodes.lance", db_path);
         if std::path::Path::new(&nodes_path).exists() {
-            let dataset = Dataset::open(&nodes_path).await?;
-            let schema = dataset.schema().clone();
+            let dataset = Dataset::open(&nodes_path).await
+                .map_err(|e| Error::Storage(e.to_string()))?;
+            let lance_schema = dataset.schema().clone();
+            let arrow_schema: ArrowSchema = ArrowSchema::from(&lance_schema);
 
             // Read all data into memory (for now - TODO: use Lance TableProvider)
             let batches = dataset
                 .scan()
                 .try_into_stream()
-                .await?;
+                .await
+                .map_err(|e| Error::Storage(e.to_string()))?;
 
             use futures::StreamExt;
             let mut all_batches = Vec::new();
             let mut stream = batches;
             while let Some(batch) = stream.next().await {
-                all_batches.push(batch?);
+                all_batches.push(batch.map_err(|e| Error::Storage(e.to_string()))?);
             }
 
             if !all_batches.is_empty() {
-                let table = MemTable::try_new(Arc::new(schema.into()), vec![all_batches])?;
+                let table = MemTable::try_new(Arc::new(arrow_schema), vec![all_batches])?;
                 self.ctx.register_table("nodes", Arc::new(table))?;
             }
         }
@@ -151,23 +155,26 @@ impl SqlEngine {
         // Register edges table
         let edges_path = format!("{}/edges.lance", db_path);
         if std::path::Path::new(&edges_path).exists() {
-            let dataset = Dataset::open(&edges_path).await?;
-            let schema = dataset.schema().clone();
+            let dataset = Dataset::open(&edges_path).await
+                .map_err(|e| Error::Storage(e.to_string()))?;
+            let lance_schema = dataset.schema().clone();
+            let arrow_schema: ArrowSchema = ArrowSchema::from(&lance_schema);
 
             let batches = dataset
                 .scan()
                 .try_into_stream()
-                .await?;
+                .await
+                .map_err(|e| Error::Storage(e.to_string()))?;
 
             use futures::StreamExt;
             let mut all_batches = Vec::new();
             let mut stream = batches;
             while let Some(batch) = stream.next().await {
-                all_batches.push(batch?);
+                all_batches.push(batch.map_err(|e| Error::Storage(e.to_string()))?);
             }
 
             if !all_batches.is_empty() {
-                let table = MemTable::try_new(Arc::new(schema.into()), vec![all_batches])?;
+                let table = MemTable::try_new(Arc::new(arrow_schema), vec![all_batches])?;
                 self.ctx.register_table("edges", Arc::new(table))?;
             }
         }
