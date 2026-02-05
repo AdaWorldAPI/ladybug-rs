@@ -117,13 +117,21 @@ The DN tree uses **left-child right-sibling (LCRS)** encoding — three u16 poin
 word 0:  PRIMARY KEY (Addr) + ROUTING
   ┌─────────┬─────────┬───────────────────────────────────────────────┐
   │ [0:7]   │ [8:15]  │ [16:63]                                      │
-  │ prefix  │ slot    │ group48: hash(T1:T2:T3:T4)                   │
+  │ slot    │ prefix  │ group48: hash(T1:T2:T3:T4)                   │
   │ u8      │ u8      │ u48 frozen path hash                         │
   └─────────┴─────────┴───────────────────────────────────────────────┘
   ↑                     ↑
   └── THIS IS Addr ──┘  └── Sort prefix for DN subtree locality
 
   Addr = (prefix << 8) | slot.  That's the record's identity.
+  In little-endian memory: byte 0 = slot (low), byte 1 = prefix (high).
+  This matches Addr::new() in bind_space.rs:
+    Self(((prefix as u16) << 8) | (slot as u16))
+  And the accessors:
+    fn prefix(self) -> u8 { (self.0 >> 8) as u8 }   // high byte
+    fn slot(self)   -> u8 { (self.0 & 0xFF) as u8 }  // low byte
+
+  addr() reads the u16 directly: records[addr as usize] is correct by construction.
   group48 = hash of the frozen T1:T2:T3:T4 path.
   Sort on (T1,T2,T3,T4,group48) clusters the DN subtree.
 
@@ -593,20 +601,32 @@ words 56-61: Expanded scent (48 bytes = 384 bits)
   This makes scent_distance a 48-byte XOR + popcount = 6 u64 ops.
   On AVX-512: nearly one instruction (load + XOR + popcount + hadd).
 
-word 62: Popcount + ECC
+word 62: Popcount + SECDED ECC
   ┌────────────────────────────────┬────────────────────────────────┐
   │ [0:15]                         │ [16:31]                        │
-  │ fp_popcount: u16               │ ecc_parity: u16                │
-  │ popcount(C8..C31)              │ Hamming(14, 12288) parity bits │
+  │ fp_popcount: u16               │ ecc_secded: u16                │
+  │ popcount(C8..C31)              │ 14 Hamming parity bits         │
+  │                                │ +1 overall parity = SECDED     │
+  │                                │ +1 spare                       │
   ├────────────────────────────────┼────────────────────────────────┤
   │ [32:47]                        │ [48:63]                        │
   │ structure_crc: u16             │ reserved: u16                  │
   │ CRC16 of C0-C6                │                                │
   └────────────────────────────────┴────────────────────────────────┘
 
+  SECDED: Single Error Correct, Double Error Detect.
+  For n=12,288 bits, r=14 parity bits (2^14=16384 ≥ 12288+14+1).
+  The 15th bit is overall parity — if Hamming decodes but overall
+  parity doesn't match, it's a double-bit error (detected, not corrected).
+  Cost: 15 bits out of the 16 in ecc_secded. 1 spare.
+
 word 63: XOR fold parity of fingerprint (C8-C31)
   192 words XOR-folded to 1 word.
   Quick integrity check: fold(fingerprint) should equal this word.
+
+  NOTE: word 62 (CRC, ECC) and word 63 (XOR fold) contain hashes/parity
+  that look random. Exclude them from XOR delta compression on disk —
+  they poison delta sparsity. Recompute on decode instead.
 ```
 
 ### C8-C31: Fingerprint (192 words = 12,288 bits)
@@ -698,7 +718,7 @@ Float conversion happens **only** at the boundary with human-readable output or 
 ```sql
 WHERE context_id = 0 AND rung <= 5 AND entity_type_id = 3
 ```
-Reads: C0 word 5 bytes [0:1] for context_id, byte [2] for rung, C0 word 6 bytes [6:7] for entity_type_id. Three integer comparisons on one cache line.
+Reads: C0 word 6 bytes [0:1] for context_id, byte [2] for rung, C0 word 7 byte [7] for entity_type_id. Three integer comparisons on one cache line.
 
 ### GQL / openCypher
 
@@ -822,7 +842,7 @@ fn cognitive_256_schema() -> Schema {
 **Why `addr: UInt16` is column zero:**
 
 1. **BindSpace → Arrow**: `addr` is already the array index. Converting BindSpace to Arrow is `for i in 0..65536 { batch.addr[row] = i as u16; }`. No transformation.
-2. **DataFusion filter pushdown**: `WHERE addr = 0xA37B` is a direct UInt16 equality filter — Arrow dictionary encoding makes this O(1).
+2. **DataFusion filter pushdown**: `WHERE addr = 0xA37B` is a direct UInt16 equality filter — fast scalar comparison, no join needed.
 3. **DN tree in DataFusion**: `SELECT * FROM nodes WHERE parent_addr = 0xB122` returns all children. No join. No edge table. Just a filter on an extracted u16 column.
 4. **Redis → Arrow round-trip**: `DN.GET Ada:A:soul:identity` → `addr = dn_path_to_addr()` → `SELECT * FROM nodes WHERE addr = ?`. Same key, same path, same record.
 5. **Flight DoGet**: Client sends `addr` as ticket. Server does `array[addr.prefix()][addr.slot()]`. Zero-copy RecordBatch out.
@@ -955,11 +975,17 @@ impl CogRecord {
     // ═══════════════════════════════════════════════════════════════════
 
     /// The primary key. This IS the record's identity everywhere.
+    /// In little-endian memory: byte 0 = slot, byte 1 = prefix.
+    /// Addr = (prefix << 8) | slot, matching Addr::new() in bind_space.rs.
     #[inline(always)] pub fn addr(&self) -> u16 {
-        (self.words[0] & 0xFFFF) as u16  // prefix:slot packed
+        (self.words[0] & 0xFFFF) as u16
     }
-    #[inline(always)] pub fn prefix(&self)     -> u8  { self.words[0] as u8 }
-    #[inline(always)] pub fn slot(&self)       -> u8  { (self.words[0] >> 8) as u8 }
+    #[inline(always)] pub fn prefix(&self) -> u8 {
+        (self.addr() >> 8) as u8          // high byte
+    }
+    #[inline(always)] pub fn slot(&self) -> u8 {
+        (self.addr() & 0xFF) as u8        // low byte
+    }
     #[inline(always)] pub fn group48(&self)    -> u64 { self.words[0] >> 16 }
     #[inline(always)] pub fn disambig(&self)   -> u64 { self.words[1] }
 
@@ -1220,3 +1246,308 @@ fn parent_path(path: &str) -> Option<&str> {
 //
 // Both return the same Addr. Always.
 ```
+
+---
+
+## 10. Compartment Authority Classification
+
+Not all compartments are created equal. Some are the source of truth; others are caches that can be rebuilt.
+
+| Comp | Name | Authority | Can regenerate from | Rehydrate trigger |
+|------|------|-----------|--------------------|--------------------|
+| C0 w0-4 | Key + DN tiers | **Authoritative** | — | Never (primary key) |
+| C0 w5 | LCRS pointers | **Authoritative** | DN path + parent chain | Bulk tree rebuild |
+| C0 w6 | Context/hierarchy | **Authoritative** | — | Never |
+| C0 w7 | Timestamp/access | **Authoritative** | — | Never |
+| C1 | Adjacency-OUT | **Derived** | Edge table | Edge insert/delete |
+| C2 | Adjacency-IN | **Derived** | Edge table | Edge insert/delete |
+| C3 | Verb mask | **Derived** | Edge table | Edge insert/delete |
+| C4 | SPO sketch | **Derived** | Triple store | Triple insert/delete |
+| C5 | NARS belief | **Semi-authoritative** | Evidence ring + inference | Manual re-inference |
+| C6 | Kernel memo | **Derived** | Classification pass | Re-classify on schema change |
+| C7 w56-61 | Expanded scent | **Derived** | Fingerprint | Fingerprint write |
+| C7 w62 | Popcount + ECC | **Derived** | Fingerprint | Fingerprint write |
+| C7 w63 | XOR fold parity | **Derived** | Fingerprint | Fingerprint write |
+| C8-C31 | Fingerprint | **Authoritative** | — | Never (semantic payload) |
+
+**Why this matters:**
+
+1. **CRC mismatch recovery**: if `structure_crc` (C7 word 62) fails validation, rehydrate C1-C4, C6, C7 from authoritative sources. Don't panic — just rebuild the caches.
+2. **Bulk import**: write C0 + C8-C31 first (authoritative data), then batch-populate C1-C7 derived compartments in a single pass.
+3. **C5 is special**: NARS belief is *learned state* — it accumulates from evidence over time. You can reconstruct it from the evidence ring buffer (C5 words 44-47) + inference history (word 43), but you lose revisions older than the ring. Treat it as semi-authoritative: backup before destructive operations.
+
+---
+
+## 11. Concurrency Model for LCRS Pointer Surgery
+
+`insert_as_child()` mutates 3 records atomically (child, old first child, parent). Without protection, concurrent inserts corrupt the sibling chain.
+
+### Recommended: Single-Writer Mutation Lane
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│ MUTATION MODEL                                                        │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  Base tree (context_id = 0):                                         │
+│    ONE writer lane. All DN.SET/DN.DELETE go through a single         │
+│    mutation queue. No locking needed — serial execution.              │
+│    Readers see a consistent snapshot (the last committed state).     │
+│                                                                      │
+│  Exploration overlays (context_id > 0):                              │
+│    Each exploration gets its own context_id.                         │
+│    Mutations happen in the overlay — no pointer surgery on base.     │
+│    The overlay is a sparse diff: only changed records exist.         │
+│    On promotion: merge overlay → base in the single writer lane.    │
+│                                                                      │
+│  Graph edges (C1-C3):                                                │
+│    Bitvectors are OR-monotonic for insert (set bit = add edge).     │
+│    Concurrent OR is safe (idempotent). Delete needs CAS or writer.  │
+│                                                                      │
+│  NARS inference (C5):                                                │
+│    Evidence ring is append-only within a context.                   │
+│    Revision = sum of evidence counts = commutative = safe to merge. │
+│    BUT: inference bitmap (word 43) must be OR-merged, not replaced. │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+**Why single-writer is fine here:**
+
+- The base tree changes slowly (DN paths are structural, not per-request).
+- Hot-path operations (search, NARS inference, graph traversal) are all **reads**. They touch C1-C7 and C8-C31 without writing to the tree.
+- The only tree mutation is `DN.SET` / `DN.DELETE`, which is a control plane operation, not data plane.
+- If you need concurrent tree builds (e.g., bulk import), partition by DN prefix and merge — each partition has its own writer.
+
+### Alternative: CAS Loops (for later, if needed)
+
+```rust
+// Atomic LCRS insert via compare-and-swap on word 5
+// Only viable if words[5] can be loaded/stored atomically (it's u64, so yes on x86/ARM64)
+fn insert_child_cas(records: &[AtomicU64], parent: usize, child: usize) {
+    loop {
+        let old_w5 = records[parent * 256 + 5].load(Ordering::Acquire);
+        let old_first = ((old_w5 >> 16) & 0xFFFF) as u16;
+
+        // Set child's pointers (child is exclusively ours — no CAS needed)
+        let child_w5 = (records[parent * 256].load(Ordering::Relaxed) & 0xFFFF) // parent addr
+            | ((CogRecord::NONE_ADDR as u64) << 16)   // no children yet
+            | ((old_first as u64) << 32)               // next_sib = old first
+            | ((CogRecord::NONE_ADDR as u64) << 48);   // prev_sib = none
+        records[child * 256 + 5].store(child_w5, Ordering::Release);
+
+        // CAS parent's first_child to point to new child
+        let new_w5 = (old_w5 & 0xFFFF_FFFF_0000_FFFF)
+            | ((records[child * 256].load(Ordering::Relaxed) & 0xFFFF) << 16);
+        if records[parent * 256 + 5].compare_exchange_weak(
+            old_w5, new_w5, Ordering::AcqRel, Ordering::Relaxed
+        ).is_ok() {
+            // Update old first child's prev_sib (if it exists)
+            if old_first != CogRecord::NONE_ADDR {
+                // This also needs CAS — the old_first's prev_sib might be concurrently modified
+                // In practice: use the single-writer model instead.
+            }
+            break;
+        }
+    }
+}
+```
+
+The CAS approach works for singly-linked (no prev_sibling). For doubly-linked LCRS, single-writer is cleaner.
+
+---
+
+## 12. SoA Canonical Storage (Arrow-Native) + AoS Kernel View
+
+### The AoS vs SoA Problem
+
+The CogRecord `[u64; 256]` is AoS (Array of Structures). Arrow columns are SoA (Structure of Arrays). You cannot wrap AoS memory as two Arrow `FixedSizeBinary` columns without repacking, because Arrow requires each column's values to be contiguous.
+
+```
+AoS layout (in memory):
+  [row0: 512B structure | 1536B fingerprint]
+  [row1: 512B structure | 1536B fingerprint]
+  [row2: 512B structure | 1536B fingerprint]
+  ...
+
+What Arrow needs (SoA):
+  structure column:    [row0 512B][row1 512B][row2 512B]...  ← contiguous
+  fingerprint column:  [row0 1536B][row1 1536B][row2 1536B]... ← contiguous
+
+AoS interleaves them. Arrow can't address that as columns without a copy.
+```
+
+### The Solution: SoA Canonical with AoS View
+
+Store SoA as the canonical layout. Build a `CogView` struct for the kernel that points into SoA memory for a single row, giving the same API as `CogRecord`.
+
+```rust
+use std::sync::Arc;
+use arrow_array::{FixedSizeBinaryArray, PrimitiveArray, RecordBatch, ArrayRef};
+use arrow_buffer::{Buffer, ScalarBuffer};
+use arrow_schema::{DataType, Field, Schema};
+
+/// SoA canonical storage. Arrow-native. Zero-copy for DataFusion.
+pub struct CogColumns {
+    pub n: usize,
+
+    // SoA scalars (DataFusion pushdown — cheap to filter)
+    pub addr:        Arc<[u16]>,
+    pub parent_addr: Arc<[u16]>,
+    pub first_child: Arc<[u16]>,
+    pub context_id:  Arc<[u16]>,
+    pub rung:        Arc<[u8]>,
+    pub depth:       Arc<[u8]>,
+    pub popcount:    Arc<[u16]>,
+
+    // SoA blobs (SIMD-aligned, contiguous per column)
+    pub structure:   Arc<[u8]>,    // n × 512, 64B-aligned rows
+    pub fingerprint: Arc<[u8]>,   // n × 1536, 64B-aligned rows
+}
+
+impl CogColumns {
+    /// Wrap SoA buffers as Arrow RecordBatch. No data copy.
+    pub fn to_record_batch(&self) -> RecordBatch {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("addr",        DataType::UInt16, false),
+            Field::new("parent_addr", DataType::UInt16, false),
+            Field::new("first_child", DataType::UInt16, false),
+            Field::new("context_id",  DataType::UInt16, false),
+            Field::new("rung",        DataType::UInt8,  false),
+            Field::new("depth",       DataType::UInt8,  false),
+            Field::new("popcount",    DataType::UInt16, false),
+            Field::new("structure",   DataType::FixedSizeBinary(512),  false),
+            Field::new("fingerprint", DataType::FixedSizeBinary(1536), false),
+        ]));
+
+        // Scalars: Arc<[T]> → Buffer → PrimitiveArray (no copy if same Arc)
+        let addr_arr: ArrayRef = Arc::new(PrimitiveArray::new(
+            ScalarBuffer::from(self.addr.to_vec()), None));
+        let parent_arr: ArrayRef = Arc::new(PrimitiveArray::new(
+            ScalarBuffer::from(self.parent_addr.to_vec()), None));
+        let first_child_arr: ArrayRef = Arc::new(PrimitiveArray::new(
+            ScalarBuffer::from(self.first_child.to_vec()), None));
+        let ctx_arr: ArrayRef = Arc::new(PrimitiveArray::new(
+            ScalarBuffer::from(self.context_id.to_vec()), None));
+        let rung_arr: ArrayRef = Arc::new(PrimitiveArray::new(
+            ScalarBuffer::from(self.rung.to_vec()), None));
+        let depth_arr: ArrayRef = Arc::new(PrimitiveArray::new(
+            ScalarBuffer::from(self.depth.to_vec()), None));
+        let pop_arr: ArrayRef = Arc::new(PrimitiveArray::new(
+            ScalarBuffer::from(self.popcount.to_vec()), None));
+
+        // Blobs: Arc<[u8]> → Buffer → FixedSizeBinaryArray (contiguous, zero-copy)
+        let str_buf = Buffer::from_vec(self.structure.to_vec());
+        let fp_buf = Buffer::from_vec(self.fingerprint.to_vec());
+        let str_arr: ArrayRef =
+            Arc::new(FixedSizeBinaryArray::new(512, str_buf, None));
+        let fp_arr: ArrayRef =
+            Arc::new(FixedSizeBinaryArray::new(1536, fp_buf, None));
+
+        RecordBatch::try_new(schema, vec![
+            addr_arr, parent_arr, first_child_arr, ctx_arr,
+            rung_arr, depth_arr, pop_arr, str_arr, fp_arr,
+        ]).unwrap()
+    }
+}
+
+/// AoS view into SoA storage for a single row.
+/// Gives the kernel the same pointer-arithmetic API as CogRecord
+/// without requiring AoS physical layout.
+pub struct CogView<'a> {
+    pub structure:   &'a [u8; 512],    // C0-C7
+    pub fingerprint: &'a [u8; 1536],   // C8-C31
+}
+
+impl<'a> CogView<'a> {
+    #[inline(always)]
+    pub fn from_soa(cols: &'a CogColumns, row: usize) -> Self {
+        let s_start = row * 512;
+        let f_start = row * 1536;
+        Self {
+            structure: unsafe {
+                &*(cols.structure.as_ptr().add(s_start) as *const [u8; 512])
+            },
+            fingerprint: unsafe {
+                &*(cols.fingerprint.as_ptr().add(f_start) as *const [u8; 1536])
+            },
+        }
+    }
+
+    /// Read structure as [u64; 64] for SIMD operations
+    #[inline(always)]
+    pub fn structure_words(&self) -> &[u64; 64] {
+        unsafe { &*(self.structure.as_ptr() as *const [u64; 64]) }
+    }
+
+    /// Read fingerprint as [u64; 192] for SIMD operations
+    #[inline(always)]
+    pub fn fingerprint_words(&self) -> &[u64; 192] {
+        unsafe { &*(self.fingerprint.as_ptr() as *const [u64; 192]) }
+    }
+
+    /// Read one compartment (8 u64 = 64 bytes = 1 cache line)
+    #[inline(always)]
+    pub fn comp(&self, c: u8) -> &[u64; 8] {
+        if c < 8 {
+            let offset = (c as usize) * 64;
+            unsafe { &*(self.structure.as_ptr().add(offset) as *const [u64; 8]) }
+        } else {
+            let offset = ((c - 8) as usize) * 64;
+            unsafe { &*(self.fingerprint.as_ptr().add(offset) as *const [u64; 8]) }
+        }
+    }
+
+    // All the same accessors as CogRecord, reading from structure_words()
+    #[inline(always)] pub fn addr(&self) -> u16 {
+        (self.structure_words()[0] & 0xFFFF) as u16
+    }
+    #[inline(always)] pub fn parent_addr(&self) -> u16 {
+        (self.structure_words()[5] & 0xFFFF) as u16
+    }
+    #[inline(always)] pub fn first_child(&self) -> u16 {
+        ((self.structure_words()[5] >> 16) & 0xFFFF) as u16
+    }
+    // ... etc — same bit-extraction as CogRecord
+}
+```
+
+### Alignment Guarantee
+
+Both `structure` (512 bytes) and `fingerprint` (1536 bytes) are multiples of 64. If the backing allocation is 64-byte aligned (which `Vec::with_capacity` + custom allocator ensures), then every row starts on a 64-byte boundary.
+
+```
+structure[row * 512]:     512 = 8 × 64   → every row is cache-line aligned
+fingerprint[row * 1536]:  1536 = 24 × 64 → every row is cache-line aligned
+```
+
+Your SIMD kernel can use `_mm512_load_si512` (aligned) instead of `loadu`. No alignment faults. No performance penalty.
+
+### Where Current Code Falls Into Trap A
+
+`fingerprint_table.rs:342-346` (current codebase):
+```rust
+// THIS COPIES EVERY FINGERPRINT:
+let mut fp_builder = FixedSizeBinaryBuilder::with_capacity(fingerprints.len(), FP_BYTES as i32);
+for fp in &fingerprints {
+    fp_builder.append_value(fp)?;  // ← memcpy per row
+}
+```
+
+The fix: replace `FingerprintTableProvider` with `CogRecordProvider` backed by `CogColumns`. The SoA `structure` and `fingerprint` buffers wrap directly as Arrow `FixedSizeBinary` columns. DataFusion reads them without any per-row copy.
+
+---
+
+## 13. Summary of Review Fixes Applied
+
+| # | Issue | Fix | Section |
+|---|-------|-----|---------|
+| 1 | Addr bit-order inconsistency: diagram said `[0:7]=prefix`, code says `[0:7]=slot` | Swapped diagram to `[0:7]=slot, [8:15]=prefix` (little-endian). Derived `prefix()/slot()` from `addr()`. | §2 C0, §8 |
+| 2 | Dictionary encoding claim for `addr = X` | Changed to "fast scalar comparison" — accurate for UInt16 equality | §6 |
+| 3 | ECC was SEC only (no double-error detect) | Added overall parity bit → SECDED. 15 bits total. | §2 C7 |
+| 4 | CRC/ECC/XOR-fold poison delta compression | Added exclusion note: strip C7 words 62-63 from delta stream, recompute on decode | §2 C7 |
+| 5 | SQL byte offset references stale after C0 restructure | Updated to word 6 / word 7 offsets | §4 |
+| 6 | No derived vs authoritative classification | Added compartment authority table | §10 |
+| 7 | No concurrency model for LCRS pointer surgery | Added single-writer mutation lane + CAS alternative | §11 |
+| 8 | AoS record can't back Arrow columns without copy | Added SoA canonical layout + AoS `CogView` | §12 |
+| 9 | Current `FixedSizeBinaryBuilder` copies every fingerprint | Documented Trap A and the fix path | §12 |
