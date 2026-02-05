@@ -59,6 +59,7 @@ pub mod thinking_template;
 pub mod a2a;
 pub mod blackboard_agent;
 pub mod crew_bridge;
+pub mod persona;
 
 pub use agent_card::{
     AgentCard, AgentCapability, AgentRole, AgentGoal,
@@ -83,4 +84,11 @@ pub use blackboard_agent::{
 pub use crew_bridge::{
     CrewBridge, CrewTask, CrewDispatch,
     TaskStatus, DispatchResult,
+};
+
+pub use persona::{
+    Persona, VolitionDTO, PersonalityTrait,
+    CommunicationStyle, FeatureAd,
+    PersonaExchange, VolitionSummary,
+    PersonaRegistry,
 };

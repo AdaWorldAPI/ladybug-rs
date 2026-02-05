@@ -12,6 +12,7 @@ use crate::storage::bind_space::{
     Addr, BindSpace, FINGERPRINT_WORDS,
     PREFIX_AGENTS, SLOT_SUBDIVISION,
 };
+use super::persona::Persona;
 
 /// Agent role mirrors crewAI's role field
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -68,6 +69,9 @@ pub struct AgentCard {
     pub verbose: bool,
     /// Maximum iterations before stopping
     pub max_iter: u32,
+    /// Deep personality profile (feature-aware A2A customization)
+    #[serde(default)]
+    pub persona: Option<Persona>,
     /// BindSpace slot assigned to this agent (0x00-0x7F)
     pub slot: Option<u8>,
 }
@@ -150,6 +154,7 @@ impl Default for AgentCard {
             memory: true,
             verbose: false,
             max_iter: 25,
+            persona: None,
             slot: None,
         }
     }
@@ -258,6 +263,7 @@ mod tests {
             memory: true,
             verbose: false,
             max_iter: 25,
+            persona: None,
             slot: None,
         };
 

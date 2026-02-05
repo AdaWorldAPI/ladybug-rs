@@ -470,6 +470,7 @@ impl FlightService for LadybugFlightService {
             || action_type.starts_with("a2a.")
             || action_type.starts_with("style.")
             || action_type.starts_with("agent.")
+            || action_type.starts_with("persona.")
         {
             let result = super::crew_actions::execute_crew_action(
                 action_type,
@@ -599,6 +600,30 @@ impl FlightService for LadybugFlightService {
                 ActionType {
                     r#type: "agent.blackboard.yaml".to_string(),
                     description: "Get agent blackboard as YAML handover. Body: JSON {agent_slot}".to_string(),
+                },
+                ActionType {
+                    r#type: "persona.attach".to_string(),
+                    description: "Attach persona to agent. Body: JSON {agent_slot, persona}".to_string(),
+                },
+                ActionType {
+                    r#type: "persona.attach_yaml".to_string(),
+                    description: "Attach persona from YAML. Body: YAML with agent_slot + persona fields".to_string(),
+                },
+                ActionType {
+                    r#type: "persona.get".to_string(),
+                    description: "Get agent persona as JSON. Body: JSON {agent_slot}".to_string(),
+                },
+                ActionType {
+                    r#type: "persona.get_yaml".to_string(),
+                    description: "Get agent persona as YAML. Body: JSON {agent_slot}".to_string(),
+                },
+                ActionType {
+                    r#type: "persona.compatible".to_string(),
+                    description: "Find compatible agents. Body: JSON {agent_slot, threshold}".to_string(),
+                },
+                ActionType {
+                    r#type: "persona.best_for_task".to_string(),
+                    description: "Find best agent for task by volition. Body: task description string".to_string(),
                 },
             ];
             actions.extend(crew_actions);

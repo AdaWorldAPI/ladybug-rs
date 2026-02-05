@@ -42,6 +42,8 @@ pub enum MessageKind {
     Query,
     /// Response to a query
     Response,
+    /// Persona exchange (feature-aware A2A customization)
+    PersonaExchange,
 }
 
 /// Delivery status for A2A messages

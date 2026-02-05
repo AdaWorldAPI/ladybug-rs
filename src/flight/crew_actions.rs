@@ -37,6 +37,7 @@ fn status_result_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
         Field::new("agents_registered", DataType::UInt32, false),
         Field::new("templates_registered", DataType::UInt32, false),
+        Field::new("personas_registered", DataType::UInt32, false),
         Field::new("tasks_queued", DataType::UInt32, false),
         Field::new("tasks_in_progress", DataType::UInt32, false),
         Field::new("tasks_completed", DataType::UInt32, false),
@@ -248,6 +249,7 @@ pub fn execute_crew_action(
                 vec![
                     Arc::new(UInt32Array::from(vec![status.agents_registered as u32])) as ArrayRef,
                     Arc::new(UInt32Array::from(vec![status.templates_registered as u32])) as ArrayRef,
+                    Arc::new(UInt32Array::from(vec![status.personas_registered as u32])) as ArrayRef,
                     Arc::new(UInt32Array::from(vec![status.tasks_queued as u32])) as ArrayRef,
                     Arc::new(UInt32Array::from(vec![status.tasks_in_progress as u32])) as ArrayRef,
                     Arc::new(UInt32Array::from(vec![status.tasks_completed as u32])) as ArrayRef,
@@ -416,6 +418,107 @@ pub fn execute_crew_action(
             ).map_err(|e| e.to_string())?;
 
             encode_to_ipc(&batch)
+        }
+
+        // === Persona Actions ===
+        "persona.attach" => {
+            #[derive(serde::Deserialize)]
+            struct AttachReq {
+                agent_slot: u8,
+                persona: crate::orchestration::persona::Persona,
+            }
+            let req: AttachReq = serde_json::from_slice(body)
+                .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            let mut bridge = bridge.write();
+            bridge.personas.attach(req.agent_slot, req.persona);
+            ok_message(&format!("Persona attached to agent slot {}", req.agent_slot))
+        }
+
+        "persona.attach_yaml" => {
+            let yaml = std::str::from_utf8(body)
+                .map_err(|e| format!("Invalid UTF-8: {}", e))?;
+
+            let persona = crate::orchestration::persona::Persona::from_yaml(yaml)?;
+            // Extract agent_slot from first line comment or separate field
+            // For now, require JSON wrapper with agent_slot
+            #[derive(serde::Deserialize)]
+            struct YamlAttach { agent_slot: u8 }
+
+            // Try parsing as YAML with agent_slot field
+            #[derive(serde::Deserialize)]
+            struct YamlReq {
+                agent_slot: u8,
+                #[serde(flatten)]
+                persona: crate::orchestration::persona::Persona,
+            }
+
+            let req: YamlReq = serde_yml::from_str(yaml)
+                .map_err(|e| format!("YAML parse error: {}", e))?;
+
+            let mut bridge = bridge.write();
+            bridge.personas.attach(req.agent_slot, req.persona);
+            ok_message(&format!("Persona attached to agent slot {}", req.agent_slot))
+        }
+
+        "persona.get" => {
+            #[derive(serde::Deserialize)]
+            struct GetReq { agent_slot: u8 }
+            let req: GetReq = serde_json::from_slice(body)
+                .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            let bridge = bridge.read();
+            match bridge.personas.get(req.agent_slot) {
+                Some(p) => Ok(p.to_json().into_bytes()),
+                None => error_result(&format!("No persona for agent slot {}", req.agent_slot)),
+            }
+        }
+
+        "persona.get_yaml" => {
+            #[derive(serde::Deserialize)]
+            struct GetReq { agent_slot: u8 }
+            let req: GetReq = serde_json::from_slice(body)
+                .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            let bridge = bridge.read();
+            match bridge.personas.get(req.agent_slot) {
+                Some(p) => Ok(p.to_yaml().into_bytes()),
+                None => error_result(&format!("No persona for agent slot {}", req.agent_slot)),
+            }
+        }
+
+        "persona.compatible" => {
+            #[derive(serde::Deserialize)]
+            struct CompatReq { agent_slot: u8, threshold: f32 }
+            let req: CompatReq = serde_json::from_slice(body)
+                .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            let bridge = bridge.read();
+            match bridge.personas.get(req.agent_slot) {
+                Some(persona) => {
+                    let results = bridge.personas.find_compatible(persona, req.threshold);
+                    let json = serde_json::to_vec(&results).map_err(|e| e.to_string())?;
+                    Ok(json)
+                }
+                None => error_result(&format!("No persona for agent slot {}", req.agent_slot)),
+            }
+        }
+
+        "persona.best_for_task" => {
+            let description = std::str::from_utf8(body)
+                .map_err(|e| format!("Invalid UTF-8: {}", e))?;
+
+            let bridge = bridge.read();
+            match bridge.personas.best_for_task(description) {
+                Some((slot, score)) => {
+                    let json = serde_json::json!({
+                        "agent_slot": slot,
+                        "alignment_score": score
+                    });
+                    Ok(serde_json::to_vec(&json).map_err(|e| e.to_string())?)
+                }
+                None => ok_message("No matching agent found for task"),
+            }
         }
 
         _ => error_result(&format!("Unknown crew action: {}", action_type)),
