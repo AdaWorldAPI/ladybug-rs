@@ -125,7 +125,7 @@ pub const TOTAL_ADDRESSES: usize = 65536;  // 256 × 256
 // =============================================================================
 
 /// 16-bit address as prefix:slot
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct Addr(pub u16);
 
 impl Addr {
@@ -964,13 +964,23 @@ impl BindSpace {
         addr
     }
 
-    /// Write at specific address (for fluid zone allocation)
+    /// Write at specific address (fluid, node, and orchestration surface zones)
     pub fn write_at(&mut self, addr: Addr, fingerprint: [u64; FINGERPRINT_WORDS]) -> bool {
         let prefix = addr.prefix();
         let slot = addr.slot() as usize;
 
-        // Can't write to surfaces (they're pre-initialized)
+        // Surface zone: allow writes to orchestration prefixes (0x0C-0x0F)
+        // but reject writes to pre-initialized query language prefixes (0x00-0x0B)
         if prefix <= PREFIX_SURFACE_END {
+            if prefix < PREFIX_AGENTS {
+                return false; // Query language surfaces are read-only
+            }
+            // Orchestration surfaces (agents, thinking, blackboard, a2a)
+            if let Some(c) = self.surfaces.get_mut(prefix as usize) {
+                let node = BindNode::new(fingerprint);
+                c[slot] = Some(node);
+                return true;
+            }
             return false;
         }
 

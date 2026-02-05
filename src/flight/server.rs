@@ -471,6 +471,9 @@ impl FlightService for LadybugFlightService {
             || action_type.starts_with("style.")
             || action_type.starts_with("agent.")
             || action_type.starts_with("persona.")
+            || action_type.starts_with("handover.")
+            || action_type.starts_with("orchestrator.")
+            || action_type.starts_with("kernel.")
         {
             let result = super::crew_actions::execute_crew_action(
                 action_type,
@@ -624,6 +627,61 @@ impl FlightService for LadybugFlightService {
                 ActionType {
                     r#type: "persona.best_for_task".to_string(),
                     description: "Find best agent for task by volition. Body: task description string".to_string(),
+                },
+                // Handover actions
+                ActionType {
+                    r#type: "handover.evaluate".to_string(),
+                    description: "Evaluate handover for agent. Body: JSON {agent_slot, task_description?}".to_string(),
+                },
+                ActionType {
+                    r#type: "handover.execute".to_string(),
+                    description: "Execute a handover decision. Body: JSON HandoverDecision".to_string(),
+                },
+                ActionType {
+                    r#type: "handover.update_flow".to_string(),
+                    description: "Update agent flow state. Body: JSON {agent_slot, gate_state: flow|hold|block}".to_string(),
+                },
+                // Meta-orchestrator actions
+                ActionType {
+                    r#type: "orchestrator.status".to_string(),
+                    description: "Get orchestrator status (flow states, affinities, events). No args".to_string(),
+                },
+                ActionType {
+                    r#type: "orchestrator.route_task".to_string(),
+                    description: "Route task to best agent by resonance. Body: task description string".to_string(),
+                },
+                ActionType {
+                    r#type: "orchestrator.tick".to_string(),
+                    description: "Tick orchestrator cycle, evaluate all agents. Returns non-Continue decisions".to_string(),
+                },
+                ActionType {
+                    r#type: "orchestrator.affinity".to_string(),
+                    description: "Get affinity between two agents. Body: JSON {agent_a, agent_b}".to_string(),
+                },
+                ActionType {
+                    r#type: "orchestrator.awareness".to_string(),
+                    description: "Get total A2A awareness density across all channels. No args".to_string(),
+                },
+                // Semantic kernel actions
+                ActionType {
+                    r#type: "kernel.describe".to_string(),
+                    description: "Get kernel description (address model, zones, operations, expansions)".to_string(),
+                },
+                ActionType {
+                    r#type: "kernel.introspect".to_string(),
+                    description: "Kernel self-observation: population density, hot zones, complexity. No args".to_string(),
+                },
+                ActionType {
+                    r#type: "kernel.zone_density".to_string(),
+                    description: "Count populated slots in zone. Body: JSON {prefix}".to_string(),
+                },
+                ActionType {
+                    r#type: "kernel.expansion".to_string(),
+                    description: "Get kernel expansion registry summary. No args".to_string(),
+                },
+                ActionType {
+                    r#type: "kernel.prefix_map".to_string(),
+                    description: "Get full prefix allocation map. No args".to_string(),
                 },
             ];
             actions.extend(crew_actions);
