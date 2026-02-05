@@ -38,6 +38,7 @@ use super::agent_card::{AgentCard, AgentRegistry};
 use super::thinking_template::{ThinkingTemplate, ThinkingTemplateRegistry};
 use super::blackboard_agent::{AgentBlackboard, BlackboardRegistry};
 use super::a2a::{A2AProtocol, A2AMessage, DeliveryStatus};
+use super::persona::{Persona, PersonaRegistry};
 
 /// Task status in the dispatch pipeline
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -92,6 +93,7 @@ pub struct CrewBridge {
     pub agents: AgentRegistry,
     pub templates: ThinkingTemplateRegistry,
     pub blackboards: BlackboardRegistry,
+    pub personas: PersonaRegistry,
     pub a2a: A2AProtocol,
     task_queue: Vec<CrewTask>,
     completed: Vec<DispatchResult>,
@@ -103,6 +105,7 @@ impl CrewBridge {
             agents: AgentRegistry::new(),
             templates: ThinkingTemplateRegistry::default(),
             blackboards: BlackboardRegistry::new(),
+            personas: PersonaRegistry::new(),
             a2a: A2AProtocol::new(),
             task_queue: Vec::new(),
             completed: Vec::new(),
@@ -112,11 +115,17 @@ impl CrewBridge {
     /// Register an agent from YAML definition
     pub fn register_agent(&mut self, card: AgentCard) -> Result<Addr, String> {
         let id = card.id.clone();
+        let persona = card.persona.clone();
         let addr = self.agents.register(card)?;
         let slot = addr.slot();
 
         // Create matching blackboard
         self.blackboards.create(slot, &id);
+
+        // Attach persona if provided
+        if let Some(p) = persona {
+            self.personas.attach(slot, p);
+        }
 
         Ok(addr)
     }
@@ -260,11 +269,12 @@ impl CrewBridge {
         self.a2a.receive(agent_slot)
     }
 
-    /// Bind all state into BindSpace (agents, templates, blackboards)
+    /// Bind all state into BindSpace (agents, templates, blackboards, personas)
     pub fn bind_all(&self, space: &mut BindSpace) {
         self.agents.bind_all(space);
         self.templates.bind_all(space);
         self.blackboards.bind_all(space);
+        self.personas.bind_all(space);
     }
 
     /// Get task queue
@@ -282,6 +292,7 @@ impl CrewBridge {
         BridgeStatus {
             agents_registered: self.agents.count(),
             templates_registered: self.templates.list().len(),
+            personas_registered: self.personas.list().len(),
             tasks_queued: self.task_queue.iter().filter(|t| t.status == TaskStatus::Queued).count(),
             tasks_in_progress: self.task_queue.iter().filter(|t| t.status == TaskStatus::InProgress).count(),
             tasks_completed: self.completed.len(),
@@ -301,6 +312,7 @@ impl Default for CrewBridge {
 pub struct BridgeStatus {
     pub agents_registered: usize,
     pub templates_registered: usize,
+    pub personas_registered: usize,
     pub tasks_queued: usize,
     pub tasks_in_progress: usize,
     pub tasks_completed: usize,

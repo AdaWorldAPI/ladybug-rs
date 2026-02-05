@@ -119,6 +119,10 @@ pub use crate::orchestration::{
     A2AMessage, A2AChannel, A2AProtocol, MessageKind,
     AgentBlackboard, AgentAwareness, BlackboardRegistry,
     CrewBridge, CrewTask, CrewDispatch, TaskStatus, DispatchResult,
+    Persona, VolitionDTO, PersonalityTrait,
+    CommunicationStyle, FeatureAd,
+    PersonaExchange, VolitionSummary,
+    PersonaRegistry,
 };
 
 // === Error types ===
