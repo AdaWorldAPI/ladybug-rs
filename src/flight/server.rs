@@ -153,12 +153,29 @@ pub fn traversal_flight_schema() -> SchemaRef {
 pub struct LadybugFlightService {
     bind_space: Arc<RwLock<BindSpace>>,
     hdr_index: Arc<RwLock<HdrIndex>>,
+    #[cfg(feature = "crewai")]
+    crew_bridge: Arc<RwLock<crate::orchestration::crew_bridge::CrewBridge>>,
 }
 
 impl LadybugFlightService {
     /// Create a new Flight service
     pub fn new(bind_space: Arc<RwLock<BindSpace>>, hdr_index: Arc<RwLock<HdrIndex>>) -> Self {
-        Self { bind_space, hdr_index }
+        Self {
+            bind_space,
+            hdr_index,
+            #[cfg(feature = "crewai")]
+            crew_bridge: Arc::new(RwLock::new(crate::orchestration::crew_bridge::CrewBridge::new())),
+        }
+    }
+
+    /// Create a new Flight service with an existing CrewBridge
+    #[cfg(feature = "crewai")]
+    pub fn with_crew_bridge(
+        bind_space: Arc<RwLock<BindSpace>>,
+        hdr_index: Arc<RwLock<HdrIndex>>,
+        crew_bridge: Arc<RwLock<crate::orchestration::crew_bridge::CrewBridge>>,
+    ) -> Self {
+        Self { bind_space, hdr_index, crew_bridge }
     }
 }
 
@@ -375,8 +392,34 @@ impl FlightService for LadybugFlightService {
                 let output = stream_traversal(bind_space, addr, 1, None);
                 Ok(Response::new(Box::pin(output)))
             }
+            // Orchestration zone tickets (crewai feature)
+            "agents" => {
+                // Stream prefix 0x0C (agent registry)
+                let output = stream_all_fingerprints(bind_space, 0x0C..=0x0C);
+                Ok(Response::new(Box::pin(output)))
+            }
+            "styles" => {
+                // Stream prefix 0x0D (thinking templates)
+                let output = stream_all_fingerprints(bind_space, 0x0D..=0x0D);
+                Ok(Response::new(Box::pin(output)))
+            }
+            "blackboards" => {
+                // Stream prefix 0x0E (agent blackboards)
+                let output = stream_all_fingerprints(bind_space, 0x0E..=0x0E);
+                Ok(Response::new(Box::pin(output)))
+            }
+            "a2a" => {
+                // Stream prefix 0x0F (A2A channels)
+                let output = stream_all_fingerprints(bind_space, 0x0F..=0x0F);
+                Ok(Response::new(Box::pin(output)))
+            }
+            "orchestration" => {
+                // Stream all orchestration prefixes 0x0C-0x0F
+                let output = stream_all_fingerprints(bind_space, 0x0C..=0x0F);
+                Ok(Response::new(Box::pin(output)))
+            }
             _ => Err(Status::invalid_argument(format!(
-                "Unknown ticket: {}. Use: all, surface, fluid, nodes, edges, search:..., topk:..., traverse:..., neighbors:...",
+                "Unknown ticket: {}. Use: all, surface, fluid, nodes, edges, agents, styles, blackboards, a2a, orchestration, search:..., topk:..., traverse:..., neighbors:...",
                 ticket_str
             ))),
         }
@@ -421,6 +464,27 @@ impl FlightService for LadybugFlightService {
         let action_type = action.r#type.as_str();
         let body = action.body;
 
+        // Route crew/a2a/style/agent actions to CrewBridge when crewai feature is enabled
+        #[cfg(feature = "crewai")]
+        if action_type.starts_with("crew.")
+            || action_type.starts_with("a2a.")
+            || action_type.starts_with("style.")
+            || action_type.starts_with("agent.")
+        {
+            let result = super::crew_actions::execute_crew_action(
+                action_type,
+                &body,
+                self.crew_bridge.clone(),
+                self.bind_space.clone(),
+            ).map_err(|e| Status::internal(e))?;
+
+            let flight_result = arrow_flight::Result {
+                body: bytes::Bytes::from(result),
+            };
+            let output = stream::once(async { Ok(flight_result) });
+            return Ok(Response::new(Box::pin(output)));
+        }
+
         let result = execute_action(action_type, &body, self.bind_space.clone(), self.hdr_index.clone())
             .await
             .map_err(|e| Status::internal(e))?;
@@ -437,7 +501,7 @@ impl FlightService for LadybugFlightService {
         &self,
         _request: Request<Empty>,
     ) -> Result<Response<Self::ListActionsStream>, Status> {
-        let actions = vec![
+        let mut actions = vec![
             ActionType {
                 r#type: "encode".to_string(),
                 description: "Encode text/data to 10K-bit fingerprint. Args: {text?, data?, style?}".to_string(),
@@ -475,6 +539,70 @@ impl FlightService for LadybugFlightService {
                 description: "Hydrate sparse addresses to fingerprints. Args: {addresses: [u16]}".to_string(),
             },
         ];
+
+        // Append crewAI orchestration actions when the feature is enabled
+        #[cfg(feature = "crewai")]
+        {
+            let crew_actions = vec![
+                ActionType {
+                    r#type: "crew.register_agent".to_string(),
+                    description: "Register agent(s) from YAML. Body: YAML string (agents.yaml format)".to_string(),
+                },
+                ActionType {
+                    r#type: "crew.register_style".to_string(),
+                    description: "Register thinking template(s) from YAML. Body: YAML string".to_string(),
+                },
+                ActionType {
+                    r#type: "crew.submit_task".to_string(),
+                    description: "Submit task for dispatch. Body: JSON CrewTask".to_string(),
+                },
+                ActionType {
+                    r#type: "crew.dispatch".to_string(),
+                    description: "Dispatch full crew. Body: JSON CrewDispatch".to_string(),
+                },
+                ActionType {
+                    r#type: "crew.complete_task".to_string(),
+                    description: "Mark task completed. Body: JSON {task_id, outcome}".to_string(),
+                },
+                ActionType {
+                    r#type: "crew.status".to_string(),
+                    description: "Get orchestration bridge status. No args".to_string(),
+                },
+                ActionType {
+                    r#type: "crew.bind".to_string(),
+                    description: "Bind all orchestration state to BindSpace. No args".to_string(),
+                },
+                ActionType {
+                    r#type: "a2a.send".to_string(),
+                    description: "Send A2A message. Body: JSON A2AMessage".to_string(),
+                },
+                ActionType {
+                    r#type: "a2a.receive".to_string(),
+                    description: "Receive pending A2A messages. Body: JSON {agent_slot}".to_string(),
+                },
+                ActionType {
+                    r#type: "style.resolve".to_string(),
+                    description: "Resolve thinking template by name. Body: template name string".to_string(),
+                },
+                ActionType {
+                    r#type: "style.list".to_string(),
+                    description: "List all thinking templates with modulation params. No args".to_string(),
+                },
+                ActionType {
+                    r#type: "agent.list".to_string(),
+                    description: "List all registered agents. No args".to_string(),
+                },
+                ActionType {
+                    r#type: "agent.blackboard".to_string(),
+                    description: "Get agent blackboard state. Body: JSON {agent_slot}".to_string(),
+                },
+                ActionType {
+                    r#type: "agent.blackboard.yaml".to_string(),
+                    description: "Get agent blackboard as YAML handover. Body: JSON {agent_slot}".to_string(),
+                },
+            ];
+            actions.extend(crew_actions);
+        }
 
         let output = stream::iter(actions.into_iter().map(Ok));
         Ok(Response::new(Box::pin(output)))

@@ -34,6 +34,9 @@ mod server;
 mod actions;
 mod capabilities;
 
+#[cfg(feature = "crewai")]
+pub mod crew_actions;
+
 #[cfg(feature = "flight")]
 pub use server::LadybugFlightService;
 #[cfg(feature = "flight")]
@@ -45,6 +48,10 @@ pub use capabilities::{
     TransportAdapter, TransportError,
     PythonClientConfig,
 };
+
+// crewAI orchestration actions
+#[cfg(feature = "crewai")]
+pub use crew_actions::execute_crew_action;
 
 // Legacy JSON types are only available with json_fallback feature
 #[cfg(all(feature = "flight", feature = "json_fallback"))]
