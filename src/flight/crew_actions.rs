@@ -42,6 +42,10 @@ fn status_result_schema() -> SchemaRef {
         Field::new("tasks_in_progress", DataType::UInt32, false),
         Field::new("tasks_completed", DataType::UInt32, false),
         Field::new("a2a_channels", DataType::UInt32, false),
+        Field::new("filters_registered", DataType::UInt32, false),
+        Field::new("guardrail_topics", DataType::UInt32, false),
+        Field::new("memories_stored", DataType::UInt32, false),
+        Field::new("verification_rules", DataType::UInt32, false),
     ]))
 }
 
@@ -254,6 +258,10 @@ pub fn execute_crew_action(
                     Arc::new(UInt32Array::from(vec![status.tasks_in_progress as u32])) as ArrayRef,
                     Arc::new(UInt32Array::from(vec![status.tasks_completed as u32])) as ArrayRef,
                     Arc::new(UInt32Array::from(vec![status.a2a_channels as u32])) as ArrayRef,
+                    Arc::new(UInt32Array::from(vec![status.filters_registered as u32])) as ArrayRef,
+                    Arc::new(UInt32Array::from(vec![status.guardrail_topics as u32])) as ArrayRef,
+                    Arc::new(UInt32Array::from(vec![status.memories_stored as u32])) as ArrayRef,
+                    Arc::new(UInt32Array::from(vec![status.verification_rules as u32])) as ArrayRef,
                 ],
             ).map_err(|e| e.to_string())?;
 
@@ -673,6 +681,329 @@ pub fn execute_crew_action(
             let bridge = bridge.read();
             let prefixes = bridge.kernel.expansion.all_prefixes();
             let json = serde_json::to_vec(&prefixes).map_err(|e| e.to_string())?;
+            Ok(json)
+        }
+
+        // === Filter Pipeline Actions ===
+        "filter.add" => {
+            let filter: crate::orchestration::kernel_extensions::KernelFilter =
+                serde_json::from_slice(body)
+                    .map_err(|e| format!("JSON parse error: {}", e))?;
+            let name = filter.name.clone();
+            let mut bridge = bridge.write();
+            bridge.filters.add(filter);
+            ok_message(&format!("Filter '{}' added to pipeline", name))
+        }
+
+        "filter.remove" => {
+            let name = std::str::from_utf8(body)
+                .map_err(|e| format!("Invalid UTF-8: {}", e))?
+                .trim();
+            let mut bridge = bridge.write();
+            bridge.filters.remove(name);
+            ok_message(&format!("Filter '{}' removed", name))
+        }
+
+        "filter.list" => {
+            let bridge = bridge.read();
+            let filters = bridge.filters.filters();
+            let json = serde_json::to_vec(filters).map_err(|e| e.to_string())?;
+            Ok(json)
+        }
+
+        "filter.apply" => {
+            let ctx: crate::orchestration::kernel_extensions::FilterContext =
+                serde_json::from_slice(body)
+                    .map_err(|e| format!("JSON parse error: {}", e))?;
+            let bridge = bridge.read();
+            let result = bridge.filters.apply(ctx);
+            let json = serde_json::json!({
+                "short_circuit": result.context.short_circuit,
+                "filters_applied": result.filters_applied,
+                "short_circuited_by": result.short_circuited_by,
+                "metadata": result.context.metadata,
+                "label": result.context.label,
+            });
+            Ok(serde_json::to_vec(&json).map_err(|e| e.to_string())?)
+        }
+
+        // === Guardrail Actions ===
+        "guardrail.apply" => {
+            #[derive(serde::Deserialize)]
+            struct GuardrailReq {
+                fingerprint: Vec<u64>,
+                source_addrs: Option<Vec<u16>>,
+            }
+            let req: GuardrailReq = serde_json::from_slice(body)
+                .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            if req.fingerprint.len() != crate::storage::bind_space::FINGERPRINT_WORDS {
+                return error_result(&format!(
+                    "Fingerprint must have {} words, got {}",
+                    crate::storage::bind_space::FINGERPRINT_WORDS,
+                    req.fingerprint.len()
+                ));
+            }
+
+            let mut fp = [0u64; crate::storage::bind_space::FINGERPRINT_WORDS];
+            fp.copy_from_slice(&req.fingerprint);
+
+            let space = bind_space.read();
+            let sources: Option<Vec<crate::storage::bind_space::Addr>> = req.source_addrs.map(|addrs|
+                addrs.iter().map(|&a| crate::storage::bind_space::Addr(a)).collect()
+            );
+
+            let bridge = bridge.read();
+            let result = bridge.guardrail.apply(
+                &fp,
+                &space,
+                sources.as_deref(),
+            );
+            let json = serde_json::to_vec(&result).map_err(|e| e.to_string())?;
+            Ok(json)
+        }
+
+        "guardrail.add_topic" => {
+            let topic: crate::orchestration::kernel_extensions::DeniedTopic =
+                serde_json::from_slice(body)
+                    .map_err(|e| format!("JSON parse error: {}", e))?;
+            let name = topic.name.clone();
+            let mut bridge = bridge.write();
+            bridge.guardrail.add_denied_topic(topic);
+            ok_message(&format!("Denied topic '{}' added", name))
+        }
+
+        "guardrail.enable_grounding" => {
+            #[derive(serde::Deserialize)]
+            struct GroundReq { threshold: f32 }
+            let req: GroundReq = serde_json::from_slice(body)
+                .map_err(|e| format!("JSON parse error: {}", e))?;
+            let mut bridge = bridge.write();
+            bridge.guardrail.enable_grounding(req.threshold);
+            ok_message(&format!("Grounding enabled with threshold {:.2}", req.threshold))
+        }
+
+        "guardrail.add_content_filter" => {
+            #[derive(serde::Deserialize)]
+            struct ContentReq {
+                category: crate::orchestration::kernel_extensions::ContentCategory,
+                max_severity: crate::orchestration::kernel_extensions::GuardrailSeverity,
+            }
+            let req: ContentReq = serde_json::from_slice(body)
+                .map_err(|e| format!("JSON parse error: {}", e))?;
+            let mut bridge = bridge.write();
+            bridge.guardrail.add_content_filter(req.category, req.max_severity);
+            ok_message("Content filter added")
+        }
+
+        // === Workflow Actions ===
+        "workflow.execute" => {
+            let node: crate::orchestration::kernel_extensions::WorkflowNode =
+                serde_json::from_slice(body)
+                    .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            let bridge = bridge.read();
+            let mut space = bind_space.write();
+            let result = crate::orchestration::kernel_extensions::execute_workflow(
+                &node, &mut space, &bridge.kernel,
+            );
+            let json = serde_json::to_vec(&result).map_err(|e| e.to_string())?;
+            Ok(json)
+        }
+
+        // === Memory Bank Actions ===
+        "memory.store" => {
+            #[derive(serde::Deserialize)]
+            struct StoreReq {
+                kind: crate::orchestration::kernel_extensions::MemoryKind,
+                content: String,
+                fingerprint: Vec<u64>,
+                cycle: u64,
+                source_agent: Option<u8>,
+            }
+            let req: StoreReq = serde_json::from_slice(body)
+                .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            if req.fingerprint.len() != crate::storage::bind_space::FINGERPRINT_WORDS {
+                return error_result(&format!(
+                    "Fingerprint must have {} words, got {}",
+                    crate::storage::bind_space::FINGERPRINT_WORDS,
+                    req.fingerprint.len()
+                ));
+            }
+
+            let mut fp = [0u64; crate::storage::bind_space::FINGERPRINT_WORDS];
+            fp.copy_from_slice(&req.fingerprint);
+
+            let mut bridge = bridge.write();
+            let mut space = bind_space.write();
+            match bridge.memory.store(req.kind, &req.content, fp, &mut space, req.cycle, req.source_agent) {
+                Some(addr) => ok_message(&format!("Memory stored at {:04X}", addr.0)),
+                None => error_result("Memory prefix full (255 slots)"),
+            }
+        }
+
+        "memory.retrieve" => {
+            #[derive(serde::Deserialize)]
+            struct RetrieveReq {
+                query: Vec<u64>,
+                kind: Option<crate::orchestration::kernel_extensions::MemoryKind>,
+                threshold: f32,
+                limit: usize,
+                cycle: u64,
+            }
+            let req: RetrieveReq = serde_json::from_slice(body)
+                .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            if req.query.len() != crate::storage::bind_space::FINGERPRINT_WORDS {
+                return error_result(&format!(
+                    "Query fingerprint must have {} words, got {}",
+                    crate::storage::bind_space::FINGERPRINT_WORDS,
+                    req.query.len()
+                ));
+            }
+
+            let mut query = [0u64; crate::storage::bind_space::FINGERPRINT_WORDS];
+            query.copy_from_slice(&req.query);
+
+            let mut bridge = bridge.write();
+            let space = bind_space.read();
+            let results = bridge.memory.retrieve(&query, req.kind, &space, req.threshold, req.limit, req.cycle);
+            let json = serde_json::to_vec(&results).map_err(|e| e.to_string())?;
+            Ok(json)
+        }
+
+        "memory.extract_semantic" => {
+            #[derive(serde::Deserialize)]
+            struct ExtractReq { cycle: u64 }
+            let req: ExtractReq = serde_json::from_slice(body)
+                .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            let mut bridge = bridge.write();
+            let mut space = bind_space.write();
+            let addrs = bridge.memory.extract_semantic(&mut space, req.cycle);
+            let json = serde_json::json!({
+                "extracted": addrs.len(),
+                "addrs": addrs.iter().map(|a| format!("{:04X}", a.0)).collect::<Vec<_>>(),
+            });
+            Ok(serde_json::to_vec(&json).map_err(|e| e.to_string())?)
+        }
+
+        "memory.list" => {
+            #[derive(serde::Deserialize)]
+            struct ListReq { kind: Option<crate::orchestration::kernel_extensions::MemoryKind> }
+            let req: ListReq = serde_json::from_slice(body)
+                .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            let bridge = bridge.read();
+            let memories = bridge.memory.list(req.kind);
+            let json = serde_json::to_vec(&memories).map_err(|e| e.to_string())?;
+            Ok(json)
+        }
+
+        // === Observability Actions ===
+        "observability.start_session" => {
+            #[derive(serde::Deserialize)]
+            struct SessionReq { agent_slot: Option<u8>, cycle: u64 }
+            let req: SessionReq = serde_json::from_slice(body)
+                .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            let mut bridge = bridge.write();
+            let id = bridge.observability.start_session(req.agent_slot, req.cycle);
+            ok_message(&format!("Session started: {}", id))
+        }
+
+        "observability.start_trace" => {
+            #[derive(serde::Deserialize)]
+            struct TraceReq { operation: String, cycle: u64 }
+            let req: TraceReq = serde_json::from_slice(body)
+                .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            let mut bridge = bridge.write();
+            let id = bridge.observability.start_trace(&req.operation, req.cycle);
+            ok_message(&format!("Trace started: {}", id))
+        }
+
+        "observability.add_span" => {
+            #[derive(serde::Deserialize)]
+            struct SpanReq {
+                trace_id: String,
+                span: crate::orchestration::kernel_extensions::KernelSpan,
+            }
+            let req: SpanReq = serde_json::from_slice(body)
+                .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            let mut bridge = bridge.write();
+            bridge.observability.add_span(&req.trace_id, req.span);
+            ok_message("Span added to trace")
+        }
+
+        "observability.complete_trace" => {
+            #[derive(serde::Deserialize)]
+            struct CompleteReq {
+                trace_id: String,
+                cycle: u64,
+                grounding: Option<crate::orchestration::kernel_extensions::GroundingMetadata>,
+            }
+            let req: CompleteReq = serde_json::from_slice(body)
+                .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            let mut bridge = bridge.write();
+            bridge.observability.complete_trace(&req.trace_id, req.cycle, req.grounding);
+            ok_message(&format!("Trace {} completed", req.trace_id))
+        }
+
+        "observability.summary" => {
+            let bridge = bridge.read();
+            let summary = bridge.observability.summary();
+            let json = serde_json::to_vec(&summary).map_err(|e| e.to_string())?;
+            Ok(json)
+        }
+
+        // === Verification Actions ===
+        "verification.add_rule" => {
+            let rule: crate::orchestration::kernel_extensions::VerificationRule =
+                serde_json::from_slice(body)
+                    .map_err(|e| format!("JSON parse error: {}", e))?;
+            let name = rule.name.clone();
+            let mut bridge = bridge.write();
+            bridge.verification.add_rule(rule);
+            ok_message(&format!("Verification rule '{}' added", name))
+        }
+
+        "verification.verify" => {
+            #[derive(serde::Deserialize)]
+            struct VerifyReq {
+                fingerprint: Vec<u64>,
+                addr: u16,
+            }
+            let req: VerifyReq = serde_json::from_slice(body)
+                .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            if req.fingerprint.len() != crate::storage::bind_space::FINGERPRINT_WORDS {
+                return error_result(&format!(
+                    "Fingerprint must have {} words, got {}",
+                    crate::storage::bind_space::FINGERPRINT_WORDS,
+                    req.fingerprint.len()
+                ));
+            }
+
+            let mut fp = [0u64; crate::storage::bind_space::FINGERPRINT_WORDS];
+            fp.copy_from_slice(&req.fingerprint);
+
+            let bridge = bridge.read();
+            let results = bridge.verification.verify_fingerprint(
+                &fp,
+                crate::storage::bind_space::Addr(req.addr),
+            );
+            let json = serde_json::to_vec(&results).map_err(|e| e.to_string())?;
+            Ok(json)
+        }
+
+        "verification.list_rules" => {
+            let bridge = bridge.read();
+            let rules = bridge.verification.rules();
+            let json = serde_json::to_vec(rules).map_err(|e| e.to_string())?;
             Ok(json)
         }
 
