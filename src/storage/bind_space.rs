@@ -13,11 +13,11 @@
 //! │                 │  0x02: Cypher/GQL    0x0A: Memory ops                     │
 //! │                 │       (0x00-0x7F: Cypher, 0x80-0xFF: GQL)                 │
 //! │                 │  0x03: GraphQL       0x0B: Learning ops                   │
-//! │                 │  0x04: NARS/ACT-R    0x0C: Reserved                       │
+//! │                 │  0x04: NARS/ACT-R    0x0C: Agents (crewai)               │
 //! │                 │       (0x00-0x7F: NARS, 0x80-0xFF: ACT-R)                 │
-//! │                 │  0x05: Causal        0x0D: Reserved                       │
-//! │                 │  0x06: Meta          0x0E: Reserved                       │
-//! │                 │  0x07: Verbs         0x0F: Reserved                       │
+//! │                 │  0x05: Causal        0x0D: Thinking Styles               │
+//! │                 │  0x06: Meta          0x0E: Blackboard                    │
+//! │                 │  0x07: Verbs         0x0F: A2A Routing                   │
 //! ├─────────────────┼───────────────────────────────────────────────────────────┤
 //! │  0x10-0x7F:XX   │  FLUID (112 prefixes × 256 = 28,672)                      │
 //! │                 │  Edges + Context selector + Working memory                │
@@ -85,6 +85,14 @@ pub const PREFIX_RESERVED_C: u8 = 0x0C;
 pub const PREFIX_RESERVED_D: u8 = 0x0D;
 pub const PREFIX_RESERVED_E: u8 = 0x0E;
 pub const PREFIX_RESERVED_F: u8 = 0x0F;
+
+// --- Orchestration prefixes (crewai feature) ---
+// These overlay the reserved 0x0C-0x0F surface addresses.
+// Slot subdivision: 0x00-0x7F primary, 0x80-0xFF secondary (same as SQL/Cypher)
+pub const PREFIX_AGENTS: u8 = 0x0C;       // Agent registry (cards, capabilities, goals)
+pub const PREFIX_THINKING: u8 = 0x0D;     // Thinking style templates (YAML → FieldModulation)
+pub const PREFIX_BLACKBOARD: u8 = 0x0E;   // Per-agent blackboard state (ice-caked awareness)
+pub const PREFIX_A2A: u8 = 0x0F;          // Agent-to-Agent message routing channels
 
 // Slot subdivision boundary for shared prefixes
 // Slots 0x00-0x7F: primary language (SQL, Cypher, NARS)

@@ -81,6 +81,9 @@ pub mod bench;
 #[cfg(feature = "flight")]
 pub mod flight;
 
+#[cfg(feature = "crewai")]
+pub mod orchestration;
+
 // === Re-exports for convenience ===
 
 // Core types
@@ -107,6 +110,16 @@ pub use crate::query::{Query, QueryResult, cypher_to_sql, SqlEngine, QueryBuilde
 // Storage
 #[cfg(feature = "lancedb")]
 pub use crate::storage::{Database, LanceStore, NodeRecord, EdgeRecord};
+
+// Orchestration (crewAI integration)
+#[cfg(feature = "crewai")]
+pub use crate::orchestration::{
+    AgentCard, AgentRegistry, AgentCapability, AgentRole, AgentGoal,
+    ThinkingTemplate, ThinkingTemplateRegistry, StyleOverride,
+    A2AMessage, A2AChannel, A2AProtocol, MessageKind,
+    AgentBlackboard, AgentAwareness, BlackboardRegistry,
+    CrewBridge, CrewTask, CrewDispatch, TaskStatus, DispatchResult,
+};
 
 // === Error types ===
 

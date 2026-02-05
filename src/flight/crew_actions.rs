@@ -1,0 +1,423 @@
+//! crewAI Flight Actions — DoAction handlers for orchestration
+//!
+//! Adds the following Flight DoAction endpoints:
+//!
+//! | Action | Description | Arrow IPC Params |
+//! |--------|-------------|-----------------|
+//! | `crew.register_agent` | Register agent from YAML | {yaml: binary} |
+//! | `crew.register_style` | Register thinking template | {yaml: binary} |
+//! | `crew.submit_task` | Submit task for dispatch | {json: binary} |
+//! | `crew.dispatch` | Dispatch full crew | {json: binary} |
+//! | `crew.complete_task` | Mark task completed | {task_id, outcome} |
+//! | `crew.status` | Get bridge status | {} |
+//! | `a2a.send` | Send A2A message | {json: binary} |
+//! | `a2a.receive` | Receive pending messages | {agent_slot: u8} |
+//! | `sci.query` | Route sci/v1 query | {endpoint, params: binary} |
+//! | `style.resolve` | Resolve thinking template | {name: string} |
+//! | `style.list` | List all thinking templates | {} |
+//! | `agent.blackboard` | Get agent blackboard state | {agent_slot: u8} |
+
+use std::sync::Arc;
+use parking_lot::RwLock;
+
+use arrow_array::{
+    ArrayRef, RecordBatch, StringArray, UInt8Array, UInt32Array, BooleanArray, Float32Array,
+};
+use arrow_ipc::writer::StreamWriter;
+use arrow_schema::{DataType, Field, Schema, SchemaRef};
+
+use crate::storage::BindSpace;
+use crate::orchestration::crew_bridge::CrewBridge;
+
+// =============================================================================
+// SCHEMAS
+// =============================================================================
+
+fn status_result_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("agents_registered", DataType::UInt32, false),
+        Field::new("templates_registered", DataType::UInt32, false),
+        Field::new("tasks_queued", DataType::UInt32, false),
+        Field::new("tasks_in_progress", DataType::UInt32, false),
+        Field::new("tasks_completed", DataType::UInt32, false),
+        Field::new("a2a_channels", DataType::UInt32, false),
+    ]))
+}
+
+fn agent_list_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("slot", DataType::UInt8, false),
+        Field::new("id", DataType::Utf8, false),
+        Field::new("name", DataType::Utf8, false),
+        Field::new("role", DataType::Utf8, false),
+        Field::new("thinking_style", DataType::Utf8, false),
+        Field::new("allow_delegation", DataType::Boolean, false),
+    ]))
+}
+
+fn template_list_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("slot", DataType::UInt8, false),
+        Field::new("name", DataType::Utf8, false),
+        Field::new("base_style", DataType::Utf8, false),
+        Field::new("resonance_threshold", DataType::Float32, false),
+        Field::new("fan_out", DataType::UInt32, false),
+        Field::new("depth_bias", DataType::Float32, false),
+        Field::new("exploration", DataType::Float32, false),
+    ]))
+}
+
+fn blackboard_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("agent_slot", DataType::UInt8, false),
+        Field::new("agent_id", DataType::Utf8, false),
+        Field::new("active_style", DataType::Utf8, false),
+        Field::new("coherence", DataType::Float32, false),
+        Field::new("progress", DataType::Float32, false),
+        Field::new("cycle", DataType::UInt32, false),
+        Field::new("knowledge_count", DataType::UInt32, false),
+        Field::new("ice_caked_count", DataType::UInt32, false),
+        Field::new("pending_messages", DataType::UInt32, false),
+    ]))
+}
+
+fn dispatch_result_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("task_id", DataType::Utf8, false),
+        Field::new("status", DataType::Utf8, false),
+        Field::new("agent_slot", DataType::UInt8, true),
+        Field::new("message", DataType::Utf8, false),
+    ]))
+}
+
+fn error_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("error", DataType::Boolean, false),
+        Field::new("message", DataType::Utf8, false),
+    ]))
+}
+
+// =============================================================================
+// IPC HELPERS
+// =============================================================================
+
+fn encode_to_ipc(batch: &RecordBatch) -> Result<Vec<u8>, String> {
+    let mut buffer = Vec::new();
+    {
+        let mut writer = StreamWriter::try_new(&mut buffer, batch.schema().as_ref())
+            .map_err(|e| e.to_string())?;
+        writer.write(batch).map_err(|e| e.to_string())?;
+        writer.finish().map_err(|e| e.to_string())?;
+    }
+    Ok(buffer)
+}
+
+fn error_result(msg: &str) -> Result<Vec<u8>, String> {
+    let schema = error_schema();
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(BooleanArray::from(vec![true])) as ArrayRef,
+            Arc::new(StringArray::from(vec![msg])) as ArrayRef,
+        ],
+    ).map_err(|e| e.to_string())?;
+    encode_to_ipc(&batch)
+}
+
+fn ok_message(msg: &str) -> Result<Vec<u8>, String> {
+    let schema = error_schema();
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(BooleanArray::from(vec![false])) as ArrayRef,
+            Arc::new(StringArray::from(vec![msg])) as ArrayRef,
+        ],
+    ).map_err(|e| e.to_string())?;
+    encode_to_ipc(&batch)
+}
+
+// =============================================================================
+// ACTION EXECUTION
+// =============================================================================
+
+/// Execute a crew/a2a/sci/style/agent action
+pub fn execute_crew_action(
+    action_type: &str,
+    body: &[u8],
+    bridge: Arc<RwLock<CrewBridge>>,
+    bind_space: Arc<RwLock<BindSpace>>,
+) -> Result<Vec<u8>, String> {
+    match action_type {
+        // === Crew Actions ===
+        "crew.register_agent" => {
+            let yaml = std::str::from_utf8(body)
+                .map_err(|e| format!("Invalid UTF-8: {}", e))?;
+
+            let mut bridge = bridge.write();
+            match bridge.register_agents_yaml(yaml) {
+                Ok(addrs) => {
+                    let msg = format!("Registered {} agents at {:?}",
+                        addrs.len(),
+                        addrs.iter().map(|a| format!("{:#06x}", a.0)).collect::<Vec<_>>()
+                    );
+                    ok_message(&msg)
+                }
+                Err(e) => error_result(&e),
+            }
+        }
+
+        "crew.register_style" => {
+            let yaml = std::str::from_utf8(body)
+                .map_err(|e| format!("Invalid UTF-8: {}", e))?;
+
+            let mut bridge = bridge.write();
+            match bridge.register_templates_yaml(yaml) {
+                Ok(addrs) => {
+                    let msg = format!("Registered {} templates at {:?}",
+                        addrs.len(),
+                        addrs.iter().map(|a| format!("{:#06x}", a.0)).collect::<Vec<_>>()
+                    );
+                    ok_message(&msg)
+                }
+                Err(e) => error_result(&e),
+            }
+        }
+
+        "crew.submit_task" => {
+            let task: crate::orchestration::crew_bridge::CrewTask =
+                serde_json::from_slice(body)
+                    .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            let mut bridge = bridge.write();
+            let result = bridge.submit_task(task);
+            let json = serde_json::to_vec(&result).map_err(|e| e.to_string())?;
+            Ok(json)
+        }
+
+        "crew.dispatch" => {
+            let dispatch: crate::orchestration::crew_bridge::CrewDispatch =
+                serde_json::from_slice(body)
+                    .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            let mut bridge = bridge.write();
+            let results = bridge.dispatch_crew(dispatch);
+
+            let schema = dispatch_result_schema();
+            let task_ids: Vec<&str> = results.iter().map(|r| r.task_id.as_str()).collect();
+            let statuses: Vec<String> = results.iter().map(|r| format!("{:?}", r.status)).collect();
+            let status_refs: Vec<&str> = statuses.iter().map(|s| s.as_str()).collect();
+            let slots: Vec<Option<u8>> = results.iter().map(|r| r.agent_slot).collect();
+            let messages: Vec<&str> = results.iter().map(|r| r.message.as_str()).collect();
+
+            let batch = RecordBatch::try_new(
+                schema,
+                vec![
+                    Arc::new(StringArray::from(task_ids)) as ArrayRef,
+                    Arc::new(StringArray::from(status_refs)) as ArrayRef,
+                    Arc::new(UInt8Array::from(slots)) as ArrayRef,
+                    Arc::new(StringArray::from(messages)) as ArrayRef,
+                ],
+            ).map_err(|e| e.to_string())?;
+
+            encode_to_ipc(&batch)
+        }
+
+        "crew.complete_task" => {
+            #[derive(serde::Deserialize)]
+            struct CompleteReq { task_id: String, outcome: String }
+            let req: CompleteReq = serde_json::from_slice(body)
+                .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            let mut bridge = bridge.write();
+            match bridge.complete_task(&req.task_id, &req.outcome) {
+                Some(result) => {
+                    let json = serde_json::to_vec(&result).map_err(|e| e.to_string())?;
+                    Ok(json)
+                }
+                None => error_result(&format!("Task {} not found", req.task_id)),
+            }
+        }
+
+        "crew.status" => {
+            let bridge = bridge.read();
+            let status = bridge.status_summary();
+
+            let schema = status_result_schema();
+            let batch = RecordBatch::try_new(
+                schema,
+                vec![
+                    Arc::new(UInt32Array::from(vec![status.agents_registered as u32])) as ArrayRef,
+                    Arc::new(UInt32Array::from(vec![status.templates_registered as u32])) as ArrayRef,
+                    Arc::new(UInt32Array::from(vec![status.tasks_queued as u32])) as ArrayRef,
+                    Arc::new(UInt32Array::from(vec![status.tasks_in_progress as u32])) as ArrayRef,
+                    Arc::new(UInt32Array::from(vec![status.tasks_completed as u32])) as ArrayRef,
+                    Arc::new(UInt32Array::from(vec![status.a2a_channels as u32])) as ArrayRef,
+                ],
+            ).map_err(|e| e.to_string())?;
+
+            encode_to_ipc(&batch)
+        }
+
+        "crew.bind" => {
+            let bridge = bridge.read();
+            let mut space = bind_space.write();
+            bridge.bind_all(&mut space);
+            ok_message("All orchestration state bound to BindSpace")
+        }
+
+        // === A2A Actions ===
+        "a2a.send" => {
+            let msg: crate::orchestration::a2a::A2AMessage =
+                serde_json::from_slice(body)
+                    .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            let mut bridge = bridge.write();
+            let mut space = bind_space.write();
+            let status = bridge.send_a2a(msg, &mut space);
+            ok_message(&format!("Delivery: {:?}", status))
+        }
+
+        "a2a.receive" => {
+            #[derive(serde::Deserialize)]
+            struct RecvReq { agent_slot: u8 }
+            let req: RecvReq = serde_json::from_slice(body)
+                .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            let mut bridge = bridge.write();
+            let messages = bridge.receive_a2a(req.agent_slot);
+            let json = serde_json::to_vec(&messages).map_err(|e| e.to_string())?;
+            Ok(json)
+        }
+
+        // === Style Actions ===
+        "style.resolve" => {
+            let name = std::str::from_utf8(body)
+                .map_err(|e| format!("Invalid UTF-8: {}", e))?
+                .trim();
+
+            let bridge = bridge.read();
+            match bridge.templates.get(name) {
+                Some(template) => {
+                    let m = template.effective_modulation();
+                    let schema = template_list_schema();
+                    let batch = RecordBatch::try_new(
+                        schema,
+                        vec![
+                            Arc::new(UInt8Array::from(vec![template.slot.unwrap_or(0)])) as ArrayRef,
+                            Arc::new(StringArray::from(vec![template.name.as_str()])) as ArrayRef,
+                            Arc::new(StringArray::from(vec![template.base_style.as_str()])) as ArrayRef,
+                            Arc::new(Float32Array::from(vec![m.resonance_threshold])) as ArrayRef,
+                            Arc::new(UInt32Array::from(vec![m.fan_out as u32])) as ArrayRef,
+                            Arc::new(Float32Array::from(vec![m.depth_bias])) as ArrayRef,
+                            Arc::new(Float32Array::from(vec![m.exploration])) as ArrayRef,
+                        ],
+                    ).map_err(|e| e.to_string())?;
+                    encode_to_ipc(&batch)
+                }
+                None => error_result(&format!("Template '{}' not found", name)),
+            }
+        }
+
+        "style.list" => {
+            let bridge = bridge.read();
+            let templates = bridge.templates.list();
+
+            let slots: Vec<u8> = templates.iter().map(|t| t.slot.unwrap_or(0)).collect();
+            let names: Vec<&str> = templates.iter().map(|t| t.name.as_str()).collect();
+            let bases: Vec<&str> = templates.iter().map(|t| t.base_style.as_str()).collect();
+            let thresholds: Vec<f32> = templates.iter().map(|t| t.effective_modulation().resonance_threshold).collect();
+            let fan_outs: Vec<u32> = templates.iter().map(|t| t.effective_modulation().fan_out as u32).collect();
+            let depths: Vec<f32> = templates.iter().map(|t| t.effective_modulation().depth_bias).collect();
+            let explorations: Vec<f32> = templates.iter().map(|t| t.effective_modulation().exploration).collect();
+
+            let schema = template_list_schema();
+            let batch = RecordBatch::try_new(
+                schema,
+                vec![
+                    Arc::new(UInt8Array::from(slots)) as ArrayRef,
+                    Arc::new(StringArray::from(names)) as ArrayRef,
+                    Arc::new(StringArray::from(bases)) as ArrayRef,
+                    Arc::new(Float32Array::from(thresholds)) as ArrayRef,
+                    Arc::new(UInt32Array::from(fan_outs)) as ArrayRef,
+                    Arc::new(Float32Array::from(depths)) as ArrayRef,
+                    Arc::new(Float32Array::from(explorations)) as ArrayRef,
+                ],
+            ).map_err(|e| e.to_string())?;
+
+            encode_to_ipc(&batch)
+        }
+
+        // === Agent Blackboard ===
+        "agent.blackboard" => {
+            #[derive(serde::Deserialize)]
+            struct BbReq { agent_slot: u8 }
+            let req: BbReq = serde_json::from_slice(body)
+                .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            let bridge = bridge.read();
+            match bridge.blackboards.get(req.agent_slot) {
+                Some(bb) => {
+                    let schema = blackboard_schema();
+                    let batch = RecordBatch::try_new(
+                        schema,
+                        vec![
+                            Arc::new(UInt8Array::from(vec![bb.agent_slot])) as ArrayRef,
+                            Arc::new(StringArray::from(vec![bb.agent_id.as_str()])) as ArrayRef,
+                            Arc::new(StringArray::from(vec![bb.awareness.active_style.as_str()])) as ArrayRef,
+                            Arc::new(Float32Array::from(vec![bb.awareness.coherence])) as ArrayRef,
+                            Arc::new(Float32Array::from(vec![bb.awareness.progress])) as ArrayRef,
+                            Arc::new(UInt32Array::from(vec![bb.cycle as u32])) as ArrayRef,
+                            Arc::new(UInt32Array::from(vec![bb.knowledge_addrs.len() as u32])) as ArrayRef,
+                            Arc::new(UInt32Array::from(vec![bb.awareness.ice_caked.len() as u32])) as ArrayRef,
+                            Arc::new(UInt32Array::from(vec![bb.awareness.pending_messages])) as ArrayRef,
+                        ],
+                    ).map_err(|e| e.to_string())?;
+                    encode_to_ipc(&batch)
+                }
+                None => error_result(&format!("No blackboard for agent slot {}", req.agent_slot)),
+            }
+        }
+
+        "agent.blackboard.yaml" => {
+            #[derive(serde::Deserialize)]
+            struct BbReq { agent_slot: u8 }
+            let req: BbReq = serde_json::from_slice(body)
+                .map_err(|e| format!("JSON parse error: {}", e))?;
+
+            let bridge = bridge.read();
+            match bridge.blackboards.get(req.agent_slot) {
+                Some(bb) => Ok(bb.to_yaml().into_bytes()),
+                None => error_result(&format!("No blackboard for agent slot {}", req.agent_slot)),
+            }
+        }
+
+        "agent.list" => {
+            let bridge = bridge.read();
+            let agents = bridge.agents.list();
+
+            let slots: Vec<u8> = agents.iter().map(|a| a.slot.unwrap_or(0)).collect();
+            let ids: Vec<&str> = agents.iter().map(|a| a.id.as_str()).collect();
+            let names: Vec<&str> = agents.iter().map(|a| a.name.as_str()).collect();
+            let roles: Vec<&str> = agents.iter().map(|a| a.role.name.as_str()).collect();
+            let styles: Vec<&str> = agents.iter().map(|a| a.thinking_style.as_str()).collect();
+            let delegations: Vec<bool> = agents.iter().map(|a| a.allow_delegation).collect();
+
+            let schema = agent_list_schema();
+            let batch = RecordBatch::try_new(
+                schema,
+                vec![
+                    Arc::new(UInt8Array::from(slots)) as ArrayRef,
+                    Arc::new(StringArray::from(ids)) as ArrayRef,
+                    Arc::new(StringArray::from(names)) as ArrayRef,
+                    Arc::new(StringArray::from(roles)) as ArrayRef,
+                    Arc::new(StringArray::from(styles)) as ArrayRef,
+                    Arc::new(BooleanArray::from(delegations)) as ArrayRef,
+                ],
+            ).map_err(|e| e.to_string())?;
+
+            encode_to_ipc(&batch)
+        }
+
+        _ => error_result(&format!("Unknown crew action: {}", action_type)),
+    }
+}
