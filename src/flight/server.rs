@@ -33,6 +33,9 @@
 //! - `nodes` - stream node zone (0x80-0xFF)
 //! - `search:<query_hex>:<threshold>` - similarity search with HDR cascade
 //! - `topk:<query_hex>:<k>` - top-k similar fingerprints
+//! - `edges` - stream all edges as (source, target, verb, labels)
+//! - `traverse:<source_hex>:<max_hops>[:<verb>]` - BFS graph traversal via CSR
+//! - `neighbors:<addr_hex>` - immediate neighbors (1-hop)
 //!
 //! # Actions (MCP Tools)
 //!
@@ -44,6 +47,7 @@
 //! - `xor_bind` - XOR bind two fingerprints (holographic composition)
 //! - `stats` - Get BindSpace statistics
 
+use std::collections::HashSet;
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -113,6 +117,31 @@ pub fn search_result_schema() -> SchemaRef {
         Field::new("distance", DataType::UInt32, false),
         Field::new("similarity", DataType::Float32, false),
         Field::new("cascade_level", DataType::UInt8, false),
+    ]))
+}
+
+/// Edge schema for graph edge streaming
+pub fn edge_flight_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("source", DataType::UInt16, false),
+        Field::new("target", DataType::UInt16, false),
+        Field::new("verb", DataType::UInt16, false),
+        Field::new("source_label", DataType::Utf8, true),
+        Field::new("target_label", DataType::Utf8, true),
+        Field::new("verb_label", DataType::Utf8, true),
+        Field::new("weight", DataType::Float32, false),
+    ]))
+}
+
+/// Traversal result schema for BFS/DFS via CSR
+pub fn traversal_flight_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("source", DataType::UInt16, false),
+        Field::new("hop", DataType::UInt32, false),
+        Field::new("target", DataType::UInt16, false),
+        Field::new("target_label", DataType::Utf8, true),
+        Field::new("via_verb", DataType::UInt16, false),
+        Field::new("via_verb_label", DataType::Utf8, true),
     ]))
 }
 
@@ -309,8 +338,45 @@ impl FlightService for LadybugFlightService {
                 let output = stream_topk_results(bind_space, hdr_index, query, k);
                 Ok(Response::new(Box::pin(output)))
             }
+            "edges" => {
+                let output = stream_edges(bind_space);
+                Ok(Response::new(Box::pin(output)))
+            }
+            _ if ticket_str.starts_with("traverse:") => {
+                // traverse:<source_hex>:<max_hops>[:<verb_name>]
+                let parts: Vec<&str> = ticket_str.split(':').collect();
+                if parts.len() < 3 {
+                    return Err(Status::invalid_argument(
+                        "Invalid traverse format. Use: traverse:<source_hex>:<max_hops>[:<verb>]"
+                    ));
+                }
+
+                let source: u16 = u16::from_str_radix(parts[1], 16)
+                    .map_err(|_| Status::invalid_argument("Invalid source address hex"))?;
+                let max_hops: usize = parts[2].parse()
+                    .map_err(|_| Status::invalid_argument("Invalid max_hops"))?;
+                let verb_name = parts.get(3).map(|s| s.to_string());
+
+                let output = stream_traversal(bind_space, source, max_hops, verb_name);
+                Ok(Response::new(Box::pin(output)))
+            }
+            _ if ticket_str.starts_with("neighbors:") => {
+                // neighbors:<addr_hex> — 1-hop convenience
+                let parts: Vec<&str> = ticket_str.split(':').collect();
+                if parts.len() != 2 {
+                    return Err(Status::invalid_argument(
+                        "Invalid neighbors format. Use: neighbors:<addr_hex>"
+                    ));
+                }
+
+                let addr: u16 = u16::from_str_radix(parts[1], 16)
+                    .map_err(|_| Status::invalid_argument("Invalid address hex"))?;
+
+                let output = stream_traversal(bind_space, addr, 1, None);
+                Ok(Response::new(Box::pin(output)))
+            }
             _ => Err(Status::invalid_argument(format!(
-                "Unknown ticket: {}. Use: all, surface, fluid, nodes, search:..., or topk:...",
+                "Unknown ticket: {}. Use: all, surface, fluid, nodes, edges, search:..., topk:..., traverse:..., neighbors:...",
                 ticket_str
             ))),
         }
@@ -399,6 +465,14 @@ impl FlightService for LadybugFlightService {
             ActionType {
                 r#type: "stats".to_string(),
                 description: "Get BindSpace statistics. Args: {}".to_string(),
+            },
+            ActionType {
+                r#type: "traverse".to_string(),
+                description: "BFS graph traversal via CSR. Args: {source, max_hops, verb?}".to_string(),
+            },
+            ActionType {
+                r#type: "hydrate".to_string(),
+                description: "Hydrate sparse addresses to fingerprints. Args: {addresses: [u16]}".to_string(),
             },
         ];
 
@@ -612,6 +686,201 @@ fn stream_topk_results(
         }
     })
     .flat_map(|data| stream::iter(data.into_iter().map(Ok)))
+}
+
+// =============================================================================
+// GRAPH STREAMING (edges + BFS traversal via CSR)
+// =============================================================================
+
+/// Stream all edges from BindSpace
+fn stream_edges(
+    bind_space: Arc<RwLock<BindSpace>>,
+) -> impl Stream<Item = Result<FlightData, Status>> {
+    let schema = edge_flight_schema();
+
+    // Build all edges synchronously (lock released after block)
+    let batch_result = {
+        let space = bind_space.read();
+        build_edge_batch(&space, &schema)
+    };
+
+    let schema_clone = schema.clone();
+    stream::once(async move {
+        match batch_result {
+            Ok(batch) => {
+                let encoder = FlightDataEncoderBuilder::new()
+                    .with_schema(schema_clone)
+                    .build(stream::once(async { Ok(batch) }));
+
+                let flight_data: Vec<FlightData> = encoder
+                    .filter_map(|r| async { r.ok() })
+                    .collect()
+                    .await;
+
+                flight_data
+            }
+            Err(_) => Vec::new(),
+        }
+    })
+    .flat_map(|data| stream::iter(data.into_iter().map(Ok)))
+}
+
+/// Build edge RecordBatch from BindSpace (reads directly from edge list + CSR)
+fn build_edge_batch(
+    space: &BindSpace,
+    schema: &SchemaRef,
+) -> Result<RecordBatch, Status> {
+    let mut sources = Vec::new();
+    let mut targets = Vec::new();
+    let mut verbs = Vec::new();
+    let mut source_labels = Vec::new();
+    let mut target_labels = Vec::new();
+    let mut verb_labels = Vec::new();
+    let mut weights = Vec::new();
+
+    for prefix in 0u8..=0xFF {
+        for slot in 0u8..=0xFF {
+            let addr = Addr::new(prefix, slot);
+            for edge in space.edges_out(addr) {
+                sources.push(edge.from.0);
+                targets.push(edge.to.0);
+                verbs.push(edge.verb.0);
+                source_labels.push(space.read(edge.from).and_then(|n| n.label.clone()));
+                target_labels.push(space.read(edge.to).and_then(|n| n.label.clone()));
+                verb_labels.push(space.read(edge.verb).and_then(|n| n.label.clone()));
+                weights.push(edge.weight);
+            }
+        }
+    }
+
+    if sources.is_empty() {
+        return Ok(RecordBatch::new_empty(schema.clone()));
+    }
+
+    let columns: Vec<ArrayRef> = vec![
+        Arc::new(UInt16Array::from(sources)),
+        Arc::new(UInt16Array::from(targets)),
+        Arc::new(UInt16Array::from(verbs)),
+        Arc::new(StringArray::from(source_labels)),
+        Arc::new(StringArray::from(target_labels)),
+        Arc::new(StringArray::from(verb_labels)),
+        Arc::new(Float32Array::from(weights)),
+    ];
+
+    RecordBatch::try_new(schema.clone(), columns)
+        .map_err(|e| Status::internal(e.to_string()))
+}
+
+/// Stream BFS traversal results from BindSpace via CSR
+fn stream_traversal(
+    bind_space: Arc<RwLock<BindSpace>>,
+    source: u16,
+    max_hops: usize,
+    verb_name: Option<String>,
+) -> impl Stream<Item = Result<FlightData, Status>> {
+    let schema = traversal_flight_schema();
+
+    // BFS synchronously (lock released after block)
+    let batch_result = {
+        let space = bind_space.read();
+
+        // Resolve verb name to address
+        let verb_addr = verb_name.as_deref().and_then(|name| space.verb(name));
+
+        build_traversal_batch(&space, source, max_hops, verb_addr, &schema)
+    };
+
+    let schema_clone = schema.clone();
+    stream::once(async move {
+        match batch_result {
+            Ok(batch) => {
+                let encoder = FlightDataEncoderBuilder::new()
+                    .with_schema(schema_clone)
+                    .build(stream::once(async { Ok(batch) }));
+
+                let flight_data: Vec<FlightData> = encoder
+                    .filter_map(|r| async { r.ok() })
+                    .collect()
+                    .await;
+
+                flight_data
+            }
+            Err(_) => Vec::new(),
+        }
+    })
+    .flat_map(|data| stream::iter(data.into_iter().map(Ok)))
+}
+
+/// BFS traversal over BindSpace edges, returning results as RecordBatch
+fn build_traversal_batch(
+    space: &BindSpace,
+    source: u16,
+    max_hops: usize,
+    verb_addr: Option<Addr>,
+    schema: &SchemaRef,
+) -> Result<RecordBatch, Status> {
+    let mut sources_col = Vec::new();
+    let mut hops_col = Vec::new();
+    let mut targets_col = Vec::new();
+    let mut target_labels_col: Vec<Option<String>> = Vec::new();
+    let mut via_verbs_col = Vec::new();
+    let mut via_verb_labels_col: Vec<Option<String>> = Vec::new();
+
+    let start = Addr(source);
+    let mut frontier = vec![start];
+    let mut visited = HashSet::new();
+    visited.insert(source);
+
+    for hop in 1..=max_hops {
+        let mut next_frontier = Vec::new();
+
+        for &node in &frontier {
+            for edge in space.edges_out(node) {
+                // Verb filter
+                if let Some(verb) = verb_addr {
+                    if edge.verb != verb {
+                        continue;
+                    }
+                }
+
+                if visited.insert(edge.to.0) {
+                    sources_col.push(source);
+                    hops_col.push(hop as u32);
+                    targets_col.push(edge.to.0);
+                    target_labels_col.push(
+                        space.read(edge.to).and_then(|n| n.label.clone()),
+                    );
+                    via_verbs_col.push(edge.verb.0);
+                    via_verb_labels_col.push(
+                        space.read(edge.verb).and_then(|n| n.label.clone()),
+                    );
+
+                    next_frontier.push(edge.to);
+                }
+            }
+        }
+
+        if next_frontier.is_empty() {
+            break;
+        }
+        frontier = next_frontier;
+    }
+
+    if sources_col.is_empty() {
+        return Ok(RecordBatch::new_empty(schema.clone()));
+    }
+
+    let columns: Vec<ArrayRef> = vec![
+        Arc::new(UInt16Array::from(sources_col)),
+        Arc::new(UInt32Array::from(hops_col)),
+        Arc::new(UInt16Array::from(targets_col)),
+        Arc::new(StringArray::from(target_labels_col)),
+        Arc::new(UInt16Array::from(via_verbs_col)),
+        Arc::new(StringArray::from(via_verb_labels_col)),
+    ];
+
+    RecordBatch::try_new(schema.clone(), columns)
+        .map_err(|e| Status::internal(e.to_string()))
 }
 
 // =============================================================================

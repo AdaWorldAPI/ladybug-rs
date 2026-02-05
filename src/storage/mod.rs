@@ -46,6 +46,7 @@ pub mod redis_adapter;
 pub mod lance_zero_copy;
 pub mod xor_dag;
 pub mod unified_engine;
+pub mod fingerprint_dict;
 
 #[cfg(feature = "lancedb")]
 pub use lance::{LanceStore, NodeRecord, EdgeRecord};
@@ -269,3 +270,6 @@ pub use unified_engine::{
     // Errors
     UnifiedError,
 };
+
+// Fingerprint Dictionary exports (codebook for sparse hydration)
+pub use fingerprint_dict::FingerprintDict;
