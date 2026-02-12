@@ -17,7 +17,7 @@
 //! └─────────────────────────────────────────────────────────────────────────────┘
 //! ```
 //!
-//! ## Frame Format (1250 bytes fits in single UDP packet)
+//! ## Frame Format (2048 bytes per frame, may need UDP fragmentation beyond 1500 MTU)
 //!
 //! ```text
 //! ┌───────────────────────────────────────────────────────────────────────┐

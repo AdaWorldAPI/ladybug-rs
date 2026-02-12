@@ -4,7 +4,7 @@
 //!
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────────────────────┐
-//! │                        FIREFLY FRAME (1250 bits)                            │
+//! │                        FIREFLY FRAME (16384 bits / 2048 bytes)              │
 //! ├─────────────────────────────────────────────────────────────────────────────┤
 //! │ Bits 0-63    │ HEADER: Auth + Routing                                       │
 //! │              │   [0:7]   Magic: 0xADA1 (frame identifier)                   │
@@ -50,12 +50,11 @@
 //! │              │   Correlation ID (64 bits): Causal chain reference           │
 //! │              │   Reserved (176 bits): Future use                            │
 //! ├─────────────────────────────────────────────────────────────────────────────┤
-//! │ Bits 1024-1247│ ECC: Hamming error correction (224 bits)                    │
-//! │              │   BCH(1247, 1024) code for multi-bit correction              │
-//! │              │   Can correct up to 27 bit errors                            │
-//! │              │   Detects up to 55 bit errors                                │
+//! │ Bits 1024-16381│ ECC + Payload extension (15,358 bits)                     │
+//! │              │   BCH error correction + extended data                        │
+//! │              │   (16K frame provides ample room for ECC + payload)           │
 //! ├─────────────────────────────────────────────────────────────────────────────┤
-//! │ Bits 1248-1249│ TRAILER: Frame delimiter (2 bits)                           │
+//! │ Bits 16382-16383│ TRAILER: Frame delimiter (2 bits)                        │
 //! │              │   Must be 0b11 to indicate valid frame end                   │
 //! └─────────────────────────────────────────────────────────────────────────────┘
 //! ```

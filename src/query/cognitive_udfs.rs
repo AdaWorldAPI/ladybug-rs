@@ -32,8 +32,8 @@ use crate::core::{DIM, scent_distance as core_scent_distance, extract_scent, SCE
 // CONSTANTS
 // =============================================================================
 
-/// Fingerprint size in bytes (1250 for 10K bits)
-pub const FP_BYTES: usize = 1250;
+/// Fingerprint size in bytes (2048 for 16K bits)
+pub const FP_BYTES: usize = crate::FINGERPRINT_BYTES;
 
 // =============================================================================
 // HELPER FUNCTIONS

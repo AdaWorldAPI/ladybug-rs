@@ -11,10 +11,10 @@
 //! - Const generic: works for any N (5, 7, 11, ...)
 //! - Full connectivity: every cell interferes with every other
 //!
-//! Memory: N³ × (1250 + 16) bytes = N³ × 1266 bytes
-//!   5×5×5: 158KB    (fits L1 cache)
-//!   7×7×7: 434KB    (fits L1 cache on modern CPUs)
-//!   11×11×11: 1.7MB (fits L2 cache)
+//! Memory: N³ × (2048 + 16) bytes = N³ × 2064 bytes
+//!   5×5×5: 252KB    (fits L2 cache)
+//!   7×7×7: 688KB    (fits L2 cache)
+//!   11×11×11: 2.7MB (fits L3 cache)
 
 use crate::core::Fingerprint;
 use crate::{FINGERPRINT_BITS, FINGERPRINT_U64};

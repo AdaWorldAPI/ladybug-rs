@@ -26,7 +26,7 @@
 //! distances = ladybug.batch_hamming(query_bytes, [fp1_bytes, fp2_bytes])
 //!
 //! # Direct byte operations
-//! fp = ladybug.Fingerprint.from_bytes(my_1256_bytes)
+//! fp = ladybug.Fingerprint.from_bytes(my_2048_bytes)
 //! raw_bytes = fp.to_bytes()
 //! ```
 
@@ -57,7 +57,7 @@ impl PyFingerprint {
         }
     }
 
-    /// Create from raw bytes (1256 bytes = 157 u64 words)
+    /// Create from raw bytes (2048 bytes = 256 u64 words)
     #[staticmethod]
     fn from_bytes(bytes: &[u8]) -> PyResult<Self> {
         Fingerprint::from_bytes(bytes)
@@ -89,7 +89,7 @@ impl PyFingerprint {
         }
     }
 
-    /// Get raw bytes (1256 bytes)
+    /// Get raw bytes (2048 bytes)
     fn to_bytes<'py>(&self, py: Python<'py>) -> &'py PyBytes {
         PyBytes::new(py, self.inner.as_bytes())
     }
@@ -392,7 +392,7 @@ fn batch_hamming(py: Python, query: &PyFingerprint, candidates: &PyList) -> PyRe
 }
 
 /// Batch Hamming from raw bytes
-/// Query: 1256 bytes, Candidates: list of 1256-byte arrays
+/// Query: 2048 bytes, Candidates: list of 2048-byte arrays
 /// Returns list of distances
 #[pyfunction]
 fn batch_hamming_bytes(py: Python, query_bytes: &[u8], candidate_bytes: Vec<&[u8]>) -> PyResult<Vec<u32>> {

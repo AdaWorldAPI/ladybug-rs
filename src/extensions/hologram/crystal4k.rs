@@ -253,8 +253,8 @@ mod tests {
     
     #[test]
     fn test_size() {
-        assert_eq!(Crystal4K::size_bytes(), 3 * 157 * 8);
-        // 3768 bytes ≈ 4KB
+        assert_eq!(Crystal4K::size_bytes(), 3 * crate::FINGERPRINT_U64 * 8);
+        // 6144 bytes = 6KB
     }
     
     #[test]

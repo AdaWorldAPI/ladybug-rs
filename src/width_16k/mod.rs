@@ -8,12 +8,12 @@
 //! - **Homogeneous**: minimize non-resonance zone (32 words, not 64)
 //! - **Holographic**: metadata distributed in compact sidecar, not sprawled
 //! - **Binding**: XOR over resonance words = the universal distance/bind op
-//! - **Robust**: 14,336 resonance bits >> 10,000 original, better noise margin
+//! - **Robust**: 14,336 resonance bits with wide noise margin
 //!
 //! ```text
 //! ┌──────────────────────────────────────────────────────────────────────┐
 //! │  Words 0-223   (224 words = 14,336 bits)  Hamming resonance         │
-//! │    10K pattern in words 0-156, surplus 157-223 for upscaling        │
+//! │    Full 16K fingerprint covers all 256 words (resonance + metadata) │
 //! │                                                                      │
 //! │  Words 224-255 ( 32 words =  2,048 bits)  Metadata sidecar          │
 //! │    Block 14 (224-239): Identity + Reasoning + Learning               │

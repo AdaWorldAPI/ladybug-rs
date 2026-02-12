@@ -1430,8 +1430,8 @@ mod tests {
 
         let packet = teleport_prepare(&source, &shared);
 
-        // Packet should be ~1.25KB (10K bits = 1250 bytes, but stored as u64s)
+        // Packet should be 2KB (16K bits = 2048 bytes = 256 u64s)
         assert_eq!(packet.size_bytes(), crate::FINGERPRINT_U64 * 8);
-        assert!(packet.size_bytes() < 2000); // Less than 2KB
+        assert!(packet.size_bytes() <= 2048); // Fits in 2KB
     }
 }

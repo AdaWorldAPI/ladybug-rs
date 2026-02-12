@@ -1001,7 +1001,7 @@ impl CodebookStats {
             println!("  {:?}: {}", domain, count);
         }
         println!("Memory estimate: ~{} KB", 
-            (self.total_entries * (8 + 1250)) / 1024); // addr + fp
+            (self.total_entries * (8 + crate::FINGERPRINT_BYTES)) / 1024); // addr + fp
     }
 }
 

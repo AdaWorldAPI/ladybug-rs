@@ -16,9 +16,9 @@ use std::arch::x86_64::*;
 pub const FIELD_SIZE: usize = 5;
 pub const FIELD_CELLS: usize = FIELD_SIZE * FIELD_SIZE * FIELD_SIZE; // 125
 
-/// 5×5×5 × 10Kbit quorum field.
+/// 5×5×5 × 16Kbit quorum field.
 ///
-/// Total size: 125 × 157 × 8 = 156,875 bytes ≈ 153KB
+/// Total size: 125 × 256 × 8 = 256,000 bytes = 250KB
 /// Fits in L2 cache for fast evolution.
 #[repr(C, align(64))]
 #[derive(Clone)]
@@ -384,7 +384,7 @@ mod tests {
     
     #[test]
     fn test_memory_size() {
-        assert_eq!(QuorumField::size_bytes(), 125 * 157 * 8);
-        // ≈ 153KB
+        assert_eq!(QuorumField::size_bytes(), 125 * crate::FINGERPRINT_U64 * 8);
+        // = 250KB
     }
 }

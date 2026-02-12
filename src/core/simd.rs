@@ -69,7 +69,7 @@ unsafe fn hamming_avx512(a: &Fingerprint, b: &Fingerprint) -> u32 {
     // Horizontal sum
     let mut total = _mm512_reduce_add_epi64(sum) as u32;
     
-    // Handle remaining (157 % 8 = 5 remaining)
+    // Handle remaining (256 % 8 = 0, no remainder at 16K)
     while i < FINGERPRINT_U64 {
         total += (*a_ptr.add(i) ^ *b_ptr.add(i)).count_ones();
         i += 1;
