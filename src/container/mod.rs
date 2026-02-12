@@ -25,6 +25,11 @@ pub mod adjacency;
 pub mod graph;
 pub mod dn_redis;
 pub mod traversal;
+pub mod dn_spine_cache;
+pub mod plasticity;
+pub mod addr_bridge;
+pub mod cog_redis_bridge;
+pub mod csr_bridge;
 pub mod migrate;
 #[cfg(test)]
 pub mod tests;
