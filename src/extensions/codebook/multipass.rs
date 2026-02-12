@@ -646,7 +646,7 @@ fn main() {
     println!("  │  PASS 2: HAMMING META-RESONANCE                             │");
     println!("  │    • New text → hash fingerprint (NO API CALL)              │");
     println!("  │    • XOR scan against CAM slots                             │");
-    println!("  │    • ~{} µs per lookup ({} slots × 157 XOR+popcnt)       │",
+    println!("  │    • ~{} µs per lookup ({} slots × 256 XOR+popcnt)       │",
              bench_time.as_secs_f64() * 1_000_000.0 / 10_000.0,
              stats.total_slots);
     println!("  │    • Memory: {} KB (fits in L2 cache)                      │", stats.memory_bytes / 1024);

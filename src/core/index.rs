@@ -14,8 +14,8 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::sync::Arc;
 
-/// Fingerprint size: 10K bits = 1250 bytes
-pub const FP_BYTES: usize = 1250;
+/// Fingerprint size: 16K bits = 2048 bytes
+pub const FP_BYTES: usize = crate::FINGERPRINT_BYTES;
 
 /// Type IDs (16-bit namespace)
 pub mod types {

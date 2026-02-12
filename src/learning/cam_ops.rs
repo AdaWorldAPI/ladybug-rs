@@ -2579,7 +2579,7 @@ pub fn fold_to_48(fp: &Fingerprint) -> u64 {
     let raw = fp.as_raw();
     let mut hash = 0u64;
     
-    // XOR-fold 157 u64s down to 1
+    // XOR-fold 256 u64s down to 1
     for &word in raw.iter() {
         hash ^= word;
     }

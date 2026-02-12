@@ -2052,12 +2052,11 @@ fn handle_udp_packet(buf: &[u8], len: usize, state: &SharedState) -> Option<Vec<
                 };
                 resp_header.encode(&mut resp);
 
-                // Write fingerprint payload (1248 bytes raw + 8 padding zeros)
+                // Write fingerprint payload (2048 bytes, no padding needed at 16K)
                 for (i, &word) in node.fingerprint.iter().enumerate() {
                     let off = UDP_HEADER_SIZE + i * 8;
                     resp[off..off + 8].copy_from_slice(&word.to_le_bytes());
                 }
-                // Remaining 8 bytes (1248..1256) are already zero from vec init
 
                 Some(resp)
             } else {

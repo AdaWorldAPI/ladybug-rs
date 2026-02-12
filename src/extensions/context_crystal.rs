@@ -99,9 +99,10 @@ impl QualiaVector {
         ];
         
         for (i, &val) in dims.iter().enumerate() {
-            let base = i * 1250;
-            let num_bits = (val * 1250.0) as usize;
-            for j in 0..num_bits.min(1250) {
+            let stride = crate::FINGERPRINT_BITS / 8; // bits per dimension
+            let base = i * stride;
+            let num_bits = (val * stride as f32) as usize;
+            for j in 0..num_bits.min(stride) {
                 fp.set_bit(base + j, true);
             }
         }

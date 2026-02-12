@@ -9,7 +9,7 @@
 //! │                       COGNITIVE CPU ARCHITECTURE                            │
 //! ├─────────────────────────────────────────────────────────────────────────────┤
 //! │  FIREFLY COMPILER (Python)                                                  │
-//! │    → Parses user programs → Graph IR → 1250-bit packed frames               │
+//! │    → Parses user programs → Graph IR → 16384-bit packed frames               │
 //! ├─────────────────────────────────────────────────────────────────────────────┤
 //! │  EXECUTOR (This module)                                                     │
 //! │    → Dispatches frames to language runtimes                                 │
