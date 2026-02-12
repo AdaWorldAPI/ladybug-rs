@@ -20,6 +20,7 @@ pub mod search;
 pub mod semiring;
 pub mod delta;
 pub mod spine;
+pub mod insert;
 pub mod migrate;
 #[cfg(test)]
 pub mod tests;
