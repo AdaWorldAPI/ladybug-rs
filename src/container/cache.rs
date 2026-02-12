@@ -204,4 +204,42 @@ impl ContainerCache {
             *w = 0;
         }
     }
+
+    /// Append a new container, growing the cache by one slot.
+    /// Returns the index of the newly added slot.
+    pub fn push(&mut self, data: &Container) -> Result<usize, CacheError> {
+        let pc = data.popcount();
+        if pc == 0 {
+            return Err(CacheError::ZeroContainer { idx: self.slots.len() });
+        }
+
+        let idx = self.slots.len();
+        self.slots.push(data.clone());
+        self.generation.push(1);
+        self.popcount.push(pc);
+
+        // Grow dirty bitmap if needed
+        let needed_words = (idx + 1 + 63) / 64;
+        if needed_words > self.dirty.len() {
+            self.dirty.resize(needed_words, 0);
+        }
+
+        Ok(idx)
+    }
+
+    /// Append an empty (zero) slot for a spine that will be computed lazily.
+    /// Returns the index. Marks it dirty so it gets recomputed on first read.
+    pub fn push_spine_slot(&mut self) -> usize {
+        let idx = self.slots.len();
+        self.slots.push(Container::zero());
+        self.generation.push(0);
+        self.popcount.push(0);
+
+        let needed_words = (idx + 1 + 63) / 64;
+        if needed_words > self.dirty.len() {
+            self.dirty.resize(needed_words, 0);
+        }
+        self.mark_dirty(idx);
+        idx
+    }
 }
