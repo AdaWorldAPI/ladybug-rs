@@ -59,12 +59,11 @@ impl VsaOps for Fingerprint {
         
         // Majority vote for each bit
         let threshold = items.len() / 2;
-        let mut result = Fingerprint::zero();
-        let result_data = result.as_raw().clone();
-        
+        let even = items.len() % 2 == 0;
+
         // Count bits across all items
         let mut counts = [0u32; FINGERPRINT_U64 * 64];
-        
+
         for item in items {
             for (word_idx, &word) in item.as_raw().iter().enumerate() {
                 for bit in 0..64 {
@@ -74,13 +73,15 @@ impl VsaOps for Fingerprint {
                 }
             }
         }
-        
-        // Set bits that exceed threshold
+
+        // Set bits that exceed threshold (tie-break with first item for even counts)
         let mut data = [0u64; FINGERPRINT_U64];
         for (i, &count) in counts.iter().enumerate() {
-            if count > threshold as u32 {
-                let word = i / 64;
-                let bit = i % 64;
+            let word = i / 64;
+            let bit = i % 64;
+            if count > threshold as u32
+                || (even && count == threshold as u32 && items[0].as_raw()[word] & (1 << bit) != 0)
+            {
                 data[word] |= 1 << bit;
             }
         }

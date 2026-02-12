@@ -967,11 +967,11 @@ fn bundle(fps: &[Fingerprint]) -> Fingerprint {
     let mut result = Fingerprint::zero();
     let threshold = fps.len() / 2;
     
-    for bit in 0..10000 {
+    for bit in 0..crate::FINGERPRINT_BITS {
         let count: usize = fps.iter()
             .filter(|fp| fp.get_bit(bit))
             .count();
-        
+
         if count > threshold {
             result.set_bit(bit, true);
         }

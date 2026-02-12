@@ -363,10 +363,10 @@ impl QuantumOp for HadamardOp {
         let mut result = state.clone();
         let mut rng = self.seed;
         
-        for bit in 0..10000 {
+        for bit in 0..crate::FINGERPRINT_BITS {
             // Simple LCG PRNG
             rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1);
-            
+
             if (rng >> 32) & 1 == 1 {
                 // Flip bit with 50% probability
                 result.set_bit(bit, !state.get_bit(bit));
@@ -892,10 +892,10 @@ fn fp_hash(fp: &Fingerprint) -> u64 {
 }
 
 fn blend_fingerprints(a: &Fingerprint, b: &Fingerprint, weight: f32) -> Fingerprint {
-    let threshold = (weight * 10000.0) as usize;
+    let threshold = (weight * crate::FINGERPRINT_BITS as f32) as usize;
     let mut result = a.clone();
-    
-    for bit in 0..10000 {
+
+    for bit in 0..crate::FINGERPRINT_BITS {
         if bit < threshold {
             result.set_bit(bit, b.get_bit(bit));
         }
@@ -935,10 +935,10 @@ fn smooth_fingerprint(fp: &Fingerprint) -> Fingerprint {
     // Average nearby bits (low-pass filter)
     let mut result = Fingerprint::zero();
     
-    for bit in 0..10000 {
+    for bit in 0..crate::FINGERPRINT_BITS {
         let mut count = 0;
         for offset in -5i32..=5 {
-            let idx = ((bit as i32 + offset + 10000) % 10000) as usize;
+            let idx = ((bit as i32 + offset + crate::FINGERPRINT_BITS as i32) % crate::FINGERPRINT_BITS as i32) as usize;
             if fp.get_bit(idx) {
                 count += 1;
             }
@@ -953,7 +953,7 @@ fn smooth_fingerprint(fp: &Fingerprint) -> Fingerprint {
 
 fn extract_bits(fp: &Fingerprint, start: usize, end: usize) -> Fingerprint {
     let mut result = Fingerprint::zero();
-    for i in start..end.min(10000) {
+    for i in start..end.min(crate::FINGERPRINT_BITS) {
         result.set_bit(i - start, fp.get_bit(i));
     }
     result
@@ -961,7 +961,7 @@ fn extract_bits(fp: &Fingerprint, start: usize, end: usize) -> Fingerprint {
 
 fn insert_bits(fp: &Fingerprint, bits: &Fingerprint, start: usize, end: usize) -> Fingerprint {
     let mut result = fp.clone();
-    for i in start..end.min(10000) {
+    for i in start..end.min(crate::FINGERPRINT_BITS) {
         result.set_bit(i, bits.get_bit(i - start));
     }
     result

@@ -182,11 +182,10 @@ mod tests {
     }
 
     #[test]
-    fn test_10k_fits_in_resonance() {
-        // 10K bits = 157 words, resonance = 224 words
-        assert!(157 <= RESONANCE_WORDS);
-        // surplus = 224 - 157 = 67 words for upscaling membrane
-        assert_eq!(RESONANCE_WORDS - 157, 67);
+    fn test_fingerprint_covers_resonance() {
+        // Fingerprint (256 words) covers full resonance (224 words) + metadata (32 words)
+        assert!(crate::FINGERPRINT_U64 >= VECTOR_WORDS);
+        assert_eq!(VECTOR_WORDS, RESONANCE_WORDS + METADATA_WORDS);
     }
 
     #[test]

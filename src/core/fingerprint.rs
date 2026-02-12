@@ -1,13 +1,13 @@
-//! 10,000-bit VSA fingerprint.
+//! 16,384-bit (2^14) VSA fingerprint — HDC-aligned, exact u64 alignment.
 
 use std::hash::{Hash, Hasher};
 use std::fmt;
 
 use crate::{FINGERPRINT_U64, FINGERPRINT_BITS, Error, Result};
 
-/// 10,000-bit binary fingerprint for VSA operations.
-/// 
-/// Stored as 157 u64 values (157 × 64 = 10,048 bits, 48 padding).
+/// 16,384-bit binary fingerprint for VSA operations.
+///
+/// Stored as 256 u64 values (256 × 64 = 16,384 bits, no padding).
 /// Aligned to 64 bytes for SIMD operations.
 #[repr(align(64))]
 #[derive(Clone)]
@@ -46,12 +46,12 @@ impl Fingerprint {
         content.hash(&mut hasher);
         let mut state = hasher.finish();
         
-        // LFSR expansion to 10K bits
+        // LFSR expansion to fill fingerprint words
         let mut data = [0u64; FINGERPRINT_U64];
         for word in &mut data {
             let mut val = 0u64;
             for bit in 0..64 {
-                // LFSR tap: x^64 + x^62 + x^61 + x^1 + 1
+                // LFSR taps: x^63 + x^3 + x^2 + 1 (feedback from bits 2, 3, 63)
                 let feedback = (state ^ (state >> 2) ^ (state >> 3) ^ (state >> 63)) & 1;
                 state = (state >> 1) | (feedback << 63);
                 val |= (state & 1) << bit;
@@ -77,9 +77,14 @@ impl Fingerprint {
         Self { data: [0u64; FINGERPRINT_U64] }
     }
     
-    /// Create all-ones fingerprint
+    /// Create all-ones fingerprint (only FINGERPRINT_BITS set, no padding contamination)
     pub fn ones() -> Self {
-        Self { data: [u64::MAX; FINGERPRINT_U64] }
+        let mut data = [u64::MAX; FINGERPRINT_U64];
+        let extra = FINGERPRINT_BITS % 64;
+        if extra > 0 {
+            data[FINGERPRINT_U64 - 1] = (1u64 << extra) - 1;
+        }
+        Self { data }
     }
     
     /// Get raw data
@@ -161,7 +166,7 @@ impl Fingerprint {
         let total_bits = FINGERPRINT_BITS;
         let shift = positions.rem_euclid(total_bits as i32) as usize;
 
-        // Rotate bits within the logical 10000-bit space
+        // Rotate bits within the logical FINGERPRINT_BITS space
         for i in 0..total_bits {
             let new_pos = (i + shift) % total_bits;
             if self.get_bit(i) {
@@ -169,9 +174,9 @@ impl Fingerprint {
             }
         }
 
-        // Preserve bits beyond FINGERPRINT_BITS (10000-10047 in last partial word)
-        let full_words = FINGERPRINT_BITS / 64;  // 156 full words
-        let extra_bits = FINGERPRINT_BITS % 64;  // 16 bits used in word 156
+        // Preserve bits beyond FINGERPRINT_BITS in last partial word (if any)
+        let full_words = FINGERPRINT_BITS / 64;  // 256 full words
+        let extra_bits = FINGERPRINT_BITS % 64;  // 0 extra bits (16384 is 64-aligned)
         if full_words < FINGERPRINT_U64 {
             // Clear the rotated bits in the last word, keep only overflow bits
             let mask = !((1u64 << extra_bits) - 1);  // Mask for bits >= extra_bits

@@ -62,7 +62,7 @@ use super::hdr_cascade::{
 // =============================================================================
 
 /// Number of u64 words in fingerprint
-const WORDS: usize = 156;
+const WORDS: usize = 256;
 
 /// The causal verbs - these are fingerprints too
 /// Generated deterministically from content
@@ -170,7 +170,7 @@ impl CorrelationStore {
         let mut index = HdrIndex::new();
         // For correlation queries, distance = popcount(Y) where Y is ~50% dense
         // Set threshold_l2 to 6000 to allow 60% difference (needed for ABBA retrieval)
-        index.set_thresholds(156, 2000, 6000);
+        index.set_thresholds(256, 2000, 6000);
         Self {
             index,
             edges: Vec::new(),
@@ -885,7 +885,7 @@ mod tests {
     
     use crate::core::Fingerprint;
 
-    /// Convert 157-word Fingerprint to 156-word array for HDR cascade
+    /// Convert Fingerprint to 256-word array for HDR cascade
     fn fp_to_words(fp: &Fingerprint) -> [u64; WORDS] {
         let raw = fp.as_raw();
         let mut result = [0u64; WORDS];

@@ -16,9 +16,9 @@
 //!
 //! ## UDP (Bitpacked Hamming)
 //! - Binary protocol for ultra-low-latency fingerprint operations
-//! - Header: 222 bytes | Payload: 1256 bytes (SIMD-padded) | Total: 1478 bytes (MTU-safe)
+//! - Header: 222 bytes | Payload: 2048 bytes (SIMD-aligned) | Total: 2270 bytes
 //! - Ops: PING, SEARCH, TRAVERSE, HYDRATE, EDGES
-//! - Fingerprint: 156×u64 = 1248 bytes raw, padded to 1256 for AVX-512 alignment
+//! - Fingerprint: 256×u64 = 2048 bytes (16K bits, naturally 64-byte aligned)
 //!
 //! # Content Negotiation (HTTP)
 //!
@@ -73,11 +73,11 @@ const UDP_MAGIC: [u8; 4] = *b"LDBG";
 const UDP_VERSION: u8 = 1;
 /// Header size in bytes
 const UDP_HEADER_SIZE: usize = 222;
-/// Raw fingerprint payload: 156 × u64 = 1248 bytes
+/// Raw fingerprint payload: 256 × u64 = 2048 bytes
 const UDP_FP_RAW: usize = FINGERPRINT_WORDS * 8;
-/// SIMD-padded fingerprint payload: 1248 + 8 = 1256 bytes (64-byte aligned blocks)
-const UDP_FP_PADDED: usize = 1256;
-/// Maximum datagram size: header + padded fingerprint = 1478 (fits 1500 MTU)
+/// Fingerprint payload: 2048 bytes (256 words, naturally 64-byte aligned, no padding needed)
+const UDP_FP_PADDED: usize = FINGERPRINT_WORDS * 8;
+/// Maximum datagram size: header + fingerprint = 2270
 const UDP_MAX_DATAGRAM: usize = UDP_HEADER_SIZE + UDP_FP_PADDED;
 /// Result slots in header reserved area (190 bytes / 2 = 95 u16 addresses)
 const UDP_MAX_RESULT_ADDRS: usize = 95;

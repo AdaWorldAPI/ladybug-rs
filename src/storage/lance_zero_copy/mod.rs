@@ -103,7 +103,7 @@ impl FingerprintBuffer {
     /// Create from a FixedSizeListArray (zero-copy)
     ///
     /// The FixedSizeListArray should contain UInt64 elements with
-    /// list size = FINGERPRINT_WORDS (156).
+    /// list size = FINGERPRINT_WORDS (256).
     pub fn from_fixed_size_list(array: &FixedSizeListArray) -> Option<Self> {
         // Verify the array structure
         if array.value_length() != FINGERPRINT_WORDS as i32 {
@@ -1229,7 +1229,7 @@ pub struct LanceView {
     /// Number of fingerprints in this view
     pub len: usize,
 
-    /// Raw pointer to fingerprint data (156 × u64 per fingerprint)
+    /// Raw pointer to fingerprint data (256 × u64 per fingerprint)
     /// Points directly into mmap'd Arrow buffer
     #[cfg(feature = "lance")]
     fingerprint_ptr: *const u64,
@@ -2105,7 +2105,7 @@ impl SparseFingerprint {
         }
     }
 
-    /// Create from standard fingerprint (156 words)
+    /// Create from standard fingerprint (256 words)
     pub fn from_fingerprint(fp: &[u64; FINGERPRINT_WORDS]) -> Self {
         Self::from_dense(fp)
     }

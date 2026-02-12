@@ -58,7 +58,7 @@ use crate::learning::cognitive_frameworks::{
 // CONSTANTS
 // =============================================================================
 
-const WORDS: usize = 156;
+const WORDS: usize = 256;
 
 // =============================================================================
 // QUALIA DIMENSIONS
@@ -709,7 +709,7 @@ impl CognitiveSearch {
                 }
                 let atom = &self.atoms[idx];
                 
-                let content_score = 1.0 - (dist as f32 / 10000.0);
+                let content_score = 1.0 - (dist as f32 / crate::FINGERPRINT_BITS as f32);
                 let qualia_score = query_qualia.similarity(&atom.qualia);
                 let combined = 0.6 * content_score + 0.4 * qualia_score;
                 
@@ -768,7 +768,7 @@ impl CognitiveSearch {
                     return None;
                 }
                 let atom = &self.atoms[idx];
-                let score = 1.0 - (dist as f32 / 10000.0);
+                let score = 1.0 - (dist as f32 / crate::FINGERPRINT_BITS as f32);
                 
                 Some(CognitiveResult {
                     atom: atom.clone(),
@@ -868,7 +868,7 @@ impl CognitiveSearch {
                 continue;
             }
             let atom = &self.atoms[idx];
-            let weight = 1.0 - (dist as f32 / 10000.0);
+            let weight = 1.0 - (dist as f32 / crate::FINGERPRINT_BITS as f32);
             
             weighted_f += atom.truth.f * weight;
             weighted_c += atom.truth.c * weight;

@@ -74,7 +74,8 @@ impl TruthValue {
     
     /// Convert to evidence counts
     pub fn to_evidence(&self) -> (f32, f32) {
-        let w = Self::HORIZON * self.confidence / (1.0 - self.confidence + f32::EPSILON);
+        let c = self.confidence.min(1.0 - 1.0 / (Self::HORIZON + 1000.0));
+        let w = Self::HORIZON * c / (1.0 - c);
         let w_pos = w * self.frequency;
         let w_neg = w * (1.0 - self.frequency);
         (w_pos, w_neg)
@@ -163,12 +164,11 @@ impl TruthValue {
     
     /// Comparison: A→B, C→B ⊢ A↔C
     ///
-    /// Inferring similarity from shared property
+    /// NAL standard — AND/OR ratio: f = (f1*f2) / (f1+f2 - f1*f2)
     pub fn comparison(&self, other: &TruthValue) -> TruthValue {
-        let f0 = self.frequency * other.frequency;
-        let f1 = (1.0 - self.frequency) * (1.0 - other.frequency);
-        let f = f0 + f1;
-        let c = self.confidence * other.confidence * (f0 + f1);
+        let f1f2 = self.frequency * other.frequency;
+        let f = f1f2 / (self.frequency + other.frequency - f1f2).max(f32::EPSILON);
+        let c = self.confidence * other.confidence * f;
         TruthValue { frequency: f, confidence: c }
     }
     

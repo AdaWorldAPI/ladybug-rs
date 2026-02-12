@@ -649,26 +649,26 @@ fn weighted_bundle(fps: &[(Fingerprint, f32)]) -> Fingerprint {
         return Fingerprint::zero();
     }
     
-    let mut counts = [0.0f32; 10000];
+    let mut counts = [0.0f32; 16384];
     let mut total_weight = 0.0f32;
-    
+
     for (fp, weight) in fps {
-        for i in 0..10000 {
+        for i in 0..16384 {
             if fp.get_bit(i) {
                 counts[i] += weight;
             }
         }
         total_weight += weight;
     }
-    
+
     if total_weight == 0.0 {
         return Fingerprint::zero();
     }
-    
+
     let threshold = total_weight / 2.0;
     let mut result = Fingerprint::zero();
-    
-    for i in 0..10000 {
+
+    for i in 0..16384 {
         if counts[i] > threshold {
             result.set_bit(i, true);
         }

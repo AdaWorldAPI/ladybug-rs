@@ -3,7 +3,7 @@
 //! Modern ScalarUDFImpl implementations for LadybugDB cognitive operations.
 //!
 //! UDFs:
-//! - `hamming(a, b)` -> Hamming distance (0-10000)
+//! - `hamming(a, b)` -> Hamming distance (0-16384)
 //! - `similarity(a, b)` -> Similarity (0.0-1.0)
 //! - `popcount(x)` -> Bit count
 //! - `xor_bind(a, b)` -> XOR binding (VSA)

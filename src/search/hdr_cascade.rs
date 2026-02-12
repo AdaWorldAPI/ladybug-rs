@@ -57,12 +57,11 @@ use crate::{Error, Result};
 // CONSTANTS
 // =============================================================================
 
-/// Number of 64-bit words in a fingerprint (156 = 9984 bits)
-/// Note: Fingerprint uses 157 words, but we use 156 for HDR cascade
-const WORDS: usize = 156;
+/// Number of 64-bit words in a fingerprint (256 = 16384 bits)
+const WORDS: usize = 256;
 
 /// Bits per fingerprint
-const BITS: usize = WORDS * 64;  // ~10K
+const BITS: usize = WORDS * 64;  // 16384
 
 /// Default Mexican hat excitation threshold
 const DEFAULT_EXCITE: u32 = 2000;  // ~20% different
@@ -87,8 +86,8 @@ pub fn hamming_distance(a: &[u64; WORDS], b: &[u64; WORDS]) -> u32 {
 /// Compute 1-bit sketch: which chunks differ at all?
 /// Returns a bitmask where bit i = 1 if chunk i has any difference
 #[inline]
-pub fn sketch_1bit(a: &[u64; WORDS], b: &[u64; WORDS]) -> [u8; 20] {
-    let mut sketch = [0u8; 20];
+pub fn sketch_1bit(a: &[u64; WORDS], b: &[u64; WORDS]) -> [u8; 32] {
+    let mut sketch = [0u8; 32]; // 256 words / 8 bits per byte = 32 bytes
     for i in 0..WORDS {
         let differs = (a[i] ^ b[i]) != 0;
         if differs {
@@ -100,8 +99,8 @@ pub fn sketch_1bit(a: &[u64; WORDS], b: &[u64; WORDS]) -> [u8; 20] {
 
 /// Compute 4-bit sketch: how different is each chunk? (0-15, saturated)
 #[inline]
-pub fn sketch_4bit(a: &[u64; WORDS], b: &[u64; WORDS]) -> [u8; 78] {
-    let mut sketch = [0u8; 78];
+pub fn sketch_4bit(a: &[u64; WORDS], b: &[u64; WORDS]) -> [u8; 128] {
+    let mut sketch = [0u8; 128]; // 256 words / 2 per byte = 128 bytes
     for i in 0..WORDS {
         let count = (a[i] ^ b[i]).count_ones().min(15) as u8;
         let byte_idx = i / 2;
@@ -126,13 +125,13 @@ pub fn sketch_8bit(a: &[u64; WORDS], b: &[u64; WORDS]) -> [u8; WORDS] {
 
 /// Sum of 1-bit sketch (number of differing chunks)
 #[inline]
-pub fn sketch_1bit_sum(sketch: &[u8; 20]) -> u32 {
+pub fn sketch_1bit_sum(sketch: &[u8; 32]) -> u32 {
     sketch.iter().map(|&b| b.count_ones()).sum()
 }
 
 /// Sum of 4-bit sketch (approximate total distance)
 #[inline]
-pub fn sketch_4bit_sum(sketch: &[u8; 78]) -> u32 {
+pub fn sketch_4bit_sum(sketch: &[u8; 128]) -> u32 {
     let mut sum = 0u32;
     for &byte in sketch.iter() {
         sum += (byte & 0x0F) as u32;
@@ -416,10 +415,10 @@ impl RollingWindow {
 /// Hierarchical Distance Resolution index for fast similarity search
 pub struct HdrIndex {
     /// Level 0: 1-bit sketches (which chunks differ?)
-    sketches_1bit: Vec<[u8; 20]>,
-    
+    sketches_1bit: Vec<[u8; 32]>,
+
     /// Level 1: 4-bit sketches (how much per chunk?)
-    sketches_4bit: Vec<[u8; 78]>,
+    sketches_4bit: Vec<[u8; 128]>,
     
     /// Level 2: 8-bit sketches (precise per chunk)
     sketches_8bit: Vec<[u8; WORDS]>,
@@ -445,12 +444,12 @@ impl HdrIndex {
             sketches_8bit: Vec::new(),
             fingerprints: Vec::new(),
             buckets: None,
-            threshold_l0: 100,   // ~64% of chunks can differ
-            threshold_l1: 1000,  // ~10K distance at 4-bit resolution
-            threshold_l2: 3000,  // ~30% different at 8-bit
+            threshold_l0: 256,   // All 256 chunks can differ (1-bit sketch)
+            threshold_l1: 2000,  // ~16K distance at 4-bit resolution
+            threshold_l2: 5000,  // ~30% different at 8-bit
         }
     }
-    
+
     /// Create with capacity
     pub fn with_capacity(n: usize) -> Self {
         Self {
@@ -459,9 +458,9 @@ impl HdrIndex {
             sketches_8bit: Vec::with_capacity(n),
             fingerprints: Vec::with_capacity(n),
             buckets: None,
-            threshold_l0: 100,
-            threshold_l1: 1000,
-            threshold_l2: 3000,
+            threshold_l0: 256,
+            threshold_l1: 2000,
+            threshold_l2: 5000,
         }
     }
     
@@ -479,8 +478,8 @@ impl HdrIndex {
         self.fingerprints.push(*fp);
         
         // Precompute self-sketches not useful; skip for now
-        self.sketches_1bit.push([0u8; 20]);
-        self.sketches_4bit.push([0u8; 78]);
+        self.sketches_1bit.push([0u8; 32]);
+        self.sketches_4bit.push([0u8; 128]);
         self.sketches_8bit.push([0u8; WORDS]);
     }
     
@@ -686,7 +685,7 @@ impl BoundRetrieval {
 pub struct SearchResult {
     /// Index in corpus
     pub index: usize,
-    /// Hamming distance (0 to ~10K)
+    /// Hamming distance (0 to ~16K)
     pub distance: u32,
     /// Similarity score (0.0 to 1.0, like float vectors)
     pub similarity: f32,
@@ -845,9 +844,8 @@ impl FingerprintSearch for Fingerprint {
     
     fn from_words(words: &[u64; WORDS]) -> Self {
         use crate::FINGERPRINT_U64;
-        // Fingerprint uses 157 words, HDR cascade uses 156
-        // Pad with zero for the last word
-        let mut bytes = vec![0u8; FINGERPRINT_U64 * 8];  // 1256 bytes
+        // FINGERPRINT_U64 = FINGERPRINT_WORDS = 256, direct conversion
+        let mut bytes = vec![0u8; FINGERPRINT_U64 * 8];  // 2048 bytes
         for (i, &word) in words.iter().enumerate() {
             bytes[i*8..(i+1)*8].copy_from_slice(&word.to_le_bytes());
         }
@@ -1020,7 +1018,7 @@ mod tests {
 // =============================================================================
 
 /// Sample points for exposure metering (prime-spaced for max information)
-const METER_POINTS: [usize; 7] = [0, 23, 47, 78, 101, 131, 155];
+const METER_POINTS: [usize; 7] = [0, 37, 79, 127, 167, 211, 251];
 
 /// Belichtungsmesser: 7-point exposure meter using 1-bit samples
 /// Returns (mean, sd×100) - the "lighting conditions" of this comparison
@@ -1200,7 +1198,7 @@ impl RubiconSearch {
 
                 if dist <= dynamic_threshold as u32 {
                     results.push((i, dist));
-                    batch_quality_sum += 1.0 - (dist as f32 / 10000.0);
+                    batch_quality_sum += 1.0 - (dist as f32 / BITS as f32);
                     batch_count += 1;
                 }
 
@@ -1284,7 +1282,7 @@ impl RubiconSearch {
 
         // Measure the cleaned signal
         let cleaned_dist = hamming_distance(query, &star);
-        let signal_strength = 1.0 - (cleaned_dist as f32 / 10000.0);
+        let signal_strength = 1.0 - (cleaned_dist as f32 / BITS as f32);
         let noise_reduction = radius as f32 / cleaned_dist.max(1) as f32;
 
         // Did we find a star? (signal improved by at least 2x)

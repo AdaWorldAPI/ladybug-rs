@@ -310,7 +310,7 @@ pub struct DeniedTopic {
     /// Semantic description (not keyword-based — uses fingerprint similarity)
     pub description: String,
     /// Fingerprint of the topic description for resonance matching
-    /// Stored as Vec<u64> because serde doesn't support [u64; 156] directly
+    /// Stored as Vec<u64> because serde doesn't support [u64; 256] directly
     #[serde(skip)]
     pub fingerprint: Option<[u64; FINGERPRINT_WORDS]>,
     pub threshold: f32,

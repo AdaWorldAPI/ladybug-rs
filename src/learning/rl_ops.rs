@@ -211,7 +211,7 @@ impl CausalRlAgent {
     }
     
     /// Hash a state-action pair for cache
-    fn hash_sa(state: &[u64; 156], action: &[u64; 156]) -> u64 {
+    fn hash_sa(state: &[u64; 256], action: &[u64; 256]) -> u64 {
         state[0] ^ action[0] ^ state[1].rotate_left(32) ^ action[1].rotate_left(32)
     }
     
@@ -222,9 +222,9 @@ impl CausalRlAgent {
     /// Store intervention: in state, doing action causes outcome with reward
     pub fn store_intervention(
         &mut self,
-        state: &[u64; 156],
-        action: &[u64; 156],
-        outcome: &[u64; 156],
+        state: &[u64; 256],
+        action: &[u64; 256],
+        outcome: &[u64; 256],
         reward: f32,
     ) {
         self.causal.store_intervention(state, action, outcome, reward);
@@ -233,8 +233,8 @@ impl CausalRlAgent {
     /// Query: what outcome if I do action in state?
     pub fn query_outcome(
         &self,
-        state: &[u64; 156],
-        action: &[u64; 156],
+        state: &[u64; 256],
+        action: &[u64; 256],
     ) -> Vec<CausalResult> {
         self.causal.query_outcome(state, action)
     }
@@ -242,8 +242,8 @@ impl CausalRlAgent {
     /// Query: what action caused this outcome?
     pub fn query_cause(
         &self,
-        state: &[u64; 156],
-        outcome: &[u64; 156],
+        state: &[u64; 256],
+        outcome: &[u64; 256],
     ) -> Vec<CausalResult> {
         self.causal.query_action(state, outcome)
     }
@@ -252,8 +252,8 @@ impl CausalRlAgent {
     /// Uses stored interventions, not just correlations
     pub fn q_value_causal(
         &self,
-        state: &[u64; 156],
-        action: &[u64; 156],
+        state: &[u64; 256],
+        action: &[u64; 256],
     ) -> f32 {
         let outcomes = self.query_outcome(state, action);
         
@@ -275,9 +275,9 @@ impl CausalRlAgent {
     /// Detect confounders between two outcomes
     pub fn detect_confounders(
         &self,
-        outcome1: &[u64; 156],
-        outcome2: &[u64; 156],
-    ) -> Vec<[u64; 156]> {
+        outcome1: &[u64; 256],
+        outcome2: &[u64; 256],
+    ) -> Vec<[u64; 256]> {
         self.causal.detect_confounders(outcome1, outcome2)
     }
     
@@ -288,9 +288,9 @@ impl CausalRlAgent {
     /// Store counterfactual: had I done alt_action, alt_outcome would have happened
     pub fn store_counterfactual(
         &mut self,
-        state: &[u64; 156],
-        alt_action: &[u64; 156],
-        alt_outcome: &[u64; 156],
+        state: &[u64; 256],
+        alt_action: &[u64; 256],
+        alt_outcome: &[u64; 256],
         weight: f32,
     ) {
         self.causal.store_counterfactual(state, alt_action, alt_outcome, weight);
@@ -299,8 +299,8 @@ impl CausalRlAgent {
     /// Query counterfactual: what would have happened if I had done action?
     pub fn query_counterfactual(
         &self,
-        state: &[u64; 156],
-        alt_action: &[u64; 156],
+        state: &[u64; 256],
+        alt_action: &[u64; 256],
     ) -> Vec<CausalResult> {
         self.causal.query_counterfactual(state, alt_action)
     }
@@ -308,9 +308,9 @@ impl CausalRlAgent {
     /// Compute regret: how much better would counterfactual have been?
     pub fn compute_regret(
         &self,
-        state: &[u64; 156],
-        actual_outcome: &[u64; 156],
-        alt_action: &[u64; 156],
+        state: &[u64; 256],
+        actual_outcome: &[u64; 256],
+        alt_action: &[u64; 256],
     ) -> Option<f32> {
         self.causal.compute_regret(state, actual_outcome, alt_action)
     }
@@ -322,9 +322,9 @@ impl CausalRlAgent {
     /// Select action using causal Q-values with ε-greedy
     pub fn select_action(
         &self,
-        state: &[u64; 156],
-        actions: &[[u64; 156]],
-    ) -> Option<[u64; 156]> {
+        state: &[u64; 256],
+        actions: &[[u64; 256]],
+    ) -> Option<[u64; 256]> {
         if actions.is_empty() {
             return None;
         }
@@ -350,15 +350,15 @@ impl CausalRlAgent {
     /// Prefers actions where we have less counterfactual knowledge
     pub fn select_action_curious(
         &self,
-        state: &[u64; 156],
-        actions: &[[u64; 156]],
-    ) -> Option<[u64; 156]> {
+        state: &[u64; 256],
+        actions: &[[u64; 256]],
+    ) -> Option<[u64; 256]> {
         if actions.is_empty() {
             return None;
         }
         
         // Score each action: Q-value + exploration bonus for uncertainty
-        let scored: Vec<([u64; 156], f32)> = actions.iter()
+        let scored: Vec<([u64; 256], f32)> = actions.iter()
             .map(|a| {
                 let q = self.q_value_causal(state, a);
                 let cf_count = self.query_counterfactual(state, a).len();
@@ -383,11 +383,11 @@ impl CausalRlAgent {
     /// Unlike standard Q-learning, this stores the intervention explicitly
     pub fn update_causal_q(
         &mut self,
-        state: &[u64; 156],
-        action: &[u64; 156],
+        state: &[u64; 256],
+        action: &[u64; 256],
         reward: f32,
-        next_state: &[u64; 156],
-        available_actions: &[[u64; 156]],
+        next_state: &[u64; 256],
+        available_actions: &[[u64; 256]],
     ) {
         // Store the intervention
         self.store_intervention(state, action, next_state, reward);
@@ -411,12 +411,12 @@ impl CausalRlAgent {
     /// Update with explicit counterfactual (when we know what would have happened)
     pub fn update_with_counterfactual(
         &mut self,
-        state: &[u64; 156],
-        actual_action: &[u64; 156],
-        actual_outcome: &[u64; 156],
+        state: &[u64; 256],
+        actual_action: &[u64; 256],
+        actual_outcome: &[u64; 256],
         actual_reward: f32,
-        alt_action: &[u64; 156],
-        alt_outcome: &[u64; 156],
+        alt_action: &[u64; 256],
+        alt_outcome: &[u64; 256],
         alt_reward: f32,
     ) {
         // Store actual intervention
@@ -433,9 +433,9 @@ impl CausalRlAgent {
     /// Explain why an action was chosen
     pub fn explain_action(
         &self,
-        state: &[u64; 156],
-        chosen_action: &[u64; 156],
-        actions: &[[u64; 156]],
+        state: &[u64; 256],
+        chosen_action: &[u64; 256],
+        actions: &[[u64; 256]],
     ) -> ActionExplanation {
         let chosen_q = self.q_value_causal(state, chosen_action);
         let chosen_outcomes = self.query_outcome(state, chosen_action);
@@ -446,7 +446,7 @@ impl CausalRlAgent {
                 let q = self.q_value_causal(state, a);
                 let regret = self.compute_regret(
                     state,
-                    &chosen_outcomes.first().map(|r| r.fingerprint).unwrap_or([0u64; 156]),
+                    &chosen_outcomes.first().map(|r| r.fingerprint).unwrap_or([0u64; 256]),
                     a
                 );
                 AlternativeAction {
@@ -469,7 +469,7 @@ impl CausalRlAgent {
     /// Trace the causal chain: state → action → outcome → ...
     pub fn trace_causal_chain(
         &self,
-        initial_state: &[u64; 156],
+        initial_state: &[u64; 256],
         max_depth: usize,
     ) -> Vec<CausalChainLink> {
         let mut chain = Vec::new();
@@ -489,7 +489,7 @@ impl CausalRlAgent {
                 state: current_state,
                 action: None,  // Would need to track this
                 outcome: outcome.fingerprint,
-                confidence: 1.0 - (outcome.distance as f32 / 10000.0),
+                confidence: 1.0 - (outcome.distance as f32 / crate::FINGERPRINT_BITS as f32),
             });
             
             current_state = outcome.fingerprint;
@@ -512,17 +512,17 @@ impl Default for CausalRlAgent {
 /// Explanation for an action choice
 #[derive(Debug)]
 pub struct ActionExplanation {
-    pub chosen_action: [u64; 156],
+    pub chosen_action: [u64; 256],
     pub chosen_q_value: f32,
     pub expected_outcomes: Vec<CausalResult>,
     pub alternatives: Vec<AlternativeAction>,
-    pub confounders: Vec<[u64; 156]>,
+    pub confounders: Vec<[u64; 256]>,
 }
 
 /// Alternative action that wasn't chosen
 #[derive(Debug)]
 pub struct AlternativeAction {
-    pub action: [u64; 156],
+    pub action: [u64; 256],
     pub q_value: f32,
     pub regret: Option<f32>,
 }
@@ -530,9 +530,9 @@ pub struct AlternativeAction {
 /// Link in a causal chain
 #[derive(Debug)]
 pub struct CausalChainLink {
-    pub state: [u64; 156],
-    pub action: Option<[u64; 156]>,
-    pub outcome: [u64; 156],
+    pub state: [u64; 256],
+    pub action: Option<[u64; 256]>,
+    pub outcome: [u64; 256],
     pub confidence: f32,
 }
 
@@ -544,9 +544,9 @@ pub struct CausalChainLink {
 mod tests {
     use super::*;
     
-    fn random_fp() -> [u64; 156] {
-        let mut fp = [0u64; 156];
-        for i in 0..156 {
+    fn random_fp() -> [u64; 256] {
+        let mut fp = [0u64; 256];
+        for i in 0..256 {
             fp[i] = rand::random();
         }
         fp

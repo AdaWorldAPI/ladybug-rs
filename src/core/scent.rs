@@ -11,8 +11,8 @@ use std::path::Path;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 
-/// Fingerprint size: 10K bits = 1250 bytes
-pub const FP_BYTES: usize = 1250;
+/// Fingerprint size: 16K bits = 2048 bytes
+pub const FP_BYTES: usize = 2048;
 
 /// Scent size: 5 bytes = 40 bits
 pub const SCENT_BYTES: usize = 5;

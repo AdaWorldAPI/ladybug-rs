@@ -236,7 +236,7 @@ pub enum CellResolution {
 impl CellResolution {
     pub fn words(&self) -> usize {
         match self {
-            CellResolution::Standard => 156,
+            CellResolution::Standard => 256,
             CellResolution::Qualia => 1000,
             CellResolution::High => 10_000,
             CellResolution::Reality => 1_000_000,
@@ -1211,7 +1211,7 @@ impl QuantumComparison {
     pub fn standard_comparison() -> Self {
         let configs = vec![
             // Standard fingerprint
-            QuantumConfig::new("5^5 @ 10K bits", 5, 10_000),
+            QuantumConfig::new("5^5 @ 16K bits", 5, 16_384),
             // Qualia resolution
             QuantumConfig::new("5^5 @ 64K bits", 5, 64_000),
             // Reality resolution
@@ -1219,7 +1219,7 @@ impl QuantumComparison {
             // Larger grid at qualia
             QuantumConfig::new("7^7 @ 64K bits", 7, 64_000),
             // Massive grid
-            QuantumConfig::new("9^9 @ 10K bits", 9, 10_000),
+            QuantumConfig::new("9^9 @ 16K bits", 9, 16_384),
         ];
 
         Self::compare(&configs)
@@ -1233,7 +1233,7 @@ impl QuantumComparison {
             // Single vector at qualia resolution
             QuantumConfig::new("1 × 64K bits", 1, 64_000),
             // 5^5 crystal at standard
-            QuantumConfig::new("5^5 @ 10K bits", 5, 10_000),
+            QuantumConfig::new("5^5 @ 16K bits", 5, 16_384),
             // 5^5 crystal at qualia
             QuantumConfig::new("5^5 @ 64K bits", 5, 64_000),
             // 7^7 crystal at qualia (7D would be 7^7 = 823,543 cells)

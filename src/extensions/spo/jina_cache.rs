@@ -14,9 +14,9 @@ use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
 
 // Same fingerprint structure as main.rs
-const N: usize = 10_000;
-const N64: usize = 157;
-const NEAR_THRESHOLD: u32 = 1500;  // 0.15 * 10000 = 15% Hamming distance
+const N: usize = 16_384;
+const N64: usize = 256;
+const NEAR_THRESHOLD: u32 = 2458;  // 0.15 * 16384 = 15% Hamming distance
 
 #[repr(align(64))]
 #[derive(Clone)]
@@ -49,7 +49,7 @@ impl Fingerprint {
         let median = sorted[512];
         
         for (i, &val) in embedding.iter().enumerate() {
-            let base_bit = i * 10;  // 1024 * 10 = 10240 > 10000, so we wrap
+            let base_bit = i * 10;  // 1024 * 10 = 10240 < 16384, fits without wrap
             
             // Set multiple bits based on value relative to median
             let strength = ((val - median).abs() * 5.0).min(5.0) as usize;

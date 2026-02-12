@@ -16,8 +16,8 @@ use rayon::prelude::*;
 // Constants
 // ============================================================================
 
-const N: usize = 10_000;        // Fingerprint bits
-const N64: usize = 157;         // u64 words
+const N: usize = 16_384;        // Fingerprint bits
+const N64: usize = 256;         // u64 words
 const GRID: usize = 5;          // 5×5×5 crystal
 const CELLS: usize = 125;       // Total cells
 

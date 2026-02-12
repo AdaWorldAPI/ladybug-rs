@@ -251,8 +251,8 @@ impl NSMField {
                 
                 // Set bits based on weight and seed
                 let num_bits = (*weight * 100.0) as usize;
-                for j in 0..num_bits.min(157) {
-                    let bit_pos = (seed.wrapping_mul((j + 1) as u64) % 10000) as usize;
+                for j in 0..num_bits.min(256) {
+                    let bit_pos = (seed.wrapping_mul((j + 1) as u64) % crate::FINGERPRINT_BITS as u64) as usize;
                     fp.set_bit(bit_pos, true);
                 }
             }

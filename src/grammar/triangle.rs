@@ -79,21 +79,21 @@ impl GrammarTriangle {
         
         // NSM contribution
         for i in 0..4000 {
-            if nsm_fp.get_bit(i % 10000) {
+            if nsm_fp.get_bit(i % crate::FINGERPRINT_BITS) {
                 result.set_bit(i, true);
             }
         }
         
         // Causality contribution (shifted to 4000-5999)
         for i in 0..2000 {
-            if causality_fp.get_bit(i % 10000) {
+            if causality_fp.get_bit(i % crate::FINGERPRINT_BITS) {
                 result.set_bit(4000 + i, true);
             }
         }
         
         // Qualia contribution (shifted to 6000-9999)
         for i in 0..4000 {
-            if qualia_fp.get_bit(i % 10000) {
+            if qualia_fp.get_bit(i % crate::FINGERPRINT_BITS) {
                 result.set_bit(6000 + i, true);
             }
         }
@@ -272,7 +272,7 @@ mod tests {
         
         // Should have some bits set
         assert!(fp.popcount() > 0);
-        assert!(fp.popcount() < 10000); // Not all bits
+        assert!(fp.popcount() < crate::FINGERPRINT_BITS as u32); // Not all bits
     }
     
     #[test]

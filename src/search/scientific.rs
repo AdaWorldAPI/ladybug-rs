@@ -10,8 +10,8 @@
 // CONSTANTS
 // =============================================================================
 
-/// Total bits in fingerprint (156 * 64)
-pub const TOTAL_BITS: u32 = 9984;
+/// Total bits in fingerprint (256 * 64)
+pub const TOTAL_BITS: u32 = 16384;
 
 /// Default confidence level for CI
 pub const DEFAULT_CONFIDENCE: f64 = 0.95;

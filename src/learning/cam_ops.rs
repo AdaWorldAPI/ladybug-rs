@@ -1910,8 +1910,8 @@ impl OpDictionary {
                 }
                 let _table = &args[0];
                 let query = &args[1];
-                // Threshold encoded in popcount: 0-10000 -> 0.0-1.0
-                let threshold = args[2].popcount() as f32 / 10000.0;
+                // Threshold encoded in popcount: 0-FINGERPRINT_BITS -> 0.0-1.0
+                let threshold = args[2].popcount() as f32 / crate::FINGERPRINT_BITS as f32;
 
                 // Use lance_db scan if available
                 if let Some(lance) = ctx.lance_db {
@@ -1944,7 +1944,7 @@ impl OpDictionary {
                 let left = &args[0];
                 let right = &args[1];
                 // Threshold from popcount
-                let threshold = args[2].popcount() as f32 / 10000.0;
+                let threshold = args[2].popcount() as f32 / crate::FINGERPRINT_BITS as f32;
 
                 // Check if left and right are similar enough
                 let sim = left.similarity(right);
@@ -1974,8 +1974,8 @@ impl OpDictionary {
                     return OpResult::Error("MatchSimilar requires 2 args".to_string());
                 }
                 let query = &args[0];
-                // Threshold from popcount: 0-10000 -> 0.0-1.0
-                let threshold = args[1].popcount() as f32 / 10000.0;
+                // Threshold from popcount: 0-FINGERPRINT_BITS -> 0.0-1.0
+                let threshold = args[1].popcount() as f32 / crate::FINGERPRINT_BITS as f32;
 
                 // Use lance_db if available
                 if let Some(lance) = ctx.lance_db {
@@ -2358,7 +2358,7 @@ impl OpDictionary {
                 // Whisper reduces signal density (fewer bits set)
                 // Like quantum damping - signal present but weak
                 let mut whispered = signal.clone();
-                for bit in 0..10000 {
+                for bit in 0..crate::FINGERPRINT_BITS {
                     if bit % 4 != 0 {  // Keep only 25% of bits
                         whispered.set_bit(bit, false);
                     }
@@ -2393,7 +2393,7 @@ impl OpDictionary {
                 
                 // Blend: mostly bundled memory, some noise
                 let mut dreamed = bundled.clone();
-                for bit in 0..10000 {
+                for bit in 0..crate::FINGERPRINT_BITS {
                     if bit % 10 == 0 {  // 10% noise
                         dreamed.set_bit(bit, dream_noise.get_bit(bit));
                     }
@@ -2562,7 +2562,7 @@ pub fn bundle_fingerprints(fps: &[Fingerprint]) -> Fingerprint {
     let mut result = Fingerprint::zero();
     let threshold = fps.len() / 2;
     
-    for bit in 0..10000 {
+    for bit in 0..crate::FINGERPRINT_BITS {
         let count: usize = fps.iter()
             .filter(|fp| fp.get_bit(bit))
             .count();
@@ -3712,8 +3712,8 @@ impl OpDictionary {
                 }
                 let start = &args[0];
                 let end = &args[1];
-                // Factor encoded in popcount (0-10000 → 0.0-1.0)
-                let factor = args[2].popcount() as f64 / 10000.0;
+                // Factor encoded in popcount (0-FINGERPRINT_BITS → 0.0-1.0)
+                let factor = args[2].popcount() as f64 / crate::FINGERPRINT_BITS as f64;
 
                 // Linear interpolation via weighted bundling
                 if factor < 0.5 {
@@ -3889,7 +3889,7 @@ impl OpDictionary {
                 let context = &args[1];
 
                 // Base-level: popcount-based
-                let base = chunk.popcount() as f64 / 10000.0;
+                let base = chunk.popcount() as f64 / crate::FINGERPRINT_BITS as f64;
 
                 // Spreading activation: similarity to context
                 let spreading = chunk.similarity(context) as f64;
@@ -3915,7 +3915,7 @@ impl OpDictionary {
                 }
                 // Mismatch penalty = Hamming distance / max
                 let dist = args[0].hamming(&args[1]);
-                let penalty = dist as f64 / 10000.0;
+                let penalty = dist as f64 / crate::FINGERPRINT_BITS as f64;
                 OpResult::Scalar(-penalty) // Negative = penalty
             })
         );
@@ -4051,7 +4051,7 @@ impl OpDictionary {
                 // Q-value = similarity between state-action pair and value pattern
                 let state_action = args[0].bind(&args[1]);
                 // Use popcount as value proxy (more bits = higher value)
-                let q = state_action.popcount() as f64 / 10000.0;
+                let q = state_action.popcount() as f64 / crate::FINGERPRINT_BITS as f64;
                 OpResult::Scalar(q)
             })
         );
@@ -4179,8 +4179,8 @@ impl OpDictionary {
                 }
                 // Reward encoded in bit balance
                 let positive = args[0].popcount() as f64;
-                let negative = (10000.0 - positive) / 10000.0;
-                let reward = (positive / 10000.0) - negative;
+                let negative = (crate::FINGERPRINT_BITS as f64 - positive) / crate::FINGERPRINT_BITS as f64;
+                let reward = (positive / crate::FINGERPRINT_BITS as f64) - negative;
                 OpResult::Scalar(reward)
             })
         );
@@ -4199,9 +4199,9 @@ impl OpDictionary {
                     return OpResult::Scalar(0.0);
                 }
                 // δ = r + γV(s') - V(s)
-                let reward_bits = args[0].popcount() as f64 / 10000.0;
-                let next_v = args[1].popcount() as f64 / 10000.0;
-                let current_v = args[2].popcount() as f64 / 10000.0;
+                let reward_bits = args[0].popcount() as f64 / crate::FINGERPRINT_BITS as f64;
+                let next_v = args[1].popcount() as f64 / crate::FINGERPRINT_BITS as f64;
+                let current_v = args[2].popcount() as f64 / crate::FINGERPRINT_BITS as f64;
                 let gamma = 0.99;
 
                 let td_error = reward_bits + gamma * next_v - current_v;

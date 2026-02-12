@@ -36,8 +36,8 @@ use crate::cognitive::Thought;
 use crate::graph::Edge;
 use crate::{Error, Result};
 
-/// Fingerprint size in bytes (10,000 bits = 1,250 bytes)
-pub const FINGERPRINT_BYTES: usize = 1250;
+/// Fingerprint size in bytes (16,384 bits = 2,048 bytes)
+pub const FINGERPRINT_BYTES: usize = 2048;
 
 /// Jina embedding dimension
 pub const EMBEDDING_DIM: usize = 1024;
@@ -437,14 +437,14 @@ impl LanceStore {
         candidates.sort_by_key(|(_, d)| *d);
         
         // Apply threshold and limit
-        let max_distance = threshold.map(|t| ((1.0 - t) * 10000.0) as u32);
+        let max_distance = threshold.map(|t| ((1.0 - t) * crate::FINGERPRINT_BITS as f32) as u32);
         
         let results: Vec<(NodeRecord, u32, f32)> = candidates
             .into_iter()
             .filter(|(_, d)| max_distance.map(|m| *d <= m).unwrap_or(true))
             .take(k)
             .map(|(node, dist)| {
-                let similarity = 1.0 - (dist as f32 / 10000.0);
+                let similarity = 1.0 - (dist as f32 / crate::FINGERPRINT_BITS as f32);
                 (node, dist, similarity)
             })
             .collect();

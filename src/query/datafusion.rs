@@ -13,7 +13,7 @@
 //! │   Query → Parser → Logical Plan → Physical Plan → Execution     │
 //! │                                                                  │
 //! │   Custom UDFs:                                                   │
-//! │     - hamming(a, b) → distance (0-10000)                        │
+//! │     - hamming(a, b) → distance (0-16384)                        │
 //! │     - similarity(a, b) → similarity (0.0-1.0)                   │
 //! │     - popcount(x) → count of set bits                           │
 //! │     - xor_bind(a, b) → XOR of two fingerprints                  │

@@ -43,17 +43,17 @@
 use crate::core::Fingerprint;
 use crate::{Error, Result};
 
-/// Number of u64 words in a 10K-bit fingerprint
-const WORDS: usize = 156; // 156 * 64 = 9984 bits (close enough to 10K)
+/// Number of u64 words in a 16K-bit fingerprint
+const WORDS: usize = 256; // 256 * 64 = 16384 bits
 
 /// Number of u64s per AVX-512 register
 const LANES: usize = 8; // 512 bits / 64 bits
 
 /// Full AVX-512 iterations needed
-const FULL_ITERS: usize = WORDS / LANES; // 156 / 8 = 19
+const FULL_ITERS: usize = WORDS / LANES; // 256 / 8 = 32
 
 /// Remainder words after full iterations
-const REMAINDER: usize = WORDS % LANES; // 156 % 8 = 4
+const REMAINDER: usize = WORDS % LANES; // 256 % 8 = 0
 
 // =============================================================================
 // CORE SIMD OPERATIONS
@@ -511,9 +511,8 @@ fn fingerprint_to_words(fp: &Fingerprint) -> [u64; WORDS] {
 
 fn words_to_fingerprint(words: &[u64; WORDS]) -> Fingerprint {
     use crate::FINGERPRINT_U64;
-    // Fingerprint uses 157 words, AVX engine uses 156
-    // Pad with zero for the last word
-    let mut bytes = vec![0u8; FINGERPRINT_U64 * 8];  // 1256 bytes
+    // FINGERPRINT_U64 = FINGERPRINT_WORDS = 256, direct conversion
+    let mut bytes = vec![0u8; FINGERPRINT_U64 * 8];  // 2048 bytes
     for (i, &word) in words.iter().enumerate() {
         let start = i * 8;
         bytes[start..start + 8].copy_from_slice(&word.to_le_bytes());
@@ -550,9 +549,9 @@ mod tests {
         // Same fingerprint = distance 0
         assert_eq!(hamming_distance(&a, &c), 0);
         
-        // Random fingerprints should be ~5000 apart (half the bits differ)
+        // Random fingerprints should be ~8192 apart (half of 16384 bits differ)
         let dist = hamming_distance(&a, &b);
-        assert!(dist > 4000 && dist < 6000, "Expected ~5000, got {}", dist);
+        assert!(dist > 6000 && dist < 10000, "Expected ~8192, got {}", dist);
     }
     
     #[test]
@@ -573,7 +572,7 @@ mod tests {
         
         // Query: what does Alice cause?
         let pattern = alice.bind(&causes);
-        let matches = graph.query(&pattern, 5000); // Threshold for partial match
+        let matches = graph.query(&pattern, 8200); // Threshold ~50% of 16384 bits
         
         assert!(!matches.is_empty(), "Should find Alice's edge");
     }
@@ -593,7 +592,7 @@ mod tests {
         }
         
         // 3-hop traversal from Node0
-        let results = graph.traverse_n_hops(&nodes[0], &causes, 3, 5000);
+        let results = graph.traverse_n_hops(&nodes[0], &causes, 3, 8200);
         
         assert!(!results.is_empty(), "Should find nodes within 3 hops");
     }

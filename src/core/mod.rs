@@ -15,11 +15,11 @@ pub use scent::*;
 /// Dense embedding vector
 pub type Embedding = Vec<f32>;
 
-/// Fingerprint dimension in bits (10K VSA standard)
-pub const DIM: usize = 10_000;
+/// Fingerprint dimension in bits (16K = 2^14, HDC-aligned)
+pub const DIM: usize = 16_384;
 
-/// Fingerprint dimension in u64 words
-pub const DIM_U64: usize = 157; // ceil(10000/64)
+/// Fingerprint dimension in u64 words (16384/64 = 256, exact)
+pub const DIM_U64: usize = 256;
 
-/// Last word mask for 10K bits (only 16 bits used in last u64)
-pub const LAST_MASK: u64 = (1 << 16) - 1;
+/// Last word mask (16384 % 64 == 0, so all bits valid — no partial word)
+pub const LAST_MASK: u64 = u64::MAX;

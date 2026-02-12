@@ -46,7 +46,7 @@
 //! The kernel supports concurrent access through zone-level isolation:
 //! - Each prefix is an independent array; reads to different prefixes
 //!   require no synchronization (disjoint memory).
-//! - Within a prefix, fingerprints are 156×u64 contiguous blocks.
+//! - Within a prefix, fingerprints are 256×u64 contiguous blocks.
 //!   Reads are always zero-copy references into the backing array.
 //! - Writes use prefix-level RwLock striping: concurrent reads anywhere,
 //!   writes only lock the affected prefix.
@@ -406,7 +406,7 @@ pub fn datafusion_table_mappings() -> Vec<DataFusionMapping> {
         DataFusionColumn { name: "slot".into(), data_type: "UInt8".into(), description: "Slot byte".into() },
         DataFusionColumn { name: "addr".into(), data_type: "UInt16".into(), description: "Full 16-bit address".into() },
         DataFusionColumn { name: "label".into(), data_type: "Utf8".into(), description: "Human-readable label".into() },
-        DataFusionColumn { name: "fingerprint".into(), data_type: "FixedSizeBinary(1248)".into(), description: "10K-bit fingerprint".into() },
+        DataFusionColumn { name: "fingerprint".into(), data_type: "FixedSizeBinary(2048)".into(), description: "16K-bit fingerprint".into() },
         DataFusionColumn { name: "popcount".into(), data_type: "UInt32".into(), description: "Set bits in fingerprint".into() },
         DataFusionColumn { name: "zone".into(), data_type: "Utf8".into(), description: "Surface/Fluid/Node".into() },
     ];

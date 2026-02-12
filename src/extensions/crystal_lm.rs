@@ -566,11 +566,11 @@ impl CrystalLM {
             return Fingerprint::zero();
         }
         
-        let mut counts = vec![0i32; 10000];
+        let mut counts = vec![0i32; 16384];
         let threshold = fps.len() as i32 / 2;
-        
+
         for fp in fps {
-            for i in 0..10000 {
+            for i in 0..16384 {
                 if fp.get_bit(i) {
                     counts[i] += 1;
                 }
@@ -594,11 +594,11 @@ impl CrystalLM {
             return Fingerprint::zero();
         }
         
-        let mut counts = vec![0.0f32; 10000];
+        let mut counts = vec![0.0f32; 16384];
         let mut total_weight = 0.0f32;
-        
+
         for (fp, weight) in fps {
-            for i in 0..10000 {
+            for i in 0..16384 {
                 if fp.get_bit(i) {
                     counts[i] += weight;
                 }

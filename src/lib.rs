@@ -185,7 +185,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// Version info
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Fingerprint dimensions
-pub const FINGERPRINT_BITS: usize = 10_000;
-pub const FINGERPRINT_U64: usize = 157;  // ceil(10000/64)
-pub const FINGERPRINT_BYTES: usize = FINGERPRINT_U64 * 8;
+/// Fingerprint dimensions (16K = 2^14, exact u64 alignment, no partial word)
+pub const FINGERPRINT_BITS: usize = 16_384;
+pub const FINGERPRINT_U64: usize = 256;   // 16384/64, exact
+pub const FINGERPRINT_BYTES: usize = 2048; // 256×8
