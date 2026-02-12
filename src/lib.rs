@@ -67,6 +67,7 @@ pub mod query;
 pub mod storage;
 pub mod fabric;
 pub mod learning;
+pub mod width_16k;
 
 // === Optional extensions ===
 #[cfg(any(feature = "codebook", feature = "hologram", feature = "spo", feature = "compress"))]
