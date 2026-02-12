@@ -812,10 +812,10 @@ fn rand_f32() -> f32 {
 fn weighted_blend(a: &Fingerprint, b: &Fingerprint, weight: f32) -> Fingerprint {
     // If weight > 0.5, favor b; otherwise favor a
     // Using XOR with probability proportional to weight
-    let threshold = (weight * 10000.0) as usize;
-    
+    let threshold = (weight * crate::FINGERPRINT_BITS as f32) as usize;
+
     let mut result = a.clone();
-    for bit in 0..10000 {
+    for bit in 0..crate::FINGERPRINT_BITS {
         if bit < threshold && b.get_bit(bit) != a.get_bit(bit) {
             result.set_bit(bit, b.get_bit(bit));
         }

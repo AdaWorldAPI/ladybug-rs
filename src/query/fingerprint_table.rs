@@ -12,7 +12,7 @@
 //!
 //! The TableProvider exposes:
 //! - address: UINT16 (8+8 prefix:slot)
-//! - fingerprint: FIXED_SIZE_BINARY(1250) (10K bits)
+//! - fingerprint: FIXED_SIZE_BINARY(2048) (16K bits)
 //! - label: UTF8 (optional)
 //! - qidx: UINT8 (qualia index)
 //! - access_count: UINT32
@@ -48,7 +48,7 @@ use crate::storage::bind_space::{Addr, BindSpace, BindNode, FINGERPRINT_WORDS};
 // CONSTANTS
 // =============================================================================
 
-/// Fingerprint size in bytes (156 * 8 = 1248 bytes for 9984 bits)
+/// Fingerprint size in bytes (256 * 8 = 2048 bytes for 16384 bits)
 const FP_BYTES: usize = FINGERPRINT_WORDS * 8;
 
 // =============================================================================
@@ -391,7 +391,7 @@ fn add_node(
 ) {
     addresses.push(addr);
 
-    // Convert fingerprint [u64; 156] to bytes
+    // Convert fingerprint [u64; 256] to bytes
     let mut fp_bytes = vec![0u8; FP_BYTES];
     for (i, &word) in node.fingerprint.iter().enumerate() {
         let start = i * 8;

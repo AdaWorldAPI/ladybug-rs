@@ -392,15 +392,15 @@ impl QualiaField {
     pub fn to_fingerprint_contribution(&self) -> Fingerprint {
         let mut fp = Fingerprint::zero();
         
-        // Each dimension gets ~555 bits (10000 / 18)
+        // Each dimension gets ~555 bits (FINGERPRINT_BITS / 18)
         // We use threshold-based encoding
         for (i, coord) in self.coordinates.iter().enumerate() {
             let base_bit = i * 555;
             let num_bits = (*coord * 555.0) as usize;
-            
+
             for j in 0..num_bits.min(555) {
                 let bit_pos = base_bit + j;
-                if bit_pos < 10000 {
+                if bit_pos < crate::FINGERPRINT_BITS {
                     fp.set_bit(bit_pos, true);
                 }
             }

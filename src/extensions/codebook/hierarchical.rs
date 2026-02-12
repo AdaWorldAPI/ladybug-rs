@@ -18,8 +18,8 @@ use std::collections::HashMap;
 
 const K: usize = 8;       // Number of clusters
 const P: usize = 1024;    // Projected dimension
-const N_BITS: usize = 10_000;  // Original fingerprint bits
-const N64: usize = 157;
+const N_BITS: usize = 16_384;  // Original fingerprint bits
+const N64: usize = 256;
 
 // ============================================================================
 // Fingerprint
@@ -421,7 +421,7 @@ fn main() {
         "serialization json xml proto encode",
     ];
     
-    for i in 0..10_000 {
+    for i in 0..16_384 {
         let topic = &topics[i % 8];
         let text = format!("{} function_{} implementation version_{}", topic, i, i % 100);
         let fp = Fingerprint::from_text(&text);

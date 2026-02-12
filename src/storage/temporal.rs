@@ -922,13 +922,13 @@ impl TemporalCogRedis {
     // -------------------------------------------------------------------------
 
     /// SET with ACID guarantees
-    pub fn set(&mut self, fingerprint: [u64; 156], opts: SetOptions) -> CogAddr {
+    pub fn set(&mut self, fingerprint: [u64; 256], opts: SetOptions) -> CogAddr {
         let addr = self.inner.set(fingerprint, opts.clone());
 
         // Record in temporal store
         let fp_words = {
             let mut words = [0u64; FINGERPRINT_WORDS];
-            words.copy_from_slice(&fingerprint[..FINGERPRINT_WORDS.min(156)]);
+            words.copy_from_slice(&fingerprint[..FINGERPRINT_WORDS]);
             words
         };
 

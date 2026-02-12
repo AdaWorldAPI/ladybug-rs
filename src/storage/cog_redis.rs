@@ -301,7 +301,7 @@ impl SurfaceCompartment {
 #[derive(Clone, Debug)]
 pub struct CogValue {
     /// The fingerprint content
-    pub fingerprint: [u64; 156],
+    pub fingerprint: [u64; 256],
     /// Felt quality
     pub qualia: QualiaVector,
     /// NARS truth value
@@ -319,7 +319,7 @@ pub struct CogValue {
 }
 
 impl CogValue {
-    pub fn new(fingerprint: [u64; 156]) -> Self {
+    pub fn new(fingerprint: [u64; 256]) -> Self {
         Self {
             fingerprint,
             qualia: QualiaVector::default(),
@@ -400,7 +400,7 @@ pub struct CogEdge {
     /// Relation/verb (address in surface tier)
     pub verb: CogAddr,
     /// Bound fingerprint: from ⊗ verb ⊗ to
-    pub fingerprint: [u64; 156],
+    pub fingerprint: [u64; 256],
     /// Edge strength
     pub weight: f32,
     /// Edge qualia
@@ -408,9 +408,9 @@ pub struct CogEdge {
 }
 
 impl CogEdge {
-    pub fn new(from: CogAddr, verb: CogAddr, to: CogAddr, from_fp: &[u64; 156], verb_fp: &[u64; 156], to_fp: &[u64; 156]) -> Self {
-        let mut fingerprint = [0u64; 156];
-        for i in 0..156 {
+    pub fn new(from: CogAddr, verb: CogAddr, to: CogAddr, from_fp: &[u64; 256], verb_fp: &[u64; 256], to_fp: &[u64; 256]) -> Self {
+        let mut fingerprint = [0u64; 256];
+        for i in 0..256 {
             fingerprint[i] = from_fp[i] ^ verb_fp[i] ^ to_fp[i];
         }
         Self {
@@ -488,7 +488,7 @@ pub struct CogRedis {
     /// Hot edge cache: query pattern → edge indices
     /// Key = from_fingerprint XOR verb_fingerprint (the ABBA query pattern)
     /// Value = indices into self.edges that match
-    hot_cache: HashMap<[u64; 156], Vec<usize>>,
+    hot_cache: HashMap<[u64; 256], Vec<usize>>,
     /// Fanout cache: source address → edge indices
     fanout_cache: HashMap<CogAddr, Vec<usize>>,
     /// Fanin cache: target address → edge indices
@@ -684,7 +684,7 @@ impl CogRedis {
     }
     
     /// SET - store value with cognitive metadata
-    pub fn set(&mut self, fingerprint: [u64; 156], opts: SetOptions) -> CogAddr {
+    pub fn set(&mut self, fingerprint: [u64; 256], opts: SetOptions) -> CogAddr {
         let mut value = CogValue::new(fingerprint);
         
         if let Some(q) = opts.qualia {
@@ -723,7 +723,7 @@ impl CogRedis {
     }
     
     /// SET at specific address
-    pub fn set_at(&mut self, addr: CogAddr, fingerprint: [u64; 156], opts: SetOptions) {
+    pub fn set_at(&mut self, addr: CogAddr, fingerprint: [u64; 256], opts: SetOptions) {
         let mut value = CogValue::new(fingerprint);
         
         if let Some(q) = opts.qualia {
@@ -875,8 +875,8 @@ impl CogRedis {
         self.fanout_cache.remove(&from);
         self.fanin_cache.remove(&to);
         // Invalidate pattern cache for this from+verb combo
-        let mut pattern = [0u64; 156];
-        for i in 0..156 {
+        let mut pattern = [0u64; 256];
+        for i in 0..256 {
             pattern[i] = from_val.fingerprint[i] ^ verb_val.fingerprint[i];
         }
         self.hot_cache.remove(&pattern);
@@ -888,7 +888,7 @@ impl CogRedis {
     }
     
     /// UNBIND - given edge and one component, recover the other (ABBA)
-    pub fn unbind(&mut self, edge_addr: CogAddr, known: CogAddr) -> Option<[u64; 156]> {
+    pub fn unbind(&mut self, edge_addr: CogAddr, known: CogAddr) -> Option<[u64; 256]> {
         let edge_val = self.get(edge_addr)?;
         let known_val = self.get(known)?;
         
@@ -900,8 +900,8 @@ impl CogRedis {
         let verb_val = self.get(edge.verb)?;
         
         // ABBA: edge ⊗ known ⊗ verb = other
-        let mut result = [0u64; 156];
-        for i in 0..156 {
+        let mut result = [0u64; 256];
+        for i in 0..256 {
             result[i] = edge_val.fingerprint[i] ^ known_val.fingerprint[i] ^ verb_val.fingerprint[i];
         }
         
@@ -965,7 +965,7 @@ impl CogRedis {
     /// Query by fingerprint pattern (from ⊗ verb) with hot cache
     /// 
     /// This is the Redis-style cached CSR: same query twice = O(1)
-    pub fn query_pattern(&mut self, pattern: &[u64; 156], threshold: u32) -> Vec<&CogEdge> {
+    pub fn query_pattern(&mut self, pattern: &[u64; 256], threshold: u32) -> Vec<&CogEdge> {
         // Check hot cache
         if let Some(indices) = self.hot_cache.get(pattern) {
             self.cache_hits += 1;
@@ -1013,7 +1013,7 @@ impl CogRedis {
     // =========================================================================
     
     /// RESONATE - find similar by fingerprint + qualia
-    pub fn resonate(&self, query: &[u64; 156], qualia: &QualiaVector, k: usize) -> Vec<ResonateResult> {
+    pub fn resonate(&self, query: &[u64; 256], qualia: &QualiaVector, k: usize) -> Vec<ResonateResult> {
         let results = self.search.explore(query, qualia, k);
         
         results.into_iter()
@@ -1208,7 +1208,7 @@ impl Default for CogRedis {
 /// Result from GET
 #[derive(Clone, Debug)]
 pub struct GetResult {
-    pub fingerprint: [u64; 156],
+    pub fingerprint: [u64; 256],
     pub qualia: QualiaVector,
     pub truth: TruthValue,
     pub tier: Tier,
@@ -1256,7 +1256,7 @@ impl SetOptions {
 /// Result from RESONATE
 #[derive(Clone, Debug)]
 pub struct ResonateResult {
-    pub fingerprint: [u64; 156],
+    pub fingerprint: [u64; 256],
     pub qualia: QualiaVector,
     pub truth: TruthValue,
     pub content_score: f32,
@@ -1267,7 +1267,7 @@ pub struct ResonateResult {
 /// Result from DEDUCE/ABDUCT
 #[derive(Clone, Debug)]
 pub struct DeduceResult {
-    pub fingerprint: [u64; 156],
+    pub fingerprint: [u64; 256],
     pub qualia: QualiaVector,
     pub truth: TruthValue,
 }
@@ -1289,9 +1289,9 @@ pub struct CogRedisStats {
 // HELPERS
 // =============================================================================
 
-fn hamming_distance(a: &[u64; 156], b: &[u64; 156]) -> u32 {
+fn hamming_distance(a: &[u64; 256], b: &[u64; 256]) -> u32 {
     let mut dist = 0u32;
-    for i in 0..156 {
+    for i in 0..256 {
         dist += (a[i] ^ b[i]).count_ones();
     }
     dist
@@ -2621,19 +2621,19 @@ fn cam_result_to_redis(result: CamResult) -> RedisResult {
 // HELPERS
 // =============================================================================
 
-/// Convert Fingerprint to [u64; 156] words (for CogRedis compatibility)
-fn fp_to_words(fp: &Fingerprint) -> [u64; 156] {
+/// Convert Fingerprint to [u64; 256] words (for CogRedis compatibility)
+fn fp_to_words(fp: &Fingerprint) -> [u64; 256] {
     let raw = fp.as_raw();
-    let mut words = [0u64; 156];
-    words.copy_from_slice(&raw[..156]);
+    let mut words = [0u64; 256];
+    words.copy_from_slice(&raw[..256]);
     words
 }
 
-/// Convert [u64; 156] words to Fingerprint
-fn words_to_fp(words: &[u64; 156]) -> Fingerprint {
+/// Convert [u64; 256] words to Fingerprint
+fn words_to_fp(words: &[u64; 256]) -> Fingerprint {
     use crate::FINGERPRINT_U64;
     let mut data = [0u64; FINGERPRINT_U64];
-    data[..156].copy_from_slice(words);
+    data[..256].copy_from_slice(words);
     Fingerprint::from_raw(data)
 }
 
@@ -2695,7 +2695,7 @@ impl HardenedCogRedis {
     }
 
     /// SET with hardening (tracks LRU, sets TTL, logs to WAL)
-    pub fn set(&mut self, fingerprint: [u64; 156], opts: SetOptions) -> CogAddr {
+    pub fn set(&mut self, fingerprint: [u64; 256], opts: SetOptions) -> CogAddr {
         let addr = self.inner.set(fingerprint, opts.clone());
         let to_evict = self.hardening.on_write(
             Addr::from(addr.0),
@@ -2761,7 +2761,7 @@ impl HardenedCogRedis {
     }
 
     /// RESONATE with timeout
-    pub fn resonate(&self, query: &[u64; 156], qualia: &QualiaVector, k: usize) -> Vec<ResonateResult> {
+    pub fn resonate(&self, query: &[u64; 256], qualia: &QualiaVector, k: usize) -> Vec<ResonateResult> {
         self.inner.resonate(query, qualia, k)
     }
 
@@ -2891,9 +2891,9 @@ impl Default for HardenedCogRedis {
 mod tests {
     use super::*;
     
-    fn random_fp() -> [u64; 156] {
-        let mut fp = [0u64; 156];
-        for i in 0..156 {
+    fn random_fp() -> [u64; 256] {
+        let mut fp = [0u64; 256];
+        for i in 0..256 {
             fp[i] = rand::random();
         }
         fp

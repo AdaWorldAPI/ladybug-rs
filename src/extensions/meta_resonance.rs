@@ -67,7 +67,7 @@ impl FlowVector {
         let transition = before.bind(after); // XOR gives symmetric difference
         
         // Magnitude: how much changed
-        let magnitude = before.hamming(after) as f32 / 10000.0;
+        let magnitude = before.hamming(after) as f32 / crate::FINGERPRINT_BITS as f32;
         
         // Divergence: are we gaining or losing specificity?
         let pop_before = before.popcount() as f32;
@@ -191,7 +191,7 @@ impl FlowTrajectory {
         
         let first = &self.moments[0];
         let last = &self.moments[self.moments.len() - 1];
-        first.hamming(last) as f32 / 10000.0
+        first.hamming(last) as f32 / crate::FINGERPRINT_BITS as f32
     }
     
     /// Is this a wandering path or a direct path?
@@ -337,22 +337,22 @@ fn weighted_bundle(fps: &[(Fingerprint, f32)]) -> Fingerprint {
         return Fingerprint::zero();
     }
     
-    let mut counts = [0.0f32; 10000];
+    let mut counts = [0.0f32; 16384];
     let mut total_weight = 0.0f32;
-    
+
     for (fp, weight) in fps {
-        for i in 0..10000 {
+        for i in 0..16384 {
             if fp.get_bit(i) {
                 counts[i] += weight;
             }
         }
         total_weight += weight;
     }
-    
+
     let threshold = total_weight / 2.0;
     let mut result = Fingerprint::zero();
-    
-    for i in 0..10000 {
+
+    for i in 0..16384 {
         if counts[i] > threshold {
             result.set_bit(i, true);
         }

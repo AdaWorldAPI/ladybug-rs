@@ -68,10 +68,10 @@ use crate::storage::bind_space::{Addr, BindSpace, BindNode, FINGERPRINT_WORDS};
 /// Fingerprint size in bytes
 const FP_BYTES: usize = FINGERPRINT_WORDS * 8;
 
-/// HDR words (156 for HDR cascade compatibility)
-const HDR_WORDS: usize = 156;
+/// HDR words (256 for HDR cascade compatibility)
+const HDR_WORDS: usize = 256;
 
-/// Max bits in fingerprint (~10K)
+/// Max bits in fingerprint (~16K)
 const MAX_BITS: u32 = (HDR_WORDS * 64) as u32;
 
 // =============================================================================
@@ -329,7 +329,7 @@ fn scan_zone<'a>(
         for slot in 0u8..=0xFF {
             let addr = Addr::new(prefix, slot);
             if let Some(node) = bind_space.read(addr) {
-                // Convert fingerprint to HDR format (156 words)
+                // Convert fingerprint to HDR format (256 words)
                 let fp = &node.fingerprint;
                 let mut hdr_fp = [0u64; HDR_WORDS];
                 let copy_len = fp.len().min(HDR_WORDS);
@@ -743,16 +743,16 @@ mod tests {
             threshold: 0.8, // Expect > 80% similarity
         };
 
-        // 80% similarity = 20% different = 0.2 * 9984 = ~1997 bits
+        // 80% similarity = 20% different = 0.2 * 16384 = ~3277 bits
         let thresh = pred.hamming_threshold();
-        assert!(thresh > 1900 && thresh < 2100, "threshold was {}", thresh);
+        assert!(thresh > 3100 && thresh < 3500, "threshold was {}", thresh);
 
         // 0 distance = 100% similarity, should match
         assert!(pred.matches(0));
         // 1000 distance = ~90% similarity, should match
         assert!(pred.matches(1000));
-        // 3000 distance = ~70% similarity, should not match
-        assert!(!pred.matches(3000));
+        // 4000 distance = ~75.6% similarity at 16K, should not match
+        assert!(!pred.matches(4000));
     }
 
     #[test]

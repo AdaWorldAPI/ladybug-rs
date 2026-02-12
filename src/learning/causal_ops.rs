@@ -262,8 +262,8 @@ pub struct CausalEngine {
 /// Edge in causal graph
 #[derive(Debug, Clone)]
 pub struct GraphEdge {
-    pub from: [u64; 156],
-    pub to: [u64; 156],
+    pub from: [u64; 256],
+    pub to: [u64; 256],
     pub edge_type: CausalEdgeType,
     pub strength: f32,
 }
@@ -296,12 +296,12 @@ impl CausalEngine {
     // -------------------------------------------------------------------------
     
     /// Store correlation: X co-occurs with Y
-    pub fn store_correlation(&mut self, x: &[u64; 156], y: &[u64; 156], strength: f32) {
+    pub fn store_correlation(&mut self, x: &[u64; 256], y: &[u64; 256], strength: f32) {
         self.search.store_correlation(x, y, strength);
     }
     
     /// Query: what correlates with X?
-    pub fn query_correlates(&self, x: &[u64; 156], k: usize) -> Vec<CausalResult> {
+    pub fn query_correlates(&self, x: &[u64; 256], k: usize) -> Vec<CausalResult> {
         self.search.query_correlates(x, k)
     }
     
@@ -312,9 +312,9 @@ impl CausalEngine {
     /// Store intervention: do(X) in state causes Y
     pub fn store_intervention(
         &mut self,
-        state: &[u64; 156],
-        action: &[u64; 156],
-        outcome: &[u64; 156],
+        state: &[u64; 256],
+        action: &[u64; 256],
+        outcome: &[u64; 256],
         strength: f32,
     ) {
         self.search.store_intervention(state, action, outcome, strength);
@@ -331,8 +331,8 @@ impl CausalEngine {
     /// Query: P(Y | do(X))
     pub fn query_do(
         &self,
-        state: &[u64; 156],
-        action: &[u64; 156],
+        state: &[u64; 256],
+        action: &[u64; 256],
     ) -> Vec<CausalResult> {
         self.search.query_outcome(state, action)
     }
@@ -340,8 +340,8 @@ impl CausalEngine {
     /// Query: what action caused this outcome?
     pub fn query_cause(
         &self,
-        state: &[u64; 156],
-        outcome: &[u64; 156],
+        state: &[u64; 256],
+        outcome: &[u64; 256],
     ) -> Vec<CausalResult> {
         self.search.query_action(state, outcome)
     }
@@ -349,18 +349,18 @@ impl CausalEngine {
     /// Detect confounders
     pub fn detect_confounders(
         &self,
-        outcome1: &[u64; 156],
-        outcome2: &[u64; 156],
-    ) -> Vec<[u64; 156]> {
+        outcome1: &[u64; 256],
+        outcome2: &[u64; 256],
+    ) -> Vec<[u64; 256]> {
         self.search.detect_confounders(outcome1, outcome2)
     }
     
     /// Average Treatment Effect: E[Y|do(X=1)] - E[Y|do(X=0)]
     pub fn average_treatment_effect(
         &self,
-        state: &[u64; 156],
-        treatment: &[u64; 156],
-        control: &[u64; 156],
+        state: &[u64; 256],
+        treatment: &[u64; 256],
+        control: &[u64; 256],
     ) -> Option<f32> {
         let treated = self.query_do(state, treatment);
         let untreated = self.query_do(state, control);
@@ -385,9 +385,9 @@ impl CausalEngine {
     /// Store counterfactual
     pub fn store_counterfactual(
         &mut self,
-        state: &[u64; 156],
-        alt_action: &[u64; 156],
-        alt_outcome: &[u64; 156],
+        state: &[u64; 256],
+        alt_action: &[u64; 256],
+        alt_outcome: &[u64; 256],
         strength: f32,
     ) {
         self.search.store_counterfactual(state, alt_action, alt_outcome, strength);
@@ -396,8 +396,8 @@ impl CausalEngine {
     /// Query counterfactual: what would have happened?
     pub fn query_counterfactual(
         &self,
-        state: &[u64; 156],
-        alt_action: &[u64; 156],
+        state: &[u64; 256],
+        alt_action: &[u64; 256],
     ) -> Vec<CausalResult> {
         self.search.query_counterfactual(state, alt_action)
     }
@@ -405,9 +405,9 @@ impl CausalEngine {
     /// Compute regret
     pub fn compute_regret(
         &self,
-        state: &[u64; 156],
-        actual_outcome: &[u64; 156],
-        alt_action: &[u64; 156],
+        state: &[u64; 256],
+        actual_outcome: &[u64; 256],
+        alt_action: &[u64; 256],
     ) -> Option<f32> {
         self.search.compute_regret(state, actual_outcome, alt_action)
     }
@@ -416,10 +416,10 @@ impl CausalEngine {
     /// "Was X=x necessary for Y=y?"
     pub fn prob_necessity(
         &self,
-        state: &[u64; 156],
-        x: &[u64; 156],        // Actual action
-        y: &[u64; 156],        // Actual outcome  
-        x_prime: &[u64; 156],  // Alternative action
+        state: &[u64; 256],
+        x: &[u64; 256],        // Actual action
+        y: &[u64; 256],        // Actual outcome  
+        x_prime: &[u64; 256],  // Alternative action
     ) -> Option<f32> {
         // Query: if we had done x' instead, would y still have happened?
         let cf_results = self.query_counterfactual(state, x_prime);
@@ -448,9 +448,9 @@ impl CausalEngine {
     /// "Would X=x be sufficient to cause Y=y?"
     pub fn prob_sufficiency(
         &self,
-        state: &[u64; 156],
-        x: &[u64; 156],        // Action to test
-        y: &[u64; 156],        // Desired outcome
+        state: &[u64; 256],
+        x: &[u64; 256],        // Action to test
+        y: &[u64; 256],        // Desired outcome
     ) -> Option<f32> {
         // Query: if we do x, will y happen?
         let do_results = self.query_do(state, x);
@@ -477,8 +477,8 @@ impl CausalEngine {
     /// Add edge to causal graph
     pub fn add_edge(
         &mut self,
-        from: &[u64; 156],
-        to: &[u64; 156],
+        from: &[u64; 256],
+        to: &[u64; 256],
         edge_type: CausalEdgeType,
         strength: f32,
     ) {
@@ -491,7 +491,7 @@ impl CausalEngine {
     }
     
     /// Find parents of a node (direct causes)
-    pub fn parents(&self, node: &[u64; 156]) -> Vec<[u64; 156]> {
+    pub fn parents(&self, node: &[u64; 256]) -> Vec<[u64; 256]> {
         self.graph_edges.iter()
             .filter(|e| hamming_distance(&e.to, node) < 100)
             .map(|e| e.from)
@@ -499,7 +499,7 @@ impl CausalEngine {
     }
     
     /// Find children of a node (direct effects)
-    pub fn children(&self, node: &[u64; 156]) -> Vec<[u64; 156]> {
+    pub fn children(&self, node: &[u64; 256]) -> Vec<[u64; 256]> {
         self.graph_edges.iter()
             .filter(|e| hamming_distance(&e.from, node) < 100)
             .map(|e| e.to)
@@ -507,7 +507,7 @@ impl CausalEngine {
     }
     
     /// Find all ancestors (transitive causes)
-    pub fn ancestors(&self, node: &[u64; 156]) -> Vec<[u64; 156]> {
+    pub fn ancestors(&self, node: &[u64; 256]) -> Vec<[u64; 256]> {
         let mut result = Vec::new();
         let mut frontier = self.parents(node);
         let mut visited = std::collections::HashSet::new();
@@ -527,7 +527,7 @@ impl CausalEngine {
     }
     
     /// Find all descendants (transitive effects)
-    pub fn descendants(&self, node: &[u64; 156]) -> Vec<[u64; 156]> {
+    pub fn descendants(&self, node: &[u64; 256]) -> Vec<[u64; 256]> {
         let mut result = Vec::new();
         let mut frontier = self.children(node);
         let mut visited = std::collections::HashSet::new();
@@ -549,9 +549,9 @@ impl CausalEngine {
     /// Check d-separation: are X and Y independent given Z?
     pub fn d_separated(
         &self,
-        x: &[u64; 156],
-        y: &[u64; 156],
-        z: &[[u64; 156]],
+        x: &[u64; 256],
+        y: &[u64; 256],
+        z: &[[u64; 256]],
     ) -> bool {
         // Simplified d-separation check
         // Full implementation would trace all paths and check blocking
@@ -587,9 +587,9 @@ impl CausalEngine {
     /// Total effect: X → Y (direct + indirect)
     pub fn total_effect(
         &self,
-        state: &[u64; 156],
-        x: &[u64; 156],
-        y: &[u64; 156],
+        state: &[u64; 256],
+        x: &[u64; 256],
+        y: &[u64; 256],
     ) -> Option<f32> {
         // Total effect = P(Y | do(X))
         let results = self.query_do(state, x);
@@ -604,9 +604,9 @@ impl CausalEngine {
     /// Estimate natural direct effect (effect not through mediator)
     pub fn natural_direct_effect(
         &self,
-        state: &[u64; 156],
-        x: &[u64; 156],
-        _mediator: &[u64; 156],
+        state: &[u64; 256],
+        x: &[u64; 256],
+        _mediator: &[u64; 256],
     ) -> Option<f32> {
         // NDE = E[Y_{x,M_{x'}}] - E[Y_{x',M_{x'}}]
         // This requires nested counterfactuals
@@ -632,15 +632,15 @@ impl Default for CausalEngine {
 // HELPERS
 // =============================================================================
 
-fn hamming_distance(a: &[u64; 156], b: &[u64; 156]) -> u32 {
+fn hamming_distance(a: &[u64; 256], b: &[u64; 256]) -> u32 {
     let mut dist = 0u32;
-    for i in 0..156 {
+    for i in 0..256 {
         dist += (a[i] ^ b[i]).count_ones();
     }
     dist
 }
 
-fn hash_fp(fp: &[u64; 156]) -> u64 {
+fn hash_fp(fp: &[u64; 256]) -> u64 {
     fp[0] ^ fp[1].rotate_left(32) ^ fp[2]
 }
 
@@ -652,16 +652,16 @@ fn hash_fp(fp: &[u64; 156]) -> u64 {
 mod tests {
     use super::*;
 
-    /// Convert 157-word Fingerprint to 156-word array
-    fn fp_to_words(fp: &Fingerprint) -> [u64; 156] {
+    /// Convert Fingerprint to 256-word array
+    fn fp_to_words(fp: &Fingerprint) -> [u64; 256] {
         let raw = fp.as_raw();
-        let mut result = [0u64; 156];
-        result.copy_from_slice(&raw[..156]);
+        let mut result = [0u64; 256];
+        result.copy_from_slice(&raw[..256]);
         result
     }
 
     /// Create a content-based fingerprint (proper density)
-    fn random_fp() -> [u64; 156] {
+    fn random_fp() -> [u64; 256] {
         use std::sync::atomic::{AtomicU64, Ordering};
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let id = COUNTER.fetch_add(1, Ordering::Relaxed);

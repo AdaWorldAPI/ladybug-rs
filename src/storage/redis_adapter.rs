@@ -421,7 +421,7 @@ impl RedisAdapter {
                 let node = self.substrate.read(*addr)?;
                 Some(SearchHit {
                     addr: *addr,
-                    distance: ((1.0 - sim) * 10000.0) as u32,
+                    distance: ((1.0 - sim) * crate::FINGERPRINT_BITS as f32) as u32,
                     similarity: *sim,
                     label: node.label,
                 })
@@ -577,7 +577,7 @@ impl RedisAdapter {
                 let fp1 = self.generate_fingerprint(&args[0]);
                 let fp2 = self.generate_fingerprint(&args[1]);
                 let dist = hamming_distance(&fp1, &fp2);
-                let sim = 1.0 - (dist as f64 / 10000.0);
+                let sim = 1.0 - (dist as f64 / crate::FINGERPRINT_BITS as f64);
                 RedisResult::Float(sim)
             }
             "POPCOUNT" if !args.is_empty() => {

@@ -391,31 +391,31 @@ fn weighted_bundle(fps: &[(Fingerprint, f32)]) -> Fingerprint {
         return Fingerprint::zero();
     }
     
-    let mut counts = [0.0f32; 10000];
+    let mut counts = [0.0f32; 16384];
     let mut total_weight = 0.0f32;
-    
+
     for (fp, weight) in fps {
-        for i in 0..10000 {
+        for i in 0..16384 {
             if fp.get_bit(i) {
                 counts[i] += weight;
             }
         }
         total_weight += weight;
     }
-    
+
     if total_weight == 0.0 {
         return Fingerprint::zero();
     }
-    
+
     let threshold = total_weight / 2.0;
     let mut result = Fingerprint::zero();
-    
-    for i in 0..10000 {
+
+    for i in 0..16384 {
         if counts[i] > threshold {
             result.set_bit(i, true);
         }
     }
-    
+
     result
 }
 
@@ -424,11 +424,11 @@ fn bundle_majority(fps: &[Fingerprint]) -> Fingerprint {
     if fps.is_empty() {
         return Fingerprint::zero();
     }
-    
-    let mut counts = [0i32; 10000];
-    
+
+    let mut counts = [0i32; 16384];
+
     for fp in fps {
-        for i in 0..10000 {
+        for i in 0..16384 {
             if fp.get_bit(i) {
                 counts[i] += 1;
             } else {
@@ -436,9 +436,9 @@ fn bundle_majority(fps: &[Fingerprint]) -> Fingerprint {
             }
         }
     }
-    
+
     let mut result = Fingerprint::zero();
-    for i in 0..10000 {
+    for i in 0..16384 {
         if counts[i] > 0 {
             result.set_bit(i, true);
         }
@@ -463,12 +463,12 @@ fn project_out(fp: &Fingerprint, component: &Fingerprint, strength: f32) -> Fing
     let flip_prob = strength;
     let mut seed = overlap as u64;
     
-    for i in 0..10000 {
+    for i in 0..16384 {
         if fp.get_bit(i) && component.get_bit(i) {
             // LFSR pseudo-random decision
             seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
             let rand = (seed >> 32) as f32 / u32::MAX as f32;
-            
+
             if rand < flip_prob {
                 result.set_bit(i, false);
             }

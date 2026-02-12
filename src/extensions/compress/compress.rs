@@ -14,8 +14,8 @@ use std::collections::HashMap;
 use std::time::Instant;
 use rand::prelude::*;
 
-const N: usize = 10_000;
-const N64: usize = 157;
+const N: usize = 16_384;
+const N64: usize = 256;
 const GRID: usize = 5;
 const CELLS: usize = 125;
 const RESIDUAL_BITS: usize = 256;

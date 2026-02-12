@@ -961,8 +961,8 @@ fn extract_qualia(tokens: &[Token], nsm_weights: &[f32; 65]) -> [f32; 8] {
 }
 
 fn generate_fingerprint(nsm_weights: &[f32; 65], template: &Option<TemplateInfo>, qualia: &[f32; 8]) -> Vec<u64> {
-    // 10K bits = 157 u64 words
-    let mut fp = vec![0u64; 157];
+    // 16K bits = 256 u64 words
+    let mut fp = vec![0u64; 256];
     
     // NSM contribution (bits 0-3999)
     for (i, &weight) in nsm_weights.iter().enumerate() {

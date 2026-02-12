@@ -1,6 +1,6 @@
 //! Firefly Frame Format Specification
 //!
-//! 1250-bit (156 u64 words) microinstruction format for the Ada Cognitive CPU
+//! 16384-bit (256 u64 words) microinstruction format for the Ada Cognitive CPU
 //!
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -361,7 +361,7 @@ impl ExecutionContext {
     }
 }
 
-/// Complete Firefly Frame (156 u64 words = 1248 bits + 2 bit trailer)
+/// Complete Firefly Frame (256 u64 words = 16384 bits)
 #[derive(Clone)]
 pub struct FireflyFrame {
     /// Header: Auth + Routing (word 0)

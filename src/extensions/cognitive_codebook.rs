@@ -417,16 +417,16 @@ pub fn fold_to_48(fp: &Fingerprint) -> u64 {
     // This preserves relative Hamming distances
     for i in 0..48 {
         let mut bit = false;
-        let stride = 10000 / 48;
+        let stride = 16384 / 48;
         for j in 0..stride {
             let idx = i + j * 48;
-            if idx < 10000 && fp.get_bit(idx) {
+            if idx < 16384 && fp.get_bit(idx) {
                 bit = !bit;
             }
         }
         // Also XOR any remaining bits
         let extra_start = 48 * stride + i;
-        if extra_start < 10000 && fp.get_bit(extra_start) {
+        if extra_start < 16384 && fp.get_bit(extra_start) {
             bit = !bit;
         }
         
@@ -447,10 +447,10 @@ pub fn expand_from_48(hash: u64) -> Fingerprint {
     for i in 0..48 {
         let bit = (hash >> i) & 1 == 1;
         if bit {
-            let stride = 10000 / 48;
+            let stride = 16384 / 48;
             for j in 0..stride {
                 let idx = i + j * 48;
-                if idx < 10000 {
+                if idx < 16384 {
                     fp.set_bit(idx, true);
                 }
             }
@@ -955,11 +955,11 @@ fn weighted_bundle(fps: &[(Fingerprint, f32)]) -> Fingerprint {
         return Fingerprint::zero();
     }
     
-    let mut counts = vec![0.0f32; 10000];
+    let mut counts = vec![0.0f32; 16384];
     let mut total_weight = 0.0f32;
-    
+
     for (fp, weight) in fps {
-        for i in 0..10000 {
+        for i in 0..16384 {
             if fp.get_bit(i) {
                 counts[i] += weight;
             }

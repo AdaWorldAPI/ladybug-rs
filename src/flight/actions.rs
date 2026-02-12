@@ -261,7 +261,7 @@ fn execute_encode(params: &std::collections::HashMap<String, Vec<u8>>) -> Result
     hasher.update(&input);
     let hash = hasher.finalize();
 
-    // Expand to full fingerprint size (1248 bytes = 156 * 8)
+    // Expand to full fingerprint size (2048 bytes = 256 * 8)
     let mut fingerprint = vec![0u8; FINGERPRINT_WORDS * 8];
     for (i, chunk) in fingerprint.chunks_mut(32).enumerate() {
         let mut h = Sha256::new();

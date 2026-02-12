@@ -92,7 +92,7 @@ const MAX_SEARCH_RESULTS: usize = 10000;
 ///
 /// Schema:
 /// - address: UInt16 (16-bit BindSpace address)
-/// - fingerprint: FixedSizeBinary(1248) (156 * 8 bytes)
+/// - fingerprint: FixedSizeBinary(2048) (256 * 8 bytes, 16K bits)
 /// - label: Utf8 (optional human-readable label)
 /// - zone: Utf8 (surface/fluid/node)
 /// - distance: UInt32 (optional Hamming distance)
@@ -1236,7 +1236,7 @@ fn build_search_result_data(
             // Note: We don't have direct address mapping, so we use index as pseudo-address
             // In a real implementation, HDR index would store (addr, fingerprint) pairs
             let addr = *idx as u16;
-            let similarity = 1.0 - (*dist as f32 / 10000.0);
+            let similarity = 1.0 - (*dist as f32 / crate::FINGERPRINT_BITS as f32);
             let cascade_level = if *dist < 1000 { 0 } else if *dist < 3000 { 1 } else { 2 };
 
             // Return placeholder fingerprint - real impl would look up from index

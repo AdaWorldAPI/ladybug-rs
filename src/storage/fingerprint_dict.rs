@@ -55,8 +55,8 @@ const FP_BYTES: usize = FINGERPRINT_WORDS * 8;
 /// Total addresses in the system
 const TOTAL_ADDRESSES: usize = 65536;
 
-/// Pre-computed L0 sketch size (1 bit per u64 word → 20 bytes for 156 words)
-const L0_SKETCH_BYTES: usize = 20;
+/// Pre-computed L0 sketch size (1 bit per u64 word → 32 bytes for 256 words)
+const L0_SKETCH_BYTES: usize = 32;
 
 // =============================================================================
 // DICTIONARY ENTRY

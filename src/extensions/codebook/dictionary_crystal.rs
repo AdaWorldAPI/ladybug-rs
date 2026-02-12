@@ -34,8 +34,8 @@
 use std::collections::HashMap;
 
 // Import from parent module
-const N: usize = 10_000;
-const N64: usize = 157;
+const N: usize = 16_384;
+const N64: usize = 256;
 const GRID: usize = 5;
 
 const CODEBOOK_SIZE: usize = 1024;  // 2^10 symbols
@@ -529,7 +529,7 @@ mod tests {
         
         // Simulate 10K chunks
         let mut total_bytes = 0;
-        for i in 0..10_000 {
+        for i in 0..16_384 {
             let text = format!("fn function_{}(arg: Type{}) -> Result<Output{}, Error>", i, i % 100, i % 50);
             let role = match i % 4 {
                 0 => Role::Subject,

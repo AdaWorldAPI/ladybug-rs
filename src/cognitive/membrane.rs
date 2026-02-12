@@ -18,8 +18,8 @@
 //! ```
 //!
 //! From ada-consciousness/sigma-rosetta.py: The membrane is bidirectional:
-//! - encode(): τ/σ/q → [u64; 157]
-//! - decode(): [u64; 157] → τ/σ/q (approximate, qualia is one-way hash)
+//! - encode(): τ/σ/q → [u64; 256]
+//! - decode(): [u64; 256] → τ/σ/q (approximate, qualia is one-way hash)
 
 use sha2::{Sha256, Digest};
 use crate::core::{DIM, DIM_U64, Fingerprint};

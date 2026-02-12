@@ -38,7 +38,7 @@ use std::collections::HashMap;
 // =============================================================================
 
 const GRID: usize = 5;          // 5×5×5 crystal
-const N: usize = 10_000;        // Fingerprint bits
+const N: usize = 16_384;        // Fingerprint bits
 const CONTEXT_WINDOW: usize = 5; // 2 before + current + 2 after
 
 // =============================================================================
@@ -92,7 +92,7 @@ impl QualiaVector {
     pub fn to_fingerprint(&self) -> Fingerprint {
         let mut fp = Fingerprint::zero();
         
-        // Each dimension gets ~1250 bits (10000/8)
+        // Each dimension gets ~2048 bits (16384/8)
         let dims = [
             self.arousal, self.valence, self.tension, self.depth,
             self.certainty, self.intimacy, self.urgency, self.novelty,

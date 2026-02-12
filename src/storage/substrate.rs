@@ -83,7 +83,7 @@ impl Default for SubstrateConfig {
 pub struct SubstrateNode {
     /// 16-bit cognitive address
     pub addr: CogAddr,
-    /// 10K-bit fingerprint (156 × 64-bit words)
+    /// 16K-bit fingerprint (256 × 64-bit words)
     pub fingerprint: [u64; FINGERPRINT_WORDS],
     /// Optional label
     pub label: Option<String>,
@@ -154,7 +154,7 @@ impl SubstrateNode {
     /// Similarity to another node (0.0-1.0)
     pub fn similarity_to(&self, other: &SubstrateNode) -> f32 {
         let dist = self.distance_to(other);
-        1.0 - (dist as f32 / 10000.0)
+        1.0 - (dist as f32 / crate::FINGERPRINT_BITS as f32)
     }
 }
 
@@ -745,7 +745,7 @@ impl Substrate {
     ///
     /// Falls back to full scan if Rubicon returns insufficient results.
     pub fn search(&self, query_fp: &[u64; FINGERPRINT_WORDS], k: usize, threshold: f32) -> Vec<(CogAddr, u32, f32)> {
-        let max_distance = ((1.0 - threshold) * 10000.0) as u32;
+        let max_distance = ((1.0 - threshold) * crate::FINGERPRINT_BITS as f32) as u32;
 
         // First try Rubicon search with adaptive thresholds
         let mut results = {
@@ -761,7 +761,7 @@ impl Substrate {
                 .filter_map(|(idx, dist)| {
                     if dist <= max_distance && idx < addrs.len() {
                         let addr = addrs[idx];
-                        let sim = 1.0 - (dist as f32 / 10000.0);
+                        let sim = 1.0 - (dist as f32 / crate::FINGERPRINT_BITS as f32);
                         Some((addr, dist, sim))
                     } else {
                         None
@@ -784,7 +784,7 @@ impl Substrate {
                     if let Some(node) = bind_space.read(addr) {
                         let dist = hamming_distance(query_fp, &node.fingerprint);
                         if dist <= max_distance {
-                            let sim = 1.0 - (dist as f32 / 10000.0);
+                            let sim = 1.0 - (dist as f32 / crate::FINGERPRINT_BITS as f32);
                             results.push((CogAddr::from_parts(prefix, slot), dist, sim));
                         }
                     }

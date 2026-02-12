@@ -14,8 +14,8 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-const N: usize = 10_000;        // Fingerprint bits
-const N64: usize = 157;         // u64 words
+const N: usize = 16_384;        // Fingerprint bits
+const N64: usize = 256;         // u64 words
 const CAM_SIZE: usize = 128;    // Codebook slots
 const HAMMING_THRESHOLD: u32 = 1500;  // ~15% = similar
 

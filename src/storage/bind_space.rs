@@ -49,8 +49,8 @@ use std::time::Instant;
 // ADDRESS CONSTANTS (8-bit prefix : 8-bit slot)
 // =============================================================================
 
-/// Fingerprint words (10K bits = 156 × 64-bit words)
-pub const FINGERPRINT_WORDS: usize = 156;
+/// Fingerprint words (16K bits = 256 × 64-bit words)
+pub const FINGERPRINT_WORDS: usize = 256;
 
 /// Slots per chunk (2^8 = 256)
 pub const CHUNK_SIZE: usize = 256;
