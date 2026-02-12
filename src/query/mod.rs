@@ -46,6 +46,8 @@ pub mod fingerprint_table;
 pub mod hybrid;
 pub mod scent_scan;
 pub mod graph_provider;
+pub mod container_udfs;
+pub mod dn_tree_provider;
 
 pub use builder::{Query, QueryResult};
 pub use cypher::{
@@ -105,6 +107,23 @@ pub use graph_provider::{
     TraversalConfig,
     TraversalDirection,
     GraphExt,
+};
+pub use container_udfs::{
+    register_container_udfs,
+    all_container_udfs,
+    BelichtungUdf,
+    BundleUdf,
+    CascadeFilterUdf,
+    WordDiffUdf,
+    MexicanHatUdf,
+    ContainerHammingUdf,
+    ContainerSimilarityUdf,
+    ContainerPopcountUdf,
+    ContainerXorUdf,
+};
+pub use dn_tree_provider::{
+    DnTreeTableProvider,
+    DnTreeExt,
 };
 
 #[derive(thiserror::Error, Debug)]
