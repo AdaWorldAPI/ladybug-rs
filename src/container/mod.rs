@@ -21,6 +21,10 @@ pub mod semiring;
 pub mod delta;
 pub mod spine;
 pub mod insert;
+pub mod adjacency;
+pub mod graph;
+pub mod dn_redis;
+pub mod traversal;
 pub mod migrate;
 #[cfg(test)]
 pub mod tests;
