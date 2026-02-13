@@ -1,16 +1,16 @@
-//! DnTreeTableProvider: Expose DnSpineCache as DataFusion TableProvider.
+//! DnTreeTableProvider: Expose BindSpace DN tree as DataFusion TableProvider.
 //!
 //! ```sql
-//! SELECT dn, is_spine, depth, label,
-//!        container_hamming(content, $query) as dist
+//! SELECT dn, is_spine, depth, label, rung,
+//!        hamming(content, $query) as dist
 //! FROM dn_tree
 //! WHERE depth <= 3
 //! ORDER BY dist ASC
 //! LIMIT 10
 //! ```
 //!
-//! This is a NEW provider alongside the existing FingerprintTableProvider
-//! and EdgeTableProvider. It reads from the DnSpineCache (Container architecture).
+//! After BindSpace Unification, this provider reads directly from BindSpace
+//! via the DnIndex — no separate DnSpineCache needed.
 
 use std::any::Any;
 use std::sync::Arc;
@@ -36,8 +36,8 @@ use parking_lot::RwLock;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::container::dn_spine_cache::DnSpineCache;
-use crate::container::CONTAINER_BYTES;
+use crate::container::{CONTAINER_BYTES, MetaView};
+use crate::storage::bind_space::BindSpace;
 
 // =============================================================================
 // CONSTANTS
@@ -57,6 +57,7 @@ fn dn_tree_schema() -> SchemaRef {
         Field::new("is_spine", DataType::Boolean, false),
         Field::new("depth", DataType::UInt8, false),
         Field::new("parent_dn", DataType::UInt64, true),
+        Field::new("address", DataType::UInt16, false),
         Field::new("meta", DataType::FixedSizeBinary(C_BYTES), false),
         Field::new("content", DataType::FixedSizeBinary(C_BYTES), false),
         Field::new("label", DataType::Utf8, true),
@@ -68,13 +69,14 @@ fn dn_tree_schema() -> SchemaRef {
 // TABLE PROVIDER
 // =============================================================================
 
-/// DataFusion TableProvider for DnSpineCache.
+/// DataFusion TableProvider that reads DN tree nodes from BindSpace.
 ///
-/// Exposes the container tree as a SQL-queryable table alongside
-/// the existing FingerprintTableProvider.
+/// After BindSpace Unification, DN tree data lives directly in BindSpace
+/// nodes. The DnIndex provides PackedDn ↔ Addr bidirectional lookup.
+/// Meta and content are accessed through BindNode::meta_container() / content_container().
 pub struct DnTreeTableProvider {
     schema: SchemaRef,
-    dn_cache: Arc<RwLock<DnSpineCache>>,
+    bind_space: Arc<RwLock<BindSpace>>,
 }
 
 impl std::fmt::Debug for DnTreeTableProvider {
@@ -86,10 +88,10 @@ impl std::fmt::Debug for DnTreeTableProvider {
 }
 
 impl DnTreeTableProvider {
-    pub fn new(dn_cache: Arc<RwLock<DnSpineCache>>) -> Self {
+    pub fn new(bind_space: Arc<RwLock<BindSpace>>) -> Self {
         Self {
             schema: dn_tree_schema(),
-            dn_cache,
+            bind_space,
         }
     }
 }
@@ -135,7 +137,7 @@ impl TableProvider for DnTreeTableProvider {
         Ok(Arc::new(DnTreeScan {
             schema: self.schema.clone(),
             projected_schema,
-            dn_cache: self.dn_cache.clone(),
+            bind_space: self.bind_space.clone(),
             projection: projection.cloned(),
             properties,
         }))
@@ -146,18 +148,27 @@ impl TableProvider for DnTreeTableProvider {
 // EXECUTION PLAN
 // =============================================================================
 
-#[derive(Debug)]
 struct DnTreeScan {
     schema: SchemaRef,
     projected_schema: SchemaRef,
-    dn_cache: Arc<RwLock<DnSpineCache>>,
+    bind_space: Arc<RwLock<BindSpace>>,
     projection: Option<Vec<usize>>,
     properties: PlanProperties,
 }
 
+impl std::fmt::Debug for DnTreeScan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DnTreeScan")
+            .field("schema", &self.schema)
+            .field("projected_schema", &self.projected_schema)
+            .field("projection", &self.projection)
+            .finish()
+    }
+}
+
 impl DisplayAs for DnTreeScan {
     fn fmt_as(&self, _t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "DnTreeScan")
+        write!(f, "DnTreeScan(bindspace)")
     }
 }
 
@@ -194,35 +205,38 @@ impl ExecutionPlan for DnTreeScan {
         _partition: usize,
         _context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
-        let cache = self.dn_cache.read();
+        let bs = self.bind_space.read();
 
-        // Collect all nodes into Arrow arrays
+        // Collect all DN-indexed nodes into Arrow arrays
         let mut dn_values = Vec::new();
         let mut is_spine_values = Vec::new();
         let mut depth_values = Vec::new();
         let mut parent_dn_values: Vec<Option<u64>> = Vec::new();
+        let mut address_values = Vec::new();
         let mut meta_values: Vec<Vec<u8>> = Vec::new();
         let mut content_values: Vec<Vec<u8>> = Vec::new();
         let mut label_values: Vec<Option<String>> = Vec::new();
         let mut rung_values = Vec::new();
 
-        let row_count = cache.node_count();
+        let row_count = bs.dn_index.len();
 
-        for (&dn, slot) in cache.iter() {
-            dn_values.push(dn.raw());
-            is_spine_values.push(slot.is_spine);
-            depth_values.push(dn.depth());
-            parent_dn_values.push(dn.parent().map(|p| p.raw()));
+        for (dn, addr) in bs.dn_index.iter() {
+            if let Some(node) = bs.read(addr) {
+                dn_values.push(dn.raw());
+                is_spine_values.push(node.is_spine);
+                depth_values.push(dn.depth());
+                parent_dn_values.push(dn.parent().map(|p| p.raw()));
+                address_values.push(addr.0);
 
-            let meta = cache.cache.read(slot.meta_idx);
-            let content = cache.cache.read(slot.content_idx);
+                // Read meta/content containers from BindNode fingerprint halves
+                meta_values.push(node.meta_container().as_bytes().to_vec());
+                content_values.push(node.content_container().as_bytes().to_vec());
 
-            meta_values.push(meta.as_bytes().to_vec());
-            content_values.push(content.as_bytes().to_vec());
-            label_values.push(cache.label(dn).map(|s| s.to_string()));
+                label_values.push(node.label.clone());
 
-            let meta_view = crate::container::MetaView::new(&meta.words);
-            rung_values.push(meta_view.rung_level());
+                let meta_view = MetaView::new(node.meta_words());
+                rung_values.push(meta_view.rung_level());
+            }
         }
 
         // Handle empty projection (e.g. SELECT COUNT(*))
@@ -243,6 +257,7 @@ impl ExecutionPlan for DnTreeScan {
         let is_spine_array: ArrayRef = Arc::new(BooleanArray::from(is_spine_values));
         let depth_array: ArrayRef = Arc::new(UInt8Array::from(depth_values));
         let parent_dn_array: ArrayRef = Arc::new(UInt64Array::from(parent_dn_values));
+        let address_array: ArrayRef = Arc::new(UInt16Array::from(address_values));
 
         // Fixed-size binary for meta and content
         let meta_array: ArrayRef = Arc::new(
@@ -264,6 +279,7 @@ impl ExecutionPlan for DnTreeScan {
             is_spine_array,
             depth_array,
             parent_dn_array,
+            address_array,
             meta_array,
             content_array,
             label_array,
@@ -315,14 +331,14 @@ impl RecordBatchStream for DnTreeStream {
 // EXTENSION TRAIT
 // =============================================================================
 
-/// Extension trait for registering DnSpineCache with DataFusion.
+/// Extension trait for registering BindSpace DN tree with DataFusion.
 pub trait DnTreeExt {
-    fn register_dn_tree(&self, dn_cache: Arc<RwLock<DnSpineCache>>) -> Result<()>;
+    fn register_dn_tree(&self, bind_space: Arc<RwLock<BindSpace>>) -> Result<()>;
 }
 
 impl DnTreeExt for SessionContext {
-    fn register_dn_tree(&self, dn_cache: Arc<RwLock<DnSpineCache>>) -> Result<()> {
-        let provider = DnTreeTableProvider::new(dn_cache);
+    fn register_dn_tree(&self, bind_space: Arc<RwLock<BindSpace>>) -> Result<()> {
+        let provider = DnTreeTableProvider::new(bind_space);
         self.register_table("dn_tree", Arc::new(provider))?;
         Ok(())
     }
@@ -335,44 +351,42 @@ impl DnTreeExt for SessionContext {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::container::Container;
-    use crate::container::adjacency::PackedDn;
-    use crate::container::dn_spine_cache::DnSpineCache;
+    use crate::storage::bind_space::{BindSpace, FINGERPRINT_WORDS};
 
     #[test]
     fn test_dn_tree_schema() {
         let schema = dn_tree_schema();
-        assert_eq!(schema.fields().len(), 8);
+        assert_eq!(schema.fields().len(), 9);
         assert_eq!(schema.field(0).name(), "dn");
         assert_eq!(schema.field(1).name(), "is_spine");
-        assert_eq!(schema.field(4).name(), "meta");
-        assert_eq!(schema.field(5).name(), "content");
+        assert_eq!(schema.field(4).name(), "address");
+        assert_eq!(schema.field(5).name(), "meta");
+        assert_eq!(schema.field(6).name(), "content");
     }
 
     #[tokio::test]
     async fn test_dn_tree_provider_empty() {
-        let cache = Arc::new(RwLock::new(DnSpineCache::new(16)));
-        let provider = DnTreeTableProvider::new(cache);
+        let bs = Arc::new(RwLock::new(BindSpace::new()));
+        let provider = DnTreeTableProvider::new(bs);
 
         assert_eq!(provider.table_type(), TableType::Base);
-        assert_eq!(provider.schema().fields().len(), 8);
+        assert_eq!(provider.schema().fields().len(), 9);
     }
 
     #[tokio::test]
     async fn test_dn_tree_provider_with_data() {
-        let mut cache = DnSpineCache::new(16);
+        let mut bs = BindSpace::new();
 
-        // Insert a few nodes
-        let root = PackedDn::new(&[0]);
-        let child1 = PackedDn::new(&[0, 1]);
-        let child2 = PackedDn::new(&[0, 2]);
+        // Insert nodes via write_dn_path (registers in DnIndex automatically)
+        let fp1 = [1u64; FINGERPRINT_WORDS];
+        let fp2 = [2u64; FINGERPRINT_WORDS];
+        let fp3 = [3u64; FINGERPRINT_WORDS];
+        bs.write_dn_path("root", fp1, 0);
+        bs.write_dn_path("root:child1", fp2, 1);
+        bs.write_dn_path("root:child2", fp3, 1);
 
-        cache.insert(root, &Container::random(1), &Container::random(10));
-        cache.insert(child1, &Container::random(2), &Container::random(20));
-        cache.insert(child2, &Container::random(3), &Container::random(30));
-        cache.set_label(root, "root");
-
-        let provider = Arc::new(DnTreeTableProvider::new(Arc::new(RwLock::new(cache))));
+        let bs = Arc::new(RwLock::new(bs));
+        let provider = Arc::new(DnTreeTableProvider::new(bs));
         let ctx = SessionContext::new();
         ctx.register_table("dn_tree", provider).unwrap();
 

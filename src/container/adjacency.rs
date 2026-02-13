@@ -166,6 +166,29 @@ impl PackedDn {
     pub fn raw(self) -> u64 {
         self.0
     }
+
+    /// Create from colon-separated path string (with or without `bindspace://` scheme).
+    ///
+    /// Each path segment is hashed to a deterministic u8 component:
+    /// ```text
+    /// "ada:soul:memory"             → PackedDn([hash("ada"), hash("soul"), hash("memory")])
+    /// "bindspace://ada:soul:memory" → same (scheme stripped)
+    /// ```
+    pub fn from_path(path: &str) -> Self {
+        let bare = path.strip_prefix("bindspace://").unwrap_or(path);
+        let components: Vec<u8> = bare.split(':')
+            .take(Self::MAX_DEPTH)
+            .map(|seg| {
+                // Deterministic 8-bit hash of segment (wrapping multiply-add)
+                let mut h = 0u8;
+                for &b in seg.as_bytes() {
+                    h = h.wrapping_mul(31).wrapping_add(b);
+                }
+                h
+            })
+            .collect();
+        Self::new(&components)
+    }
 }
 
 impl std::fmt::Debug for PackedDn {
