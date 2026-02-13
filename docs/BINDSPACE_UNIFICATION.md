@@ -296,14 +296,115 @@ add `dn_paths: HashMap<PackedDn, Addr>` directly to `BindSpace`.
 
 ---
 
-## 3. Recommended Approach: Option A (BindSpace Lens)
+## 3. The Width Decision: 256 = 128 meta + 128 content
+
+**Settled**: The fingerprint stays at 256 words (16,384 bits). It is NOT
+a single fingerprint — it IS a CogRecord: meta Container + content Container.
+
+### Why this is the only correct split
+
+Container 0 (meta, words 0-127) is already fully allocated per `meta.rs`:
+
+```
+W0          PackedDn identity                    8 B
+W1          Kind/geometry/flags/schema           8 B
+W2          Timestamps (created, modified)       8 B
+W3          Label hash + depth + branch          8 B
+W4-7        NARS (freq, conf, pos_ev, neg_ev)   32 B    ← NARS lives HERE
+W8-11       Rung + 7-layer + collapse gate       32 B
+W12-15      7-layer markers (5b × 7 layers)      32 B
+W16-31      Inline edges (64 packed, verb:hint)  128 B   ← edges live HERE
+W32-39      RL Q-values (16 actions)             64 B
+W40-47      Bloom filter (512 bits)              64 B
+W48-55      Graph metrics (degree, PR, CC)       64 B    ← graph metrics HERE
+W56-63      Qualia (18 channels × f16)           64 B
+W64-79      Rung/collapse history                128 B
+W80-95      Representation language descriptor   128 B
+W96-111     DN-Sparse CSR overflow (~200 edges)  128 B   ← overflow edges HERE
+W112-125    Reserved                             112 B
+W126-127    Checksum + version                   16 B
+            TOTAL: 128 words = 1024 bytes
+```
+
+Container 1 (content, words 128-255) is pure semantic fingerprint:
+- 8,192 bits of search surface
+- ALL Hamming distance operations use ONLY this half
+- belichtungsmesser, cascade_filter, HDR cascade — all hit content only
+- Meta is NEVER in the distance calculation (edges, NARS, timestamps would corrupt similarity)
+
+### Why 8K bits of content is enough
+
+| Metric | 8K bits | 16K bits |
+|--------|---------|----------|
+| Random expected Hamming | 4,096 | 8,192 |
+| Standard deviation (σ) | ~45 | ~64 |
+| 2σ discrimination band | 4,006 – 4,186 | 8,064 – 8,320 |
+| AVX-512 iterations | 16 (perfect) | 32 |
+| Per-comparison (AVX2) | ~4ns | ~8ns |
+| Unique states | 2^8192 | 2^16384 |
+
+8K bits provides 2^8192 distinct fingerprints. For cognitive workloads,
+this is astronomically more than needed. Halving width halves comparison
+time with no meaningful resolution loss.
+
+### What this means for each surface
+
+**Search** (HDR cascade, belichtungsmesser, UDFs):
+- Operates on `Container::view(&node.fingerprint[128..])` — content ONLY
+- Current `hamming()` UDF uses full 256 words — WRONG, includes metadata
+- After unification: `hamming()` uses content half only — CORRECT
+
+**Graph traversal** (DN tree, edges, NARS):
+- Reads `MetaView::new(&node.fingerprint[..128])` — meta ONLY
+- Inline edges in W16-31 (64 edges) + CSR overflow in W96-111 (~200 edges)
+- NARS truth values in W4-7
+- Graph metrics (degree, PageRank) in W48-55
+- No separate edge store needed for DN tree — edges ARE the metadata
+
+**XorDag parity**: Full 256 words — protects BOTH halves.
+
+**ArrowZeroCopy**: Stores full 256 words in FingerprintBuffer.
+Consumer decides which half: `Container::view(&fp[128..])` for search,
+`MetaView::new(&fp[..128])` for traversal.
+
+### The DN tree insight
+
+The DN tree doesn't need a separate DnSpineCache because:
+1. PackedDn is stored in meta W0 (the identity)
+2. Parent/child edges are in meta W16-31 (inline edges with verb=PARENT_OF)
+3. Depth is in meta W3 (tree_depth field)
+4. Rung is in meta W8 (rung_level field)
+5. Labels are in BindNode.label (existing field)
+6. Spine flag goes in BindNode.is_spine (new field)
+
+The DnIndex (PackedDn → Addr HashMap) provides the addressing bridge.
+When you want to walk the tree:
+
+```rust
+let addr = bind_space.dn_index.addr_for(dn)?;
+let node = bind_space.read(addr)?;
+let meta = MetaView::new(&node.fingerprint[..128]);
+let children_edges = (0..64).filter_map(|i| {
+    let (verb, hint) = meta.inline_edge(i);
+    if verb == VERB_PARENT_OF { Some(hint) } else { None }
+});
+```
+
+No DnSpineCache. No separate Container storage. No sync problem.
+The tree IS the metadata in the fingerprint array.
+
+---
+
+## 4. Recommended Approach: Option A (BindSpace Lens)
 
 Option A is the only approach that achieves:
 1. Zero-copy from BindSpace through Container through Arrow
 2. Single canonical store
 3. Minimal migration risk
-4. All 8 surfaces continue working
+4. All 8+ surfaces continue working
 5. XorDag protection maintained
+6. Meta/content separation (edges, NARS never corrupt search)
+7. DN tree embedded in metadata (no separate tree store)
 
 The key additions to BindSpace are small:
 - `BindNode.is_spine: bool` (1 byte per node)
@@ -315,7 +416,7 @@ Everything else is deletion or reorganization.
 
 ---
 
-## 4. Implementation Steps (For Next Session)
+## 5. Implementation Steps (For Next Session)
 
 ### Phase 0: Branch Setup (Do First)
 
@@ -682,7 +783,7 @@ Replace with ~20 new tests that verify:
 
 ---
 
-## 5. Files — Complete Action List
+## 6. Files — Complete Action List
 
 ### Delete (7 files)
 
@@ -732,7 +833,7 @@ Everything else. Specifically:
 
 ---
 
-## 6. Zero-Copy Verification Checklist
+## 7. Zero-Copy Verification Checklist
 
 After implementation, verify these zero-copy paths:
 
@@ -749,7 +850,7 @@ it's not zero-copy. Fix it.
 
 ---
 
-## 7. What This Does NOT Fix (Out of Scope)
+## 8. What This Does NOT Fix (Out of Scope)
 
 These are pre-existing issues documented in `docs/STORAGE_CONTRACTS.md`:
 
@@ -766,7 +867,7 @@ write path instead of two.
 
 ---
 
-## 8. Rollback Strategy
+## 9. Rollback Strategy
 
 The implementation happens on a NEW branch. If it fails:
 
@@ -798,7 +899,7 @@ If any phase breaks, stop and revert just that phase.
 
 ---
 
-## 9. Success Criteria
+## 10. Success Criteria
 
 The refactor is DONE when:
 
@@ -817,7 +918,7 @@ The refactor is DONE when:
 
 ---
 
-## 10. Reference: The 8 Surfaces That Touch BindSpace
+## 11. Reference: The 8 Surfaces That Touch BindSpace
 
 Every surface must continue to work after unification:
 
@@ -838,7 +939,7 @@ Surface 8 gets new capability (Container views into Arrow buffers).
 
 ---
 
-## 11. The Holy Grail: End-to-End Zero-Copy External API
+## 12. The Holy Grail: End-to-End Zero-Copy External API
 
 The deeper goal is not just internal zero-copy between BindSpace and Container.
 It's **zero-copy from storage through DataFusion through Arrow Flight to the
