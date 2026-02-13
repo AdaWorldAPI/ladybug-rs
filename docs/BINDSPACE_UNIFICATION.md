@@ -355,11 +355,11 @@ time with no meaningful resolution loss.
 - After unification: `hamming()` uses content half only — CORRECT
 
 **Graph traversal** (DN tree, edges, NARS):
-- Reads `MetaView::new(&node.fingerprint[..128])` — meta ONLY
-- Inline edges in W16-31 (64 edges) + CSR overflow in W96-111 (~200 edges)
+- Tree structure (parent/child/depth) is FREE from PackedDn address — no storage cost
+- Semantic edges in W16-31 (64 inline) + CSR overflow in W96-111 (~200 edges)
 - NARS truth values in W4-7
 - Graph metrics (degree, PageRank) in W48-55
-- No separate edge store needed for DN tree — edges ARE the metadata
+- Inline edges are for SEMANTIC relationships only (not tree structure)
 
 **XorDag parity**: Full 256 words — protects BOTH halves.
 
@@ -371,27 +371,114 @@ Consumer decides which half: `Container::view(&fp[128..])` for search,
 
 The DN tree doesn't need a separate DnSpineCache because:
 1. PackedDn is stored in meta W0 (the identity)
-2. Parent/child edges are in meta W16-31 (inline edges with verb=PARENT_OF)
-3. Depth is in meta W3 (tree_depth field)
-4. Rung is in meta W8 (rung_level field)
-5. Labels are in BindNode.label (existing field)
-6. Spine flag goes in BindNode.is_spine (new field)
+2. **Parent** is implicit: `PackedDn::parent()` is O(1) bit masking — just chop the last component. No edge slot needed.
+3. **Children** are tracked by DnIndex (see Phase 3) — a `HashMap<Addr, Vec<Addr>>` built at registration time. No edge slot needed.
+4. Depth is in meta W3 (tree_depth field) — also implicit in `dn.depth()`, the number of non-zero components
+5. Rung is in meta W8 (rung_level field)
+6. Labels are in BindNode.label (existing field)
+7. Spine flag goes in BindNode.is_spine (new field)
+
+**Critical**: Inline edge slots (W16-31, max 64 edges) are precious. They
+must NOT be wasted on structural tree edges (PARENT_OF, CHILD_OF) that
+are already free from the PackedDn address structure. Inline edges are
+reserved for **semantic** relationships: SIMILAR_TO, CAUSES, INHIBITS,
+CO_OCCURS, ENTAILS, etc. — edges that cannot be derived from the address.
 
 The DnIndex (PackedDn → Addr HashMap) provides the addressing bridge.
 When you want to walk the tree:
 
 ```rust
+// Upward: parent is O(1) bit masking on the PackedDn address
+let parent_dn = dn.parent();  // chop last component, no lookup needed
+let parent_addr = bind_space.dn_index.addr_for(parent_dn)?;
+
+// Downward: DnIndex maintains a children list per Addr
 let addr = bind_space.dn_index.addr_for(dn)?;
-let node = bind_space.read(addr)?;
+let children: &[Addr] = bind_space.dn_index.children(addr);
+for &child_addr in children {
+    let child = bind_space.read(child_addr)?;
+    let child_meta = MetaView::new(&child.fingerprint[..128]);
+    // ...
+}
+
+// Semantic edges (the ones that DO use inline slots):
 let meta = MetaView::new(&node.fingerprint[..128]);
-let children_edges = (0..64).filter_map(|i| {
+for i in 0..64 {
     let (verb, hint) = meta.inline_edge(i);
-    if verb == VERB_PARENT_OF { Some(hint) } else { None }
-});
+    // verb is SIMILAR_TO, CAUSES, INHIBITS, etc.
+    // NOT PARENT_OF (that's free from the address)
+}
 ```
 
 No DnSpineCache. No separate Container storage. No sync problem.
-The tree IS the metadata in the fingerprint array.
+The tree structure is implicit in the address. Inline edges are for semantics only.
+
+---
+
+## 3b. The Three-Layer Principle (Why This Is The Holy Grail)
+
+The DN tree fix above reveals a deeper architectural principle that
+governs the entire system. There are exactly three layers, and each
+has ONE job. Mixing them creates technical debt; keeping them pure
+enables zero-copy end-to-end.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  LAYER 1: ADDRESS (free structure, zero storage cost)            │
+│  ═══════════════════════════════════════════════════              │
+│                                                                  │
+│  PackedDn           → tree (parent/child/depth/sibling)          │
+│  Addr (u16)         → flat slot (prefix:slot, O(1) index)        │
+│  DnIndex            → bridge (PackedDn ↔ Addr, children list)    │
+│                                                                  │
+│  NO data here. Pure topology. Derived from the address itself.   │
+│  parent = bit mask. depth = component count. children = index.   │
+│  Cost: 0 bytes per relationship. ∞ relationships for free.       │
+├──────────────────────────────────────────────────────────────────┤
+│  LAYER 2: DATA (one contiguous buffer, zero-copy views)          │
+│  ═════════════════════════════════════════════════════            │
+│                                                                  │
+│  Buffer (Arrow)     → 65536 × 256 × 8 = 128 MB contiguous       │
+│  [0..128]           → Container view: structured metadata        │
+│                       (NARS, rung, graph metrics, qualia,        │
+│                        SEMANTIC edges, bloom, RL, checksum)      │
+│  [128..256]         → Container view: search fingerprint         │
+│                       (8192 pure Hamming bits, no metadata)      │
+│                                                                  │
+│  ONE allocation. Everything else is a typed lens:                │
+│  Container::view()  → zero-copy into any 128-word slice          │
+│  MetaView::new()    → structured read of meta container          │
+│  FingerprintBuffer  → Arrow array wrapping same buffer           │
+│                                                                  │
+│  Inline edges (W16-31) are SEMANTIC only:                        │
+│  SIMILAR_TO, CAUSES, INHIBITS, CO_OCCURS — not PARENT_OF.       │
+│  Tree edges are free in Layer 1. Don't pay for them again here.  │
+├──────────────────────────────────────────────────────────────────┤
+│  LAYER 3: TRANSPORT (zero-copy from buffer to wire)              │
+│  ═══════════════════════════════════════════════════              │
+│                                                                  │
+│  FingerprintStore   → Buffer.clone() = Arc bump (not copy)       │
+│  TableProvider      → RecordBatch columns share the Buffer       │
+│  DataFusion         → columnar engine, processes in-place        │
+│  Arrow Flight       → IPC frames read directly from Buffer       │
+│  Client             → single copy at network edge                │
+│                                                                  │
+│  The buffer flows from disk (mmap) through query through         │
+│  network. ONE allocation. The rest is pointer arithmetic.        │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Why this is the Holy Grail**: Every existing cognitive storage system
+mixes these layers — tree structure stored as edges, metadata serialized
+into transport formats, copies at every boundary. Ladybug keeps them
+pure. Structure is free (it's the address). Data is one buffer (typed
+views, no copies). Transport is the same buffer (Arc bump, not copy).
+
+The entire unification plan below exists to enforce this separation.
+DnSpineCache violated it (Layer 2 duplicating Layer 1's tree in its
+own storage). Container UDFs violated it (Layer 2 at wrong width,
+forcing copies). The bridges violated it (Layer 1 with two incompatible
+address hashes). Remove the violations, and the Holy Grail emerges.
 
 ---
 
@@ -404,11 +491,11 @@ Option A is the only approach that achieves:
 4. All 8+ surfaces continue working
 5. XorDag protection maintained
 6. Meta/content separation (edges, NARS never corrupt search)
-7. DN tree embedded in metadata (no separate tree store)
+7. DN tree structure free from address (no edges wasted, no separate store)
 
 The key additions to BindSpace are small:
 - `BindNode.is_spine: bool` (1 byte per node)
-- `DnIndex` struct (pure addressing, ~3 fields)
+- `DnIndex` struct (pure addressing + children index, ~4 fields)
 - `Container::view()` (one unsafe transmute, zero runtime cost)
 - `BindSpace.dirty: BitVec` (8KB for 65536 bits)
 
@@ -527,9 +614,18 @@ continues to work. The views are additive. `is_spine` defaults to `false`.
 use crate::container::adjacency::PackedDn;
 
 /// Bidirectional DN ↔ Addr index. Pure addressing — no data storage.
+///
+/// Tree structure is IMPLICIT in the PackedDn address:
+/// - Parent: `dn.parent()` → O(1) bit masking (chop last component)
+/// - Depth:  `dn.depth()`  → count non-zero components
+/// - Sibling enumeration: DnIndex.children(parent_addr)
+///
+/// DnIndex stores NO fingerprints, NO containers, NO edges.
+/// It is an address book, nothing more. All data lives in BindSpace.
 pub struct DnIndex {
     dn_to_addr: HashMap<PackedDn, Addr>,
-    addr_to_dn: Vec<Option<PackedDn>>,  // indexed by Addr.0, 65536 entries
+    addr_to_dn: Vec<Option<PackedDn>>,       // indexed by Addr.0, 65536 entries
+    children:   HashMap<Addr, Vec<Addr>>,     // parent_addr → [child_addrs]
 }
 
 impl DnIndex {
@@ -537,12 +633,21 @@ impl DnIndex {
         Self {
             dn_to_addr: HashMap::new(),
             addr_to_dn: vec![None; TOTAL_ADDRESSES],
+            children: HashMap::new(),
         }
     }
 
+    /// Register a DN ↔ Addr mapping and update the parent's children list.
     pub fn register(&mut self, dn: PackedDn, addr: Addr) {
         self.dn_to_addr.insert(dn, addr);
         self.addr_to_dn[addr.0 as usize] = Some(dn);
+
+        // Automatically maintain children index using PackedDn::parent()
+        if let Some(parent_dn) = dn.parent() {
+            if let Some(&parent_addr) = self.dn_to_addr.get(&parent_dn) {
+                self.children.entry(parent_addr).or_default().push(addr);
+            }
+        }
     }
 
     pub fn addr_for(&self, dn: PackedDn) -> Option<Addr> {
@@ -551,6 +656,12 @@ impl DnIndex {
 
     pub fn dn_for(&self, addr: Addr) -> Option<PackedDn> {
         self.addr_to_dn[addr.0 as usize]
+    }
+
+    /// Children of addr (for downward tree traversal).
+    /// Upward traversal doesn't need this — use PackedDn::parent().
+    pub fn children(&self, addr: Addr) -> &[Addr] {
+        self.children.get(&addr).map(|v| v.as_slice()).unwrap_or(&[])
     }
 
     pub fn len(&self) -> usize {
