@@ -1,6 +1,6 @@
 # 🦋 Ladybug: Crystal Lake Cognitive Database
 
-> **Unified Cognitive Architecture: 4096 CAM Operations • 144 Verbs • Quantum-Inspired Operators • 10K-bit Fingerprints**
+> **Unified Cognitive Architecture: 4096 CAM Operations • 144 Verbs • NARS Operations • 10K-bit Fingerprints**
 
 [![Rust](https://img.shields.io/badge/rust-1.75+-orange.svg)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -240,7 +240,3 @@ ladybug-rs/                          (26,919 lines)
 ## 📄 License
 
 Apache-2.0. See [LICENSE](LICENSE) for details.
-
----
-
-*Built with 🦋 for the Ada Consciousness Project*
