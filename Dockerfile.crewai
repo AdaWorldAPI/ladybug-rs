@@ -1,0 +1,106 @@
+# =============================================================================
+# LadybugDB + crewAI — Docker Build
+# =============================================================================
+# Builds ladybug with crewAI agent orchestration framework vendored in.
+# crewai-rust provides: Agent, Crew, Flow, Task, LLM integrations,
+# memory, RAG, MCP, A2A messaging, and telemetry.
+#
+# BUILD:
+#   docker build -f Dockerfile.crewai -t ladybugdb:crewai .
+#
+# RUN:
+#   docker run -p 8080:8080 -p 50051:50051 ladybugdb:crewai
+# =============================================================================
+
+# =============================================================================
+# STAGE 1: Builder
+# =============================================================================
+FROM rust:1.93-slim-bookworm AS builder
+
+RUN apt-get update && apt-get install -y \
+    pkg-config libssl-dev cmake protobuf-compiler git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# --- Clone crewai-rust vendor ---
+RUN git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust vendor/crewai-rust
+
+# --- Copy source ---
+COPY . .
+
+# --- Activate vendor deps in Cargo.toml ---
+RUN sed -i 's/^# crewai-vendor = /crewai-vendor = /' Cargo.toml && \
+    sed -i 's/^# vendor-crewai = /vendor-crewai = /' Cargo.toml
+
+ARG FEATURES="simd,parallel,flight,crewai,vendor-crewai"
+
+# --- AVX-512 binary ---
+RUN RUSTFLAGS="-C target-cpu=x86-64-v4 -C link-arg=-s" \
+    cargo build --release --bin ladybug-server --features "$FEATURES" && \
+    cp target/release/ladybug-server /build/ladybug-avx512 && \
+    cargo clean -p ladybug
+
+# --- AVX-2 binary ---
+RUN RUSTFLAGS="-C target-cpu=x86-64-v3 -C link-arg=-s" \
+    cargo build --release --bin ladybug-server --features "$FEATURES" && \
+    cp target/release/ladybug-server /build/ladybug-avx2 && \
+    cargo clean -p ladybug
+
+# --- Generic binary ---
+RUN RUSTFLAGS="-C link-arg=-s" \
+    cargo build --release --bin ladybug-server --features "$FEATURES" && \
+    cp target/release/ladybug-server /build/ladybug-generic
+
+# --- Flight gRPC binary ---
+RUN RUSTFLAGS="-C target-cpu=x86-64-v3 -C link-arg=-s" \
+    cargo build --release --bin ladybug-flight --features "$FEATURES" && \
+    cp target/release/ladybug-flight /build/ladybug-flight
+
+# =============================================================================
+# STAGE 2: Runtime
+# =============================================================================
+FROM debian:bookworm-slim AS runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl procps \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -m -s /bin/bash ladybug \
+    && mkdir -p /data && chown ladybug:ladybug /data
+
+COPY --from=builder /build/ladybug-avx512 /usr/local/bin/
+COPY --from=builder /build/ladybug-avx2   /usr/local/bin/
+COPY --from=builder /build/ladybug-generic /usr/local/bin/
+COPY --from=builder /build/ladybug-flight /usr/local/bin/
+
+COPY <<'ENTRY' /usr/local/bin/ladybug-start
+#!/bin/sh
+set -e
+if grep -q "avx512f" /proc/cpuinfo 2>/dev/null; then
+  BIN=ladybug-avx512; LVL=AVX-512
+elif grep -q "avx2" /proc/cpuinfo 2>/dev/null; then
+  BIN=ladybug-avx2; LVL=AVX-2
+else
+  BIN=ladybug-generic; LVL=Generic
+fi
+echo "[ladybugdb+crewai] SIMD: ${LVL} → ${BIN}"
+exec "/usr/local/bin/${BIN}" "$@"
+ENTRY
+RUN chmod +x /usr/local/bin/ladybug-start
+
+USER ladybug
+WORKDIR /home/ladybug
+
+ENV LADYBUG_HOST=0.0.0.0
+ENV LADYBUG_PORT=8080
+ENV LADYBUG_FLIGHT_PORT=50051
+ENV LADYBUG_DATA_DIR=/data
+ENV LADYBUG_PRESET=crewai
+
+EXPOSE 8080
+EXPOSE 50051
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:${LADYBUG_PORT}/health || exit 1
+
+ENTRYPOINT ["ladybug-start"]

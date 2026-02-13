@@ -44,9 +44,15 @@ flight = ["arrow-flight", "tonic", "prost"]  # Arrow Flight MCP server
 crewai = ["flight"]                          # crewAI orchestration (A2A, agent cards, thinking templates)
 json_fallback = []                           # Legacy JSON MCP types (backwards compat)
 
+# Vendor integrations — uncommented by Dockerfile presets at build time.
+# Require repos cloned into vendor/ and dependency lines below uncommented.
+# See: Dockerfile.n8n, Dockerfile.crewai, Dockerfile.full
+# vendor-n8n = ["dep:n8n-core", "dep:n8n-workflow", "dep:n8n-arrow", "dep:n8n-grpc", "dep:n8n-hamming"]
+# vendor-crewai = ["dep:crewai-vendor", "crewai"]
+
 # All features
 full = [
-    "simd", "parallel", "python", 
+    "simd", "parallel", "python",
     "codebook", "hologram", "spo", "compress", "quantum",
     "lancedb", "neo4j", "redis"
 ]
@@ -159,6 +165,30 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"], optional = true
 # -----------------------------------------------------------------------------
 pyo3 = { version = "0.23", optional = true, features = ["extension-module"] }
 
+# -----------------------------------------------------------------------------
+# Vendor: n8n-rs (workflow automation engine)
+# Source: https://github.com/AdaWorldAPI/n8n-rs
+# Uncommented by Dockerfile.n8n / Dockerfile.full at build time.
+# Requires: git clone https://github.com/AdaWorldAPI/n8n-rs vendor/n8n-rs
+# NOTE: n8n crates pin Arrow 53 / DataFusion 43. The Dockerfiles add
+# [patch.crates-io] entries to unify Arrow/DataFusion to ladybug's versions.
+# -----------------------------------------------------------------------------
+# n8n-core     = { path = "vendor/n8n-rs/n8n-rust/crates/n8n-core",     optional = true }
+# n8n-workflow = { path = "vendor/n8n-rs/n8n-rust/crates/n8n-workflow",  optional = true }
+# n8n-arrow    = { path = "vendor/n8n-rs/n8n-rust/crates/n8n-arrow",    optional = true }
+# n8n-grpc     = { path = "vendor/n8n-rs/n8n-rust/crates/n8n-grpc",     optional = true }
+# n8n-hamming  = { path = "vendor/n8n-rs/n8n-rust/crates/n8n-hamming",  optional = true }
+
+# -----------------------------------------------------------------------------
+# Vendor: crewai-rust (AI agent orchestration framework)
+# Source: https://github.com/AdaWorldAPI/crewai-rust
+# Uncommented by Dockerfile.crewai / Dockerfile.full at build time.
+# Requires: git clone https://github.com/AdaWorldAPI/crewai-rust vendor/crewai-rust
+# No version conflicts — crewai has no Arrow/DataFusion deps.
+# Renamed to crewai-vendor to avoid collision with ladybug's built-in crewai feature.
+# -----------------------------------------------------------------------------
+# crewai-vendor = { package = "crewai", path = "vendor/crewai-rust", optional = true }
+
 # =============================================================================
 # DEV DEPENDENCIES
 # =============================================================================
@@ -267,3 +297,15 @@ opt-level = 3
 # lance-bitpacking = { path = "vendor/lance/rust/compression/bitpacking" }
 # fsst = { path = "vendor/lance/rust/compression/fsst" }
 # datafusion = { git = "https://github.com/AdaWorldAPI/datafusion", branch = "liblzma-fix" }
+#
+# n8n-rs vendor overrides — use local clones instead of git fetch:
+#   git clone https://github.com/AdaWorldAPI/n8n-rs vendor/n8n-rs
+# n8n-core     = { path = "vendor/n8n-rs/n8n-rust/crates/n8n-core" }
+# n8n-workflow = { path = "vendor/n8n-rs/n8n-rust/crates/n8n-workflow" }
+# n8n-arrow    = { path = "vendor/n8n-rs/n8n-rust/crates/n8n-arrow" }
+# n8n-grpc     = { path = "vendor/n8n-rs/n8n-rust/crates/n8n-grpc" }
+# n8n-hamming  = { path = "vendor/n8n-rs/n8n-rust/crates/n8n-hamming" }
+#
+# crewai-rust vendor override — use local clone instead of git fetch:
+#   git clone https://github.com/AdaWorldAPI/crewai-rust vendor/crewai-rust
+# crewai = { path = "vendor/crewai-rust" }
