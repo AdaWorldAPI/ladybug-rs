@@ -31,7 +31,7 @@ use std::sync::{RwLock, Mutex};
 use std::time::{Duration, Instant};
 
 use super::bind_space::{BindSpace, BindNode, Addr, FINGERPRINT_WORDS, hamming_distance};
-use super::cog_redis::{CogAddr, Tier};
+use super::cog_redis::CogAddr;
 use crate::search::RubiconSearch;
 
 // =============================================================================

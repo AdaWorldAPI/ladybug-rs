@@ -49,12 +49,10 @@
 //! ```
 
 use std::collections::HashMap;
-use crate::core::Fingerprint;
-use crate::{Error, Result};
 
 use super::hdr_cascade::{
-    HdrIndex, MexicanHat, RollingWindow, AlienSearch,
-    hamming_distance, SearchResult,
+    HdrIndex, MexicanHat, RollingWindow,
+    hamming_distance,
 };
 
 // =============================================================================
@@ -618,7 +616,7 @@ impl CounterfactualStore {
         // Get counterfactual outcome
         let cf_results = self.query_counterfactual(state, alt_action, threshold);
         
-        if let Some((edge, cf_outcome, _)) = cf_results.first() {
+        if let Some((_edge, cf_outcome, _)) = cf_results.first() {
             // Regret = distance between actual and counterfactual
             // (positive = counterfactual was better)
             let actual_dist = hamming_distance(actual_outcome, state);

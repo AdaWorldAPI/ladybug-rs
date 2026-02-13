@@ -1259,7 +1259,7 @@ ORDER BY t.depth, t.amplification DESC
                             id, label, props
                         ));
                     }
-                    PatternElement::Edge(edge) => {
+                    PatternElement::Edge(_edge) => {
                         // Edge creation requires knowing the from/to node IDs
                         // This is simplified - real implementation needs alias resolution
                     }

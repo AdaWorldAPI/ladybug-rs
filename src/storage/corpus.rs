@@ -33,10 +33,10 @@
 //! - **Sliding**: Overlapping windows for context
 //! - **Semantic**: Split on topic changes (requires embeddings)
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
-use std::path::{Path, PathBuf};
+use std::sync::RwLock;
+use std::path::PathBuf;
 
 // ============================================================================
 // Fingerprint Generation (Scent)
@@ -157,25 +157,22 @@ pub fn chunk_document(
     strategy: ChunkStrategy,
     start_id: u64,
 ) -> Vec<Chunk> {
-    let mut chunks = Vec::new();
     let mut next_id = start_id;
 
     match strategy {
         ChunkStrategy::Sentence { max_sentences } => {
-            chunks = chunk_by_sentences(doc_id, text, max_sentences, &mut next_id);
+            chunk_by_sentences(doc_id, text, max_sentences, &mut next_id)
         }
         ChunkStrategy::Paragraph { max_paragraphs } => {
-            chunks = chunk_by_paragraphs(doc_id, text, max_paragraphs, &mut next_id);
+            chunk_by_paragraphs(doc_id, text, max_paragraphs, &mut next_id)
         }
         ChunkStrategy::Sliding { window_size, overlap } => {
-            chunks = chunk_sliding_window(doc_id, text, window_size, overlap, &mut next_id);
+            chunk_sliding_window(doc_id, text, window_size, overlap, &mut next_id)
         }
         ChunkStrategy::FixedSize { target_size } => {
-            chunks = chunk_fixed_size(doc_id, text, target_size, &mut next_id);
+            chunk_fixed_size(doc_id, text, target_size, &mut next_id)
         }
     }
-
-    chunks
 }
 
 /// Split by sentence boundaries
@@ -578,7 +575,7 @@ impl CorpusStore {
 
     /// Add raw text as a document
     pub fn add_text(&self, id: &str, text: String) -> Result<(), CorpusError> {
-        let start_id = self.next_chunk_id.fetch_add(10000, Ordering::SeqCst);
+        let _start_id = self.next_chunk_id.fetch_add(10000, Ordering::SeqCst);
         let mut doc = Document::new(id, text, self.config.default_strategy);
 
         // Reassign chunk IDs

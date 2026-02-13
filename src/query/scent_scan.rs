@@ -44,7 +44,7 @@ use arrow::record_batch::RecordBatch;
 use datafusion::common::ScalarValue;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::TaskContext;
-use datafusion::logical_expr::{ColumnarValue, ScalarFunctionArgs, ScalarUDF, ScalarUDFImpl, Signature, TypeSignature, Volatility};
+use datafusion::logical_expr::{ColumnarValue, ScalarFunctionArgs, ScalarUDF, ScalarUDFImpl, Signature, Volatility};
 use datafusion::physical_expr::EquivalenceProperties;
 use datafusion::physical_plan::{
     DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties,
@@ -57,7 +57,6 @@ use parking_lot::RwLock;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::core::Fingerprint;
 use crate::search::hdr_cascade::{hamming_distance, HdrIndex};
 use crate::storage::bind_space::{Addr, BindSpace, BindNode, FINGERPRINT_WORDS};
 

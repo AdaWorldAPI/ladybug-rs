@@ -5,7 +5,7 @@
 //! BEFORE computing full distance — a few cycles vs full popcount.
 
 use super::{RESONANCE_WORDS, VECTOR_WORDS};
-use super::schema::{SchemaSidecar, NeighborBloom, NodeKind};
+use super::schema::SchemaSidecar;
 
 /// Block mask: which of the 14 resonance blocks participate in distance.
 /// Default = all 14 blocks. Can exclude blocks for partial/multi-resolution search.
@@ -119,6 +119,7 @@ impl SchemaQuery {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::width_16k::schema::NodeKind;
 
     #[test]
     fn test_resonance_distance_self() {

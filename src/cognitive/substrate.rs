@@ -55,9 +55,9 @@ use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
 use crate::core::{Fingerprint, VsaOps};
-use crate::cognitive::style::{ThinkingStyle, FieldModulation};
-use crate::cognitive::quad_triangle::{QuadTriangle, TriangleId, CognitiveProfiles};
-use crate::cognitive::seven_layer::{SevenLayerNode, LayerId, ConsciousnessSnapshot, process_layers_wave, snapshot_consciousness};
+use crate::cognitive::style::ThinkingStyle;
+use crate::cognitive::quad_triangle::{QuadTriangle, CognitiveProfiles};
+use crate::cognitive::seven_layer::{SevenLayerNode, ConsciousnessSnapshot, process_layers_wave, snapshot_consciousness};
 use crate::cognitive::collapse_gate::{GateState, CollapseDecision, evaluate_gate, calculate_sd};
 use crate::fabric::mrna::{MRNA, Resonance};
 use crate::fabric::Subsystem;

@@ -51,7 +51,6 @@
 
 use std::collections::HashMap;
 use crate::core::Fingerprint;
-use crate::{Error, Result};
 
 // =============================================================================
 // CONSTANTS
@@ -385,11 +384,11 @@ impl RollingWindow {
     /// Get coefficient of variation (σ/μ)
     #[inline]
     pub fn cv(&self) -> f32 {
-        let μ = self.mean();
-        if μ < 1.0 {
+        let mu = self.mean();
+        if mu < 1.0 {
             return 0.0;
         }
-        self.stddev() / μ
+        self.stddev() / mu
     }
     
     /// Is the window showing coherent (clustered) pattern?
@@ -925,9 +924,9 @@ mod tests {
             window.push(d);
         }
         
-        let (μ, σ) = window.stats();
-        assert!((μ - 105.2).abs() < 1.0);
-        assert!(σ > 0.0 && σ < 10.0);  // Low variance
+        let (mu, sigma) = window.stats();
+        assert!((mu - 105.2).abs() < 1.0);
+        assert!(sigma > 0.0 && sigma < 10.0);  // Low variance
     }
     
     #[test]
@@ -1398,8 +1397,8 @@ pub enum SignalClass {
 /// Classify a comparison result for routing
 pub fn classify_signal(mean: u8, sd: u8, distance: u32) -> SignalClass {
     match (mean, sd, distance) {
-        (0..=2, 0..=30, 0..=2000) => SignalClass::Strong,
-        (0..=4, 0..=60, 0..=4000) => SignalClass::Moderate,
+        (0..=2, 0..=29, 0..=1999) => SignalClass::Strong,
+        (3..=4, 30..=59, 2000..=3999) => SignalClass::Moderate,
         (_, 50.., 4000..=8000) => SignalClass::WeakButStackable,
         _ => SignalClass::Noise,
     }

@@ -38,10 +38,8 @@
 //! | Trap    | syscall, debug                                  |
 
 use std::collections::HashMap;
-use crate::storage::FINGERPRINT_WORDS;
 use super::firefly_frame::{
     FireflyFrame, FrameHeader, Instruction, LanguagePrefix,
-    ExecutionContext, ConditionFlags, FrameBuilder,
 };
 
 // =============================================================================
@@ -759,6 +757,7 @@ fn get_mnemonic(prefix: LanguagePrefix, opcode: u8) -> &'static str {
 mod tests {
     use super::*;
     use crate::fabric::executor::Executor;
+    use crate::storage::FINGERPRINT_WORDS;
 
     #[test]
     fn test_parse_simple() {

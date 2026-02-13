@@ -25,12 +25,11 @@
 //! - Memory-mapped where possible
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use super::bind_space::{Addr, BindNode, BindEdge, FINGERPRINT_WORDS};
+use super::bind_space::FINGERPRINT_WORDS;
 
 // =============================================================================
 // TEMPORAL TYPES

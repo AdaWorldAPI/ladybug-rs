@@ -497,7 +497,7 @@ impl FireflyFrame {
     fn verify_ecc(words: &[u64; Self::WORDS]) -> Option<[u64; Self::WORDS]> {
         // Simplified verification
         // Real implementation would do full BCH decode
-        let mut corrected = *words;
+        let corrected = *words;
 
         let expected_ecc = Self::compute_ecc(&words[0..16]);
         let received_ecc = &words[16..20];

@@ -28,8 +28,10 @@ pub use quad_triangle::*;
 pub use collapse_gate::*;
 pub use seven_layer::*;
 pub use rung::*;
-pub use fabric::*;
-pub use grammar_engine::*;
+pub use grammar_engine::{
+    GrammarRole, GrammarTriangle, GrammarCognitiveEngine,
+    IngestResult, process_batch, serialize_state, deserialize_state,
+};
 pub use substrate::*;
 pub use membrane::{
     Membrane, ConsciousnessParams,

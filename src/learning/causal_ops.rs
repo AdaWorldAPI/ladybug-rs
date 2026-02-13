@@ -27,8 +27,7 @@
 //! All operations use CausalSearch from the search module.
 //! ABBA retrieval (A⊗B⊗B=A) enables O(1) queries in any direction.
 
-use crate::core::Fingerprint;
-use crate::search::causal::{CausalSearch, CausalVerbs, QueryMode, CausalResult, EdgeType};
+use crate::search::causal::{CausalSearch, CausalVerbs, CausalResult};
 
 // =============================================================================
 // CAUSALITY OPERATION CODES (0xA00-0xAFF)
@@ -417,7 +416,7 @@ impl CausalEngine {
     pub fn prob_necessity(
         &self,
         state: &[u64; 256],
-        x: &[u64; 256],        // Actual action
+        _x: &[u64; 256],        // Actual action
         y: &[u64; 256],        // Actual outcome  
         x_prime: &[u64; 256],  // Alternative action
     ) -> Option<f32> {
@@ -556,8 +555,8 @@ impl CausalEngine {
         // Simplified d-separation check
         // Full implementation would trace all paths and check blocking
         
-        let x_ancestors = self.ancestors(x);
-        let y_ancestors = self.ancestors(y);
+        let _x_ancestors = self.ancestors(x);
+        let _y_ancestors = self.ancestors(y);
         
         // Check if any Z blocks the path
         for zi in z {
@@ -589,7 +588,7 @@ impl CausalEngine {
         &self,
         state: &[u64; 256],
         x: &[u64; 256],
-        y: &[u64; 256],
+        _y: &[u64; 256],
     ) -> Option<f32> {
         // Total effect = P(Y | do(X))
         let results = self.query_do(state, x);
@@ -604,7 +603,7 @@ impl CausalEngine {
     /// Estimate natural direct effect (effect not through mediator)
     pub fn natural_direct_effect(
         &self,
-        state: &[u64; 256],
+        _state: &[u64; 256],
         x: &[u64; 256],
         _mediator: &[u64; 256],
     ) -> Option<f32> {
@@ -651,6 +650,7 @@ fn hash_fp(fp: &[u64; 256]) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::Fingerprint;
 
     /// Convert Fingerprint to 256-word array
     fn fp_to_words(fp: &Fingerprint) -> [u64; 256] {

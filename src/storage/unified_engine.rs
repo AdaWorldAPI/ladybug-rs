@@ -63,20 +63,18 @@
 //! ```
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use super::bind_space::{
-    Addr, BindNode, BindEdge, BindSpace, BitpackedCsr,
+    Addr, BindNode, BindSpace,
     FINGERPRINT_WORDS, dn_path_to_addr,
-    PREFIX_NODE_START, PREFIX_FLUID_START, PREFIX_VERBS,
+    PREFIX_NODE_START,
 };
 use super::xor_dag::{
-    XorDag, XorDagConfig, DagTransaction, DagError,
-    EpochGuard, EpochTicket, WorkItem, WorkOperation,
-    ParityBlock, ParityTier, ConflictStrategy,
-    xor_fingerprints, xor_fingerprints_multi,
+    XorDag, XorDagConfig, DagError,
+    EpochGuard, EpochTicket, WorkItem, ConflictStrategy,
 };
 use super::concurrency::{
     MemoryPool, MemoryPoolConfig, MvccStore, MvccSlot,
@@ -84,13 +82,10 @@ use super::concurrency::{
     ParallelExecutor, ParallelConfig,
 };
 use super::resilient::{
-    ResilientStore, ResilienceConfig, WriteBuffer,
-    DependencyGraph, RecoveryEngine, VirtualVersion, WriteState,
+    ResilienceConfig, WriteBuffer,
+    DependencyGraph, VirtualVersion,
 };
-use super::lance_zero_copy::{
-    ArrowZeroCopy, FingerprintBuffer, AdjacencyIndex,
-    Temperature, ScentAwareness, LanceView, ZeroCopyBubbler,
-};
+use super::lance_zero_copy::ArrowZeroCopy;
 use super::temporal::Version;
 use super::fingerprint_dict::FingerprintDict;
 
@@ -1381,7 +1376,7 @@ impl TxnBatchBuffer {
 
     /// Get or start a batch transaction
     pub fn get_batch_txn(&mut self, dag: &super::xor_dag::XorDag) -> Result<u64, super::xor_dag::DagError> {
-        if let Some(txn) = self.current_batch {
+        if let Some(_txn) = self.current_batch {
             // Check if batch should be committed
             if self.ops_in_batch >= self.max_batch_size {
                 self.commit_batch(dag)?;
@@ -1605,8 +1600,6 @@ impl UnifiedEngine {
 
         let prefix = pattern.trim_end_matches('*').trim_end_matches(':');
         let mut results = Vec::new();
-        let mut new_cursor = cursor;
-        let mut scanned = 0;
 
         // Scan from cursor position
         let start_prefix = (cursor >> 8) as u8;
@@ -1621,14 +1614,14 @@ impl UnifiedEngine {
                         if label.starts_with(prefix) || pattern == "*" {
                             results.push(label.clone());
                             if results.len() >= count {
-                                // Set cursor to next position
-                                new_cursor = ((prefix_byte as u32) << 8) | ((slot + 1) as u32);
-                                return Ok((new_cursor, results));
+                                // Return cursor pointing to next position
+                                let next = ((prefix_byte as u32) << 8) | ((slot + 1) as u32);
+                                return Ok((next, results));
                             }
                         }
                     }
                 }
-                scanned += 1;
+                // scanning
             }
         }
 
@@ -1642,7 +1635,7 @@ impl UnifiedEngine {
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         let addr = dn_path_to_addr(path);
-        if let Some(node) = bind_space.read(addr) {
+        if let Some(_node) = bind_space.read(addr) {
             // Determine type based on zone
             let zone = if addr.is_surface() {
                 "surface"
@@ -1726,6 +1719,7 @@ impl std::error::Error for UnifiedError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::xor_dag::WorkOperation;
 
     #[test]
     fn test_unified_engine_basic() {

@@ -43,7 +43,7 @@ use arrow::array::*;
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use arrow::record_batch::RecordBatch;
 
-use super::bind_space::{Addr, BindNode, BindSpace, FINGERPRINT_WORDS, hamming_distance};
+use super::bind_space::{Addr, BindSpace, FINGERPRINT_WORDS, hamming_distance};
 
 // =============================================================================
 // CONSTANTS

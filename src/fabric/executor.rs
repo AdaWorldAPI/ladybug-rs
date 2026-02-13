@@ -15,14 +15,13 @@
 //! └─────────────────────────────────────────────────────────────────────────────┘
 //! ```
 
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::storage::{BindSpace, Substrate, SubstrateConfig, Addr, FINGERPRINT_WORDS};
 use crate::nars::TruthValue;
 use super::firefly_frame::{
-    FireflyFrame, FrameHeader, Instruction, LanguagePrefix,
+    FireflyFrame, Instruction, LanguagePrefix,
     ExecutionContext, ConditionFlags,
 };
 
@@ -224,7 +223,7 @@ impl Executor {
     // LANCE: Vector Operations
     // =========================================================================
 
-    fn exec_lance(&mut self, inst: &Instruction, data: &[u64; 6]) -> ExecResult {
+    fn exec_lance(&mut self, inst: &Instruction, _data: &[u64; 6]) -> ExecResult {
         self.stats.lance_ops += 1;
 
         match inst.opcode {
@@ -630,7 +629,7 @@ impl Default for Executor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fabric::firefly_frame::FrameBuilder;
+    use crate::fabric::firefly_frame::{FrameBuilder, FrameHeader};
 
     fn random_fp(seed: u64) -> [u64; FINGERPRINT_WORDS] {
         use std::hash::{Hash, Hasher};

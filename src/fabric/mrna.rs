@@ -330,7 +330,7 @@ fn bundle_fingerprints(fps: &[&Fingerprint]) -> Fingerprint {
     
     // Convert to owned for bundle
     let owned: Vec<Fingerprint> = fps.iter().map(|&f| f.clone()).collect();
-    let refs: Vec<&Fingerprint> = owned.iter().collect();
+    let _refs: Vec<&Fingerprint> = owned.iter().collect();
     
     // Use VSA bundle (but we need owned slice)
     Fingerprint::bundle(&owned)

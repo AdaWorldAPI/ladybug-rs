@@ -35,8 +35,7 @@
 //! └─────────────────┘     └─────────────────┘
 //! ```
 
-use crate::core::Fingerprint;
-use crate::search::causal::{CausalSearch, QueryMode, CausalResult};
+use crate::search::causal::{CausalSearch, CausalResult};
 
 // =============================================================================
 // RL OPERATION CODES (0x900-0x9FF)

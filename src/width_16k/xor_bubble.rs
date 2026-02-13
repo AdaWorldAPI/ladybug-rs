@@ -4,7 +4,7 @@
 //! are sparse: most words are unchanged. A delta only stores non-zero
 //! XOR words, avoiding full 2KB copies.
 
-use super::{VECTOR_WORDS, RESONANCE_WORDS};
+use super::VECTOR_WORDS;
 use std::collections::HashMap;
 use std::sync::RwLock;
 

@@ -9,7 +9,6 @@
 //! Operators transform them, measurements collapse them.
 
 use crate::core::Fingerprint;
-use std::f32::consts::PI;
 
 // =============================================================================
 // TREE ADDRESSING (256-way branching)

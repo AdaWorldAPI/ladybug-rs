@@ -41,7 +41,6 @@
 //! ```
 
 use crate::core::Fingerprint;
-use crate::{Error, Result};
 
 /// Number of u64 words in a 16K-bit fingerprint
 const WORDS: usize = 256; // 256 * 64 = 16384 bits
