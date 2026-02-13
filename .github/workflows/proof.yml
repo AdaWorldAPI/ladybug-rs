@@ -76,7 +76,7 @@ jobs:
           toolchain: "1.93.0"
       - uses: Swatinem/rust-cache@v2
       - name: Run foundation proofs
-        run: cargo test --test proof_foundation -- --test-threads=1 -v
+        run: cargo test --test proof_foundation -- --test-threads=1 --show-output
 
   # ---------------------------------------------------------------------------
   # Reasoning Ladder Proofs (Sun et al. 2025 tier verification)
@@ -92,7 +92,7 @@ jobs:
           toolchain: "1.93.0"
       - uses: Swatinem/rust-cache@v2
       - name: Run reasoning ladder proofs
-        run: cargo test --test proof_reasoning_ladder -- --test-threads=1 -v
+        run: cargo test --test proof_reasoning_ladder -- --test-threads=1 --show-output
 
   # ---------------------------------------------------------------------------
   # Tactics Proofs (34 cognitive tactics structural verification)
@@ -108,7 +108,7 @@ jobs:
           toolchain: "1.93.0"
       - uses: Swatinem/rust-cache@v2
       - name: Run tactics proofs
-        run: cargo test --test proof_tactics -- --test-threads=1 -v
+        run: cargo test --test proof_tactics -- --test-threads=1 --show-output
 
   # ---------------------------------------------------------------------------
   # Level A Gap Proofs (hardening / race condition coverage)
