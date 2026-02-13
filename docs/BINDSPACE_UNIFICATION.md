@@ -1655,7 +1655,725 @@ on BindSpace so there's one buffer to rule them all.
 
 ---
 
+## 13. Surface Integration Plan: Every Query Language Through BindSpace
+
+### The Endgame
+
+Every query language — SQL, Cypher, NARS, GraphQL, Causal, SPO — is a
+**parser** that produces operations on ONE substrate. Neo4j is a surface,
+not an architecture. If the substrate is clean enough, you can rewrite
+Neo4j's Cypher engine in Rust and plug it into this codebase, gaining
+zero-copy Arrow transport, NARS inference, causal reasoning, and 8+8
+addressing — things Neo4j will never have.
+
+The key: all surfaces resolve through `bindspace://` → `bind_space.content()`
+/ `bind_space.meta()` → DataFusion → Arrow Flight. ONE path. ONE buffer.
+
+### 13.1 Surface Prefix Map (Current State)
+
+```
+PREFIX  SURFACE              STATUS     CAM OPS     ENTRY POINT
+═════════════════════════════════════════════════════════════════
+0x00    Lance (vector)       PARTIAL    2/56        /api/v1/lance/*
+0x01    SQL (DataFusion)     PARTIAL    2/57        /api/v1/sql, /sql
+0x02    Cypher (graph)       GOOD       2/59        /api/v1/cypher, /cypher
+0x03    GraphQL              STUB       0/0         (not implemented)
+0x04    NARS (inference)     PARTIAL    5/73        /api/v1/nars/*
+0x05    Causal (Pearl)       COMPLETE   5/60        /api/v1/graph/search
+0x06    Meta (container)     COMPLETE   6/65        (internal — MetaView)
+0x07    Verbs                PARTIAL    12/41       (internal — cam_ops)
+0x08    Concepts             MINIMAL    9/55        (internal — ACT-R)
+0x09    Qualia               PARTIAL    8/76        (internal — affect)
+0x0A    Memory               PARTIAL    0/0         (internal — session)
+0x0B    Learning             PARTIAL    21/80       (internal — frameworks)
+0x0C    Agents               PARTIAL    0/0         (internal — orchestration)
+0x0D    Thinking             PARTIAL    0/0         (internal — templates)
+0x0E    Blackboard           GOOD       0/0         (internal — agent state)
+0x0F    A2A (routing)        COMPLETE   0/0         (internal — messaging)
+
+CAM CODEBOOK: 101 of 1,102 defined operations registered (9.2%)
+```
+
+### 13.2 Unified Surface Architecture (After Unification)
+
+Every surface follows the SAME pattern:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  USER INPUT                                                     │
+│  ═══════════                                                    │
+│  Cypher: MATCH (n)-[:CAUSES]->(m) RETURN m.name                 │
+│  SQL:    SELECT * FROM bindspace WHERE hamming(content, $q) < 50│
+│  NARS:   <robin --> bird>. %0.9;0.8%                            │
+│  Redis:  DN.GET bindspace://ada:soul:memory                     │
+│  Flight: DoGet(ticket="search:0xAB12:100")                      │
+│  HTTP:   POST /api/v1/graph/traverse                            │
+│  GQL:    { node(uri: "bindspace://ada:soul") { nars edges } }   │
+│  Causal: INTERVENE(do=X, observe=Y)                             │
+│  SPO:    QUERY(subject=S, predicate=CAUSES, object=?)           │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  PARSER (per-surface)                                           │
+│  ══════════════════                                             │
+│  Cypher: CypherParser → AST → CypherPlan                       │
+│  SQL:    DataFusion SQL parser (built-in)                       │
+│  NARS:   NarsParser → Judgment/Question/Goal                    │
+│  Redis:  RedisCommand::parse()                                  │
+│  Flight: Ticket/Action decoder                                  │
+│  GQL:    (future) GraphQL schema resolver                       │
+│  Causal: CausalEdge::new(rung, state, action, outcome)         │
+│  SPO:    XOR composition (S ⊕ P ⊕ O)                           │
+│                                                                 │
+│  Output: ONE of these:                                          │
+│  ├── Addr (direct lookup)                                       │
+│  ├── URI → bind_space.resolve("bindspace://...")                │
+│  ├── SQL string → DataFusion                                    │
+│  ├── CAM op ID → cam_ops.execute(id, args)                     │
+│  └── Fingerprint → HDR cascade search                           │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  BIND SPACE (single substrate)                                  │
+│  ══════════════════════════════                                 │
+│  resolve(uri)          → Addr                                   │
+│  content(addr)         → &Container  (search fingerprint)       │
+│  meta(addr)            → MetaView    (NARS, edges, rung)        │
+│  nodes()               → Iterator    (all occupied slots)       │
+│  hash_all()            → [u64; 256]  (integrity digest)         │
+│  nars_revise(addr,f,c) → ()          (update truth values)      │
+│  dn_index.children(a)  → &[Addr]    (tree traversal)           │
+│                                                                 │
+│  DataFusion tables:                                             │
+│  ├── "bindspace"  (FingerprintTableProvider)                    │
+│  ├── "dn_tree"    (DnTreeTableProvider, rewritten)              │
+│  └── "edges"      (EdgeTableProvider)                           │
+│                                                                 │
+│  UDFs (all 256-word, array-at-a-time):                         │
+│  ├── hamming(a, b)         similarity(a, b)                     │
+│  ├── popcount(x)           xor_bind(a, b)                       │
+│  ├── belichtung(a, b)      cascade_filter(q, c, t)             │
+│  ├── word_diff(a, b)       mexican_hat(d)                       │
+│  ├── nars_deduction(...)   nars_revision(...)                   │
+│  └── extract_scent(fp)     scent_distance(a, b)                │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  TRANSPORT (zero-copy)                                          │
+│  ═════════════════════                                          │
+│  Buffer.clone() = Arc bump → RecordBatch → Flight IPC → Client │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 13.3 Per-Surface Wiring (Surgical Changes)
+
+#### 0x00: Lance — Vector Search
+
+**Current**: `lance.rs` has API mismatch (Cargo says 1.0, vendor has 2.1).
+**After unification**: Lance becomes a persistence backend for FingerprintStore.
+The query path goes through DataFusion, not Lance's own query API.
+
+```
+Lance file on disk (Arrow IPC)
+    ↓ mmap
+FingerprintStore.buffer  ← BindSpace owns this
+    ↓ DataFusion scan
+RecordBatch (zero-copy)
+    ↓ Flight
+Client
+```
+
+**Change needed**: Fix lance.rs API to match vendor 2.1, or bypass lance.rs
+entirely and use `lance_zero_copy/mod.rs` which already works with Arrow
+buffers directly. The latter is cleaner.
+
+**CAM contract**: `LanceOp::VectorSearch (0x001)`, `LanceOp::Insert (0x002)`.
+Other 54 defined ops are future expansion slots.
+
+---
+
+#### 0x01: SQL — DataFusion
+
+**Current**: `datafusion.rs` registers tables and UDFs. Works, but UDFs are
+scalar-at-a-time and fingerprint table copies data.
+
+**After unification**:
+- FingerprintTableProvider reads from FingerprintStore (Buffer-backed, zero-copy)
+- UDFs upgraded to array-at-a-time processing
+- DnTreeTableProvider reads from BindSpace via DnIndex (no DnSpineCache)
+
+```rust
+// All SQL queries resolve through the same BindSpace:
+SELECT label, hamming(content, $query) as dist
+FROM bindspace
+WHERE hamming(content, $query) < 100
+ORDER BY dist LIMIT 10
+```
+
+**Change needed**: Phase 5 (merge UDFs) + Phase 6 (rewrite DnTreeTableProvider).
+
+**CAM contract**: `SqlOp::Select (0x100)`, `SqlOp::Insert (0x101)`.
+DataFusion handles the rest natively.
+
+---
+
+#### 0x02: Cypher — Graph Pattern Matching
+
+**Current**: `cypher.rs` (1,409 lines) parses Cypher and TRANSPILES to SQL.
+This is actually the right approach — Cypher is a syntax, DataFusion is
+the engine. But the transpiled SQL hits the `edges` table which reads
+from BindSpace edge lists.
+
+**After unification**: No change to the parser. The transpiled SQL now benefits
+from zero-copy edge table and Buffer-backed fingerprint table.
+
+**Endgame (Neo4j replacement)**:
+```
+User writes:  MATCH (n:Person)-[:KNOWS]->(m) WHERE m.age > 30 RETURN m
+Parser:       CypherParser::parse() → CypherAST
+Transpiler:   cypher_to_sql() → recursive CTE with edge JOIN
+Engine:       DataFusion executes SQL against BindSpace tables
+Transport:    Arrow Flight streams RecordBatch to client
+```
+
+Neo4j's Bolt protocol is replaced by Arrow Flight. Neo4j's property graph
+is replaced by BindSpace meta containers (MetaView has all property fields).
+Neo4j's native storage is replaced by the FingerprintStore buffer.
+
+**What Cypher gains from Ladybug that Neo4j doesn't have**:
+- Zero-copy path from storage to wire
+- NARS truth values on every node (`meta.nars_frequency()`)
+- Causal inference (`MATCH (x)-[:CAUSES]->(y)` with Pearl rung semantics)
+- 8K-bit content fingerprint for similarity search on graph nodes
+- 4096 CAM operations as graph-callable procedures
+
+**Change needed**: None for core. Future: add Cypher CALL for CAM ops,
+add property access through MetaView fields.
+
+**CAM contract**: `CypherOp::Match (0x200)`, `CypherOp::Create (0x201)`.
+
+---
+
+#### 0x03: GraphQL — Schema-First Queries
+
+**Current**: Not implemented. Prefix reserved.
+
+**After unification**: GraphQL becomes a thin schema that maps field names
+to MetaView accessors and content Container operations:
+
+```graphql
+type Node {
+  uri: String!                    # bindspace:// label
+  addr: Int!                      # Addr.0 as u16
+  nars: NarsTruth                 # meta.nars_frequency(), .nars_confidence()
+  rung: Int                       # meta.rung_level()
+  depth: Int                      # dn.depth()
+  edges: [Edge!]!                 # meta.inline_edge(0..64) + CSR overflow
+  children: [Node!]!              # dn_index.children(addr)
+  parent: Node                    # dn.parent() → resolve
+  content: Fingerprint            # content_container()
+  similarity(to: Fingerprint!): Float  # content.hamming() → 1.0 - dist/8192
+}
+
+type Query {
+  node(uri: String!): Node        # bind_space.resolve(uri)
+  search(query: Fingerprint!, k: Int!): [Node!]!  # HDR cascade
+  nars_revise(uri: String!, f: Float!, c: Float!): NarsTruth
+}
+```
+
+**Implementation**: Use `async-graphql` crate. Each resolver is a one-liner
+through the fluent API:
+
+```rust
+async fn node(&self, uri: String) -> Option<NodeType> {
+    let addr = self.bind_space.read().resolve(&uri)?;
+    Some(NodeType { addr, uri })
+}
+
+impl NodeType {
+    async fn nars(&self, ctx: &Context<'_>) -> NarsTruth {
+        let bs = ctx.data::<Arc<RwLock<BindSpace>>>().unwrap().read();
+        let (f, c) = bs.meta(self.addr).map(|m| (m.nars_frequency(), m.nars_confidence()))
+            .unwrap_or((0.0, 0.0));
+        NarsTruth { frequency: f, confidence: c }
+    }
+}
+```
+
+**Change needed**: New file `src/query/graphql.rs`. Not part of the core
+unification (Phases 1-8) — this is a Phase 13 addition.
+
+**CAM contract**: No ops yet. Reserve `0x300-0x3FF` for future GQL resolvers.
+
+---
+
+#### 0x04: NARS — Non-Axiomatic Reasoning
+
+**Current**: `src/nars/` has 5 inference rules (deduction, induction, abduction,
+analogy, comparison) and truth value algebra. HTTP endpoints at `/api/v1/nars/*`.
+UDFs in cognitive_udfs.rs.
+
+**After unification**: NARS truth values live in meta W4-7. All operations go
+through `bind_space.meta(addr)?.nars_frequency()` and `bind_space.nars_revise()`.
+
+```
+// Before: HTTP → parse JSON → TruthValue::new() → math → JSON response
+// After:  HTTP → resolve URI → bind_space.nars_revise(addr, f, c) → done
+
+// Or via SQL:
+SELECT uri, nars_revision(
+    nars_freq(meta), nars_conf(meta),
+    0.9, 0.8
+) as revised
+FROM dn_tree
+WHERE uri LIKE 'bindspace://ada:soul:%'
+```
+
+**NARS as ACT-R integration**: Prefix 0x08 (ACT-R) shares the NARS truth
+space. ACT-R chunk activation = NARS confidence. ACT-R retrieval = NARS
+question answering. The 8+8 address model means ACT-R chunks ARE BindSpace
+nodes with NARS truth values in their meta container.
+
+**Change needed**: Add `nars_freq(meta)` and `nars_conf(meta)` UDFs that
+extract from FixedSizeBinary(1024) meta column. Wire HTTP endpoints to
+use `bind_space.nars_revise()` instead of standalone TruthValue math.
+
+**CAM contract**: `NarsOp::Deduction (0x400)` through `NarsOp::Comparison (0x404)`.
+5 registered, 68 slots reserved for advanced rules (exemplification,
+conversion, contraposition, resemblance, etc.).
+
+---
+
+#### 0x05: Causal — Pearl's Three Rungs
+
+**Current**: `causal.rs` (1,026 lines) is COMPLETE. Implements SEE/DO/IMAGINE
+with ABBA retrieval (O(1) bidirectional XOR query).
+
+**After unification**: Causal edges are stored as BindSpace nodes in the
+`0x05:xx` surface zone. The ABBA fingerprints are content containers.
+Causal verb types (SEE, DO, CAUSES, IMAGINE, WOULD) are in meta W8-11.
+
+```
+// Intervention query through unified API:
+let state_addr = bind_space.resolve("bindspace://patient:vitals:current")?;
+let action_addr = bind_space.resolve("bindspace://treatment:aspirin:dose")?;
+let outcome = causal.query_outcome(
+    bind_space.content(state_addr)?,
+    bind_space.content(action_addr)?,
+)?;
+```
+
+**Change needed**: Wire `CausalEngine` to read/write through BindSpace
+fluent API instead of standalone fingerprint arrays.
+
+**CAM contract**: `CausalOp::Correlate (0xA00)` through `CausalOp::Confound (0xA04)`.
+
+---
+
+#### 0x06: Meta — Container Metadata
+
+**Current**: `meta.rs` (575 lines) is COMPLETE. MetaView/MetaViewMut provide
+zero-copy structured access to all 128 words of the meta container.
+
+**After unification**: MetaView is the canonical way to access node metadata
+through `bind_space.meta(addr)`. No change needed to meta.rs itself —
+it already provides exactly the right interface.
+
+**CAM contract**: `MetaOp::ReadField (0xD00)`, `MetaOp::WriteField (0xD01)`.
+
+---
+
+#### 0x07: Verbs — Semantic Edge Types
+
+**Current**: 12 of 41 verbs registered (CAUSES, BECOMES, ENABLES, PREVENTS,
+CONTAINS, REQUIRES, IMPLIES, SUPPORTS, CONTRADICTS, GROUNDS, ABSTRACTS,
+REFINES). Each verb is a fingerprint in the BindSpace `0x07:xx` surface zone.
+
+**After unification**: Verbs are BindSpace nodes at `0x07:xx`. Inline edges
+(W16-31) use the verb address as the verb byte. Edge creation goes through
+`bind_space.link(from, verb_addr, to)`.
+
+```rust
+// Creating a causal edge:
+let causes = bind_space.resolve("bindspace://verb:causes")?;
+bind_space.link(state_addr, causes, outcome_addr);
+
+// Reading edges by verb:
+for i in 0..64 {
+    let (verb, hint) = bind_space.meta(addr)?.inline_edge(i);
+    if verb == causes.slot() { /* this is a CAUSES edge */ }
+}
+```
+
+**Change needed**: Register all 41 verbs at startup. Wire verb fingerprints
+through `bindspace://verb:causes`, `bindspace://verb:enables`, etc.
+
+**CAM contract**: `VerbOp::Bind (0xE00)` — 12 registered, 29 reserved.
+
+---
+
+#### 0x08-0x0F: Cognitive Surfaces
+
+These are internal surfaces — they don't have external query parsers (yet).
+They use the same BindSpace fluent API internally:
+
+| Prefix | Surface | How it uses BindSpace |
+|--------|---------|----------------------|
+| 0x08 | **ACT-R** | Chunks = BindNodes. Activation = NARS confidence. Retrieval = hamming search on content. |
+| 0x09 | **Qualia** | 18 affect channels in meta W56-63. `meta.qualia_valence()`, `.qualia_arousal()`. |
+| 0x0A | **Memory** | Episodic sessions. Each moment = BindNode. Session = DN tree subtree. |
+| 0x0B | **Learning** | Pattern/sequence learning reads/writes content containers. Dirty tracking triggers consolidation. |
+| 0x0C | **Agents** | Agent cards at `0x0C:xx`. Capabilities = inline edges to verb nodes. |
+| 0x0D | **Thinking** | Templates at `0x0D:xx`. Style parameters in meta. Content = prompt fingerprint. |
+| 0x0E | **Blackboard** | Per-agent state partition. Ice-cake = XorDag snapshots. |
+| 0x0F | **A2A** | Message routing. Source/target = agent Addrs. Payload = content fingerprint. |
+
+**No parser changes needed for 0x08-0x0F** — these are internal consumers
+of the fluent API, not external query surfaces. They benefit automatically
+from the unification.
+
+### 13.4 DataFusion Table Unification
+
+After unification, THREE tables expose the entire substrate:
+
+```sql
+-- Table 1: bindspace (all 65,536 addresses)
+-- Provider: FingerprintTableProvider (rewritten for zero-copy)
+SELECT address, label, zone,
+       hamming(fingerprint, $query) as dist
+FROM bindspace
+WHERE zone = 'node'
+ORDER BY dist LIMIT 10;
+
+-- Table 2: dn_tree (DN-addressed nodes via DnIndex)
+-- Provider: DnTreeTableProvider (rewritten to read BindSpace)
+SELECT uri, depth, rung, is_spine,
+       nars_freq(meta) as freq,
+       nars_conf(meta) as conf,
+       hamming(content, $query) as dist
+FROM dn_tree
+WHERE uri LIKE 'bindspace://ada:%'
+ORDER BY dist LIMIT 10;
+
+-- Table 3: edges (graph topology)
+-- Provider: EdgeTableProvider (reads BindSpace CSR + inline edges)
+SELECT source_label, verb_label, target_label, weight
+FROM edges
+WHERE source_label = 'bindspace://ada:soul'
+  AND verb_label = 'CAUSES';
+```
+
+**UDF unification** (after Phase 5):
+
+| UDF | Width | Input | Purpose |
+|-----|-------|-------|---------|
+| `hamming(a, b)` | 256w | FixedSizeBinary(2048) | Full fingerprint distance |
+| `similarity(a, b)` | 256w | FixedSizeBinary(2048) | 1.0 - hamming/16384 |
+| `content_hamming(a, b)` | 128w | FixedSizeBinary(1024) | Content-only distance |
+| `belichtung(a, b)` | 128w | FixedSizeBinary(1024) | 7-point exposure estimate |
+| `cascade_filter(q, c, t)` | 128w | FixedSizeBinary(1024) | 5-level HDR cascade |
+| `nars_freq(meta)` | 128w | FixedSizeBinary(1024) | Extract NARS frequency |
+| `nars_conf(meta)` | 128w | FixedSizeBinary(1024) | Extract NARS confidence |
+| `nars_revision(f1,c1,f2,c2)` | scalar | Float64 | NARS revision formula |
+| `nars_deduction(f1,c1,f2,c2)` | scalar | Float64 | NARS deduction |
+| `xor_bind(a, b)` | 256w | Binary | VSA binding |
+| `extract_scent(fp)` | 256w | FixedSizeBinary(2048) | 5-byte scent index |
+| `mexican_hat(d)` | scalar | UInt32 | Wavelet response |
+
+Duplicate UDFs (`container_hamming`, `container_similarity`, `container_popcount`,
+`container_xor`) are DELETED — they duplicate `hamming`, `similarity`,
+`popcount`, `xor_bind` at the wrong width.
+
+### 13.5 Cross-Surface Queries (The Power Move)
+
+Once all surfaces resolve through the same BindSpace, you can MIX
+query languages in a single DataFusion session:
+
+```sql
+-- Cypher-style graph traversal + NARS truth + causal reasoning
+-- in ONE SQL query:
+
+WITH causal_edges AS (
+    SELECT source, target, verb_label, weight
+    FROM edges
+    WHERE verb_label = 'CAUSES'
+      AND weight > 0.5
+),
+nars_beliefs AS (
+    SELECT uri, nars_freq(meta) as freq, nars_conf(meta) as conf
+    FROM dn_tree
+    WHERE nars_conf(meta) > 0.7
+)
+SELECT
+    c.source, c.target, c.weight,
+    n.freq, n.conf,
+    similarity(
+        (SELECT content FROM dn_tree WHERE address = c.target),
+        $query
+    ) as relevance
+FROM causal_edges c
+JOIN nars_beliefs n ON n.uri = c.target
+ORDER BY relevance DESC
+LIMIT 10;
+```
+
+This query traverses the causal graph (Pearl Rung 2), filters by NARS
+confidence (cognitive architecture), and ranks by content similarity
+(vector search) — all zero-copy through the same BindSpace buffer.
+
+Neo4j can't do this. Pinecone can't do this. Not even a graph+vector
+hybrid can do this. It requires the Three-Layer architecture where
+addressing, data, and transport are unified.
+
+---
+
+## 14. The `.deprecated/` Folder: Safe Harvesting
+
+### Why Not Delete
+
+The Algorithm Debt Consolidation (commit `b704a68`) added 2,378 lines
+across 7 files. The unification plan replaces these, but the IDEAS in
+them are valuable — specifically the search algorithms, the plasticity
+model, and the UDF implementations. Moving to `.deprecated/` means:
+
+- Future sessions can read the original implementations for reference
+- `git blame` still works on the original files
+- No data loss if a rollback is needed
+- The code compiles but is NOT part of the active build
+
+### File Inventory
+
+```
+.deprecated/
+├── container/
+│   ├── dn_spine_cache.rs      581 lines  → replaced by DnIndex
+│   ├── plasticity.rs          193 lines  → rewritten at src/storage/plasticity.rs
+│   ├── addr_bridge.rs         164 lines  → replaced by DnIndex + bindspace://
+│   ├── cog_redis_bridge.rs    134 lines  → dead code (CogRedis direct)
+│   └── csr_bridge.rs          102 lines  → dead code (BindSpace has CSR)
+├── query/
+│   ├── container_udfs.rs      813 lines  → merged into cognitive_udfs.rs
+│   └── dn_tree_provider.rs    391 lines  → rewritten in place
+└── README.md                             → explains why these are here
+                            ─────────────
+                            2,378 lines total
+```
+
+### Migration Steps (Phase 8 of Implementation)
+
+```bash
+# 1. Create folder
+mkdir -p .deprecated/container .deprecated/query
+
+# 2. Move files (git tracks the move)
+git mv src/container/dn_spine_cache.rs .deprecated/container/
+git mv src/container/plasticity.rs .deprecated/container/
+git mv src/container/addr_bridge.rs .deprecated/container/
+git mv src/container/cog_redis_bridge.rs .deprecated/container/
+git mv src/container/csr_bridge.rs .deprecated/container/
+git mv src/query/container_udfs.rs .deprecated/query/
+
+# 3. dn_tree_provider.rs is REWRITTEN in place (not moved)
+
+# 4. Update module declarations
+# src/container/mod.rs: remove 5 pub mod lines
+# src/query/mod.rs: remove container_udfs pub mod + pub use
+
+# 5. Update tests
+# Move relevant tests from src/container/tests.rs to .deprecated/
+# Or delete them (they test deleted functionality)
+```
+
+### .deprecated/README.md
+
+```markdown
+# Deprecated Code — Algorithm Debt Consolidation
+
+These files were part of the Algorithm Debt Consolidation (commit b704a68).
+They built a parallel storage universe (DnSpineCache) instead of extending
+the canonical BindSpace model.
+
+The BindSpace Unification (see docs/BINDSPACE_UNIFICATION.md) replaces
+these with:
+- DnIndex (pure addressing, no data storage) replaces DnSpineCache + AddrBridge
+- Container::view() (zero-copy lens) replaces Container conversions
+- Merged UDFs in cognitive_udfs.rs replace container_udfs.rs
+- Rewritten DnTreeTableProvider reads BindSpace directly
+
+These files are kept for reference. Ideas worth harvesting:
+- plasticity.rs: prune/consolidate/rename algorithm (rewritten at storage/plasticity.rs)
+- container_udfs.rs: belichtung, cascade_filter, word_diff, mexican_hat formulas
+- dn_spine_cache.rs: SpineCache arena allocator concept (kept at container/spine.rs)
+```
+
+### What Stays in src/container/ (NOT deprecated)
+
+| File | Lines | Why it stays |
+|------|-------|-------------|
+| `adjacency.rs` | 169 | PackedDn, InlineEdgeView — core addressing |
+| `search.rs` | ~300 | belichtungsmesser, hamming_early_exit — production search |
+| `semiring.rs` | ~200 | Tropical/Boolean/MinPlus — algebra |
+| `spine.rs` | ~150 | SpineCache arena — useful for scratch |
+| `meta.rs` | 575 | MetaView/MetaViewMut — THE metadata interface |
+| `geometry.rs` | ~100 | Container geometry encoding |
+| `graph.rs` | ~200 | Graph metrics computation |
+| `dn_redis.rs` | ~160 | Redis key generation for PackedDn |
+| `traversal.rs` | ~200 | Tree traversal algorithms |
+| `mod.rs` | ~50 | Module declarations (updated) |
+| `record.rs` | ~100 | CogRecord type |
+| `cache.rs` | ~100 | Cache helpers |
+| `delta.rs` | ~100 | Delta encoding |
+| `insert.rs` | ~100 | Insert operations |
+| `migrate.rs` | ~100 | Migration helpers |
+
+---
+
+## 15. CAM Codebook Contract: 4096 Ops as the Surface Registry
+
+### The Principle
+
+The CAM codebook (cam_ops.rs, 4,661 lines) defines 4,096 operation
+slots organized as 16 categories × 256 operations. This IS the contract
+for what each surface can do. Even if an operation is STUB today,
+its slot is RESERVED — a future session implements it, and all surfaces
+that call that CAM op ID automatically get the new capability.
+
+### Current Coverage
+
+```
+CATEGORY    PREFIX  DEFINED  REGISTERED  COVERAGE
+══════════════════════════════════════════════════
+LanceDb     0x0     56       2           3.6%
+Sql         0x1     57       2           3.5%
+Cypher      0x2     59       2           3.4%
+Hamming     0x3     45       3           6.7%
+Nars        0x4     73       5           6.8%
+Filesystem  0x5     74       9           12.2%
+Crystal     0x6     68       10          14.7%
+Nsm         0x7     80       0           0%  ←
+Actr        0x8     55       9           16.4%
+Rl          0x9     61       9           14.8%
+Causality   0xA     60       5           8.3%
+Qualia      0xB     76       8           10.5%
+Rung        0xC     72       0           0%  ←
+Meta        0xD     65       6           9.2%
+Verbs       0xE     41       12          29.3%  ← highest
+Learning    0xF     80+      21          26.3%
+──────────────────────────────────────────────────
+TOTAL             1,102     101          9.2%
+```
+
+### How CAM Ops Map to the 8+8 Address Model
+
+Each CAM operation is itself a BindSpace node:
+
+```
+CAM op 0x400 (NarsOp::Deduction)
+    ↓
+Address: Addr(0x04, 0x00)  → surface prefix 0x04 (NARS), slot 0x00
+    ↓
+BindNode at 0x0400:
+    meta:    verb type, arity, signature
+    content: operation fingerprint (content-addressable dispatch)
+    label:   "bindspace://nars:deduction"
+```
+
+This means:
+- `CAM.EXEC nars:deduction` resolves via `bindspace://nars:deduction`
+- The operation IS a BindSpace node with its own NARS truth values
+- You can query operations with SQL: `SELECT * FROM bindspace WHERE zone='surface' AND address BETWEEN 0x0400 AND 0x04FF`
+- Operations are content-addressable: describe what you want, CAM finds the closest operation by Hamming distance
+
+### The Contract for New Surfaces
+
+When adding a new query surface (e.g., GraphQL at 0x03):
+
+1. **Reserve CAM slots**: `GraphqlOp::Query = 0x300`, `GraphqlOp::Mutation = 0x301`, etc.
+2. **Register operations**: `register_graphql_ops()` in cam_ops.rs
+3. **Create BindSpace nodes**: Each op gets a node at `0x03:xx` with fingerprint + signature
+4. **Implement parser**: New parser produces CAM op IDs + arguments
+5. **Wire entry point**: HTTP endpoint, Flight action, or Redis command
+
+The contract is: if you define a CAM op, you MUST:
+- Give it a unique ID in the 0x000-0xFFF range
+- Register it with `OpDictionary::register()`
+- Store its node at the corresponding BindSpace surface address
+- Give it a `bindspace://category:operation` URI label
+
+### Why This Enables the Neo4j Endgame
+
+Neo4j has ~200 Cypher functions (aggregations, list operations, math,
+string, temporal, spatial). Each one maps to a CAM op slot:
+
+```
+CypherOp::Count     = 0x210  (aggregation)
+CypherOp::Collect   = 0x211  (list aggregation)
+CypherOp::Unwind    = 0x212  (list expansion)
+CypherOp::Size      = 0x213  (collection size)
+CypherOp::Labels    = 0x214  (node labels)
+CypherOp::Type      = 0x215  (edge type)
+CypherOp::Id        = 0x216  (internal ID → Addr)
+CypherOp::Exists    = 0x217  (property existence)
+CypherOp::ShortPath = 0x218  (shortestPath via CSR)
+CypherOp::AllPath   = 0x219  (allShortestPaths)
+...
+```
+
+59 slots are already defined in `CypherOp`. 256 are available.
+Neo4j's ~200 functions fit comfortably. Each one:
+- Gets a CAM op ID
+- Gets a BindSpace node at `0x02:xx`
+- Gets a `bindspace://cypher:function_name` URI
+- Is callable from SQL, Flight, Redis, or native Cypher
+- Has NARS truth values (how often is this function correct?)
+- Is content-addressable (describe what you need, CAM finds the function)
+
+The moment you implement `CypherOp::ShortPath`, it becomes available from
+ALL surfaces — `SELECT shortest_path(...)` in SQL, `DN.EXEC cypher:shortpath`
+in Redis, `DoAction("cypher:shortpath")` in Flight. One implementation,
+every surface gets it.
+
+---
+
+## 16. Implementation Priority (Complete Ordering)
+
+```
+PHASE  WHAT                              PREREQUISITE    RISK
+═════════════════════════════════════════════════════════════════
+ 0     Branch setup                      none            none
+ 1     Container::view()                 none            LOW
+ 2     BindNode views + fluent API       Phase 1         LOW
+ 3     DnIndex + children                Phase 2         LOW
+ 4     Dirty tracking                    Phase 3         LOW
+ 5     Merge UDFs                        Phase 2         MEDIUM
+ 6     Rewrite DnTreeTableProvider       Phase 3         MEDIUM
+ 7     Rewrite plasticity                Phase 3         LOW
+ 8     Move deprecated to .deprecated/   Phase 5-7       LOW
+ 9     Verify zero-copy paths            Phase 6         LOW
+10     FingerprintStore (Buffer-backed)  Phase 9         HIGH
+11     Wire FingerprintStore to tables   Phase 10        HIGH
+12     mmap persistence (via Lance)      Phase 11        MEDIUM
+13     GraphQL surface (async-graphql)   Phase 2         MEDIUM
+14     Wire NARS HTTP to BindSpace       Phase 2         LOW
+15     Wire Causal to fluent API         Phase 2         LOW
+16     Register all 41 verbs             Phase 3         LOW
+17     Cypher → CAM op wiring            Phase 5         MEDIUM
+18     bindspace:// URI everywhere       Phase 3         LOW
+═════════════════════════════════════════════════════════════════
+
+Phases 0-8:  Core unification (one PR)
+Phases 9-12: Zero-copy Holy Grail (separate PR)
+Phases 13-18: Surface integration (one PR per surface)
+```
+
+---
+
 *This document is the complete specification. A new session should
 read this file, create the branch, and execute phases 0-8 in order.
 Phases 9-12 (FingerprintStore + end-to-end zero-copy) follow as the
-natural next step once unification is complete.*
+natural next step once unification is complete. Phases 13-18 wire
+all surfaces through the unified API.*
