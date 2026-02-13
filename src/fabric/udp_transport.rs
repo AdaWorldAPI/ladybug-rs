@@ -517,14 +517,11 @@ mod tests {
         let sender_addr = "127.0.0.1:0";
         let receiver_addr = "127.0.0.1:0";
 
-        let sender = UdpSender::new(sender_addr).unwrap();
-        let receiver = UdpReceiver::new(receiver_addr).unwrap();
-
-        // Get actual bound addresses
-        let receiver_actual = receiver.socket.local_addr().unwrap();
+        let _sender = UdpSender::new(sender_addr).unwrap();
+        let _receiver = UdpReceiver::new(receiver_addr).unwrap();
 
         // Create sender with known destination
-        let mut sender = UdpSender::new(sender_addr).unwrap();
+        let sender = UdpSender::new(sender_addr).unwrap();
 
         // Note: Full loopback test requires threads or async
         // Just verify construction works

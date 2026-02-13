@@ -339,16 +339,16 @@ impl CapabilitiesChecker {
 
         if response.is_ok() {
             // Flight is available, try to get info
-            let info_request = tonic::Request::new(arrow_flight::FlightDescriptor {
+            let _info_request = tonic::Request::new(arrow_flight::FlightDescriptor {
                 r#type: arrow_flight::flight_descriptor::DescriptorType::Cmd as i32,
                 cmd: bytes::Bytes::from_static(b"capabilities"),
                 path: vec![],
             });
 
-            let mut dn_tree = true;
-            let mut acid = true;
-            let mut work_stealing = true;
-            let mut actions = vec![
+            let dn_tree = true;
+            let acid = true;
+            let work_stealing = true;
+            let actions = vec![
                 "encode".to_string(),
                 "bind".to_string(),
                 "read".to_string(),
@@ -383,11 +383,9 @@ impl CapabilitiesChecker {
 
     /// Probe HTTP/2 SSE endpoint
     async fn probe_sse(&self) -> Result<ProbeResult, ProbeError> {
-        // Try to connect to SSE endpoint
-        let url = format!("http://{}/mcp/sse/capabilities", self.endpoint);
-
         #[cfg(feature = "reqwest")]
         {
+            let url = format!("http://{}/mcp/sse/capabilities", self.endpoint);
             let client = reqwest::Client::builder()
                 .timeout(self.timeout)
                 .http2_prior_knowledge()
@@ -412,10 +410,9 @@ impl CapabilitiesChecker {
 
     /// Probe HTTP JSON endpoint
     async fn probe_json(&self) -> Result<ProbeResult, ProbeError> {
-        let url = format!("http://{}/mcp/capabilities", self.endpoint);
-
         #[cfg(feature = "reqwest")]
         {
+            let url = format!("http://{}/mcp/capabilities", self.endpoint);
             let client = reqwest::Client::builder()
                 .timeout(self.timeout)
                 .build()
@@ -519,7 +516,7 @@ pub struct TransportAdapter {
     capabilities: Capabilities,
     endpoint: String,
     #[cfg(feature = "flight")]
-    flight_client: Option<Arc<RwLock<arrow_flight::flight_service_client::FlightServiceClient<tonic::transport::Channel>>>>,
+    flight_client: Option<Arc<RwLock<arrow_flight::flight_service_client::FlightServiceClient<Channel>>>>,
 }
 
 impl TransportAdapter {
@@ -605,17 +602,16 @@ impl TransportAdapter {
         Err(TransportError::NotSupported)
     }
 
-    async fn execute_sse(&self, action: &str, params: &[u8]) -> Result<Vec<u8>, TransportError> {
-        let url = format!("http://{}/mcp/sse/{}", self.endpoint, action);
-
+    async fn execute_sse(&self, _action: &str, _params: &[u8]) -> Result<Vec<u8>, TransportError> {
         #[cfg(feature = "reqwest")]
         {
+            let url = format!("http://{}/mcp/sse/{}", self.endpoint, _action);
             let client = reqwest::Client::new();
             let response = client
                 .post(&url)
                 .header("Content-Type", "application/octet-stream")
                 .header("Accept", "text/event-stream")
-                .body(params.to_vec())
+                .body(_params.to_vec())
                 .send()
                 .await
                 .map_err(|e| TransportError::ActionFailed(e.to_string()))?;
@@ -630,16 +626,15 @@ impl TransportAdapter {
         Err(TransportError::ActionFailed("SSE request failed".to_string()))
     }
 
-    async fn execute_json(&self, action: &str, params: &[u8]) -> Result<Vec<u8>, TransportError> {
-        let url = format!("http://{}/mcp/json/{}", self.endpoint, action);
-
+    async fn execute_json(&self, _action: &str, _params: &[u8]) -> Result<Vec<u8>, TransportError> {
         #[cfg(feature = "reqwest")]
         {
+            let url = format!("http://{}/mcp/json/{}", self.endpoint, _action);
             let client = reqwest::Client::new();
             let response = client
                 .post(&url)
                 .header("Content-Type", "application/json")
-                .body(params.to_vec())
+                .body(_params.to_vec())
                 .send()
                 .await
                 .map_err(|e| TransportError::ActionFailed(e.to_string()))?;

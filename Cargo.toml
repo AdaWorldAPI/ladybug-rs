@@ -42,6 +42,7 @@ quantum = []                     # Quantum-inspired operators
 bench = []                       # Benchmark suite (comparison vs Qdrant/Milvus)
 flight = ["arrow-flight", "tonic", "prost"]  # Arrow Flight MCP server
 crewai = ["flight"]                          # crewAI orchestration (A2A, agent cards, thinking templates)
+json_fallback = []                           # Legacy JSON MCP types (backwards compat)
 
 # All features
 full = [

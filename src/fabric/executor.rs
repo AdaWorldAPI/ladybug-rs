@@ -709,7 +709,7 @@ mod tests {
         let fp = random_fp(42);
         exec.registers.write(0x8000, fp);
 
-        let builder = FrameBuilder::new(1);
+        let _builder = FrameBuilder::new(1);
 
         // Simple program: LOAD, PERMUTE, HALT
         let program = vec![

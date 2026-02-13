@@ -516,7 +516,7 @@ mod tests {
         let weights = StyleWeights::from_thinking_style(ThinkingStyle::Creative);
         // Creative should favor exploration (abduction, analogy)
         let analogy_bias = weights.bias_for(InferenceRuleKind::Analogy);
-        let deduction_bias = weights.bias_for(InferenceRuleKind::Deduction);
+        let _deduction_bias = weights.bias_for(InferenceRuleKind::Deduction);
         // Creative typically has higher analogy than deduction
         assert!(analogy_bias >= 0.0);
     }

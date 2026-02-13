@@ -6,7 +6,6 @@
 //! Run: `cargo test --test reasoning_ladder`
 
 use ladybug::core::Fingerprint;
-use ladybug::core::vsa::VsaOps;
 use ladybug::nars::TruthValue;
 use ladybug::cognitive::{
     SevenLayerNode, LayerId,

@@ -511,7 +511,7 @@ impl FlightService for LadybugFlightService {
         &self,
         _request: Request<Empty>,
     ) -> Result<Response<Self::ListActionsStream>, Status> {
-        let mut actions = vec![
+        let actions = vec![
             ActionType {
                 r#type: "encode".to_string(),
                 description: "Encode text/data to 10K-bit fingerprint. Args: {text?, data?, style?}".to_string(),
@@ -552,7 +552,8 @@ impl FlightService for LadybugFlightService {
 
         // Append crewAI orchestration actions when the feature is enabled
         #[cfg(feature = "crewai")]
-        {
+        let actions = {
+            let mut actions = actions;
             let crew_actions = vec![
                 ActionType {
                     r#type: "crew.register_agent".to_string(),
@@ -781,7 +782,8 @@ impl FlightService for LadybugFlightService {
                 },
             ];
             actions.extend(crew_actions);
-        }
+            actions
+        };
 
         let output = stream::iter(actions.into_iter().map(Ok));
         Ok(Response::new(Box::pin(output)))

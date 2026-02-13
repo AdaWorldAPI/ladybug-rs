@@ -368,7 +368,7 @@ mod tests {
         mrna.pollinate_from(Subsystem::Compression, &compress_fp);
         
         // Check cross-pollination
-        let cross = mrna.cross_pollinate(
+        let _cross = mrna.cross_pollinate(
             Subsystem::Compression,
             &compress_fp,
             Subsystem::Query,

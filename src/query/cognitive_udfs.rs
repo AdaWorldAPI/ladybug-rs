@@ -1353,7 +1353,6 @@ pub fn all_cognitive_udfs() -> Vec<ScalarUDF> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use datafusion::prelude::*;
 
     #[test]
     fn test_hamming_bytes() {
