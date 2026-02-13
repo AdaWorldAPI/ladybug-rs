@@ -109,6 +109,9 @@ pub mod storage;
 pub mod width_16k;
 pub mod world;
 
+// === Unified execution contract (crewai-rust × ada-n8n integration) ===
+pub mod contract;
+
 // === Optional extensions ===
 #[cfg(any(
     feature = "codebook",
