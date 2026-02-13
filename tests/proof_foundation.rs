@@ -6,7 +6,7 @@
 //! Run: `cargo test --test foundation`
 
 use ladybug::core::Fingerprint;
-use ladybug::core::vsa::{VsaOps, fusion_quality, multi_fusion_quality};
+use ladybug::core::vsa::{fusion_quality, multi_fusion_quality};
 use ladybug::nars::TruthValue;
 use ladybug::FINGERPRINT_BITS;
 

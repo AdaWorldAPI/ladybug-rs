@@ -157,30 +157,32 @@ mod simd {
     /// AVX-512 accelerated Hamming distance
     #[target_feature(enable = "avx512f,avx512vpopcntdq")]
     pub unsafe fn hamming_distance_avx512(a: &[u64; WORDS], b: &[u64; WORDS]) -> u32 {
-        let mut total = _mm512_setzero_si512();
-        
-        // Process 8 u64s at a time
-        for i in 0..(WORDS / 8) {
-            let offset = i * 8;
-            let va = _mm512_loadu_si512(a.as_ptr().add(offset) as *const __m512i);
-            let vb = _mm512_loadu_si512(b.as_ptr().add(offset) as *const __m512i);
-            let xor = _mm512_xor_si512(va, vb);
-            let pop = _mm512_popcnt_epi64(xor);
-            total = _mm512_add_epi64(total, pop);
+        unsafe {
+            let mut total = _mm512_setzero_si512();
+
+            // Process 8 u64s at a time
+            for i in 0..(WORDS / 8) {
+                let offset = i * 8;
+                let va = _mm512_loadu_si512(a.as_ptr().add(offset) as *const __m512i);
+                let vb = _mm512_loadu_si512(b.as_ptr().add(offset) as *const __m512i);
+                let xor = _mm512_xor_si512(va, vb);
+                let pop = _mm512_popcnt_epi64(xor);
+                total = _mm512_add_epi64(total, pop);
+            }
+
+            // Remainder
+            let mut rem = 0u32;
+            for i in ((WORDS / 8) * 8)..WORDS {
+                rem += (a[i] ^ b[i]).count_ones();
+            }
+
+            // Horizontal sum
+            let mut lanes = [0u64; 8];
+            _mm512_storeu_si512(lanes.as_mut_ptr() as *mut __m512i, total);
+            let sum: u64 = lanes.iter().sum();
+
+            (sum as u32) + rem
         }
-        
-        // Remainder
-        let mut rem = 0u32;
-        for i in ((WORDS / 8) * 8)..WORDS {
-            rem += (a[i] ^ b[i]).count_ones();
-        }
-        
-        // Horizontal sum
-        let mut lanes = [0u64; 8];
-        _mm512_storeu_si512(lanes.as_mut_ptr() as *mut __m512i, total);
-        let sum: u64 = lanes.iter().sum();
-        
-        (sum as u32) + rem
     }
     
     /// Batch process 8 candidates against 1 query
@@ -189,36 +191,38 @@ mod simd {
         query: &[u64; WORDS],
         candidates: &[[u64; WORDS]; 8],
     ) -> [u32; 8] {
-        let mut totals = [_mm512_setzero_si512(); 8];
-        
-        for i in 0..(WORDS / 8) {
-            let offset = i * 8;
-            let vq = _mm512_loadu_si512(query.as_ptr().add(offset) as *const __m512i);
-            
+        unsafe {
+            let mut totals = [_mm512_setzero_si512(); 8];
+
+            for i in 0..(WORDS / 8) {
+                let offset = i * 8;
+                let vq = _mm512_loadu_si512(query.as_ptr().add(offset) as *const __m512i);
+
+                for j in 0..8 {
+                    let vc = _mm512_loadu_si512(candidates[j].as_ptr().add(offset) as *const __m512i);
+                    let xor = _mm512_xor_si512(vq, vc);
+                    let pop = _mm512_popcnt_epi64(xor);
+                    totals[j] = _mm512_add_epi64(totals[j], pop);
+                }
+            }
+
+            let mut results = [0u32; 8];
             for j in 0..8 {
-                let vc = _mm512_loadu_si512(candidates[j].as_ptr().add(offset) as *const __m512i);
-                let xor = _mm512_xor_si512(vq, vc);
-                let pop = _mm512_popcnt_epi64(xor);
-                totals[j] = _mm512_add_epi64(totals[j], pop);
+                let mut lanes = [0u64; 8];
+                _mm512_storeu_si512(lanes.as_mut_ptr() as *mut __m512i, totals[j]);
+                let sum: u64 = lanes.iter().sum();
+
+                // Remainder
+                let mut rem = 0u32;
+                for i in ((WORDS / 8) * 8)..WORDS {
+                    rem += (query[i] ^ candidates[j][i]).count_ones();
+                }
+
+                results[j] = (sum as u32) + rem;
             }
+
+            results
         }
-        
-        let mut results = [0u32; 8];
-        for j in 0..8 {
-            let mut lanes = [0u64; 8];
-            _mm512_storeu_si512(lanes.as_mut_ptr() as *mut __m512i, totals[j]);
-            let sum: u64 = lanes.iter().sum();
-            
-            // Remainder
-            let mut rem = 0u32;
-            for i in ((WORDS / 8) * 8)..WORDS {
-                rem += (query[i] ^ candidates[j][i]).count_ones();
-            }
-            
-            results[j] = (sum as u32) + rem;
-        }
-        
-        results
     }
 }
 
@@ -1397,9 +1401,9 @@ pub enum SignalClass {
 /// Classify a comparison result for routing
 pub fn classify_signal(mean: u8, sd: u8, distance: u32) -> SignalClass {
     match (mean, sd, distance) {
-        (0..=2, 0..=29, 0..=1999) => SignalClass::Strong,
-        (3..=4, 30..=59, 2000..=3999) => SignalClass::Moderate,
-        (_, 50.., 4000..=8000) => SignalClass::WeakButStackable,
+        (0..=2, 0..=31, 0..=2047) => SignalClass::Strong,
+        (3..=4, 32..=63, 2048..=4095) => SignalClass::Moderate,
+        (_, 48.., 4096..=8191) => SignalClass::WeakButStackable,
         _ => SignalClass::Noise,
     }
 }

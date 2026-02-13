@@ -1290,7 +1290,7 @@ mod tests {
         // Write v2 (overwrites)
         let txn2 = store.begin(IsolationLevel::ReadCommitted);
         store.write_in_txn(txn2, 0x8001, [2u64; FINGERPRINT_WORDS], Some("v2".into())).unwrap();
-        let v2 = store.commit(txn2).unwrap();
+        let _v2 = store.commit(txn2).unwrap();
 
         // Current shows v2
         let current = store.read(0x8001).unwrap();

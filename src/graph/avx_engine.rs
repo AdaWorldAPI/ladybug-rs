@@ -64,32 +64,34 @@ const REMAINDER: usize = WORDS % LANES; // 256 % 8 = 0
 #[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
 #[target_feature(enable = "avx512f,avx512bw,avx512vpopcntdq")]
 pub unsafe fn hamming_distance_avx512(a: &[u64; WORDS], b: &[u64; WORDS]) -> u32 {
-    use std::arch::x86_64::*;
-    
-    let mut total = _mm512_setzero_si512();
-    
-    // Process 8 u64s (512 bits) at a time
-    for i in 0..FULL_ITERS {
-        let offset = i * LANES;
-        let va = _mm512_loadu_si512(a.as_ptr().add(offset) as *const __m512i);
-        let vb = _mm512_loadu_si512(b.as_ptr().add(offset) as *const __m512i);
-        let xor = _mm512_xor_si512(va, vb);
-        let pop = _mm512_popcnt_epi64(xor);
-        total = _mm512_add_epi64(total, pop);
+    unsafe {
+        use std::arch::x86_64::*;
+
+        let mut total = _mm512_setzero_si512();
+
+        // Process 8 u64s (512 bits) at a time
+        for i in 0..FULL_ITERS {
+            let offset = i * LANES;
+            let va = _mm512_loadu_si512(a.as_ptr().add(offset) as *const __m512i);
+            let vb = _mm512_loadu_si512(b.as_ptr().add(offset) as *const __m512i);
+            let xor = _mm512_xor_si512(va, vb);
+            let pop = _mm512_popcnt_epi64(xor);
+            total = _mm512_add_epi64(total, pop);
+        }
+
+        // Handle remainder (4 u64s)
+        let mut remainder_sum: u64 = 0;
+        for i in (FULL_ITERS * LANES)..WORDS {
+            remainder_sum += (a[i] ^ b[i]).count_ones() as u64;
+        }
+
+        // Horizontal sum of 8 lanes
+        let mut result = [0u64; 8];
+        _mm512_storeu_si512(result.as_mut_ptr() as *mut __m512i, total);
+        let simd_sum: u64 = result.iter().sum();
+
+        (simd_sum + remainder_sum) as u32
     }
-    
-    // Handle remainder (4 u64s)
-    let mut remainder_sum: u64 = 0;
-    for i in (FULL_ITERS * LANES)..WORDS {
-        remainder_sum += (a[i] ^ b[i]).count_ones() as u64;
-    }
-    
-    // Horizontal sum of 8 lanes
-    let mut result = [0u64; 8];
-    _mm512_storeu_si512(result.as_mut_ptr() as *mut __m512i, total);
-    let simd_sum: u64 = result.iter().sum();
-    
-    (simd_sum + remainder_sum) as u32
 }
 
 /// Fallback for non-AVX512 systems
@@ -121,19 +123,21 @@ pub fn hamming_distance(a: &Fingerprint, b: &Fingerprint) -> u32 {
 #[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
 #[target_feature(enable = "avx512f")]
 pub unsafe fn xor_avx512(a: &[u64; WORDS], b: &[u64; WORDS], out: &mut [u64; WORDS]) {
-    use std::arch::x86_64::*;
-    
-    for i in 0..FULL_ITERS {
-        let offset = i * LANES;
-        let va = _mm512_loadu_si512(a.as_ptr().add(offset) as *const __m512i);
-        let vb = _mm512_loadu_si512(b.as_ptr().add(offset) as *const __m512i);
-        let result = _mm512_xor_si512(va, vb);
-        _mm512_storeu_si512(out.as_mut_ptr().add(offset) as *mut __m512i, result);
-    }
-    
-    // Remainder
-    for i in (FULL_ITERS * LANES)..WORDS {
-        out[i] = a[i] ^ b[i];
+    unsafe {
+        use std::arch::x86_64::*;
+
+        for i in 0..FULL_ITERS {
+            let offset = i * LANES;
+            let va = _mm512_loadu_si512(a.as_ptr().add(offset) as *const __m512i);
+            let vb = _mm512_loadu_si512(b.as_ptr().add(offset) as *const __m512i);
+            let result = _mm512_xor_si512(va, vb);
+            _mm512_storeu_si512(out.as_mut_ptr().add(offset) as *mut __m512i, result);
+        }
+
+        // Remainder
+        for i in (FULL_ITERS * LANES)..WORDS {
+            out[i] = a[i] ^ b[i];
+        }
     }
 }
 
@@ -387,39 +391,41 @@ pub unsafe fn batch_hamming_8(
     query: &[u64; WORDS],
     edges: &[[u64; WORDS]; 8],
 ) -> [u32; 8] {
-    use std::arch::x86_64::*;
-    
-    let mut totals = [_mm512_setzero_si512(); 8];
-    
-    for i in 0..FULL_ITERS {
-        let offset = i * LANES;
-        let vq = _mm512_loadu_si512(query.as_ptr().add(offset) as *const __m512i);
-        
+    unsafe {
+        use std::arch::x86_64::*;
+
+        let mut totals = [_mm512_setzero_si512(); 8];
+
+        for i in 0..FULL_ITERS {
+            let offset = i * LANES;
+            let vq = _mm512_loadu_si512(query.as_ptr().add(offset) as *const __m512i);
+
+            for j in 0..8 {
+                let ve = _mm512_loadu_si512(edges[j].as_ptr().add(offset) as *const __m512i);
+                let xor = _mm512_xor_si512(vq, ve);
+                let pop = _mm512_popcnt_epi64(xor);
+                totals[j] = _mm512_add_epi64(totals[j], pop);
+            }
+        }
+
+        // Reduce each total
+        let mut results = [0u32; 8];
         for j in 0..8 {
-            let ve = _mm512_loadu_si512(edges[j].as_ptr().add(offset) as *const __m512i);
-            let xor = _mm512_xor_si512(vq, ve);
-            let pop = _mm512_popcnt_epi64(xor);
-            totals[j] = _mm512_add_epi64(totals[j], pop);
+            let mut lanes = [0u64; 8];
+            _mm512_storeu_si512(lanes.as_mut_ptr() as *mut __m512i, totals[j]);
+            let sum: u64 = lanes.iter().sum();
+
+            // Add remainder
+            let mut rem_sum = 0u64;
+            for i in (FULL_ITERS * LANES)..WORDS {
+                rem_sum += (query[i] ^ edges[j][i]).count_ones() as u64;
+            }
+
+            results[j] = (sum + rem_sum) as u32;
         }
+
+        results
     }
-    
-    // Reduce each total
-    let mut results = [0u32; 8];
-    for j in 0..8 {
-        let mut lanes = [0u64; 8];
-        _mm512_storeu_si512(lanes.as_mut_ptr() as *mut __m512i, totals[j]);
-        let sum: u64 = lanes.iter().sum();
-        
-        // Add remainder
-        let mut rem_sum = 0u64;
-        for i in (FULL_ITERS * LANES)..WORDS {
-            rem_sum += (query[i] ^ edges[j][i]).count_ones() as u64;
-        }
-        
-        results[j] = (sum + rem_sum) as u32;
-    }
-    
-    results
 }
 
 /// Batched graph query - processes edges 8 at a time

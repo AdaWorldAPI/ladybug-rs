@@ -10,25 +10,27 @@ use crate::core::Fingerprint;
 use crate::FINGERPRINT_U64;
 
 
-#[cfg(target_arch = "aarch64")]
-use std::arch::aarch64::*;
-
 /// Compute Hamming distance between two fingerprints.
 /// 
 /// Automatically dispatches to the best SIMD implementation available.
 #[inline]
 pub fn hamming_distance(a: &Fingerprint, b: &Fingerprint) -> u32 {
     #[cfg(all(target_arch = "x86_64", target_feature = "avx512vpopcntdq"))]
-    unsafe { return hamming_avx512(a, b); }
-    
+    { return unsafe { hamming_avx512(a, b) }; }
+
     #[cfg(all(target_arch = "x86_64", target_feature = "avx2", not(target_feature = "avx512vpopcntdq")))]
-    unsafe { return hamming_avx2(a, b); }
-    
+    { return unsafe { hamming_avx2(a, b) }; }
+
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    unsafe { return hamming_neon(a, b); }
-    
+    { return unsafe { hamming_neon(a, b) }; }
+
     // Scalar fallback
-    hamming_scalar(a, b)
+    #[cfg(not(any(
+        all(target_arch = "x86_64", target_feature = "avx512vpopcntdq"),
+        all(target_arch = "x86_64", target_feature = "avx2"),
+        all(target_arch = "aarch64", target_feature = "neon"),
+    )))]
+    { return hamming_scalar(a, b); }
 }
 
 /// Scalar implementation (works everywhere)
@@ -48,123 +50,135 @@ pub fn hamming_scalar(a: &Fingerprint, b: &Fingerprint) -> u32 {
 #[cfg(all(target_arch = "x86_64", target_feature = "avx512vpopcntdq"))]
 #[target_feature(enable = "avx512f", enable = "avx512vpopcntdq")]
 unsafe fn hamming_avx512(a: &Fingerprint, b: &Fingerprint) -> u32 {
-    let a_ptr = a.as_raw().as_ptr();
-    let b_ptr = b.as_raw().as_ptr();
-    
-    let mut sum = _mm512_setzero_si512();
-    
-    // Process 8 u64 at a time (512 bits)
-    let mut i = 0;
-    while i + 8 <= FINGERPRINT_U64 {
-        let va = _mm512_loadu_si512(a_ptr.add(i) as *const __m512i);
-        let vb = _mm512_loadu_si512(b_ptr.add(i) as *const __m512i);
-        let xor = _mm512_xor_si512(va, vb);
-        let popcnt = _mm512_popcnt_epi64(xor);
-        sum = _mm512_add_epi64(sum, popcnt);
-        i += 8;
+    unsafe {
+        use std::arch::x86_64::*;
+
+        let a_ptr = a.as_raw().as_ptr();
+        let b_ptr = b.as_raw().as_ptr();
+
+        let mut sum = _mm512_setzero_si512();
+
+        // Process 8 u64 at a time (512 bits)
+        let mut i = 0;
+        while i + 8 <= FINGERPRINT_U64 {
+            let va = _mm512_loadu_si512(a_ptr.add(i) as *const __m512i);
+            let vb = _mm512_loadu_si512(b_ptr.add(i) as *const __m512i);
+            let xor = _mm512_xor_si512(va, vb);
+            let popcnt = _mm512_popcnt_epi64(xor);
+            sum = _mm512_add_epi64(sum, popcnt);
+            i += 8;
+        }
+
+        // Horizontal sum
+        let mut total = _mm512_reduce_add_epi64(sum) as u32;
+
+        // Handle remaining (256 % 8 = 0, no remainder at 16K)
+        while i < FINGERPRINT_U64 {
+            total += (*a_ptr.add(i) ^ *b_ptr.add(i)).count_ones();
+            i += 1;
+        }
+
+        total
     }
-    
-    // Horizontal sum
-    let mut total = _mm512_reduce_add_epi64(sum) as u32;
-    
-    // Handle remaining (256 % 8 = 0, no remainder at 16K)
-    while i < FINGERPRINT_U64 {
-        total += (*a_ptr.add(i) ^ *b_ptr.add(i)).count_ones();
-        i += 1;
-    }
-    
-    total
 }
 
 /// AVX2 implementation (fallback for older x86_64)
 #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
 #[target_feature(enable = "avx2")]
 unsafe fn hamming_avx2(a: &Fingerprint, b: &Fingerprint) -> u32 {
-    let a_ptr = a.as_raw().as_ptr();
-    let b_ptr = b.as_raw().as_ptr();
-    
-    // Lookup table for 4-bit popcount
-    let lookup = _mm256_setr_epi8(
-        0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4,
-        0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4,
-    );
-    let low_mask = _mm256_set1_epi8(0x0f);
-    
-    let mut total_sum = _mm256_setzero_si256();
-    
-    // Process 4 u64 at a time (256 bits)
-    let mut i = 0;
-    while i + 4 <= FINGERPRINT_U64 {
-        let va = _mm256_loadu_si256(a_ptr.add(i) as *const __m256i);
-        let vb = _mm256_loadu_si256(b_ptr.add(i) as *const __m256i);
-        let xor = _mm256_xor_si256(va, vb);
-        
-        // Popcount via lookup table
-        let lo = _mm256_and_si256(xor, low_mask);
-        let hi = _mm256_and_si256(_mm256_srli_epi16(xor, 4), low_mask);
-        let popcnt_lo = _mm256_shuffle_epi8(lookup, lo);
-        let popcnt_hi = _mm256_shuffle_epi8(lookup, hi);
-        let popcnt = _mm256_add_epi8(popcnt_lo, popcnt_hi);
-        
-        // Sum bytes
-        let sad = _mm256_sad_epu8(popcnt, _mm256_setzero_si256());
-        total_sum = _mm256_add_epi64(total_sum, sad);
-        
-        i += 4;
+    unsafe {
+        use std::arch::x86_64::*;
+
+        let a_ptr = a.as_raw().as_ptr();
+        let b_ptr = b.as_raw().as_ptr();
+
+        // Lookup table for 4-bit popcount
+        let lookup = _mm256_setr_epi8(
+            0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4,
+            0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4,
+        );
+        let low_mask = _mm256_set1_epi8(0x0f);
+
+        let mut total_sum = _mm256_setzero_si256();
+
+        // Process 4 u64 at a time (256 bits)
+        let mut i = 0;
+        while i + 4 <= FINGERPRINT_U64 {
+            let va = _mm256_loadu_si256(a_ptr.add(i) as *const __m256i);
+            let vb = _mm256_loadu_si256(b_ptr.add(i) as *const __m256i);
+            let xor = _mm256_xor_si256(va, vb);
+
+            // Popcount via lookup table
+            let lo = _mm256_and_si256(xor, low_mask);
+            let hi = _mm256_and_si256(_mm256_srli_epi16(xor, 4), low_mask);
+            let popcnt_lo = _mm256_shuffle_epi8(lookup, lo);
+            let popcnt_hi = _mm256_shuffle_epi8(lookup, hi);
+            let popcnt = _mm256_add_epi8(popcnt_lo, popcnt_hi);
+
+            // Sum bytes
+            let sad = _mm256_sad_epu8(popcnt, _mm256_setzero_si256());
+            total_sum = _mm256_add_epi64(total_sum, sad);
+
+            i += 4;
+        }
+
+        // Horizontal sum
+        let sum_lo = _mm256_extracti128_si256(total_sum, 0);
+        let sum_hi = _mm256_extracti128_si256(total_sum, 1);
+        let sum128 = _mm_add_epi64(sum_lo, sum_hi);
+        let mut total = (_mm_extract_epi64(sum128, 0) + _mm_extract_epi64(sum128, 1)) as u32;
+
+        // Handle remaining
+        while i < FINGERPRINT_U64 {
+            total += (*a_ptr.add(i) ^ *b_ptr.add(i)).count_ones();
+            i += 1;
+        }
+
+        total
     }
-    
-    // Horizontal sum
-    let sum_lo = _mm256_extracti128_si256(total_sum, 0);
-    let sum_hi = _mm256_extracti128_si256(total_sum, 1);
-    let sum128 = _mm_add_epi64(sum_lo, sum_hi);
-    let mut total = (_mm_extract_epi64(sum128, 0) + _mm_extract_epi64(sum128, 1)) as u32;
-    
-    // Handle remaining
-    while i < FINGERPRINT_U64 {
-        total += (*a_ptr.add(i) ^ *b_ptr.add(i)).count_ones();
-        i += 1;
-    }
-    
-    total
 }
 
 /// ARM NEON implementation
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 #[target_feature(enable = "neon")]
 unsafe fn hamming_neon(a: &Fingerprint, b: &Fingerprint) -> u32 {
-    let a_ptr = a.as_raw().as_ptr() as *const u8;
-    let b_ptr = b.as_raw().as_ptr() as *const u8;
-    
-    let mut sum = vdupq_n_u64(0);
-    
-    // Process 16 bytes at a time
-    let mut i = 0;
-    let byte_len = FINGERPRINT_U64 * 8;
-    while i + 16 <= byte_len {
-        let va = vld1q_u8(a_ptr.add(i));
-        let vb = vld1q_u8(b_ptr.add(i));
-        let xor = veorq_u8(va, vb);
-        let cnt = vcntq_u8(xor);  // Count bits per byte
-        
-        // Sum to 64-bit
-        let sum16 = vpaddlq_u8(cnt);   // u8 -> u16
-        let sum32 = vpaddlq_u16(sum16); // u16 -> u32
-        let sum64 = vpaddlq_u32(sum32); // u32 -> u64
-        sum = vaddq_u64(sum, sum64);
-        
-        i += 16;
+    unsafe {
+        use std::arch::aarch64::*;
+
+        let a_ptr = a.as_raw().as_ptr() as *const u8;
+        let b_ptr = b.as_raw().as_ptr() as *const u8;
+
+        let mut sum = vdupq_n_u64(0);
+
+        // Process 16 bytes at a time
+        let mut i = 0;
+        let byte_len = FINGERPRINT_U64 * 8;
+        while i + 16 <= byte_len {
+            let va = vld1q_u8(a_ptr.add(i));
+            let vb = vld1q_u8(b_ptr.add(i));
+            let xor = veorq_u8(va, vb);
+            let cnt = vcntq_u8(xor);  // Count bits per byte
+
+            // Sum to 64-bit
+            let sum16 = vpaddlq_u8(cnt);   // u8 -> u16
+            let sum32 = vpaddlq_u16(sum16); // u16 -> u32
+            let sum64 = vpaddlq_u32(sum32); // u32 -> u64
+            sum = vaddq_u64(sum, sum64);
+
+            i += 16;
+        }
+
+        // Horizontal sum
+        let mut total = (vgetq_lane_u64(sum, 0) + vgetq_lane_u64(sum, 1)) as u32;
+
+        // Handle remaining bytes
+        while i < byte_len {
+            total += (*a_ptr.add(i) ^ *b_ptr.add(i)).count_ones();
+            i += 1;
+        }
+
+        total
     }
-    
-    // Horizontal sum
-    let mut total = (vgetq_lane_u64(sum, 0) + vgetq_lane_u64(sum, 1)) as u32;
-    
-    // Handle remaining bytes
-    while i < byte_len {
-        total += (*a_ptr.add(i) ^ *b_ptr.add(i)).count_ones();
-        i += 1;
-    }
-    
-    total
 }
 
 /// Batch Hamming distance computation (parallel)

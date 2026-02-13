@@ -24,7 +24,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-use tokio::net::TcpListener;
 use tonic::transport::Server;
 
 use ladybug::flight::LadybugFlightService;

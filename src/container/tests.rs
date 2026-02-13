@@ -2,7 +2,7 @@
 
 use super::*;
 use super::geometry::ContainerGeometry;
-use super::meta::{MetaView, MetaViewMut, W_NARS_BASE, SCHEMA_VERSION, W_CHECKSUM};
+use super::meta::{MetaView, MetaViewMut, SCHEMA_VERSION};
 use super::record::CogRecord;
 use super::cache::ContainerCache;
 use super::search::{belichtungsmesser, cascade_search, MexicanHat, hamming_early_exit};
@@ -1021,7 +1021,7 @@ fn test_xyz_trace_and_probe() {
 // 15. INSERT_LEAF: SPINE-GUIDED INSERTION
 // ============================================================================
 
-use super::insert::{insert_leaf, InsertResult, SPLIT_THRESHOLD, RESONANCE_THRESHOLD};
+use super::insert::{insert_leaf, InsertResult, SPLIT_THRESHOLD};
 
 #[test]
 fn test_insert_path3_new_branch_into_empty_tree() {
@@ -1700,7 +1700,7 @@ fn test_redis_pipeline_building() {
 // ============================================================================
 
 use std::collections::HashMap;
-use super::traversal::{self, DnSemiring};
+use super::traversal::{self};
 
 #[test]
 fn test_boolean_bfs_traversal() {

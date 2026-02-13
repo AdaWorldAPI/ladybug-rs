@@ -510,13 +510,12 @@ fn timestamp() -> u64 {
 
 // ========== SIMD Optimized Scent Scan ==========
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
 mod simd {
-    
-    
+    use super::{SCENT_BYTES, BUCKETS, scent_distance};
+
     /// SIMD-optimized scent scan (AVX2)
     /// Compares query against 256 scents, returns matching chunk IDs
-    #[cfg(target_feature = "avx2")]
     pub fn find_chunks_simd(
         scents: &[[u8; SCENT_BYTES]; BUCKETS],
         query: &[u8; SCENT_BYTES],
@@ -590,7 +589,7 @@ mod tests {
         let fp = make_fp(0x42);
         idx.on_append(&fp, 0);
         
-        let (l1, l2) = idx.assign(&fp);
+        let (l1, _l2) = idx.assign(&fp);
         assert_eq!(l1, 0x42);
         
         let matches = idx.find_chunks(&extract_scent(&fp), 10);

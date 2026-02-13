@@ -262,7 +262,7 @@ mod tests {
         let cat1 = Fingerprint::from_content("cat instance 1");
         let cat2 = Fingerprint::from_content("cat instance 2");
         let cat3 = Fingerprint::from_content("cat instance 3");
-        let dog = Fingerprint::from_content("dog");
+        let _dog = Fingerprint::from_content("dog");
         
         let prototype = Fingerprint::bundle(&[cat1.clone(), cat2.clone(), cat3.clone()]);
         
@@ -287,7 +287,7 @@ mod tests {
         assert!(seq.similarity(&word1) < 0.9);
         
         // But we can decode first word
-        let decoded_first = seq.unbind(&Fingerprint::zero().permute(0));
+        let _decoded_first = seq.unbind(&Fingerprint::zero().permute(0));
         // (This is a simplified test - real decoding needs iterative cleanup)
     }
 
