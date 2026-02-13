@@ -57,9 +57,12 @@ full = [
 [dependencies]
 # -----------------------------------------------------------------------------
 # Storage: LanceDB + Arrow ecosystem
-# Arrow 57.x aligns with DataFusion 52 / lance 1.0 (vendored)
+# Arrow 57.x aligns with DataFusion 52 / lance (vendored as 2.1.0-beta.0)
+# NOTE: crates.io version is 1.0 (placeholder); actual code targets the
+# vendored 2.1 API. Uncomment [patch.crates-io] to use vendor submodule.
+# Without the patch, lancedb feature will compile against crates.io lance 1.0.
 # -----------------------------------------------------------------------------
-lance = { version = "2.1.0-beta.0", optional = true, default-features = false }
+lance = { version = "1.0", optional = true, default-features = false }
 arrow = { version = "57", features = ["ffi"] }
 arrow-array = "57"
 arrow-schema = "57"
@@ -242,19 +245,26 @@ opt-level = 3
 # To enable: change datafusion = "52" above and uncomment patch below
 # =============================================================================
 
-[patch.crates-io]
-lance = { path = "vendor/lance/rust/lance", default-features = false }
-lance-core = { path = "vendor/lance/rust/lance-core" }
-lance-io = { path = "vendor/lance/rust/lance-io", default-features = false }
-lance-file = { path = "vendor/lance/rust/lance-file" }
-lance-encoding = { path = "vendor/lance/rust/lance-encoding" }
-lance-table = { path = "vendor/lance/rust/lance-table" }
-lance-index = { path = "vendor/lance/rust/lance-index" }
-lance-arrow = { path = "vendor/lance/rust/lance-arrow" }
-lance-linalg = { path = "vendor/lance/rust/lance-linalg" }
-lance-datafusion = { path = "vendor/lance/rust/lance-datafusion" }
-lance-namespace = { path = "vendor/lance/rust/lance-namespace" }
-lance-geo = { path = "vendor/lance/rust/lance-geo" }
-lance-bitpacking = { path = "vendor/lance/rust/compression/bitpacking" }
-fsst = { path = "vendor/lance/rust/compression/fsst" }
+# [patch.crates-io]
+# Lance vendor patches — UNCOMMENT when lancedb feature is ready and
+# submodules are checked out (git submodule update --init --recursive).
+# These are NOT needed for production builds (simd,parallel,flight).
+# Cargo validates ALL patch paths at resolution time regardless of features,
+# so keeping these active breaks builds where submodules aren't cloned
+# (Railway, GitHub Actions without actions/checkout submodules: true).
+#
+# lance = { path = "vendor/lance/rust/lance", default-features = false }
+# lance-core = { path = "vendor/lance/rust/lance-core" }
+# lance-io = { path = "vendor/lance/rust/lance-io", default-features = false }
+# lance-file = { path = "vendor/lance/rust/lance-file" }
+# lance-encoding = { path = "vendor/lance/rust/lance-encoding" }
+# lance-table = { path = "vendor/lance/rust/lance-table" }
+# lance-index = { path = "vendor/lance/rust/lance-index" }
+# lance-arrow = { path = "vendor/lance/rust/lance-arrow" }
+# lance-linalg = { path = "vendor/lance/rust/lance-linalg" }
+# lance-datafusion = { path = "vendor/lance/rust/lance-datafusion" }
+# lance-namespace = { path = "vendor/lance/rust/lance-namespace" }
+# lance-geo = { path = "vendor/lance/rust/lance-geo" }
+# lance-bitpacking = { path = "vendor/lance/rust/compression/bitpacking" }
+# fsst = { path = "vendor/lance/rust/compression/fsst" }
 # datafusion = { git = "https://github.com/AdaWorldAPI/datafusion", branch = "liblzma-fix" }
