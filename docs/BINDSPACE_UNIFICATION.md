@@ -823,7 +823,88 @@ Same pattern applies for `nars_deduction()`, `nars_abduction()`,
 `nars_induction()` — all operating on W4-7 without touching the
 content fingerprint in [128..256].
 
-**Import**: Add `use crate::container::Container;` to bind_space.rs.
+#### The Fluent API: `bind_space.content(addr)` / `bind_space.meta(addr)`
+
+The key insight: callers shouldn't need to know about Container::view(),
+MetaView::new(), or which half of the fingerprint array is which.
+BindSpace should expose Container operations directly:
+
+```rust
+impl BindSpace {
+    /// Zero-copy content Container (search fingerprint, words 128-255).
+    pub fn content(&self, addr: Addr) -> Option<&Container> {
+        self.read(addr).map(|n| n.content_container())
+    }
+
+    /// Zero-copy meta view (NARS, edges, rung, etc., words 0-127).
+    pub fn meta(&self, addr: Addr) -> Option<MetaView<'_>> {
+        self.read(addr).map(|n| MetaView::new(&n.meta_container().words))
+    }
+
+    /// Mutable content Container view.
+    pub fn content_mut(&mut self, addr: Addr) -> Option<&mut Container> {
+        self.read_mut(addr).map(|n| n.content_container_mut())
+    }
+
+    /// Mutable meta Container view.
+    pub fn meta_mut(&mut self, addr: Addr) -> Option<MetaViewMut<'_>> {
+        self.read_mut(addr).map(|n| MetaViewMut::new(&mut n.meta_container_mut().words))
+    }
+}
+```
+
+This gives you one-liner access to everything:
+
+```rust
+// Search — content half only, type-safe
+let dist = bind_space.content(addr1)?.hamming(bind_space.content(addr2)?);
+
+// NARS — meta half only, type-safe
+let freq = bind_space.meta(addr)?.nars_frequency();
+let conf = bind_space.meta(addr)?.nars_confidence();
+
+// Edges — meta half only
+let (verb, hint) = bind_space.meta(addr)?.inline_edge(5);
+
+// Rung level
+let rung = bind_space.meta(addr)?.rung_level();
+
+// Graph metrics
+let degree = bind_space.meta(addr)?.out_degree();
+
+// Bloom filter check
+let contains = bind_space.meta(addr)?.bloom_contains(some_id);
+
+// Combined with URI resolution (one-line from string to data):
+let dist = bind_space.content(bind_space.resolve(uri)?)?.hamming(query);
+```
+
+**Why this syntax matters:**
+
+1. **Type-safe layer separation** — `content()` returns `&Container`
+   (Hamming, bundle, XOR). `meta()` returns `MetaView` (NARS, edges,
+   rung). You CANNOT call hamming on meta or nars_frequency on content.
+   Wrong-half bugs are compile errors.
+
+2. **Discoverable API** — `bind_space.meta(addr)?.` triggers autocomplete
+   showing every MetaView method. The developer never needs to read
+   meta.rs to know what's available.
+
+3. **Zero-copy preserved** — These are thin wrappers around
+   Container::view(). No allocation, no copy. The `&Container` reference
+   points directly into `BindNode.fingerprint[128..256]`.
+
+4. **Collapses 6-8 repeated patterns** — Every callsite that does
+   `read(addr)` → extract slice → construct view → call method becomes
+   a one-liner.
+
+5. **Borrow checker enforces correctness** — `content()` borrows
+   `&self`, so you can't simultaneously `content_mut()` the same
+   slot. This is the same guarantee XorDag should provide, enforced
+   at compile time.
+
+**Import**: Add `use crate::container::{Container, MetaView, MetaViewMut};`
+to bind_space.rs.
 
 **Backward compat**: ALL existing code that reads `node.fingerprint` directly
 continues to work. The views are additive. `is_spine` defaults to `false`.
