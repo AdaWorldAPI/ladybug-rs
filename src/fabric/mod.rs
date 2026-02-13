@@ -37,6 +37,7 @@ pub mod executor;
 pub mod gel;
 pub mod udp_transport;
 pub mod zero_copy;
+pub mod shadow;
 
 pub use mrna::{MRNA, ResonanceField, CrossPollination, FieldSnapshot};
 pub use butterfly::{ButterflyDetector, Butterfly, ButterflyPrediction};

@@ -151,6 +151,51 @@ pub struct CausalEdge {
 }
 
 // =============================================================================
+// CAUSAL TRACE — Reverse causality chain
+// =============================================================================
+
+/// A single step in a reverse causal trace.
+#[derive(Debug, Clone)]
+pub struct TraceStep {
+    /// State that was the cause
+    pub state: [u64; WORDS],
+    /// Action that was taken
+    pub action: [u64; WORDS],
+    /// Outcome that resulted
+    pub outcome: [u64; WORDS],
+    /// Hamming distance (quality of match)
+    pub distance: u32,
+    /// Weight of the causal edge
+    pub weight: f32,
+}
+
+/// Complete reverse causal trace from outcome back to root cause(s).
+#[derive(Debug, Clone)]
+pub struct CausalTrace {
+    /// Steps from outcome backward toward root cause
+    pub steps: Vec<TraceStep>,
+    /// The outcome we started tracing from
+    pub origin: [u64; WORDS],
+}
+
+impl CausalTrace {
+    /// Number of causal steps found.
+    pub fn depth(&self) -> usize {
+        self.steps.len()
+    }
+
+    /// Root cause (last step's state), if any steps were found.
+    pub fn root_cause(&self) -> Option<&[u64; WORDS]> {
+        self.steps.last().map(|s| &s.state)
+    }
+
+    /// Total causal weight along the chain.
+    pub fn total_weight(&self) -> f32 {
+        self.steps.iter().map(|s| s.weight).sum()
+    }
+}
+
+// =============================================================================
 // CAUSAL STORE - THE THREE RUNGS
 // =============================================================================
 
@@ -246,7 +291,7 @@ impl Default for CorrelationStore {
 /// Uses ABBA for direct retrieval
 pub struct InterventionStore {
     /// Edges: state ⊗ DO ⊗ action ⊗ CAUSES ⊗ outcome
-    edges: Vec<CausalEdge>,
+    pub(crate) edges: Vec<CausalEdge>,
     /// Index by state prefix (for fast lookup)
     state_index: HashMap<u64, Vec<usize>>,
     /// Index by action prefix
@@ -831,9 +876,67 @@ impl CausalSearch {
     }
     
     // -------------------------------------------------------------------------
+    // REVERSE CAUSAL TRACE
+    // -------------------------------------------------------------------------
+
+    /// Trace backward from an outcome to find the causal chain that produced it.
+    ///
+    /// Starting from `outcome`, walks backward through intervention edges:
+    /// outcome → (action, state) → (action, state) → ...
+    /// until no more causes are found or max_depth is reached.
+    ///
+    /// Returns a CausalTrace with each step's state, action, and distance.
+    ///
+    /// # Science
+    /// - Pearl (2009): "The Book of Why" — tracing causal chains backward
+    /// - Halpern & Pearl (2005): Actual causality definition
+    pub fn reverse_trace(
+        &self,
+        outcome: &[u64; WORDS],
+        max_depth: usize,
+    ) -> CausalTrace {
+        let mut steps = Vec::new();
+        let mut current = *outcome;
+
+        for _depth in 0..max_depth {
+            // Find any intervention edge where this is the outcome
+            // Try all stored edges and find ones whose outcome is close
+            let mut best_edge: Option<(&CausalEdge, u32)> = None;
+            for edge in &self.interventions.edges {
+                let dist = hamming_distance(&edge.outcome, &current);
+                if dist < self.threshold {
+                    if best_edge.is_none() || dist < best_edge.unwrap().1 {
+                        best_edge = Some((edge, dist));
+                    }
+                }
+            }
+
+            match best_edge {
+                Some((edge, dist)) => {
+                    steps.push(TraceStep {
+                        state: edge.state,
+                        action: edge.action.unwrap_or([0u64; WORDS]),
+                        outcome: edge.outcome,
+                        distance: dist,
+                        weight: edge.weight,
+                    });
+                    // Walk backward to this edge's state
+                    current = edge.state;
+                }
+                None => break, // No more causes found
+            }
+        }
+
+        CausalTrace {
+            steps,
+            origin: *outcome,
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // ANALYSIS
     // -------------------------------------------------------------------------
-    
+
     /// Detect confounders between two outcomes
     pub fn detect_confounders(
         &self,
@@ -999,6 +1102,51 @@ mod tests {
         assert_eq!(results[0].fingerprint, outcome);
     }
     
+    #[test]
+    fn test_reverse_causal_trace() {
+        let mut search = CausalSearch::new();
+
+        // Build a chain: state1 → action1 → state2 → action2 → outcome
+        let state1 = random_fp();
+        let action1 = random_fp();
+        let state2 = random_fp();
+        let action2 = random_fp();
+        let outcome = random_fp();
+
+        // Store two intervention edges forming a chain
+        search.store_intervention(&state1, &action1, &state2, 1.0);
+        search.store_intervention(&state2, &action2, &outcome, 0.9);
+
+        // Trace backward from outcome
+        let trace = search.reverse_trace(&outcome, 5);
+
+        // Should find at least 1 step (outcome → state2)
+        assert!(!trace.steps.is_empty(), "Trace should find at least one cause");
+        assert_eq!(trace.steps[0].outcome, outcome);
+        assert_eq!(trace.steps[0].state, state2);
+
+        // If chain is found, should trace back further
+        if trace.depth() >= 2 {
+            assert_eq!(trace.steps[1].state, state1);
+        }
+
+        // Root cause should be state1 if full chain found
+        if trace.depth() == 2 {
+            assert_eq!(trace.root_cause().unwrap(), &state1);
+            assert!(trace.total_weight() > 1.5);
+        }
+    }
+
+    #[test]
+    fn test_reverse_trace_no_cause() {
+        let search = CausalSearch::new();
+        let orphan = random_fp();
+
+        let trace = search.reverse_trace(&orphan, 5);
+        assert_eq!(trace.depth(), 0);
+        assert!(trace.root_cause().is_none());
+    }
+
     #[test]
     fn test_confounder_detection() {
         let mut search = CausalSearch::new();

@@ -19,6 +19,8 @@ mod fabric;
 mod grammar_engine;
 mod substrate;
 pub mod membrane;
+pub mod metacog;
+pub mod recursive;
 
 pub use thought::{Thought, Concept, Belief};
 pub use style::*;

@@ -58,7 +58,7 @@ use crate::{Error, Result};
 // =============================================================================
 
 /// Number of 64-bit words in a fingerprint (256 = 16384 bits)
-const WORDS: usize = 256;
+pub(crate) const WORDS: usize = 256;
 
 /// Bits per fingerprint
 const BITS: usize = WORDS * 64;  // 16384
