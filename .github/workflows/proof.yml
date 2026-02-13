@@ -4,12 +4,13 @@
 # Runs the mathematical proof tests that verify ladybug-rs architectural
 # claims against the published literature (Berry-Esseen, NARS, Pearl, etc.)
 #
-# Three test suites:
+# Four test suites:
 #   proof_foundation       — 13 proofs (F-1 through F-7c)
 #   proof_reasoning_ladder — 8 proofs  (RL-1 through RL-8)
 #   proof_tactics          — 12 proofs (T-01 through T-34)
+#   proof_level_a_gaps     — 6 proofs  (A.1.4 through A.6.2)
 #
-# Total: 33 proofs verifying cognitive substrate invariants.
+# Total: 39 proofs verifying cognitive substrate invariants.
 # =============================================================================
 
 name: Proof Suite
@@ -66,9 +67,19 @@ jobs:
       - name: Run tactics proofs
         run: cargo test --test proof_tactics -- --test-threads=1 -v
 
+  proof-level-a-gaps:
+    name: Level A Gap Proofs (A.1.4 through A.6.2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run level A gap proofs
+        run: cargo test --test proof_level_a_gaps -- --test-threads=1
+
   proof-summary:
     name: Proof Summary
-    needs: [proof-foundation, proof-reasoning-ladder, proof-tactics]
+    needs: [proof-foundation, proof-reasoning-ladder, proof-tactics, proof-level-a-gaps]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -81,10 +92,12 @@ jobs:
           echo "  Foundation:       ${{ needs.proof-foundation.result }}"
           echo "  Reasoning Ladder: ${{ needs.proof-reasoning-ladder.result }}"
           echo "  Tactics:          ${{ needs.proof-tactics.result }}"
+          echo "  Level A Gaps:     ${{ needs.proof-level-a-gaps.result }}"
           echo ""
           if [ "${{ needs.proof-foundation.result }}" = "success" ] && \
              [ "${{ needs.proof-reasoning-ladder.result }}" = "success" ] && \
-             [ "${{ needs.proof-tactics.result }}" = "success" ]; then
+             [ "${{ needs.proof-tactics.result }}" = "success" ] && \
+             [ "${{ needs.proof-level-a-gaps.result }}" = "success" ]; then
             echo "  ALL PROOF SUITES PASSED"
           else
             echo "  SOME PROOF SUITES FAILED"
