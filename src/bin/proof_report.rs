@@ -66,6 +66,18 @@ const SUITES: &[ProofSuite] = &[
             "T-34 Cross-domain fusion",
         ],
     },
+    ProofSuite {
+        name: "Level A Gaps",
+        test_name: "proof_level_a_gaps",
+        proofs: &[
+            "A.1.4 SIMD-scalar equivalence",
+            "A.2.2 NARS deduction bounds",
+            "A.3.2 Collapse gate acyclicity",
+            "A.4.3 Seven-layer fault isolation",
+            "A.5.1 Cascade search KNN correctness",
+            "A.6.2 WAL entry round-trip coverage",
+        ],
+    },
 ];
 
 fn main() {

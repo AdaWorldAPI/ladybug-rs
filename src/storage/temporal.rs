@@ -376,28 +376,58 @@ impl TemporalStore {
     }
 
     /// Commit transaction
+    ///
+    /// Serializable isolation fix: the transaction is removed from `active_txns`
+    /// only **after** conflict detection and write application succeed, and the
+    /// entries/addr_index write locks are held across the entire
+    /// check-conflicts + apply-writes window so no concurrent commit can
+    /// interleave.
     pub fn commit(&self, txn_id: TxnId) -> Result<Version, TemporalError> {
-        let txn = self.active_txns.write()
-            .map_err(|_| TemporalError::LockError)?
-            .remove(&txn_id)
-            .ok_or(TemporalError::TxnNotFound(txn_id))?;
+        // Take the transaction out of active_txns only temporarily for
+        // validation; if conflict detection fails we put it back (abort path
+        // handles cleanup). We clone first so we can re-insert on failure.
+        let txn = {
+            let txns = self.active_txns.read()
+                .map_err(|_| TemporalError::LockError)?;
+            txns.get(&txn_id)
+                .cloned()
+                .ok_or(TemporalError::TxnNotFound(txn_id))?
+        };
 
         if txn.state != TxnState::Active {
             return Err(TemporalError::TxnNotActive(txn_id));
         }
 
-        // Conflict detection for Serializable
-        if txn.isolation == IsolationLevel::Serializable {
-            self.check_conflicts(&txn)?;
-        }
-
-        // Advance version
-        let commit_version = self.versions.advance();
-
-        // Apply writes
+        // Acquire write locks on entries and addr_index FIRST — hold them
+        // across conflict detection AND write application to close the
+        // TOCTOU gap that previously existed.
         let mut entries = self.entries.write().map_err(|_| TemporalError::LockError)?;
         let mut addr_idx = self.addr_index.write().map_err(|_| TemporalError::LockError)?;
 
+        // Conflict detection for Serializable (while holding write locks,
+        // so no other commit can modify the data we're checking against).
+        if txn.isolation == IsolationLevel::Serializable {
+            for &addr in &txn.read_set {
+                if let Some(indices) = addr_idx.get(&addr) {
+                    for &idx in indices {
+                        if let Some(entry) = entries.get(idx) {
+                            if entry.created_version > txn.start_version {
+                                return Err(TemporalError::Conflict {
+                                    txn_id: txn.id,
+                                    addr,
+                                    conflicting_version: entry.created_version,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Advance version (after conflict check succeeds)
+        let commit_version = self.versions.advance();
+
+        // Apply writes
         for (addr, mut entry) in txn.pending_writes {
             entry.created_version = commit_version;
             let idx = entries.len();
@@ -418,12 +448,23 @@ impl TemporalStore {
             }
         }
 
-        // Apply edges
+        // Apply edges (separate lock, but still under our entries lock)
         let mut edges = self.edges.write().map_err(|_| TemporalError::LockError)?;
         for mut edge in txn.pending_edges {
             edge.created_version = commit_version;
             edges.push(edge);
         }
+
+        // Drop data locks before removing from active_txns to avoid
+        // potential lock-ordering issues.
+        drop(edges);
+        drop(addr_idx);
+        drop(entries);
+
+        // NOW remove the transaction from active set (commit is durable).
+        self.active_txns.write()
+            .map_err(|_| TemporalError::LockError)?
+            .remove(&txn_id);
 
         Ok(commit_version)
     }
@@ -437,29 +478,9 @@ impl TemporalStore {
         Ok(())
     }
 
-    /// Check for conflicts (Serializable isolation)
-    fn check_conflicts(&self, txn: &Transaction) -> Result<(), TemporalError> {
-        let entries = self.entries.read().map_err(|_| TemporalError::LockError)?;
-
-        for &addr in &txn.read_set {
-            // Check if any entry for this addr was written after our snapshot
-            if let Some(indices) = self.addr_index.read().ok().and_then(|i| i.get(&addr).cloned()) {
-                for idx in indices {
-                    if let Some(entry) = entries.get(idx) {
-                        if entry.created_version > txn.start_version {
-                            return Err(TemporalError::Conflict {
-                                txn_id: txn.id,
-                                addr,
-                                conflicting_version: entry.created_version,
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
+    // NOTE: check_conflicts logic was inlined into commit() so that it runs
+    // under the same write locks as the apply-writes phase, closing the
+    // TOCTOU gap that existed when they held separate read/write locks.
 
     // -------------------------------------------------------------------------
     // READS (with version)

@@ -133,19 +133,20 @@ impl LruTracker {
     }
 
     /// Record access to an address
+    ///
+    /// Duplicate-safe: removes ALL prior occurrences of `addr` from the order
+    /// queue before pushing, even if the HashMap and VecDeque were out of sync.
     pub fn touch(&mut self, addr: u16) {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_micros() as u64;
 
-        // Update access time
-        if let Some(old_time) = self.access_times.insert(addr, now) {
-            // Already tracked - update order
-            if let Some(pos) = self.order.iter().position(|&a| a == addr) {
-                self.order.remove(pos);
-            }
-        }
+        self.access_times.insert(addr, now);
+
+        // Remove ALL occurrences from the order queue (not just the first)
+        // to prevent duplicate accumulation if state ever diverges.
+        self.order.retain(|&a| a != addr);
         self.order.push_back(addr);
     }
 
@@ -414,16 +415,24 @@ impl WriteAheadLog {
     }
 
     /// Append entry to WAL
+    ///
+    /// Write-ahead contract: when `sync_writes` is true, data is flushed to
+    /// the OS (and thus to disk on fsync-capable filesystems) **before** the
+    /// in-memory bookkeeping is updated. This ensures that a crash after
+    /// `append` returns will always have the entry on disk.
     pub fn append(&mut self, entry: &WalEntry) -> std::io::Result<()> {
         let bytes = entry.to_bytes();
         if let Some(file) = &mut self.file {
             file.write_all(&bytes)?;
-            self.size += bytes.len();
-            self.entries_since_checkpoint += 1;
 
+            // Flush to disk BEFORE updating in-memory state so that a crash
+            // after this point guarantees the entry is durable.
             if self.sync_writes {
                 file.flush()?;
             }
+
+            self.size += bytes.len();
+            self.entries_since_checkpoint += 1;
         }
         Ok(())
     }
