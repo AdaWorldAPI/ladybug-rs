@@ -55,6 +55,26 @@
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+
+---
+
+## CLAM Hardening — Academic Foundation
+
+**READ**: `docs/CLAM_HARDENING.md` before any search/index work.
+
+CLAM (URI-ABD/clam, MIT, pure Rust) provides the mathematical proof that
+ladybug-rs's fingerprint-based search works. Key concepts:
+
+| ladybug-rs | CLAM equivalent | Formal guarantee |
+|------------|-----------------|-----------------|
+| Scent hierarchy | CLAM Tree (bipolar split) | O(k · 2^LFD · log n) |
+| HDR cascade filtering | d_min/d_max bounds | Triangle inequality: provable |
+| XOR-fold scent | Cluster center + radius | Metric ball containment |
+| Mexican hat thresholds | Cluster radius/span | Adaptive, data-driven |
+| Full fingerprints | panCAKES XOR-diff | 5-70x compression, search on compressed |
+
+Papers: CHESS (1908.08551), CHAODA (2103.11774), CAKES (2309.05491), panCAKES (2409.12161)
+
 ### Feature Flags - Know What They Enable
 
 ```toml
