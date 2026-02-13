@@ -256,6 +256,7 @@ pub async fn execute_action(
         "hamming" => execute_hamming(&params),
         "xor_bind" => execute_xor_bind(&params),
         "stats" => execute_stats(bind_space),
+        "ingest.unified_step" => execute_ingest_step(body, bind_space),
         _ => {
             let schema = error_result_schema();
             let batch = RecordBatch::try_new(
@@ -660,4 +661,47 @@ mod json_fallback {
         pub l2_candidates: usize,
         pub final_candidates: usize,
     }
+}
+
+// =============================================================================
+// INGEST: UNIFIED STEP (Contract Integration)
+// =============================================================================
+
+/// Ingest a UnifiedStep from ada-n8n or crewai-rust via Flight push.
+///
+/// The action body is raw JSON (not Arrow IPC) containing a serialized
+/// `UnifiedStep`. The step's output is fingerprinted and stored in BindSpace.
+/// Returns an Arrow IPC batch with the enrichment result.
+fn execute_ingest_step(body: &[u8], bind_space: Arc<RwLock<BindSpace>>) -> Result<Vec<u8>, String> {
+    use crate::contract::enricher::EnrichmentEngine;
+    use crate::contract::types::UnifiedStep;
+
+    // Deserialize the step from JSON body
+    let step: UnifiedStep =
+        serde_json::from_slice(body).map_err(|e| format!("Invalid UnifiedStep JSON: {}", e))?;
+
+    // Enrich: fingerprint + write to BindSpace
+    let engine = EnrichmentEngine::new(bind_space);
+    let enrichment = engine.enrich_step(&step);
+
+    // Build Arrow result: address, qidx, step_id
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("step_id", DataType::Utf8, false),
+        Field::new("address", DataType::UInt16, false),
+        Field::new("qidx", DataType::UInt8, false),
+        Field::new("success", DataType::Boolean, false),
+    ]));
+
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(StringArray::from(vec![enrichment.step_id.as_str()])) as ArrayRef,
+            Arc::new(UInt16Array::from(vec![enrichment.bind_addr.0])) as ArrayRef,
+            Arc::new(UInt8Array::from(vec![enrichment.qidx])) as ArrayRef,
+            Arc::new(BooleanArray::from(vec![true])) as ArrayRef,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    encode_to_ipc(&batch)
 }

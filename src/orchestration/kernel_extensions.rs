@@ -582,6 +582,20 @@ pub enum WorkflowOp {
     DelegateToAgent { agent_slot: u8 },
     /// Apply guardrail check
     GuardrailCheck,
+    /// Delegate execution to an external runtime (crewAI or n8n).
+    ///
+    /// Sends a `DataEnvelope` via HTTP POST and receives one back.
+    /// The `endpoint` field overrides the runtime's default URL from env.
+    DelegateToRuntime {
+        /// Target runtime: `"crewai"` or `"n8n"`
+        runtime: String,
+        /// Namespaced step type: `"crew.agent"`, `"n8n.httpRequest"`, etc.
+        step_type: String,
+        /// JSON parameters for the step
+        parameters: serde_json::Value,
+        /// Override endpoint URL (otherwise reads `CREWAI_ENDPOINT` / `N8N_ENDPOINT`)
+        endpoint: Option<String>,
+    },
 }
 
 /// A workflow node in the execution graph
@@ -821,7 +835,8 @@ fn execute_step(
         | WorkflowOp::Escalate
         | WorkflowOp::Crystallize
         | WorkflowOp::DelegateToAgent { .. }
-        | WorkflowOp::GuardrailCheck => {
+        | WorkflowOp::GuardrailCheck
+        | WorkflowOp::DelegateToRuntime { .. } => {
             // These are higher-level operations that require additional context.
             // Handled by the orchestrator layer, not the workflow engine directly.
         }
