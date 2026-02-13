@@ -25,16 +25,13 @@
 //! - Transparent to consumers
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
-use std::sync::{Arc, RwLock, Mutex, Condvar};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use super::bind_space::FINGERPRINT_WORDS;
-use super::temporal::{
-    TemporalStore, TemporalEntry,
-    Version, IsolationLevel,
-};
+use super::temporal::{IsolationLevel, TemporalEntry, TemporalStore, Version};
 
 // =============================================================================
 // CONFIGURATION
@@ -297,7 +294,11 @@ impl WriteBuffer {
     }
 
     /// Buffer a delete operation
-    pub fn buffer_delete(&self, addr: u16, depends_on: Vec<u64>) -> Result<(u64, VirtualVersion), BufferError> {
+    pub fn buffer_delete(
+        &self,
+        addr: u16,
+        depends_on: Vec<u64>,
+    ) -> Result<(u64, VirtualVersion), BufferError> {
         let pending = self.pending_count();
         if pending >= self.config.max_pending_writes {
             return Err(BufferError::BufferFull(pending));
@@ -380,7 +381,8 @@ impl WriteBuffer {
     pub fn get_buffered(&self, addr: u16) -> Option<BufferedWrite> {
         let writes = self.writes.read().ok()?;
         // Find most recent write to this address
-        writes.values()
+        writes
+            .values()
             .filter(|w| w.addr == addr && w.state != WriteState::RolledBack)
             .max_by_key(|w| w.virtual_version)
             .cloned()
@@ -414,10 +416,7 @@ impl WriteBuffer {
             Err(_) => return Vec::new(),
         };
 
-        queue.iter()
-            .take(max_size)
-            .copied()
-            .collect()
+        queue.iter().take(max_size).copied().collect()
     }
 
     /// Remove confirmed writes older than threshold
@@ -425,32 +424,31 @@ impl WriteBuffer {
         let now = Instant::now();
 
         if let Ok(mut writes) = self.writes.write() {
-            let to_remove: Vec<_> = writes.iter()
+            let to_remove: Vec<_> = writes
+                .iter()
                 .filter(|(_, w)| {
-                    w.state == WriteState::Confirmed
-                        && now.duration_since(w.buffered_at) > min_age
+                    w.state == WriteState::Confirmed && now.duration_since(w.buffered_at) > min_age
                 })
                 .map(|(id, _)| *id)
                 .collect();
 
             for id in to_remove {
                 if let Some(w) = writes.remove(&id) {
-                    self.memory_used.fetch_sub(w.memory_size() as u64, Ordering::SeqCst);
+                    self.memory_used
+                        .fetch_sub(w.memory_size() as u64, Ordering::SeqCst);
                 }
             }
         }
 
         if let Ok(mut deletes) = self.deletes.write() {
             deletes.retain(|_, d| {
-                d.state != WriteState::Confirmed
-                    || now.duration_since(d.buffered_at) <= min_age
+                d.state != WriteState::Confirmed || now.duration_since(d.buffered_at) <= min_age
             });
         }
 
         if let Ok(mut links) = self.links.write() {
             links.retain(|_, l| {
-                l.state != WriteState::Confirmed
-                    || now.duration_since(l.buffered_at) <= min_age
+                l.state != WriteState::Confirmed || now.duration_since(l.buffered_at) <= min_age
             });
         }
     }
@@ -517,7 +515,8 @@ impl DependencyGraph {
 
     /// Get automatic dependencies for an address (previous write to same addr)
     pub fn auto_depends(&self, addr: u16) -> Vec<u64> {
-        self.addr_writes.read()
+        self.addr_writes
+            .read()
             .ok()
             .and_then(|m| m.get(&addr).copied())
             .map(|id| vec![id])
@@ -560,7 +559,8 @@ impl DependencyGraph {
         // Calculate in-degrees
         if let Ok(deps) = self.dependencies.read() {
             for &id in ids {
-                let count = deps.get(&id)
+                let count = deps
+                    .get(&id)
                     .map(|d| d.iter().filter(|&dep| id_set.contains(dep)).count())
                     .unwrap_or(0);
                 in_degree.insert(id, count);
@@ -568,7 +568,8 @@ impl DependencyGraph {
         }
 
         // Kahn's algorithm
-        let mut queue: VecDeque<_> = in_degree.iter()
+        let mut queue: VecDeque<_> = in_degree
+            .iter()
             .filter(|(_, deg)| **deg == 0)
             .map(|(id, _)| *id)
             .collect();
@@ -753,9 +754,7 @@ impl ResilientStore {
                 // Flush each write
                 for id in ordered {
                     // Get the write
-                    let write = buffer.writes.read()
-                        .ok()
-                        .and_then(|w| w.get(&id).cloned());
+                    let write = buffer.writes.read().ok().and_then(|w| w.get(&id).cloned());
 
                     if let Some(write) = write {
                         if write.state != WriteState::Pending {
@@ -764,7 +763,9 @@ impl ResilientStore {
 
                         // Check dependencies are confirmed
                         let deps_ok = write.depends_on.iter().all(|&dep_id| {
-                            buffer.writes.read()
+                            buffer
+                                .writes
+                                .read()
                                 .ok()
                                 .map(|w| {
                                     w.get(&dep_id)
@@ -846,7 +847,9 @@ impl ResilientStore {
             Vec::new()
         };
 
-        let (id, virtual_version) = self.buffer.buffer_write(addr, fingerprint, label, depends_on.clone())?;
+        let (id, virtual_version) =
+            self.buffer
+                .buffer_write(addr, fingerprint, label, depends_on.clone())?;
 
         // Record in dependency graph
         self.deps.record(id, addr, depends_on);
@@ -867,7 +870,9 @@ impl ResilientStore {
         label: Option<String>,
         depends_on: Vec<u64>,
     ) -> Result<VirtualVersion, BufferError> {
-        let (id, virtual_version) = self.buffer.buffer_write(addr, fingerprint, label, depends_on.clone())?;
+        let (id, virtual_version) =
+            self.buffer
+                .buffer_write(addr, fingerprint, label, depends_on.clone())?;
         self.deps.record(id, addr, depends_on);
 
         if self.config.sync_writes {
@@ -943,10 +948,18 @@ impl ResilientStore {
         let timeout = self.config.max_buffer_age;
 
         loop {
-            if let Some(write) = self.buffer.writes.read().ok().and_then(|w| w.get(&id).cloned()) {
+            if let Some(write) = self
+                .buffer
+                .writes
+                .read()
+                .ok()
+                .and_then(|w| w.get(&id).cloned())
+            {
                 match write.state {
                     WriteState::Confirmed => return Ok(write.real_version.unwrap_or(0)),
-                    WriteState::Failed => return Err(BufferError::WriteFailed(write.error.unwrap_or_default())),
+                    WriteState::Failed => {
+                        return Err(BufferError::WriteFailed(write.error.unwrap_or_default()));
+                    }
                     WriteState::RolledBack => return Err(BufferError::RolledBack(id)),
                     _ => {}
                 }
@@ -962,7 +975,10 @@ impl ResilientStore {
 
     /// Flush all pending writes
     pub fn flush(&self) -> Result<(), BufferError> {
-        let pending_ids: Vec<_> = self.buffer.writes.read()
+        let pending_ids: Vec<_> = self
+            .buffer
+            .writes
+            .read()
             .map(|w| w.keys().copied().collect())
             .unwrap_or_default();
 
@@ -1098,7 +1114,9 @@ mod tests {
         let buffer = WriteBuffer::new(config);
 
         let fp = [42u64; FINGERPRINT_WORDS];
-        let (id, vv) = buffer.buffer_write(0x8001, fp, Some("test".into()), vec![]).unwrap();
+        let (id, vv) = buffer
+            .buffer_write(0x8001, fp, Some("test".into()), vec![])
+            .unwrap();
 
         assert!(id > 0);
         assert!(vv >= 1_000_000); // Virtual versions start high

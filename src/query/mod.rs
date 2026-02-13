@@ -42,74 +42,32 @@ mod builder;
 pub mod cognitive_udfs;
 mod cypher;
 mod datafusion;
+pub mod dn_tree_provider;
 pub mod fingerprint_table;
+pub mod graph_provider;
 pub mod hybrid;
 pub mod scent_scan;
-pub mod graph_provider;
-pub mod dn_tree_provider;
 
 pub use builder::{Query, QueryResult};
-pub use cypher::{
-    CypherParser,
-    CypherTranspiler,
-    CypherQuery,
-    cypher_to_sql,
+pub use cognitive_udfs::{
+    ExtractScentUdf, HammingUdf, MembraneDecodeUdf, MembraneEncodeUdf, NarsAbductionUdf,
+    NarsDeductionUdf, NarsInductionUdf, NarsRevisionUdf, PopcountUdf, ScentDistanceUdf,
+    SimilarityUdf, XorBindUdf, all_cognitive_udfs, register_cognitive_udfs,
 };
-pub use datafusion::{
-    SqlEngine,
-    QueryBuilder,
+pub use cypher::{CypherParser, CypherQuery, CypherTranspiler, cypher_to_sql};
+pub use datafusion::{QueryBuilder, SqlEngine};
+pub use dn_tree_provider::{DnTreeExt, DnTreeTableProvider};
+pub use fingerprint_table::{BindSpaceExt, BindSpaceScan, FingerprintTableProvider};
+pub use graph_provider::{
+    EdgeTableProvider, GraphExt, GraphTraversalExec, TraversalConfig, TraversalDirection,
 };
 pub use hybrid::{
-    HybridQuery,
-    HybridResult,
-    HybridEngine,
-    HybridStats,
-    CausalMode,
-    TemporalConstraint,
-    VectorConstraint,
-    QualiaFilter,
-    TruthFilter,
-    parse_hybrid,
-    execute_hybrid_command,
-};
-pub use cognitive_udfs::{
-    register_cognitive_udfs,
-    all_cognitive_udfs,
-    HammingUdf,
-    SimilarityUdf,
-    PopcountUdf,
-    XorBindUdf,
-    ExtractScentUdf,
-    ScentDistanceUdf,
-    NarsDeductionUdf,
-    NarsInductionUdf,
-    NarsAbductionUdf,
-    NarsRevisionUdf,
-    MembraneEncodeUdf,
-    MembraneDecodeUdf,
-};
-pub use fingerprint_table::{
-    FingerprintTableProvider,
-    BindSpaceScan,
-    BindSpaceExt,
+    CausalMode, HybridEngine, HybridQuery, HybridResult, HybridStats, QualiaFilter,
+    TemporalConstraint, TruthFilter, VectorConstraint, execute_hybrid_command, parse_hybrid,
 };
 pub use scent_scan::{
-    ScentScanExec,
-    ScentPredicate,
-    HammingDistanceUdf,
+    HammingDistanceUdf, ScentPredicate, ScentScanExec, ScentUdfExtension,
     SimilarityUdf as ScentSimilarityUdf,
-    ScentUdfExtension,
-};
-pub use graph_provider::{
-    EdgeTableProvider,
-    GraphTraversalExec,
-    TraversalConfig,
-    TraversalDirection,
-    GraphExt,
-};
-pub use dn_tree_provider::{
-    DnTreeTableProvider,
-    DnTreeExt,
 };
 
 #[derive(thiserror::Error, Debug)]

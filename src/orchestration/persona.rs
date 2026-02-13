@@ -25,12 +25,11 @@
 //! personality traits, volition, and communication preferences into a 10K-bit
 //! fingerprint that enables HDR similarity search for personality compatibility.
 
-use serde::{Deserialize, Serialize};
 use crate::cognitive::ThinkingStyle;
 use crate::storage::bind_space::{
-    Addr, BindSpace, FINGERPRINT_WORDS,
-    PREFIX_AGENTS, SLOT_SUBDIVISION,
+    Addr, BindSpace, FINGERPRINT_WORDS, PREFIX_AGENTS, SLOT_SUBDIVISION,
 };
+use serde::{Deserialize, Serialize};
 
 /// Personality trait — a named dimension of agent personality
 ///
@@ -211,7 +210,7 @@ impl Persona {
     /// - Thinking style preferences as resonance patterns (words 60-79)
     /// - Feature proficiencies as weighted hashes (words 80-155)
     pub fn to_fingerprint(&self) -> [u64; FINGERPRINT_WORDS] {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
 
         let mut fp = [0u64; FINGERPRINT_WORDS];
 
@@ -225,7 +224,11 @@ impl Persona {
         ];
         for (i, &param) in volition_params.iter().enumerate() {
             let bits = (param * 64.0_f32).round() as u32;
-            fp[i * 2] = if bits >= 64 { u64::MAX } else { (1u64 << bits) - 1 };
+            fp[i * 2] = if bits >= 64 {
+                u64::MAX
+            } else {
+                (1u64 << bits) - 1
+            };
             // Drive hash in odd words
             let mut h = Sha256::new();
             h.update(self.volition.drive.as_bytes());
@@ -244,7 +247,11 @@ impl Persona {
 
             // Scale hash by trait value (thermometer masking)
             let bits = (trait_entry.value * 64.0_f32).round() as u32;
-            let mask = if bits >= 64 { u64::MAX } else { (1u64 << bits) - 1 };
+            let mask = if bits >= 64 {
+                u64::MAX
+            } else {
+                (1u64 << bits) - 1
+            };
             fp[base_word] ^= trait_hash & mask;
         }
 
@@ -260,7 +267,11 @@ impl Persona {
             let word = 50 + i * 2;
             if word < FINGERPRINT_WORDS {
                 let bits = (param * 64.0_f32).round() as u32;
-                fp[word] = if bits >= 64 { u64::MAX } else { (1u64 << bits) - 1 };
+                fp[word] = if bits >= 64 {
+                    u64::MAX
+                } else {
+                    (1u64 << bits) - 1
+                };
             }
         }
 
@@ -275,7 +286,11 @@ impl Persona {
                 // Weight by position (first preference = more bits)
                 let weight = 1.0_f32 / (i as f32 + 1.0);
                 let bits = (weight * 64.0_f32).round() as u32;
-                let mask = if bits >= 64 { u64::MAX } else { (1u64 << bits) - 1 };
+                let mask = if bits >= 64 {
+                    u64::MAX
+                } else {
+                    (1u64 << bits) - 1
+                };
                 fp[word] ^= u64::from_le_bytes(hash[..8].try_into().unwrap()) & mask;
             }
         }
@@ -352,7 +367,10 @@ impl Persona {
 
     /// Get feature proficiency by name (None if not present)
     pub fn feature_proficiency(&self, name: &str) -> Option<f32> {
-        self.features.iter().find(|f| f.name == name).map(|f| f.proficiency)
+        self.features
+            .iter()
+            .find(|f| f.name == name)
+            .map(|f| f.proficiency)
     }
 
     /// Get trait value by name (None if not present)
@@ -367,11 +385,17 @@ impl Persona {
     pub fn volition_alignment(&self, task_description: &str) -> f32 {
         let lower = task_description.to_lowercase();
 
-        let affinity_hits = self.volition.affinities.iter()
+        let affinity_hits = self
+            .volition
+            .affinities
+            .iter()
             .filter(|a| lower.contains(&a.to_lowercase()))
             .count() as f32;
 
-        let aversion_hits = self.volition.aversions.iter()
+        let aversion_hits = self
+            .volition
+            .aversions
+            .iter()
             .filter(|a| lower.contains(&a.to_lowercase()))
             .count() as f32;
 
@@ -441,10 +465,14 @@ impl PersonaExchange {
 
     /// Create an exchange with only features relevant to a specific task
     pub fn for_task(persona: &Persona, sender_slot: u8, task_keywords: &[&str]) -> Self {
-        let relevant = persona.features.iter()
+        let relevant = persona
+            .features
+            .iter()
             .filter(|f| {
                 let lower = f.name.to_lowercase();
-                task_keywords.iter().any(|kw| lower.contains(&kw.to_lowercase()))
+                task_keywords
+                    .iter()
+                    .any(|kw| lower.contains(&kw.to_lowercase()))
             })
             .cloned()
             .collect();
@@ -470,7 +498,9 @@ pub struct PersonaRegistry {
 
 impl PersonaRegistry {
     pub fn new() -> Self {
-        Self { personas: Vec::new() }
+        Self {
+            personas: Vec::new(),
+        }
     }
 
     /// Attach a persona to an agent slot
@@ -485,17 +515,25 @@ impl PersonaRegistry {
 
     /// Get persona for an agent slot
     pub fn get(&self, agent_slot: u8) -> Option<&Persona> {
-        self.personas.iter().find(|(s, _)| *s == agent_slot).map(|(_, p)| p)
+        self.personas
+            .iter()
+            .find(|(s, _)| *s == agent_slot)
+            .map(|(_, p)| p)
     }
 
     /// Get mutable persona for an agent slot
     pub fn get_mut(&mut self, agent_slot: u8) -> Option<&mut Persona> {
-        self.personas.iter_mut().find(|(s, _)| *s == agent_slot).map(|(_, p)| p)
+        self.personas
+            .iter_mut()
+            .find(|(s, _)| *s == agent_slot)
+            .map(|(_, p)| p)
     }
 
     /// Find agents with compatible personas (above threshold)
     pub fn find_compatible(&self, persona: &Persona, threshold: f32) -> Vec<(u8, f32)> {
-        let mut results: Vec<(u8, f32)> = self.personas.iter()
+        let mut results: Vec<(u8, f32)> = self
+            .personas
+            .iter()
             .map(|(slot, p)| (*slot, persona.compatibility(p)))
             .filter(|(_, score)| *score >= threshold)
             .collect();
@@ -506,7 +544,8 @@ impl PersonaRegistry {
 
     /// Find agents with a specific feature at minimum proficiency
     pub fn find_by_feature(&self, feature_name: &str, min_proficiency: f32) -> Vec<(u8, f32)> {
-        self.personas.iter()
+        self.personas
+            .iter()
             .filter_map(|(slot, p)| {
                 p.feature_proficiency(feature_name)
                     .filter(|&prof| prof >= min_proficiency)
@@ -517,7 +556,8 @@ impl PersonaRegistry {
 
     /// Find best agent for a task based on volition alignment
     pub fn best_for_task(&self, task_description: &str) -> Option<(u8, f32)> {
-        self.personas.iter()
+        self.personas
+            .iter()
             .map(|(slot, p)| (*slot, p.volition_alignment(task_description)))
             .filter(|(_, score)| *score > 0.0)
             .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
@@ -551,9 +591,13 @@ impl PersonaRegistry {
         struct PersonaList {
             personas: Vec<PersonaEntry>,
         }
-        let list: PersonaList = serde_yml::from_str(yaml)
-            .map_err(|e| format!("YAML parse error: {}", e))?;
-        Ok(list.personas.into_iter().map(|e| (e.agent_id, e.persona)).collect())
+        let list: PersonaList =
+            serde_yml::from_str(yaml).map_err(|e| format!("YAML parse error: {}", e))?;
+        Ok(list
+            .personas
+            .into_iter()
+            .map(|e| (e.agent_id, e.persona))
+            .collect())
     }
 }
 
@@ -580,8 +624,16 @@ mod tests {
                 aversions: vec!["formatting".to_string()],
             },
             traits: vec![
-                PersonalityTrait { name: "openness".to_string(), value: 0.9, frozen: false },
-                PersonalityTrait { name: "precision".to_string(), value: 0.85, frozen: true },
+                PersonalityTrait {
+                    name: "openness".to_string(),
+                    value: 0.9,
+                    frozen: false,
+                },
+                PersonalityTrait {
+                    name: "precision".to_string(),
+                    value: 0.85,
+                    frozen: true,
+                },
             ],
             communication: CommunicationStyle {
                 formality: 0.6,
@@ -591,14 +643,12 @@ mod tests {
                 emotional_tone: 0.2,
             },
             preferred_styles: vec!["analytical".to_string(), "exploratory".to_string()],
-            features: vec![
-                FeatureAd {
-                    name: "sci_query".to_string(),
-                    proficiency: 0.95,
-                    preference: 0.9,
-                    cam_opcode: Some(0x060),
-                },
-            ],
+            features: vec![FeatureAd {
+                name: "sci_query".to_string(),
+                proficiency: 0.95,
+                preference: 0.9,
+                cam_opcode: Some(0x060),
+            }],
         }
     }
 

@@ -56,8 +56,8 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
-use crate::core::Fingerprint;
 use super::quantum_7d::{Coord7D, PhaseTag7D, QuantumCell7D};
+use crate::core::Fingerprint;
 
 // =============================================================================
 // BITCHAIN CELL (7D variant)
@@ -103,8 +103,13 @@ impl BitchainCell7D {
             .as_micros() as u64;
 
         let coord_sig = [
-            coord.a as u8, coord.b as u8, coord.c as u8, coord.d as u8,
-            coord.e as u8, coord.f as u8, coord.g as u8,
+            coord.a as u8,
+            coord.b as u8,
+            coord.c as u8,
+            coord.d as u8,
+            coord.e as u8,
+            coord.f as u8,
+            coord.g as u8,
         ];
 
         let mut signed = Self {
@@ -380,7 +385,9 @@ impl BitchainCrystal7x7 {
             return 0.0;
         }
 
-        let tensions: Vec<f64> = self.strings.values()
+        let tensions: Vec<f64> = self
+            .strings
+            .values()
             .filter_map(|s| s.current())
             .map(|c| c.string_tension())
             .collect();
@@ -390,7 +397,9 @@ impl BitchainCrystal7x7 {
 
     /// Bell test with work constraints
     pub fn bell_test(&self, samples: usize) -> BitchainBellResult7D {
-        let active: Vec<_> = self.strings.iter()
+        let active: Vec<_> = self
+            .strings
+            .iter()
             .filter_map(|(idx, s)| s.current().map(|c| (*idx, c)))
             .collect();
 
@@ -417,9 +426,7 @@ impl BitchainCrystal7x7 {
             let b = &cell_b.cell.amplitude;
             let b_prime = cell_b.cell.amplitude.permute(11);
 
-            let corr = |x: &Fingerprint, y: &Fingerprint| -> f32 {
-                2.0 * x.similarity(y) - 1.0
-            };
+            let corr = |x: &Fingerprint, y: &Fingerprint| -> f32 { 2.0 * x.similarity(y) - 1.0 };
 
             e_ab += corr(a, b);
             e_ab_prime += corr(a, &b_prime);
@@ -520,14 +527,43 @@ impl BitchainBellResult7D {
         s.push_str("╔══════════════════════════════════════════════════════════════╗\n");
         s.push_str("║           7^7 BITCHAIN BELL TEST ANALYSIS                    ║\n");
         s.push_str("╠══════════════════════════════════════════════════════════════╣\n");
-        s.push_str(&format!("║  S value:              {:.4}                              ║\n", self.s_value));
-        s.push_str(&format!("║  Classical (|S|≤2):    {}                                  ║\n", if self.s_value.abs() <= 2.0 { "YES" } else { "NO " }));
-        s.push_str(&format!("║  Tsirelson (|S|≤2.83): {}                                  ║\n", if self.bounded_by_tsirelson { "YES" } else { "NO " }));
+        s.push_str(&format!(
+            "║  S value:              {:.4}                              ║\n",
+            self.s_value
+        ));
+        s.push_str(&format!(
+            "║  Classical (|S|≤2):    {}                                  ║\n",
+            if self.s_value.abs() <= 2.0 {
+                "YES"
+            } else {
+                "NO "
+            }
+        ));
+        s.push_str(&format!(
+            "║  Tsirelson (|S|≤2.83): {}                                  ║\n",
+            if self.bounded_by_tsirelson {
+                "YES"
+            } else {
+                "NO "
+            }
+        ));
         s.push_str("╠══════════════════════════════════════════════════════════════╣\n");
-        s.push_str(&format!("║  Difficulty:           {} bits                             ║\n", self.difficulty));
-        s.push_str(&format!("║  Total work:           2^{:.2} hashes                       ║\n", (self.total_work as f64).log2()));
-        s.push_str(&format!("║  String tension:       {:.4}                              ║\n", self.tension));
-        s.push_str(&format!("║  String length:        {:.2} Planck units                 ║\n", self.string_length_estimate));
+        s.push_str(&format!(
+            "║  Difficulty:           {} bits                             ║\n",
+            self.difficulty
+        ));
+        s.push_str(&format!(
+            "║  Total work:           2^{:.2} hashes                       ║\n",
+            (self.total_work as f64).log2()
+        ));
+        s.push_str(&format!(
+            "║  String tension:       {:.4}                              ║\n",
+            self.tension
+        ));
+        s.push_str(&format!(
+            "║  String length:        {:.2} Planck units                 ║\n",
+            self.string_length_estimate
+        ));
         s.push_str("╠══════════════════════════════════════════════════════════════╣\n");
         s.push_str("║  INTERPRETATION:                                             ║\n");
 

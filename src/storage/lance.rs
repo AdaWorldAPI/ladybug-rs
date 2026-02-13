@@ -26,8 +26,8 @@
 use arrow::array::*;
 use arrow::datatypes::{DataType, Field, Schema as ArrowSchema, TimeUnit};
 use arrow::record_batch::RecordBatch;
-use lance::dataset::write::{WriteMode, WriteParams};
 use lance::Dataset;
+use lance::dataset::write::{WriteMode, WriteParams};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -50,8 +50,9 @@ pub const THINKING_STYLE_DIM: usize = 7;
 /// Wrap a single RecordBatch as a RecordBatchReader for Lance 2.1 API.
 fn batch_reader(
     batch: RecordBatch,
-) -> RecordBatchIterator<std::vec::IntoIter<std::result::Result<RecordBatch, arrow::error::ArrowError>>>
-{
+) -> RecordBatchIterator<
+    std::vec::IntoIter<std::result::Result<RecordBatch, arrow::error::ArrowError>>,
+> {
     let schema = batch.schema();
     RecordBatchIterator::new(vec![Ok(batch)].into_iter(), schema)
 }
@@ -638,12 +639,25 @@ impl NodeRecord {
 
     /// Extract from RecordBatch at given row index
     pub fn from_record_batch(batch: &RecordBatch, row: usize) -> Result<Self> {
-        let id = batch.column(0).as_any().downcast_ref::<StringArray>()
-            .unwrap().value(row).to_string();
-        let label = batch.column(1).as_any().downcast_ref::<StringArray>()
-            .unwrap().value(row).to_string();
+        let id = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap()
+            .value(row)
+            .to_string();
+        let label = batch
+            .column(1)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap()
+            .value(row)
+            .to_string();
 
-        let fp_col = batch.column(2).as_any().downcast_ref::<FixedSizeBinaryArray>()
+        let fp_col = batch
+            .column(2)
+            .as_any()
+            .downcast_ref::<FixedSizeBinaryArray>()
             .unwrap();
         let fingerprint = if fp_col.is_null(row) {
             None
@@ -651,10 +665,17 @@ impl NodeRecord {
             Some(fp_col.value(row).to_vec())
         };
 
-        let qidx = batch.column(4).as_any().downcast_ref::<UInt8Array>()
-            .unwrap().value(row);
+        let qidx = batch
+            .column(4)
+            .as_any()
+            .downcast_ref::<UInt8Array>()
+            .unwrap()
+            .value(row);
 
-        let content_col = batch.column(6).as_any().downcast_ref::<StringArray>()
+        let content_col = batch
+            .column(6)
+            .as_any()
+            .downcast_ref::<StringArray>()
             .unwrap();
         let content = if content_col.is_null(row) {
             None
@@ -662,7 +683,10 @@ impl NodeRecord {
             Some(content_col.value(row).to_string())
         };
 
-        let props_col = batch.column(7).as_any().downcast_ref::<StringArray>()
+        let props_col = batch
+            .column(7)
+            .as_any()
+            .downcast_ref::<StringArray>()
             .unwrap();
         let properties = if props_col.is_null(row) {
             None
@@ -670,10 +694,18 @@ impl NodeRecord {
             Some(props_col.value(row).to_string())
         };
 
-        let created_at = batch.column(8).as_any().downcast_ref::<TimestampMicrosecondArray>()
-            .unwrap().value(row);
-        let version = batch.column(9).as_any().downcast_ref::<Int64Array>()
-            .unwrap().value(row);
+        let created_at = batch
+            .column(8)
+            .as_any()
+            .downcast_ref::<TimestampMicrosecondArray>()
+            .unwrap()
+            .value(row);
+        let version = batch
+            .column(9)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap()
+            .value(row);
 
         Ok(Self {
             id,
@@ -748,8 +780,7 @@ impl EdgeRecord {
         let weights: Float32Array = [Some(self.weight)].into_iter().collect();
         let amplifications: Float32Array = [Some(self.amplification)].into_iter().collect();
         let properties: StringArray = [self.properties.as_deref()].into_iter().collect();
-        let created_ats: TimestampMicrosecondArray =
-            [Some(self.created_at)].into_iter().collect();
+        let created_ats: TimestampMicrosecondArray = [Some(self.created_at)].into_iter().collect();
 
         Ok(RecordBatch::try_new(
             schema,
@@ -769,28 +800,64 @@ impl EdgeRecord {
     /// Extract from RecordBatch
     pub fn from_record_batch(batch: &RecordBatch, row: usize) -> Result<Self> {
         Ok(Self {
-            id: batch.column(0).as_any().downcast_ref::<StringArray>()
-                .unwrap().value(row).to_string(),
-            from_id: batch.column(1).as_any().downcast_ref::<StringArray>()
-                .unwrap().value(row).to_string(),
-            to_id: batch.column(2).as_any().downcast_ref::<StringArray>()
-                .unwrap().value(row).to_string(),
-            edge_type: batch.column(3).as_any().downcast_ref::<StringArray>()
-                .unwrap().value(row).to_string(),
-            weight: batch.column(4).as_any().downcast_ref::<Float32Array>()
-                .unwrap().value(row),
-            amplification: batch.column(5).as_any().downcast_ref::<Float32Array>()
-                .unwrap().value(row),
+            id: batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap()
+                .value(row)
+                .to_string(),
+            from_id: batch
+                .column(1)
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap()
+                .value(row)
+                .to_string(),
+            to_id: batch
+                .column(2)
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap()
+                .value(row)
+                .to_string(),
+            edge_type: batch
+                .column(3)
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap()
+                .value(row)
+                .to_string(),
+            weight: batch
+                .column(4)
+                .as_any()
+                .downcast_ref::<Float32Array>()
+                .unwrap()
+                .value(row),
+            amplification: batch
+                .column(5)
+                .as_any()
+                .downcast_ref::<Float32Array>()
+                .unwrap()
+                .value(row),
             properties: {
-                let col = batch.column(6).as_any().downcast_ref::<StringArray>().unwrap();
+                let col = batch
+                    .column(6)
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .unwrap();
                 if col.is_null(row) {
                     None
                 } else {
                     Some(col.value(row).to_string())
                 }
             },
-            created_at: batch.column(7).as_any().downcast_ref::<TimestampMicrosecondArray>()
-                .unwrap().value(row),
+            created_at: batch
+                .column(7)
+                .as_any()
+                .downcast_ref::<TimestampMicrosecondArray>()
+                .unwrap()
+                .value(row),
         })
     }
 }

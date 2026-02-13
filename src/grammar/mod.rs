@@ -52,12 +52,12 @@
 //! let similarity = triangle.similarity(&other);
 //! ```
 
-pub mod nsm;
 pub mod causality;
+pub mod nsm;
 pub mod qualia;
 pub mod triangle;
 
-pub use nsm::{NSMField, NSM_PRIMITIVES};
 pub use causality::{CausalityFlow, DependencyType};
-pub use qualia::{QualiaField, QUALIA_DIMENSIONS};
+pub use nsm::{NSM_PRIMITIVES, NSMField};
+pub use qualia::{QUALIA_DIMENSIONS, QualiaField};
 pub use triangle::{GrammarTriangle, TriangleSummary};

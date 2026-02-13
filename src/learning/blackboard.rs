@@ -1,8 +1,8 @@
 //! Blackboard — Persistent session state for agent handoffs
 
-use serde::{Serialize, Deserialize};
 use crate::cognitive::GateState;
-use crate::learning::session::{SessionState, IceCakedDecision};
+use crate::learning::session::{IceCakedDecision, SessionState};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IceCakedLayer {
@@ -100,7 +100,7 @@ impl Blackboard {
             cycle: 0,
         }
     }
-    
+
     pub fn update_from_session(&mut self, state: &SessionState) {
         self.current_task.phase = format!("{:?}", state.phase);
         self.current_task.progress = state.progress;
@@ -108,7 +108,7 @@ impl Blackboard {
         self.resonance_captures = state.moment_count as u64;
         self.cycle = state.cycle;
     }
-    
+
     pub fn record_decision(&mut self, task: &str, choice: &str, rationale: &str, gate: GateState) {
         let decision = Decision {
             id: uuid::Uuid::new_v4().to_string(),
@@ -121,39 +121,42 @@ impl Blackboard {
         };
         self.decisions.push(decision);
     }
-    
+
     pub fn add_ice_cake(&mut self, decision: &IceCakedDecision) {
         let mut layer = IceCakedLayer::from(decision);
         layer.layer_id = self.ice_cake_layers.len() as u32 + 1;
         self.ice_cake_layers.push(layer);
     }
-    
+
     pub fn record_file_modified(&mut self, path: &str) {
         if !self.files_modified.contains(&path.to_string()) {
             self.files_modified.push(path.to_string());
         }
     }
-    
+
     pub fn add_next_step(&mut self, step: &str) {
         self.next_steps.push(step.to_string());
     }
-    
+
     pub fn to_yaml(&self) -> String {
         serde_yml::to_string(self).unwrap_or_default()
     }
-    
+
     pub fn to_json(&self) -> String {
         serde_json::to_string_pretty(self).unwrap_or_default()
     }
-    
+
     pub fn handover_summary(&self) -> String {
         let mut s = String::new();
         s.push_str(&format!("# Session Handover: {}\n\n", self.session_id));
         s.push_str("## Current Task\n");
         s.push_str(&format!("- **ID**: {}\n", self.current_task.id));
         s.push_str(&format!("- **Phase**: {}\n", self.current_task.phase));
-        s.push_str(&format!("- **Progress**: {:.0}%\n\n", self.current_task.progress * 100.0));
-        
+        s.push_str(&format!(
+            "- **Progress**: {:.0}%\n\n",
+            self.current_task.progress * 100.0
+        ));
+
         if !self.ice_cake_layers.is_empty() {
             s.push_str("## Ice-Caked (Frozen Commitments) ❄️\n");
             for layer in &self.ice_cake_layers {
@@ -162,16 +165,18 @@ impl Blackboard {
             }
             s.push_str("\n");
         }
-        
+
         if !self.next_steps.is_empty() {
             s.push_str("## Next Steps\n");
             for (i, step) in self.next_steps.iter().enumerate() {
                 s.push_str(&format!("{}. {}\n", i + 1, step));
             }
         }
-        
-        s.push_str(&format!("\n## Stats\n- Resonance Captures: {}\n- Concepts Extracted: {}\n", 
-            self.resonance_captures, self.concepts_extracted));
+
+        s.push_str(&format!(
+            "\n## Stats\n- Resonance Captures: {}\n- Concepts Extracted: {}\n",
+            self.resonance_captures, self.concepts_extracted
+        ));
         s
     }
 }

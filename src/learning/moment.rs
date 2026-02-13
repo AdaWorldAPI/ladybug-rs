@@ -1,9 +1,9 @@
 //! Moment — Atomic unit of learning capture
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use crate::cognitive::ThinkingStyle;
 use crate::core::Fingerprint;
 use crate::nars::TruthValue;
-use crate::cognitive::ThinkingStyle;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Qualia — The felt quality of a learning moment
 #[derive(Clone, Debug, Default)]
@@ -17,8 +17,10 @@ pub struct Qualia {
 }
 
 impl Qualia {
-    pub fn new() -> Self { Self::default() }
-    
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn from_metrics(novelty: f32, effort: f32, satisfaction: f32) -> Self {
         let mut q = Self {
             novelty: novelty.clamp(0.0, 1.0),
@@ -31,21 +33,21 @@ impl Qualia {
         q.compute_qidx();
         q
     }
-    
+
     pub fn compute_qidx(&mut self) {
         let breakthrough = (self.novelty * self.satisfaction * 15.0) as u8;
         let clean_effort = (self.effort * (1.0 - self.confusion) * 15.0) as u8;
         self.qidx = (breakthrough << 4) | clean_effort;
     }
-    
+
     pub fn is_breakthrough(&self) -> bool {
         self.novelty > 0.6 && self.satisfaction > 0.7
     }
-    
+
     pub fn is_struggle(&self) -> bool {
         self.effort > 0.5 && self.confusion > 0.4
     }
-    
+
     pub fn weight_fingerprint(&self, fp: &Fingerprint) -> Fingerprint {
         let qualia_sig = Fingerprint::from_content(&format!(
             "qualia:{}:{}:{}:{}:{}",
@@ -91,12 +93,12 @@ impl Moment {
         let fingerprint = Fingerprint::from_content(content);
         let qualia = Qualia::default();
         let resonance_vector = qualia.weight_fingerprint(&fingerprint);
-        
+
         let timestamp_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
-        
+
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             session_id: session_id.to_string(),
@@ -113,27 +115,27 @@ impl Moment {
             related_files: Vec::new(),
         }
     }
-    
+
     pub fn with_qualia(mut self, qualia: Qualia) -> Self {
         self.qualia = qualia;
         self.resonance_vector = self.qualia.weight_fingerprint(&self.fingerprint);
         self
     }
-    
+
     pub fn with_style(mut self, style: ThinkingStyle) -> Self {
         self.thinking_style = style;
         self
     }
-    
+
     pub fn with_tag(mut self, tag: &str) -> Self {
         self.tags.push(tag.to_string());
         self
     }
-    
+
     pub fn is_breakthrough(&self) -> bool {
         self.moment_type == MomentType::Breakthrough || self.qualia.is_breakthrough()
     }
-    
+
     pub fn resonance(&self, other: &Moment) -> f32 {
         self.resonance_vector.similarity(&other.resonance_vector)
     }
@@ -163,22 +165,34 @@ impl MomentBuilder {
             files: Vec::new(),
         }
     }
-    
-    pub fn encounter(mut self) -> Self { self.moment_type = MomentType::Encounter; self }
-    pub fn struggle(mut self) -> Self { self.moment_type = MomentType::Struggle; self }
-    pub fn breakthrough(mut self) -> Self { self.moment_type = MomentType::Breakthrough; self }
-    pub fn failure(mut self) -> Self { self.moment_type = MomentType::Failure; self }
-    
+
+    pub fn encounter(mut self) -> Self {
+        self.moment_type = MomentType::Encounter;
+        self
+    }
+    pub fn struggle(mut self) -> Self {
+        self.moment_type = MomentType::Struggle;
+        self
+    }
+    pub fn breakthrough(mut self) -> Self {
+        self.moment_type = MomentType::Breakthrough;
+        self
+    }
+    pub fn failure(mut self) -> Self {
+        self.moment_type = MomentType::Failure;
+        self
+    }
+
     pub fn qualia(mut self, novelty: f32, effort: f32, satisfaction: f32) -> Self {
         self.qualia = Some(Qualia::from_metrics(novelty, effort, satisfaction));
         self
     }
-    
+
     pub fn tag(mut self, tag: &str) -> Self {
         self.tags.push(tag.to_string());
         self
     }
-    
+
     pub fn build(self) -> Moment {
         let mut moment = Moment::new(&self.session_id, &self.content, self.moment_type);
         if let Some(q) = self.qualia {

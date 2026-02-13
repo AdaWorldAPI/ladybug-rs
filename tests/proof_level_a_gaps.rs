@@ -1,3 +1,4 @@
+#![allow(clippy::assertions_on_constants)]
 //! Level A Gap Proofs — Missing unit-level proofs from the Proof Skeleton.
 //!
 //! These 6 proofs close coverage gaps identified by mapping the existing 33
@@ -12,16 +13,16 @@
 //!
 //! Run: `cargo test --test proof_level_a_gaps -- --test-threads=1 -v`
 
+use ladybug::cognitive::{
+    GateState, LayerId, SD_BLOCK_THRESHOLD, SD_FLOW_THRESHOLD, SevenLayerNode, get_gate_state,
+    process_layer,
+};
+use ladybug::container::search::cascade_search;
+use ladybug::container::{CONTAINER_BITS, Container};
 use ladybug::core::Fingerprint;
 use ladybug::core::simd::{hamming_distance, hamming_scalar};
 use ladybug::nars::TruthValue;
-use ladybug::cognitive::{
-    GateState, get_gate_state, SD_FLOW_THRESHOLD, SD_BLOCK_THRESHOLD,
-    process_layer, LayerId, SevenLayerNode,
-};
-use ladybug::container::{Container, CONTAINER_BITS};
-use ladybug::container::search::cascade_search;
-use ladybug::storage::{WalEntry, FINGERPRINT_WORDS};
+use ladybug::storage::{FINGERPRINT_WORDS, WalEntry};
 
 // =============================================================================
 // A.1.4: SIMD–Scalar Equivalence
@@ -43,11 +44,13 @@ fn level_a_1_4_simd_scalar_equivalence() {
     // Case 1: identical → 0
     let a = Fingerprint::from_content("simd_eq_a");
     assert_eq!(
-        hamming_distance(&a, &a), 0,
+        hamming_distance(&a, &a),
+        0,
         "Identical fingerprints must have distance 0"
     );
     assert_eq!(
-        hamming_scalar(&a, &a), 0,
+        hamming_scalar(&a, &a),
+        0,
         "Scalar: identical fingerprints must have distance 0"
     );
 
@@ -107,12 +110,20 @@ fn level_a_2_2_deduction_bounds() {
                     assert!(
                         result.frequency >= 0.0 && result.frequency <= 1.0,
                         "Deduction frequency out of [0,1]: f={} from ({},{})×({},{})",
-                        result.frequency, f1, c1, f2, c2
+                        result.frequency,
+                        f1,
+                        c1,
+                        f2,
+                        c2
                     );
                     assert!(
                         result.confidence >= 0.0 && result.confidence <= 1.0,
                         "Deduction confidence out of [0,1]: c={} from ({},{})×({},{})",
-                        result.confidence, f1, c1, f2, c2
+                        result.confidence,
+                        f1,
+                        c1,
+                        f2,
+                        c2
                     );
 
                     // Verify algebraic identity: f = f1*f2
@@ -157,7 +168,8 @@ fn level_a_3_2_gate_acyclicity() {
     let first = get_gate_state(test_sd);
     for _ in 0..100 {
         assert_eq!(
-            get_gate_state(test_sd), first,
+            get_gate_state(test_sd),
+            first,
             "get_gate_state must be deterministic"
         );
     }
@@ -180,7 +192,8 @@ fn level_a_3_2_gate_acyclicity() {
     assert!(
         SD_FLOW_THRESHOLD < SD_BLOCK_THRESHOLD,
         "Flow threshold ({}) must be less than Block threshold ({})",
-        SD_FLOW_THRESHOLD, SD_BLOCK_THRESHOLD
+        SD_FLOW_THRESHOLD,
+        SD_BLOCK_THRESHOLD
     );
 
     // Property 4: No hysteresis — ascending and descending sweeps agree
@@ -226,7 +239,8 @@ fn level_a_4_3_fault_isolation() {
     assert!(
         (l1_clean.output_activation - l1_corrupt.output_activation).abs() < 1e-6,
         "L1 must be independent of marker corruption: clean={} vs corrupt={}",
-        l1_clean.output_activation, l1_corrupt.output_activation
+        l1_clean.output_activation,
+        l1_corrupt.output_activation
     );
     assert!(
         (l1_clean.input_resonance - l1_corrupt.input_resonance).abs() < 1e-6,
@@ -238,7 +252,8 @@ fn level_a_4_3_fault_isolation() {
     assert!(
         (l1_clean.output_activation - l1_again.output_activation).abs() < 1e-6,
         "L1 must be deterministic: first={} second={}",
-        l1_clean.output_activation, l1_again.output_activation
+        l1_clean.output_activation,
+        l1_again.output_activation
     );
 }
 
@@ -264,17 +279,15 @@ fn level_a_5_1_knn_correctness() {
         .collect();
 
     // Brute-force ground truth: compute all distances
-    let mut ground_truth: Vec<(usize, u32)> = corpus.iter()
+    let mut ground_truth: Vec<(usize, u32)> = corpus
+        .iter()
         .enumerate()
         .map(|(i, c)| (i, query.hamming(c)))
         .collect();
     ground_truth.sort_by_key(|(_, d)| *d);
 
     // The brute-force top-k distances
-    let true_top_k: Vec<u32> = ground_truth.iter()
-        .take(top_k)
-        .map(|(_, d)| *d)
-        .collect();
+    let true_top_k: Vec<u32> = ground_truth.iter().take(top_k).map(|(_, d)| *d).collect();
 
     // Use a generous threshold to ensure all top-k are found
     let threshold = true_top_k.last().copied().unwrap_or(CONTAINER_BITS as u32) + 200;
@@ -286,7 +299,8 @@ fn level_a_5_1_knn_correctness() {
         assert!(
             window[0].distance <= window[1].distance,
             "Results must be sorted by distance: {} > {}",
-            window[0].distance, window[1].distance
+            window[0].distance,
+            window[1].distance
         );
     }
 
@@ -312,7 +326,8 @@ fn level_a_5_1_knn_correctness() {
         assert!(
             closest_returned <= closest_true * 2 + 100,
             "Closest returned ({}) should be close to true closest ({})",
-            closest_returned, closest_true
+            closest_returned,
+            closest_true
         );
     }
 }
@@ -337,11 +352,15 @@ fn level_a_6_2_wal_roundtrip_coverage() {
             label: Some("test_label".to_string()),
         };
         let bytes = entry.to_bytes();
-        let (recovered, consumed) = WalEntry::from_bytes(&bytes)
-            .expect("Write entry round-trip failed");
+        let (recovered, consumed) =
+            WalEntry::from_bytes(&bytes).expect("Write entry round-trip failed");
         assert_eq!(consumed, bytes.len());
         match recovered {
-            WalEntry::Write { addr, fingerprint, label } => {
+            WalEntry::Write {
+                addr,
+                fingerprint,
+                label,
+            } => {
                 assert_eq!(addr, 0x8042);
                 assert_eq!(fingerprint, fp);
                 assert_eq!(label, Some("test_label".to_string()));
@@ -359,11 +378,15 @@ fn level_a_6_2_wal_roundtrip_coverage() {
             label: None,
         };
         let bytes = entry.to_bytes();
-        let (recovered, consumed) = WalEntry::from_bytes(&bytes)
-            .expect("Write (no label) round-trip failed");
+        let (recovered, consumed) =
+            WalEntry::from_bytes(&bytes).expect("Write (no label) round-trip failed");
         assert_eq!(consumed, bytes.len());
         match recovered {
-            WalEntry::Write { addr, fingerprint, label } => {
+            WalEntry::Write {
+                addr,
+                fingerprint,
+                label,
+            } => {
                 assert_eq!(addr, 0x0001);
                 assert_eq!(fingerprint, fp);
                 assert_eq!(label, None);
@@ -376,8 +399,8 @@ fn level_a_6_2_wal_roundtrip_coverage() {
     {
         let entry = WalEntry::Delete { addr: 0xFFFF };
         let bytes = entry.to_bytes();
-        let (recovered, consumed) = WalEntry::from_bytes(&bytes)
-            .expect("Delete entry round-trip failed");
+        let (recovered, consumed) =
+            WalEntry::from_bytes(&bytes).expect("Delete entry round-trip failed");
         assert_eq!(consumed, bytes.len());
         match recovered {
             WalEntry::Delete { addr } => assert_eq!(addr, 0xFFFF),
@@ -387,10 +410,14 @@ fn level_a_6_2_wal_roundtrip_coverage() {
 
     // Test 4: Link entry
     {
-        let entry = WalEntry::Link { from: 0x8001, verb: 0x0700, to: 0x8002 };
+        let entry = WalEntry::Link {
+            from: 0x8001,
+            verb: 0x0700,
+            to: 0x8002,
+        };
         let bytes = entry.to_bytes();
-        let (recovered, consumed) = WalEntry::from_bytes(&bytes)
-            .expect("Link entry round-trip failed");
+        let (recovered, consumed) =
+            WalEntry::from_bytes(&bytes).expect("Link entry round-trip failed");
         assert_eq!(consumed, bytes.len());
         match recovered {
             WalEntry::Link { from, verb, to } => {
@@ -407,8 +434,8 @@ fn level_a_6_2_wal_roundtrip_coverage() {
         let ts = 1_700_000_000_000_000u64;
         let entry = WalEntry::Checkpoint { timestamp: ts };
         let bytes = entry.to_bytes();
-        let (recovered, consumed) = WalEntry::from_bytes(&bytes)
-            .expect("Checkpoint entry round-trip failed");
+        let (recovered, consumed) =
+            WalEntry::from_bytes(&bytes).expect("Checkpoint entry round-trip failed");
         assert_eq!(consumed, bytes.len());
         match recovered {
             WalEntry::Checkpoint { timestamp } => assert_eq!(timestamp, ts),
@@ -425,7 +452,11 @@ fn level_a_6_2_wal_roundtrip_coverage() {
                 label: Some("a".to_string()),
             },
             WalEntry::Delete { addr: 0x8002 },
-            WalEntry::Link { from: 0x8001, verb: 0x0700, to: 0x8003 },
+            WalEntry::Link {
+                from: 0x8001,
+                verb: 0x0700,
+                to: 0x8003,
+            },
             WalEntry::Checkpoint { timestamp: 999 },
         ];
 
@@ -438,13 +469,14 @@ fn level_a_6_2_wal_roundtrip_coverage() {
         let mut offset = 0;
         let mut recovered_count = 0;
         while offset < stream.len() {
-            let (_, consumed) = WalEntry::from_bytes(&stream[offset..])
-                .expect("Stream recovery failed");
+            let (_, consumed) =
+                WalEntry::from_bytes(&stream[offset..]).expect("Stream recovery failed");
             offset += consumed;
             recovered_count += 1;
         }
         assert_eq!(
-            recovered_count, entries.len(),
+            recovered_count,
+            entries.len(),
             "Must recover all {} entries from concatenated stream",
             entries.len()
         );

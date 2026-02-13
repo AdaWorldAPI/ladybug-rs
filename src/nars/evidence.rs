@@ -22,7 +22,7 @@ impl Evidence {
             source: None,
         }
     }
-    
+
     /// Create with source attribution
     pub fn with_source(positive: f32, negative: f32, source: &str) -> Self {
         Self {
@@ -31,17 +31,17 @@ impl Evidence {
             source: Some(source.to_string()),
         }
     }
-    
+
     /// Convert to truth value
     pub fn to_truth(&self) -> TruthValue {
         TruthValue::from_evidence(self.positive, self.negative)
     }
-    
+
     /// Total evidence weight
     pub fn total(&self) -> f32 {
         self.positive + self.negative
     }
-    
+
     /// Combine with other evidence
     pub fn combine(&self, other: &Evidence) -> Evidence {
         Evidence {

@@ -3,12 +3,12 @@
 //! Not message passing. Live resonance between subsystems.
 //! Every operation leaves a "scent" that others can sense.
 
-use std::sync::Arc;
 use parking_lot::RwLock;
 use std::collections::VecDeque;
+use std::sync::Arc;
 
-use crate::core::Fingerprint;
 use crate::cognitive::ThinkingStyle;
+use crate::core::Fingerprint;
 use crate::fabric::Subsystem;
 
 /// Maximum concepts in resonance field
@@ -30,19 +30,19 @@ impl MRNA {
             field: Arc::new(RwLock::new(ResonanceField::new())),
         }
     }
-    
+
     /// Pollinate: add concept to field, get what it resonates with
     pub fn pollinate(&self, concept: &Fingerprint) -> Vec<Resonance> {
         let mut field = self.field.write();
         field.pollinate(concept)
     }
-    
+
     /// Pollinate with subsystem tag
     pub fn pollinate_from(&self, subsystem: Subsystem, concept: &Fingerprint) -> Vec<Resonance> {
         let mut field = self.field.write();
         field.pollinate_tagged(subsystem, concept)
     }
-    
+
     /// Check cross-pollination between subsystems
     pub fn cross_pollinate(
         &self,
@@ -53,25 +53,25 @@ impl MRNA {
         let field = self.field.read();
         field.cross_pollinate(source, concept, target)
     }
-    
+
     /// Get current field snapshot
     pub fn snapshot(&self) -> FieldSnapshot {
         let field = self.field.read();
         field.snapshot()
     }
-    
+
     /// Set thinking style (affects all resonance)
     pub fn set_style(&self, style: ThinkingStyle) {
         let mut field = self.field.write();
         field.style = style;
     }
-    
+
     /// Get current superposition fingerprint
     pub fn superposition(&self) -> Fingerprint {
         let field = self.field.read();
         field.superposition.clone()
     }
-    
+
     /// Recent query patterns (for compression optimization)
     pub fn recent_query_patterns(&self) -> Vec<Fingerprint> {
         let field = self.field.read();
@@ -97,13 +97,13 @@ impl Clone for MRNA {
 pub struct ResonanceField {
     /// Active concepts with their sources
     active_concepts: Vec<TaggedConcept>,
-    
+
     /// Superposition of all active (bundled)
     superposition: Fingerprint,
-    
+
     /// History for butterfly detection
     history: VecDeque<FieldSnapshot>,
-    
+
     /// Current thinking style
     style: ThinkingStyle,
 }
@@ -125,17 +125,18 @@ impl ResonanceField {
             style: ThinkingStyle::default(),
         }
     }
-    
+
     /// Pollinate concept into field
     fn pollinate(&mut self, concept: &Fingerprint) -> Vec<Resonance> {
         self.pollinate_tagged(Subsystem::Query, concept)
     }
-    
+
     /// Pollinate with subsystem tag
     fn pollinate_tagged(&mut self, source: Subsystem, concept: &Fingerprint) -> Vec<Resonance> {
         // Find what resonates
         let threshold = self.style.field_modulation().resonance_threshold;
-        let resonances: Vec<Resonance> = self.active_concepts
+        let resonances: Vec<Resonance> = self
+            .active_concepts
             .iter()
             .enumerate()
             .filter_map(|(i, tc)| {
@@ -151,28 +152,28 @@ impl ResonanceField {
                 }
             })
             .collect();
-        
+
         // Add to field
         if self.active_concepts.len() >= MAX_ACTIVE_CONCEPTS {
             // Remove oldest
             self.active_concepts.remove(0);
         }
-        
+
         self.active_concepts.push(TaggedConcept {
             fingerprint: concept.clone(),
             source,
             timestamp: std::time::Instant::now(),
         });
-        
+
         // Update superposition
         self.update_superposition();
-        
+
         // Record history
         self.record_history();
-        
+
         resonances
     }
-    
+
     /// Check cross-pollination between subsystems
     fn cross_pollinate(
         &self,
@@ -181,15 +182,16 @@ impl ResonanceField {
         target: Subsystem,
     ) -> Option<CrossPollination> {
         // Get target's concepts
-        let target_concepts: Vec<_> = self.active_concepts
+        let target_concepts: Vec<_> = self
+            .active_concepts
             .iter()
             .filter(|tc| tc.source == target)
             .collect();
-        
+
         if target_concepts.is_empty() {
             return None;
         }
-        
+
         // Find cross-resonances (loose threshold)
         let cross_threshold = 0.3;
         let mut cross_resonances: Vec<(usize, f32)> = target_concepts
@@ -204,14 +206,14 @@ impl ResonanceField {
                 }
             })
             .collect();
-        
+
         if cross_resonances.is_empty() {
             return None;
         }
-        
+
         // Sort by similarity
         cross_resonances.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-        
+
         Some(CrossPollination {
             source,
             target,
@@ -220,7 +222,7 @@ impl ResonanceField {
             strongest_concept: target_concepts[cross_resonances[0].0].fingerprint.clone(),
         })
     }
-    
+
     /// Get concepts from specific subsystem
     pub fn concepts_for_subsystem(&self, subsystem: Subsystem) -> Vec<Fingerprint> {
         self.active_concepts
@@ -229,22 +231,23 @@ impl ResonanceField {
             .map(|tc| tc.fingerprint.clone())
             .collect()
     }
-    
+
     /// Update superposition (bundle all active)
     fn update_superposition(&mut self) {
         if self.active_concepts.is_empty() {
             self.superposition = Fingerprint::zero();
             return;
         }
-        
-        let fps: Vec<_> = self.active_concepts
+
+        let fps: Vec<_> = self
+            .active_concepts
             .iter()
             .map(|tc| &tc.fingerprint)
             .collect();
-        
+
         self.superposition = bundle_fingerprints(&fps);
     }
-    
+
     /// Record snapshot for history
     fn record_history(&mut self) {
         if self.history.len() >= HISTORY_DEPTH {
@@ -252,7 +255,7 @@ impl ResonanceField {
         }
         self.history.push_back(self.snapshot());
     }
-    
+
     /// Create snapshot of current state
     fn snapshot(&self) -> FieldSnapshot {
         FieldSnapshot {
@@ -262,7 +265,7 @@ impl ResonanceField {
             subsystem_counts: self.subsystem_counts(),
         }
     }
-    
+
     /// Count concepts per subsystem
     fn subsystem_counts(&self) -> [(Subsystem, usize); 5] {
         let mut counts = [(Subsystem::Query, 0); 5];
@@ -271,7 +274,7 @@ impl ResonanceField {
         counts[2] = (Subsystem::Learning, 0);
         counts[3] = (Subsystem::Inference, 0);
         counts[4] = (Subsystem::Style, 0);
-        
+
         for tc in &self.active_concepts {
             match tc.source {
                 Subsystem::Query => counts[0].1 += 1,
@@ -283,7 +286,7 @@ impl ResonanceField {
         }
         counts
     }
-    
+
     /// Get history for butterfly detection
     pub fn history(&self) -> &VecDeque<FieldSnapshot> {
         &self.history
@@ -320,18 +323,18 @@ pub struct FieldSnapshot {
 /// Bundle multiple fingerprints (majority vote)
 fn bundle_fingerprints(fps: &[&Fingerprint]) -> Fingerprint {
     use crate::core::VsaOps;
-    
+
     if fps.is_empty() {
         return Fingerprint::zero();
     }
     if fps.len() == 1 {
         return (*fps[0]).clone();
     }
-    
+
     // Convert to owned for bundle
     let owned: Vec<Fingerprint> = fps.iter().map(|&f| f.clone()).collect();
     let _refs: Vec<&Fingerprint> = owned.iter().collect();
-    
+
     // Use VSA bundle (but we need owned slice)
     Fingerprint::bundle(&owned)
 }
@@ -339,41 +342,37 @@ fn bundle_fingerprints(fps: &[&Fingerprint]) -> Fingerprint {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_mrna_pollination() {
         let mrna = MRNA::new();
-        
+
         // First concept, no resonances
         let fp1 = Fingerprint::from_content("hello");
         let r1 = mrna.pollinate(&fp1);
         assert!(r1.is_empty());
-        
+
         // Same concept should resonate
         let r2 = mrna.pollinate(&fp1);
         assert!(!r2.is_empty());
         assert!(r2[0].similarity > 0.99);
     }
-    
+
     #[test]
     fn test_cross_pollination() {
         let mrna = MRNA::new();
-        
+
         // Add from Query
         let query_fp = Fingerprint::from_content("database query");
         mrna.pollinate_from(Subsystem::Query, &query_fp);
-        
+
         // Add similar from Compression
         let compress_fp = Fingerprint::from_content("database compression");
         mrna.pollinate_from(Subsystem::Compression, &compress_fp);
-        
+
         // Check cross-pollination
-        let _cross = mrna.cross_pollinate(
-            Subsystem::Compression,
-            &compress_fp,
-            Subsystem::Query,
-        );
-        
+        let _cross = mrna.cross_pollinate(Subsystem::Compression, &compress_fp, Subsystem::Query);
+
         // Should find weak resonance (different but related)
         // Note: with random fingerprints baseline is ~0.5
     }

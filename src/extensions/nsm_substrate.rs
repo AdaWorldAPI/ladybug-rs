@@ -106,9 +106,15 @@ use std::collections::HashMap;
 /// The 65 NSM primitives organized by category
 /// The 65 NSM primitives organized by category (Wierzbicka 1996, Goddard 2011)
 pub const NSM_CATEGORIES: &[(&str, &[&str])] = &[
-    ("SUBSTANTIVES", &["I", "YOU", "SOMEONE", "SOMETHING", "PEOPLE", "BODY"]),
+    (
+        "SUBSTANTIVES",
+        &["I", "YOU", "SOMEONE", "SOMETHING", "PEOPLE", "BODY"],
+    ),
     ("DETERMINERS", &["THIS", "THE_SAME", "OTHER", "ANOTHER"]),
-    ("QUANTIFIERS", &["ONE", "TWO", "SOME", "ALL", "MUCH", "MANY", "MORE"]),
+    (
+        "QUANTIFIERS",
+        &["ONE", "TWO", "SOME", "ALL", "MUCH", "MANY", "MORE"],
+    ),
     ("EVALUATORS", &["GOOD", "BAD"]),
     ("DESCRIPTORS", &["BIG", "SMALL"]),
     ("MENTAL", &["THINK", "KNOW", "WANT", "FEEL", "SEE", "HEAR"]),
@@ -116,8 +122,25 @@ pub const NSM_CATEGORIES: &[(&str, &[&str])] = &[
     ("ACTIONS", &["DO", "HAPPEN", "MOVE", "TOUCH"]),
     ("EXISTENCE", &["THERE_IS", "HAVE", "BE"]),
     ("LIFE", &["LIVE", "DIE"]),
-    ("TIME", &["WHEN", "NOW", "BEFORE", "AFTER", "A_LONG_TIME", "A_SHORT_TIME", "FOR_SOME_TIME", "MOMENT"]),
-    ("SPACE", &["WHERE", "HERE", "ABOVE", "BELOW", "FAR", "NEAR", "SIDE", "INSIDE"]),
+    (
+        "TIME",
+        &[
+            "WHEN",
+            "NOW",
+            "BEFORE",
+            "AFTER",
+            "A_LONG_TIME",
+            "A_SHORT_TIME",
+            "FOR_SOME_TIME",
+            "MOMENT",
+        ],
+    ),
+    (
+        "SPACE",
+        &[
+            "WHERE", "HERE", "ABOVE", "BELOW", "FAR", "NEAR", "SIDE", "INSIDE",
+        ],
+    ),
     ("LOGICAL", &["NOT", "MAYBE", "CAN", "BECAUSE", "IF"]),
     ("INTENSIFIER", &["VERY"]),
     ("SIMILARITY", &["LIKE", "KIND"]),
@@ -143,13 +166,13 @@ pub const ROLES: &[&str] = &[
 pub struct NsmCodebook {
     /// Primitive → Fingerprint mapping
     primes: HashMap<String, Fingerprint>,
-    
+
     /// Role → Fingerprint mapping
     roles: HashMap<String, Fingerprint>,
-    
+
     /// Learned concepts (beyond the 65 primes)
     learned: HashMap<String, (Fingerprint, TruthValue)>,
-    
+
     /// Generation counter (for orthogonalization)
     generation: usize,
 }
@@ -165,7 +188,7 @@ impl NsmCodebook {
     pub fn new() -> Self {
         let mut primes = HashMap::new();
         let mut seed = 0u64;
-        
+
         // Generate orthogonal fingerprints for each prime
         for (category, primitives) in NSM_CATEGORIES {
             for primitive in *primitives {
@@ -176,7 +199,7 @@ impl NsmCodebook {
                 seed += 1;
             }
         }
-        
+
         // Generate role fingerprints
         let mut roles = HashMap::new();
         for role in ROLES {
@@ -184,7 +207,7 @@ impl NsmCodebook {
             roles.insert(role.to_string(), fp);
             seed += 1;
         }
-        
+
         Self {
             primes,
             roles,
@@ -192,94 +215,136 @@ impl NsmCodebook {
             generation: 0,
         }
     }
-    
+
     /// Generate orthogonal-ish fingerprint from seed
     fn orthogonal_fingerprint(seed_str: &str, offset: u64) -> Fingerprint {
         // Use LFSR with seed derived from string + offset
-        let seed = seed_str.bytes()
+        let seed = seed_str
+            .bytes()
             .fold(offset, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
-        
+
         Fingerprint::from_content(&format!("{}{}", seed_str, seed))
     }
-    
+
     /// Get fingerprint for a primitive
     pub fn prime(&self, name: &str) -> Option<&Fingerprint> {
         self.primes.get(name)
     }
-    
+
     /// Get fingerprint for a role
     pub fn role(&self, name: &str) -> Option<&Fingerprint> {
         self.roles.get(name)
     }
-    
+
     /// Decompose text into NSM weights
     /// Returns: Vec<(primitive_name, weight, role)>
     pub fn decompose(&self, text: &str) -> Vec<(String, f32, Option<String>)> {
         let text_lower = text.to_lowercase();
         let mut result = Vec::new();
-        
+
         // Simple keyword-based decomposition
         // (In production, use the fine-tuned model from arXiv:2505.11764)
         let activations = [
             // Mental predicates
-            ("WANT", &["want", "desire", "wish", "need", "yearn"][..], Some("R_ACTION")),
-            ("KNOW", &["know", "understand", "realize", "aware"][..], Some("R_ACTION")),
-            ("THINK", &["think", "believe", "suppose", "consider"][..], Some("R_ACTION")),
+            (
+                "WANT",
+                &["want", "desire", "wish", "need", "yearn"][..],
+                Some("R_ACTION"),
+            ),
+            (
+                "KNOW",
+                &["know", "understand", "realize", "aware"][..],
+                Some("R_ACTION"),
+            ),
+            (
+                "THINK",
+                &["think", "believe", "suppose", "consider"][..],
+                Some("R_ACTION"),
+            ),
             ("FEEL", &["feel", "emotion", "sense"][..], Some("R_ACTION")),
-            ("SEE", &["see", "look", "watch", "observe"][..], Some("R_ACTION")),
+            (
+                "SEE",
+                &["see", "look", "watch", "observe"][..],
+                Some("R_ACTION"),
+            ),
             ("HEAR", &["hear", "listen", "sound"][..], Some("R_ACTION")),
-            
             // Agents
             ("I", &["i ", "me ", "my ", "myself"][..], Some("R_AGENT")),
             ("YOU", &["you ", "your "][..], Some("R_AGENT")),
-            ("SOMEONE", &["someone", "person", "one "][..], Some("R_AGENT")),
-            ("PEOPLE", &["people", "they", "everyone"][..], Some("R_AGENT")),
-            
+            (
+                "SOMEONE",
+                &["someone", "person", "one "][..],
+                Some("R_AGENT"),
+            ),
+            (
+                "PEOPLE",
+                &["people", "they", "everyone"][..],
+                Some("R_AGENT"),
+            ),
             // Evaluators
-            ("GOOD", &["good", "great", "beautiful", "wonderful"][..], None),
+            (
+                "GOOD",
+                &["good", "great", "beautiful", "wonderful"][..],
+                None,
+            ),
             ("BAD", &["bad", "terrible", "awful", "wrong"][..], None),
-            
             // Time
             ("NOW", &["now", "currently", "present"][..], Some("R_TIME")),
-            ("BEFORE", &["before", "past", "ago", "previously"][..], Some("R_TIME")),
-            ("AFTER", &["after", "future", "later", "next"][..], Some("R_TIME")),
-            
+            (
+                "BEFORE",
+                &["before", "past", "ago", "previously"][..],
+                Some("R_TIME"),
+            ),
+            (
+                "AFTER",
+                &["after", "future", "later", "next"][..],
+                Some("R_TIME"),
+            ),
             // Logic
-            ("BECAUSE", &["because", "since", "therefore"][..], Some("R_CAUSE")),
-            ("IF", &["if ", "whether", "suppose"][..], Some("R_CONDITION")),
+            (
+                "BECAUSE",
+                &["because", "since", "therefore"][..],
+                Some("R_CAUSE"),
+            ),
+            (
+                "IF",
+                &["if ", "whether", "suppose"][..],
+                Some("R_CONDITION"),
+            ),
             ("NOT", &["not", "no ", "never", "don't"][..], None),
             ("MAYBE", &["maybe", "perhaps", "possibly"][..], None),
-            
             // Existence
             ("DO", &["do ", "does", "did", "doing"][..], Some("R_ACTION")),
-            ("HAPPEN", &["happen", "occur", "event"][..], Some("R_ACTION")),
+            (
+                "HAPPEN",
+                &["happen", "occur", "event"][..],
+                Some("R_ACTION"),
+            ),
         ];
-        
+
         for (primitive, keywords, role) in activations {
-            let count: usize = keywords.iter()
-                .map(|k| text_lower.matches(k).count())
-                .sum();
-            
+            let count: usize = keywords.iter().map(|k| text_lower.matches(k).count()).sum();
+
             if count > 0 {
                 let weight = (count as f32 * 0.3).min(1.0);
                 result.push((primitive.to_string(), weight, role.map(|s| s.to_string())));
             }
         }
-        
+
         result
     }
-    
+
     /// Encode text as fingerprint using NSM decomposition + role binding
     pub fn encode(&self, text: &str) -> Fingerprint {
         let decomposition = self.decompose(text);
-        
+
         if decomposition.is_empty() {
             // Fallback: content-based fingerprint
             return Fingerprint::from_content(text);
         }
-        
+
         let mut components = Vec::new();
-        
+
         for (primitive, weight, role) in &decomposition {
             if let Some(prime_fp) = self.primes.get(primitive) {
                 // Role-bind if role is specified
@@ -292,42 +357,38 @@ impl NsmCodebook {
                 } else {
                     prime_fp.clone()
                 };
-                
+
                 components.push((bound, *weight));
             }
         }
-        
+
         // Weighted bundle
         weighted_bundle(&components)
     }
-    
+
     /// Learn a new concept from a cluster of similar fingerprints
     /// This is the metacognitive bootstrap!
-    pub fn learn_concept(
-        &mut self, 
-        name: &str, 
-        examples: &[Fingerprint],
-        confidence: f32,
-    ) {
+    pub fn learn_concept(&mut self, name: &str, examples: &[Fingerprint], confidence: f32) {
         if examples.is_empty() {
             return;
         }
-        
+
         // Bundle the examples to get the "prototype"
         let prototype = bundle_majority(examples);
-        
+
         // Make it more orthogonal to existing concepts
         let orthogonalized = self.orthogonalize(&prototype);
-        
+
         let truth = TruthValue::new(1.0, confidence);
-        self.learned.insert(name.to_string(), (orthogonalized, truth));
+        self.learned
+            .insert(name.to_string(), (orthogonalized, truth));
         self.generation += 1;
     }
-    
+
     /// Project out known concepts to make new one more orthogonal
     fn orthogonalize(&self, fp: &Fingerprint) -> Fingerprint {
         let mut result = fp.clone();
-        
+
         // Project out each prime that has high correlation
         for (_, prime_fp) in &self.primes {
             let sim = result.similarity(prime_fp);
@@ -336,7 +397,7 @@ impl NsmCodebook {
                 result = project_out(&result, prime_fp, 0.3);
             }
         }
-        
+
         // Project out learned concepts too
         for (_, (learned_fp, _)) in &self.learned {
             let sim = result.similarity(learned_fp);
@@ -344,14 +405,14 @@ impl NsmCodebook {
                 result = project_out(&result, learned_fp, 0.3);
             }
         }
-        
+
         result
     }
-    
+
     /// Get the best matching concept for a fingerprint
     pub fn resonate(&self, query: &Fingerprint, threshold: f32) -> Option<(String, f32)> {
         let mut best: Option<(String, f32)> = None;
-        
+
         // Check primes
         for (name, fp) in &self.primes {
             let sim = query.similarity(fp);
@@ -361,7 +422,7 @@ impl NsmCodebook {
                 }
             }
         }
-        
+
         // Check learned concepts
         for (name, (fp, _)) in &self.learned {
             let sim = query.similarity(fp);
@@ -371,10 +432,10 @@ impl NsmCodebook {
                 }
             }
         }
-        
+
         best
     }
-    
+
     /// Get total vocabulary size (primes + learned)
     pub fn vocabulary_size(&self) -> usize {
         self.primes.len() + self.learned.len()
@@ -390,7 +451,7 @@ fn weighted_bundle(fps: &[(Fingerprint, f32)]) -> Fingerprint {
     if fps.is_empty() {
         return Fingerprint::zero();
     }
-    
+
     let mut counts = [0.0f32; 16384];
     let mut total_weight = 0.0f32;
 
@@ -443,26 +504,28 @@ fn bundle_majority(fps: &[Fingerprint]) -> Fingerprint {
             result.set_bit(i, true);
         }
     }
-    
+
     result
 }
 
 /// Project out a component (reduce correlation)
 fn project_out(fp: &Fingerprint, component: &Fingerprint, strength: f32) -> Fingerprint {
     let mut result = fp.clone();
-    let overlap = fp.as_raw().iter()
+    let overlap = fp
+        .as_raw()
+        .iter()
         .zip(component.as_raw().iter())
         .map(|(a, b)| (*a & *b).count_ones())
         .sum::<u32>();
-    
+
     if overlap < 100 {
         return result; // Not enough overlap to project
     }
-    
+
     // Flip bits where both are set, probabilistically
     let flip_prob = strength;
     let mut seed = overlap as u64;
-    
+
     for i in 0..16384 {
         if fp.get_bit(i) && component.get_bit(i) {
             // LFSR pseudo-random decision
@@ -474,7 +537,7 @@ fn project_out(fp: &Fingerprint, component: &Fingerprint, strength: f32) -> Fing
             }
         }
     }
-    
+
     result
 }
 
@@ -487,16 +550,16 @@ fn project_out(fp: &Fingerprint, component: &Fingerprint, strength: f32) -> Fing
 pub struct MetaConcept {
     /// Name/label
     pub name: String,
-    
+
     /// Fingerprint (the "what")
     pub fingerprint: Fingerprint,
-    
+
     /// NARS truth value (how confident are we)
     pub truth: TruthValue,
-    
+
     /// Usage count (for frequency-based confidence)
     pub uses: u64,
-    
+
     /// Last access time (for recency weighting)
     pub last_access: u64,
 }
@@ -505,13 +568,13 @@ pub struct MetaConcept {
 pub struct MetacognitiveSubstrate {
     /// The NSM codebook
     pub codebook: NsmCodebook,
-    
+
     /// The 5×5×5 crystal for context
     crystal: [[[Fingerprint; 5]; 5]; 5],
-    
+
     /// Concepts learned from resonance patterns
     concepts: HashMap<String, MetaConcept>,
-    
+
     /// Time counter
     tick: u64,
 }
@@ -527,48 +590,43 @@ impl MetacognitiveSubstrate {
         Self {
             codebook: NsmCodebook::new(),
             crystal: core::array::from_fn(|_| {
-                core::array::from_fn(|_| {
-                    core::array::from_fn(|_| Fingerprint::zero())
-                })
+                core::array::from_fn(|_| core::array::from_fn(|_| Fingerprint::zero()))
             }),
             concepts: HashMap::new(),
             tick: 0,
         }
     }
-    
+
     /// Encode text to fingerprint (replaces Jina!)
     pub fn encode(&self, text: &str) -> Fingerprint {
         self.codebook.encode(text)
     }
-    
+
     /// Insert into crystal at position
     pub fn insert(&mut self, t: usize, s: usize, o: usize, fp: &Fingerprint) {
         let t = t.min(4);
         let s = s.min(4);
         let o = o.min(4);
-        
+
         if self.crystal[t][s][o].popcount() == 0 {
             self.crystal[t][s][o] = fp.clone();
         } else {
-            self.crystal[t][s][o] = bundle_majority(&[
-                self.crystal[t][s][o].clone(),
-                fp.clone(),
-            ]);
+            self.crystal[t][s][o] = bundle_majority(&[self.crystal[t][s][o].clone(), fp.clone()]);
         }
-        
+
         self.tick += 1;
     }
-    
+
     /// Resonate: find best matching concept
     pub fn resonate(&self, query: &Fingerprint) -> Option<(String, f32, TruthValue)> {
         // First check codebook
         if let Some((name, sim)) = self.codebook.resonate(query, 0.6) {
             return Some((name, sim, TruthValue::new(1.0, 0.9)));
         }
-        
+
         // Then check learned concepts
         let mut best: Option<(String, f32, TruthValue)> = None;
-        
+
         for (name, concept) in &self.concepts {
             let sim = query.similarity(&concept.fingerprint);
             if sim > 0.6 {
@@ -577,15 +635,15 @@ impl MetacognitiveSubstrate {
                 }
             }
         }
-        
+
         best
     }
-    
+
     /// Metacognitive loop: detect clusters and mint new concepts
     pub fn reflect(&mut self) {
         // Find clusters in the crystal
         let mut cell_fps: Vec<(usize, usize, usize, Fingerprint)> = Vec::new();
-        
+
         for t in 0..5 {
             for s in 0..5 {
                 for o in 0..5 {
@@ -596,34 +654,36 @@ impl MetacognitiveSubstrate {
                 }
             }
         }
-        
+
         // Find pairs with high similarity
         for i in 0..cell_fps.len() {
-            for j in (i+1)..cell_fps.len() {
+            for j in (i + 1)..cell_fps.len() {
                 let sim = cell_fps[i].3.similarity(&cell_fps[j].3);
-                
+
                 if sim > 0.8 {
                     // These cells are similar - potential concept!
-                    let prototype = bundle_majority(&[
-                        cell_fps[i].3.clone(),
-                        cell_fps[j].3.clone(),
-                    ]);
-                    
+                    let prototype =
+                        bundle_majority(&[cell_fps[i].3.clone(), cell_fps[j].3.clone()]);
+
                     // Check if we already have this concept
                     let existing = self.codebook.resonate(&prototype, 0.85);
-                    
+
                     if existing.is_none() {
                         // Mint new concept!
                         let name = format!("CONCEPT_{}", self.tick);
-                        self.codebook.learn_concept(&name, &[prototype.clone()], 0.7);
-                        
-                        self.concepts.insert(name.clone(), MetaConcept {
-                            name,
-                            fingerprint: prototype,
-                            truth: TruthValue::new(1.0, 0.7),
-                            uses: 1,
-                            last_access: self.tick,
-                        });
+                        self.codebook
+                            .learn_concept(&name, &[prototype.clone()], 0.7);
+
+                        self.concepts.insert(
+                            name.clone(),
+                            MetaConcept {
+                                name,
+                                fingerprint: prototype,
+                                truth: TruthValue::new(1.0, 0.7),
+                                uses: 1,
+                                last_access: self.tick,
+                            },
+                        );
                     }
                 }
             }
@@ -638,93 +698,93 @@ impl MetacognitiveSubstrate {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_codebook_initialization() {
         let codebook = NsmCodebook::new();
-        
+
         // Should have 65 primes
         assert!(codebook.primes.len() >= 60);
-        
+
         // Should have role markers
         assert!(codebook.roles.len() >= 8);
-        
+
         // Primes should be roughly orthogonal
         let want = codebook.prime("WANT").unwrap();
         let know = codebook.prime("KNOW").unwrap();
         let sim = want.similarity(know);
-        
+
         // Should be low similarity (orthogonal-ish)
         assert!(sim < 0.6, "WANT and KNOW too similar: {}", sim);
     }
-    
+
     #[test]
     fn test_decomposition() {
         let codebook = NsmCodebook::new();
-        
+
         let decomp = codebook.decompose("I want to know something good");
-        
+
         // Should detect I, WANT, KNOW, GOOD
         let names: Vec<_> = decomp.iter().map(|(n, _, _)| n.as_str()).collect();
         assert!(names.contains(&"I"));
         assert!(names.contains(&"WANT"));
         assert!(names.contains(&"KNOW"));
     }
-    
+
     #[test]
     fn test_encoding() {
         let codebook = NsmCodebook::new();
-        
+
         let fp1 = codebook.encode("I want to understand");
         let fp2 = codebook.encode("I desire to comprehend");
         let fp3 = codebook.encode("The weather is nice today");
-        
+
         // Similar meanings should be closer
         let sim_12 = fp1.similarity(&fp2);
         let sim_13 = fp1.similarity(&fp3);
-        
+
         println!("want/desire similarity: {:.3}", sim_12);
         println!("want/weather similarity: {:.3}", sim_13);
-        
+
         // With proper NSM decomposition, these should differ
         // (though keyword-based is crude)
     }
-    
+
     #[test]
     fn test_learning() {
         let mut codebook = NsmCodebook::new();
-        
+
         // Create some example fingerprints
         let examples = vec![
             Fingerprint::from_content("programming code software"),
             Fingerprint::from_content("coding development software"),
             Fingerprint::from_content("software engineering code"),
         ];
-        
+
         // Learn a new concept
         codebook.learn_concept("PROGRAMMING", &examples, 0.8);
-        
+
         // Should now be in vocabulary
         assert!(codebook.vocabulary_size() > 65);
-        
+
         // Should resonate
         let query = Fingerprint::from_content("writing code");
         let result = codebook.resonate(&query, 0.3);
-        
+
         println!("Resonance result: {:?}", result);
     }
-    
+
     #[test]
     fn test_metacognitive_substrate() {
         let mut substrate = MetacognitiveSubstrate::new();
-        
+
         // Encode some text
         let fp = substrate.encode("I want to understand this concept");
         assert!(fp.popcount() > 0);
-        
+
         // Insert into crystal
         substrate.insert(2, 2, 2, &fp);
-        
+
         // Should be able to resonate
         let result = substrate.resonate(&fp);
         println!("Substrate resonance: {:?}", result);

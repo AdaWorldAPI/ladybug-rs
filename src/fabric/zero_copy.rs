@@ -25,8 +25,8 @@
 //!      [0x8001,...]      [0x8002,...]
 //! ```
 
+use crate::storage::{Addr, BindSpace, FINGERPRINT_WORDS};
 use std::collections::VecDeque;
-use crate::storage::{BindSpace, Addr, FINGERPRINT_WORDS};
 
 /// Address reference - no data copy
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -92,10 +92,7 @@ pub struct ZeroCopyExecutor<'a> {
 
 impl<'a> ZeroCopyExecutor<'a> {
     pub fn new(bind_space: &'a mut BindSpace) -> Self {
-        Self {
-            bind_space,
-            ops: 0,
-        }
+        Self { bind_space, ops: 0 }
     }
 
     /// Bind two addresses, write result to dest - ZERO COPY
@@ -130,7 +127,8 @@ impl<'a> ZeroCopyExecutor<'a> {
     /// No fingerprint data is copied!
     #[inline]
     pub fn follow_edge(&self, edge: AddrRef) -> Option<AddrRef> {
-        self.bind_space.read(Addr(edge.0))
+        self.bind_space
+            .read(Addr(edge.0))
             .map(|node| AddrRef((node.fingerprint[0] & 0xFFFF) as u16))
     }
 
@@ -219,7 +217,9 @@ impl<'a> ZeroCopyExecutor<'a> {
         let fp_a = self.bind_space.read(Addr(a.0))?;
         let fp_b = self.bind_space.read(Addr(b.0))?;
 
-        let dist: u32 = fp_a.fingerprint.iter()
+        let dist: u32 = fp_a
+            .fingerprint
+            .iter()
             .zip(fp_b.fingerprint.iter())
             .map(|(x, y)| (x ^ y).count_ones())
             .sum();
@@ -295,7 +295,12 @@ impl<'a> ZeroCopyExecutor<'a> {
     }
 
     /// Shortest path via address-only BFS
-    pub fn shortest_path(&self, start: AddrRef, end: AddrRef, max_hops: usize) -> Option<Vec<AddrRef>> {
+    pub fn shortest_path(
+        &self,
+        start: AddrRef,
+        end: AddrRef,
+        max_hops: usize,
+    ) -> Option<Vec<AddrRef>> {
         let mut visited = vec![false; 65536];
         let mut parent = vec![None::<AddrRef>; 65536];
         let mut queue = VecDeque::new();

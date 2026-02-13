@@ -27,20 +27,47 @@ impl ThroughputReport {
     pub fn print(&self) {
         println!("\n╔════════════════════════════════════════════════════════════════╗");
         println!("║                    THROUGHPUT MEASUREMENT                      ║");
-        println!("║                    {} vectors, {} queries               ║",
-            format_num(self.num_vectors), format_num(self.num_queries));
+        println!(
+            "║                    {} vectors, {} queries               ║",
+            format_num(self.num_vectors),
+            format_num(self.num_queries)
+        );
         println!("╠════════════════════════════════════════════════════════════════╣");
         println!("║ LATENCY                                                        ║");
-        println!("║   Average:  {:>12}                                       ║", format_ns(self.avg_latency_ns));
-        println!("║   P50:      {:>12}                                       ║", format_ns(self.p50_latency_ns));
-        println!("║   P95:      {:>12}                                       ║", format_ns(self.p95_latency_ns));
-        println!("║   P99:      {:>12}                                       ║", format_ns(self.p99_latency_ns));
-        println!("║   Min:      {:>12}                                       ║", format_ns(self.min_latency_ns));
-        println!("║   Max:      {:>12}                                       ║", format_ns(self.max_latency_ns));
+        println!(
+            "║   Average:  {:>12}                                       ║",
+            format_ns(self.avg_latency_ns)
+        );
+        println!(
+            "║   P50:      {:>12}                                       ║",
+            format_ns(self.p50_latency_ns)
+        );
+        println!(
+            "║   P95:      {:>12}                                       ║",
+            format_ns(self.p95_latency_ns)
+        );
+        println!(
+            "║   P99:      {:>12}                                       ║",
+            format_ns(self.p99_latency_ns)
+        );
+        println!(
+            "║   Min:      {:>12}                                       ║",
+            format_ns(self.min_latency_ns)
+        );
+        println!(
+            "║   Max:      {:>12}                                       ║",
+            format_ns(self.max_latency_ns)
+        );
         println!("╠════════════════════════════════════════════════════════════════╣");
         println!("║ THROUGHPUT                                                     ║");
-        println!("║   Single-query QPS:  {:>12.0}                             ║", self.qps);
-        println!("║   Batch QPS:         {:>12.0}                             ║", self.batch_qps);
+        println!(
+            "║   Single-query QPS:  {:>12.0}                             ║",
+            self.qps
+        );
+        println!(
+            "║   Batch QPS:         {:>12.0}                             ║",
+            self.batch_qps
+        );
         println!("╚════════════════════════════════════════════════════════════════╝");
 
         // Performance tier
@@ -135,7 +162,8 @@ pub fn throughput_scaling_test() {
 
         let report = measure_throughput(&database, &queries, 10, 10);
 
-        println!("║ {:>13} │ {:>13} │ {:>13} │ {:>12.0} ║",
+        println!(
+            "║ {:>13} │ {:>13} │ {:>13} │ {:>12.0} ║",
             format_num(size),
             format_ns(report.avg_latency_ns),
             format_ns(report.p99_latency_ns),

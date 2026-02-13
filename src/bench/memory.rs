@@ -28,23 +28,44 @@ impl MemoryReport {
     pub fn print(&self) {
         println!("\n╔════════════════════════════════════════════════════════════════╗");
         println!("║                    MEMORY COMPARISON                           ║");
-        println!("║                    {} vectors                               ║", format_num(self.num_vectors));
+        println!(
+            "║                    {} vectors                               ║",
+            format_num(self.num_vectors)
+        );
         println!("╠════════════════════════════════════════════════════════════════╣");
         println!("║ System          │ Total RAM      │ Per Vector    │ vs Float32 ║");
         println!("╠═════════════════╪════════════════╪═══════════════╪════════════╣");
-        println!("║ Float32 HNSW    │ {:>14} │ {:>13} │      1.0x  ║",
-            format_bytes(self.float32_total), format_bytes(self.float32_per_vec as usize));
-        println!("║ Float16 HNSW    │ {:>14} │ {:>13} │      1.9x  ║",
-            format_bytes(self.float16_total), format_bytes(self.float16_per_vec as usize));
-        println!("║ IVF_PQ          │ {:>14} │ {:>13} │     30.0x  ║",
-            format_bytes(self.pq_total), format_bytes(self.pq_per_vec as usize));
-        println!("║ LADYBUG 10K-bit │ {:>14} │ {:>13} │ {:>8.1}x  ║",
-            format_bytes(self.ladybug_total), format_bytes(self.ladybug_per_vec as usize),
-            self.savings_vs_f32);
+        println!(
+            "║ Float32 HNSW    │ {:>14} │ {:>13} │      1.0x  ║",
+            format_bytes(self.float32_total),
+            format_bytes(self.float32_per_vec as usize)
+        );
+        println!(
+            "║ Float16 HNSW    │ {:>14} │ {:>13} │      1.9x  ║",
+            format_bytes(self.float16_total),
+            format_bytes(self.float16_per_vec as usize)
+        );
+        println!(
+            "║ IVF_PQ          │ {:>14} │ {:>13} │     30.0x  ║",
+            format_bytes(self.pq_total),
+            format_bytes(self.pq_per_vec as usize)
+        );
+        println!(
+            "║ LADYBUG 10K-bit │ {:>14} │ {:>13} │ {:>8.1}x  ║",
+            format_bytes(self.ladybug_total),
+            format_bytes(self.ladybug_per_vec as usize),
+            self.savings_vs_f32
+        );
         println!("╚═════════════════╧════════════════╧═══════════════╧════════════╝");
         println!();
-        println!("Ladybug uses {:.1}x LESS RAM than float32 HNSW", self.savings_vs_f32);
-        println!("Ladybug uses {:.1}x LESS RAM than float16 HNSW", self.savings_vs_f16);
+        println!(
+            "Ladybug uses {:.1}x LESS RAM than float32 HNSW",
+            self.savings_vs_f32
+        );
+        println!(
+            "Ladybug uses {:.1}x LESS RAM than float16 HNSW",
+            self.savings_vs_f16
+        );
     }
 }
 

@@ -34,7 +34,9 @@ impl PhaseTag13D {
     }
 
     pub fn pi() -> Self {
-        Self { bits: [u64::MAX, u64::MAX] }
+        Self {
+            bits: [u64::MAX, u64::MAX],
+        }
     }
 
     pub fn from_seed(seed: u64) -> Self {
@@ -57,8 +59,7 @@ impl PhaseTag13D {
     }
 
     pub fn hamming(&self, other: &PhaseTag13D) -> u32 {
-        (self.bits[0] ^ other.bits[0]).count_ones()
-            + (self.bits[1] ^ other.bits[1]).count_ones()
+        (self.bits[0] ^ other.bits[0]).count_ones() + (self.bits[1] ^ other.bits[1]).count_ones()
     }
 
     pub fn cos_angle_to(&self, other: &PhaseTag13D) -> f32 {
@@ -151,14 +152,16 @@ impl Coord13D {
     }
 
     pub fn manhattan(&self, other: &Coord13D) -> usize {
-        self.axes.iter()
+        self.axes
+            .iter()
             .zip(other.axes.iter())
             .map(|(a, b)| (*a as isize - *b as isize).unsigned_abs())
             .sum()
     }
 
     pub fn chebyshev(&self, other: &Coord13D) -> usize {
-        self.axes.iter()
+        self.axes
+            .iter()
             .zip(other.axes.iter())
             .map(|(a, b)| (*a as isize - *b as isize).unsigned_abs())
             .max()
@@ -304,9 +307,7 @@ impl Crystal13D {
             let b = &cell_b.amplitude;
             let b_prime = cell_b.amplitude.permute(17);
 
-            let corr = |x: &Fingerprint, y: &Fingerprint| -> f32 {
-                2.0 * x.similarity(y) - 1.0
-            };
+            let corr = |x: &Fingerprint, y: &Fingerprint| -> f32 { 2.0 * x.similarity(y) - 1.0 };
 
             e_ab += corr(a, b);
             e_ab_prime += corr(a, &b_prime);
@@ -460,6 +461,9 @@ mod tests {
         crystal.populate_entangled(0.05);
 
         let result = crystal.bell_test(30);
-        println!("13D Bell test: S = {:.3}, quantum = {}", result.s_value, result.is_quantum);
+        println!(
+            "13D Bell test: S = {:.3}, quantum = {}",
+            result.s_value, result.is_quantum
+        );
     }
 }

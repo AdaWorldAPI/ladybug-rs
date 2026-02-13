@@ -55,7 +55,12 @@ impl ClusterDistribution {
         let n = distances.len() as f32;
         let mu = distances.iter().sum::<u32>() as f32 / n;
         let sigma = if distances.len() > 1 {
-            (distances.iter().map(|d| (*d as f32 - mu).powi(2)).sum::<f32>() / (n - 1.0)).sqrt()
+            (distances
+                .iter()
+                .map(|d| (*d as f32 - mu).powi(2))
+                .sum::<f32>()
+                / (n - 1.0))
+                .sqrt()
         } else {
             0.0
         };
@@ -93,7 +98,11 @@ impl ClusterDistribution {
     /// High CV → spread-out cluster → more resolution needed.
     #[inline]
     pub fn coefficient_of_variation(&self) -> f32 {
-        if self.mu > 0.0 { self.sigma / self.mu } else { 0.0 }
+        if self.mu > 0.0 {
+            self.sigma / self.mu
+        } else {
+            0.0
+        }
     }
 
     /// Interquartile range: p75 - p25.
@@ -245,17 +254,18 @@ pub struct DistortionReport {
 
 /// Detect distortion between original and transformed fingerprints,
 /// calibrated against a cluster's CRP distribution.
-pub fn detect_distortion(
-    raw_distance: u32,
-    corpus_dist: &ClusterDistribution,
-) -> DistortionReport {
+pub fn detect_distortion(raw_distance: u32, corpus_dist: &ClusterDistribution) -> DistortionReport {
     let noise_floor = corpus_dist.sigma * BERRY_ESSEEN_NOISE_FLOOR;
     let d = raw_distance as f32;
     let z = corpus_dist.z_score(d);
 
     DistortionReport {
         information_loss: (d - noise_floor).max(0.0) / TOTAL_BITS,
-        structural_drift: if corpus_dist.mu > 0.0 { d / corpus_dist.mu } else { 0.0 },
+        structural_drift: if corpus_dist.mu > 0.0 {
+            d / corpus_dist.mu
+        } else {
+            0.0
+        },
         semantic_z: z,
         significant: z.abs() > 2.0,
     }

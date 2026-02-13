@@ -12,6 +12,9 @@
 # Profiles:
 #   docker-compose --profile avx512 up    # Use AVX-512 optimized build
 #   docker-compose --profile dev up       # Development with hot reload
+#   docker-compose --profile n8n up       # Ladybug + n8n workflow engine
+#   docker-compose --profile crewai up    # Ladybug + crewAI orchestration
+#   docker-compose --profile full up      # Ladybug + n8n + crewAI
 # =============================================================================
 
 version: '3.9'
@@ -98,6 +101,102 @@ services:
         ./target/release/ladybug-server
       "
     restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Ladybug + n8n workflow engine
+  # ---------------------------------------------------------------------------
+  ladybug-n8n:
+    build:
+      context: .
+      dockerfile: Dockerfile.n8n
+    container_name: ladybug-rs-n8n
+    profiles:
+      - n8n
+    ports:
+      - "8080:8080"
+      - "50051:50051"
+    environment:
+      - LADYBUG_HOST=0.0.0.0
+      - LADYBUG_PORT=8080
+      - LADYBUG_FLIGHT_PORT=50051
+      - RUST_LOG=info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+
+  # ---------------------------------------------------------------------------
+  # Ladybug + crewAI agent orchestration
+  # ---------------------------------------------------------------------------
+  ladybug-crewai:
+    build:
+      context: .
+      dockerfile: Dockerfile.crewai
+    container_name: ladybug-rs-crewai
+    profiles:
+      - crewai
+    ports:
+      - "8080:8080"
+      - "50051:50051"
+    environment:
+      - LADYBUG_HOST=0.0.0.0
+      - LADYBUG_PORT=8080
+      - LADYBUG_FLIGHT_PORT=50051
+      - RUST_LOG=info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+
+  # ---------------------------------------------------------------------------
+  # Ladybug + n8n + crewAI (full vendor build)
+  # ---------------------------------------------------------------------------
+  ladybug-full:
+    build:
+      context: .
+      dockerfile: Dockerfile.full
+    container_name: ladybug-rs-full
+    profiles:
+      - full
+    ports:
+      - "8080:8080"
+      - "50051:50051"
+    environment:
+      - LADYBUG_HOST=0.0.0.0
+      - LADYBUG_PORT=8080
+      - LADYBUG_FLIGHT_PORT=50051
+      - RUST_LOG=info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
 
 volumes:
   cargo-cache:

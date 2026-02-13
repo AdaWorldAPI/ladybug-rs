@@ -8,7 +8,7 @@
 //! - Schmidhuber (2010): Recursive compression as intelligence measure
 //! - Berry-Esseen (1941/42): At d=16384, Normal approximation error < 0.004
 
-use crate::search::hdr_cascade::{hamming_distance, WORDS};
+use crate::search::hdr_cascade::{WORDS, hamming_distance};
 
 const TOTAL_BITS: f32 = 16384.0;
 
@@ -66,7 +66,10 @@ impl Default for RecursiveExpansion {
 
 impl RecursiveExpansion {
     pub fn new(max_depth: u8, convergence_threshold: f32) -> Self {
-        Self { max_depth, convergence_threshold }
+        Self {
+            max_depth,
+            convergence_threshold,
+        }
     }
 
     /// Apply a transformation function recursively until convergence or max_depth.
@@ -94,12 +97,20 @@ impl RecursiveExpansion {
             });
 
             if delta < self.convergence_threshold {
-                return ExpansionTrace { steps, converged: true, total_information };
+                return ExpansionTrace {
+                    steps,
+                    converged: true,
+                    total_information,
+                };
             }
             current = next;
         }
 
-        ExpansionTrace { steps, converged: false, total_information }
+        ExpansionTrace {
+            steps,
+            converged: false,
+            total_information,
+        }
     }
 }
 
@@ -126,11 +137,7 @@ pub struct OscillationResult {
 ///
 /// - Even rounds: diverge (XOR with noise = explore neighborhood)
 /// - Odd rounds: converge (keep only majority bits = stabilize)
-pub fn oscillate(
-    seed: &[u64; WORDS],
-    rounds: usize,
-    noise_magnitude: f32,
-) -> OscillationResult {
+pub fn oscillate(seed: &[u64; WORDS], rounds: usize, noise_magnitude: f32) -> OscillationResult {
     let mut current = *seed;
     let mut ratios = Vec::with_capacity(rounds);
     let mut total_delta = 0.0;
@@ -145,9 +152,12 @@ pub fn oscillate(
                 // Deterministic noise based on round + word position
                 let mask = if bits_per_word > 0 {
                     let shift = (round * 7 + 3) % 64;
-                    u64::MAX.wrapping_shr(64u32.saturating_sub(bits_per_word as u32))
+                    u64::MAX
+                        .wrapping_shr(64u32.saturating_sub(bits_per_word as u32))
                         .rotate_left(shift as u32)
-                } else { 0 };
+                } else {
+                    0
+                };
                 *word ^= mask;
             }
             ratios.push(1.0);
@@ -234,7 +244,10 @@ mod tests {
         let result = oscillate(&seed, 10, 0.01);
         // After oscillation with small noise, should be close to seed
         let dist = hamming_distance(&seed, &result.result) as f32 / TOTAL_BITS;
-        assert!(dist < 0.1, "Oscillation should stay near seed, got delta={dist}");
+        assert!(
+            dist < 0.1,
+            "Oscillation should stay near seed, got delta={dist}"
+        );
     }
 
     #[test]

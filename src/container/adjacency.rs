@@ -14,7 +14,7 @@
 //! The graph IS the metadata — no separate adjacency structure.
 
 use super::CONTAINER_WORDS;
-use super::meta::{W_EDGE_BASE, W_ADJ_BASE, MAX_INLINE_EDGES};
+use super::meta::{MAX_INLINE_EDGES, W_ADJ_BASE, W_EDGE_BASE};
 
 // ============================================================================
 // PACKED DN: Hierarchical address in a u64
@@ -176,7 +176,8 @@ impl PackedDn {
     /// ```
     pub fn from_path(path: &str) -> Self {
         let bare = path.strip_prefix("bindspace://").unwrap_or(path);
-        let components: Vec<u8> = bare.split(':')
+        let components: Vec<u8> = bare
+            .split(':')
             .take(Self::MAX_DEPTH)
             .map(|seg| {
                 // Deterministic 8-bit hash of segment (wrapping multiply-add)
@@ -238,7 +239,10 @@ pub struct InlineEdge {
 
 impl InlineEdge {
     /// Empty/sentinel edge.
-    pub const EMPTY: InlineEdge = InlineEdge { verb: 0, target_hint: 0 };
+    pub const EMPTY: InlineEdge = InlineEdge {
+        verb: 0,
+        target_hint: 0,
+    };
 
     /// Pack into 16 bits.
     #[inline]
@@ -282,9 +286,7 @@ impl EdgeDescriptor {
     /// Create from components.
     pub fn new(verb_id: u16, weight: f32, target_dn_low: u32) -> Self {
         let w = (weight.clamp(0.0, 1.0) * 65535.0) as u16;
-        let val = ((verb_id as u64) << 48)
-            | ((w as u64) << 32)
-            | (target_dn_low as u64);
+        let val = ((verb_id as u64) << 48) | ((w as u64) << 32) | (target_dn_low as u64);
         EdgeDescriptor(val)
     }
 
@@ -446,8 +448,7 @@ impl<'a> InlineEdgeViewMut<'a> {
         let word_idx = W_EDGE_BASE + idx / 4;
         let shift = (idx % 4) * 16;
         let packed = edge.pack() as u64;
-        self.words[word_idx] = (self.words[word_idx] & !(0xFFFF << shift))
-            | (packed << shift);
+        self.words[word_idx] = (self.words[word_idx] & !(0xFFFF << shift)) | (packed << shift);
     }
 
     /// Add an edge to the first empty slot. Returns the slot index, or None if full.
@@ -567,8 +568,8 @@ impl<'a> CsrOverflowViewMut<'a> {
 
     /// Set row count.
     pub fn set_row_count(&mut self, count: u16) {
-        self.words[CSR_HEADER] = (self.words[CSR_HEADER] & !(0xFFFF << 16))
-            | ((count as u64) << 16);
+        self.words[CSR_HEADER] =
+            (self.words[CSR_HEADER] & !(0xFFFF << 16)) | ((count as u64) << 16);
     }
 
     /// Write an EdgeDescriptor into the data region.

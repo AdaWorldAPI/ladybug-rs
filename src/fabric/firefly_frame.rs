@@ -198,15 +198,15 @@ impl FrameHeader {
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LanguagePrefix {
-    Lance = 0x0,    // Vector operations
-    Sql = 0x1,      // Relational
-    Cypher = 0x2,   // Graph
-    Nars = 0x3,     // Inference
-    Causal = 0x4,   // Pearl's rungs
-    Quantum = 0x5,  // Superposition
-    Memory = 0x6,   // Bind space
-    Control = 0x7,  // Flow control
-    Trap = 0xF,     // System calls
+    Lance = 0x0,   // Vector operations
+    Sql = 0x1,     // Relational
+    Cypher = 0x2,  // Graph
+    Nars = 0x3,    // Inference
+    Causal = 0x4,  // Pearl's rungs
+    Quantum = 0x5, // Superposition
+    Memory = 0x6,  // Bind space
+    Control = 0x7, // Flow control
+    Trap = 0xF,    // System calls
 }
 
 impl LanguagePrefix {
@@ -229,10 +229,10 @@ impl LanguagePrefix {
 /// Condition flags for branching
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ConditionFlags {
-    pub zero: bool,       // Result was zero
-    pub negative: bool,   // Result was negative
-    pub overflow: bool,   // Arithmetic overflow
-    pub carry: bool,      // Carry/borrow
+    pub zero: bool,     // Result was zero
+    pub negative: bool, // Result was negative
+    pub overflow: bool, // Arithmetic overflow
+    pub carry: bool,    // Carry/borrow
 }
 
 impl ConditionFlags {

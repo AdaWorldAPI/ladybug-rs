@@ -36,7 +36,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
 
 use crate::core::Fingerprint;
-use crate::core::simd::{hamming_distance, batch_hamming as rust_batch_hamming};
+use crate::core::simd::{batch_hamming as rust_batch_hamming, hamming_distance};
 use crate::nars::TruthValue;
 use crate::storage::Database;
 use crate::{FINGERPRINT_BITS, FINGERPRINT_BYTES};
@@ -174,7 +174,8 @@ impl PyFingerprint {
     }
 
     fn __repr__(&self) -> String {
-        format!("Fingerprint({} bits set, density={:.2})",
+        format!(
+            "Fingerprint({} bits set, density={:.2})",
             self.inner.popcount(),
             self.inner.density()
         )
@@ -196,7 +197,7 @@ impl PyTruthValue {
             inner: TruthValue::new(frequency, confidence),
         }
     }
-    
+
     /// Create from evidence counts
     #[staticmethod]
     fn from_evidence(positive: f32, negative: f32) -> Self {
@@ -204,66 +205,70 @@ impl PyTruthValue {
             inner: TruthValue::from_evidence(positive, negative),
         }
     }
-    
+
     /// Frequency component
     #[getter]
     fn frequency(&self) -> f32 {
         self.inner.frequency
     }
-    
+
     /// Confidence component
     #[getter]
     fn confidence(&self) -> f32 {
         self.inner.confidence
     }
-    
+
     /// Expected value for decision making
     fn expectation(&self) -> f32 {
         self.inner.expectation()
     }
-    
+
     /// Revision: combine with independent evidence
     fn revision(&self, other: &PyTruthValue) -> PyTruthValue {
         PyTruthValue {
             inner: self.inner.revision(&other.inner),
         }
     }
-    
+
     /// Deduction: A→B, B→C ⊢ A→C
     fn deduction(&self, other: &PyTruthValue) -> PyTruthValue {
         PyTruthValue {
             inner: self.inner.deduction(&other.inner),
         }
     }
-    
+
     /// Induction: A→B, A→C ⊢ B→C
     fn induction(&self, other: &PyTruthValue) -> PyTruthValue {
         PyTruthValue {
             inner: self.inner.induction(&other.inner),
         }
     }
-    
+
     /// Abduction: A→B, C→B ⊢ A→C
     fn abduction(&self, other: &PyTruthValue) -> PyTruthValue {
         PyTruthValue {
             inner: self.inner.abduction(&other.inner),
         }
     }
-    
+
     /// Negation
     fn negation(&self) -> PyTruthValue {
         PyTruthValue {
             inner: self.inner.negation(),
         }
     }
-    
+
     fn __repr__(&self) -> String {
-        format!("<{:.2}, {:.2}>", self.inner.frequency, self.inner.confidence)
+        format!(
+            "<{:.2}, {:.2}>",
+            self.inner.frequency, self.inner.confidence
+        )
     }
-    
+
     fn __str__(&self) -> String {
-        format!("⟨{:.0}%, {:.0}%⟩", 
-            self.inner.frequency * 100.0, 
+        format!(
+            "⟨{:.0}%, {:.0}%⟩",
+            self.inner.frequency * 100.0,
             self.inner.confidence * 100.0
         )
     }
@@ -284,7 +289,7 @@ impl PyDatabase {
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
         Ok(Self { inner: db })
     }
-    
+
     /// Create in-memory database
     #[staticmethod]
     fn memory() -> Self {
@@ -292,31 +297,35 @@ impl PyDatabase {
             inner: Database::memory(),
         }
     }
-    
+
     /// Execute SQL query
     fn sql(&self, query: &str) -> PyResult<Vec<Vec<String>>> {
-        let result = self.inner.sql(query)
+        let result = self
+            .inner
+            .sql(query)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
         Ok(result.rows)
     }
-    
+
     /// Execute Cypher query
     fn cypher(&self, query: &str) -> PyResult<Vec<Vec<String>>> {
-        let result = self.inner.cypher(query)
+        let result = self
+            .inner
+            .cypher(query)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
         Ok(result.rows)
     }
-    
+
     /// Resonance search by content
     fn resonate(&self, content: &str, threshold: f32, limit: usize) -> Vec<(usize, f32)> {
         self.inner.resonate_content(content, threshold, limit)
     }
-    
+
     /// Resonance search by fingerprint
     fn resonate_fp(&self, fp: &PyFingerprint, threshold: f32, limit: usize) -> Vec<(usize, f32)> {
         self.inner.resonate(&fp.inner, threshold, limit)
     }
-    
+
     /// Index fingerprints for search
     fn index(&self, py: Python, fingerprints: &PyList) -> PyResult<()> {
         let fps: Vec<Fingerprint> = fingerprints
@@ -326,37 +335,41 @@ impl PyDatabase {
                 Ok(py_fp.inner.clone())
             })
             .collect::<PyResult<Vec<_>>>()?;
-        
+
         self.inner.index_fingerprints(fps);
         Ok(())
     }
-    
+
     /// Fork for counterfactual reasoning
     fn fork(&self) -> PyDatabase {
         PyDatabase {
             inner: self.inner.fork(),
         }
     }
-    
+
     /// Database path
     #[getter]
     fn path(&self) -> &str {
         self.inner.path()
     }
-    
+
     /// Current version
     #[getter]
     fn version(&self) -> u64 {
         self.inner.version()
     }
-    
+
     /// Number of indexed fingerprints
     fn fingerprint_count(&self) -> usize {
         self.inner.fingerprint_count()
     }
-    
+
     fn __repr__(&self) -> String {
-        format!("Database('{}', version={})", self.inner.path(), self.inner.version())
+        format!(
+            "Database('{}', version={})",
+            self.inner.path(),
+            self.inner.version()
+        )
     }
 }
 
@@ -395,7 +408,11 @@ fn batch_hamming(py: Python, query: &PyFingerprint, candidates: &PyList) -> PyRe
 /// Query: 2048 bytes, Candidates: list of 2048-byte arrays
 /// Returns list of distances
 #[pyfunction]
-fn batch_hamming_bytes(py: Python, query_bytes: &[u8], candidate_bytes: Vec<&[u8]>) -> PyResult<Vec<u32>> {
+fn batch_hamming_bytes(
+    py: Python,
+    query_bytes: &[u8],
+    candidate_bytes: Vec<&[u8]>,
+) -> PyResult<Vec<u32>> {
     let query = Fingerprint::from_bytes(query_bytes)
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
 
@@ -404,8 +421,8 @@ fn batch_hamming_bytes(py: Python, query_bytes: &[u8], candidate_bytes: Vec<&[u8
         .map(|b| Fingerprint::from_bytes(b))
         .collect();
 
-    let candidates = candidates
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+    let candidates =
+        candidates.map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
 
     Ok(rust_batch_hamming(&query, &candidates))
 }
@@ -426,7 +443,9 @@ fn hamming_bytes(a: &[u8], b: &[u8]) -> PyResult<u32> {
 #[pyfunction]
 fn bundle(py: Python, fingerprints: &PyList) -> PyResult<PyFingerprint> {
     if fingerprints.is_empty() {
-        return Ok(PyFingerprint { inner: Fingerprint::zero() });
+        return Ok(PyFingerprint {
+            inner: Fingerprint::zero(),
+        });
     }
 
     let fps: Vec<Fingerprint> = fingerprints
@@ -471,10 +490,7 @@ fn topk_hamming(
     let distances = rust_batch_hamming(&query.inner, &fps);
 
     // Get top-k
-    let mut indexed: Vec<(usize, u32)> = distances
-        .into_iter()
-        .enumerate()
-        .collect();
+    let mut indexed: Vec<(usize, u32)> = distances.into_iter().enumerate().collect();
 
     let k = k.min(indexed.len());
     indexed.select_nth_unstable_by_key(k.saturating_sub(1), |&(_, d)| d);

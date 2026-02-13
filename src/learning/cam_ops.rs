@@ -21,8 +21,8 @@
 //! - 0xE00-0xEFF: Learning Operations (256)
 //! - 0xF00-0xFFF: User-Defined/Extension (256)
 
-use crate::core::Fingerprint;
 use crate::Result;
+use crate::core::Fingerprint;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -105,22 +105,22 @@ pub struct OpMeta {
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum OpCategory {
-    LanceDb     = 0x0,  // 0x000-0x0FF - Native LanceDB operations
-    Sql         = 0x1,  // 0x100-0x1FF
-    Cypher      = 0x2,  // 0x200-0x2FF
-    Hamming     = 0x3,  // 0x300-0x3FF
-    Nars        = 0x4,  // 0x400-0x4FF
-    Filesystem  = 0x5,  // 0x500-0x5FF
-    Crystal     = 0x6,  // 0x600-0x6FF
-    Nsm         = 0x7,  // 0x700-0x7FF
-    Actr        = 0x8,  // 0x800-0x8FF
-    Rl          = 0x9,  // 0x900-0x9FF
-    Causality   = 0xA,  // 0xA00-0xAFF
-    Qualia      = 0xB,  // 0xB00-0xBFF
-    Rung        = 0xC,  // 0xC00-0xCFF
-    Meta        = 0xD,  // 0xD00-0xDFF
-    Learning    = 0xE,  // 0xE00-0xEFF
-    UserDefined = 0xF,  // 0xF00-0xFFF
+    LanceDb = 0x0,     // 0x000-0x0FF - Native LanceDB operations
+    Sql = 0x1,         // 0x100-0x1FF
+    Cypher = 0x2,      // 0x200-0x2FF
+    Hamming = 0x3,     // 0x300-0x3FF
+    Nars = 0x4,        // 0x400-0x4FF
+    Filesystem = 0x5,  // 0x500-0x5FF
+    Crystal = 0x6,     // 0x600-0x6FF
+    Nsm = 0x7,         // 0x700-0x7FF
+    Actr = 0x8,        // 0x800-0x8FF
+    Rl = 0x9,          // 0x900-0x9FF
+    Causality = 0xA,   // 0xA00-0xAFF
+    Qualia = 0xB,      // 0xB00-0xBFF
+    Rung = 0xC,        // 0xC00-0xCFF
+    Meta = 0xD,        // 0xD00-0xDFF
+    Learning = 0xE,    // 0xE00-0xEFF
+    UserDefined = 0xF, // 0xF00-0xFFF
 }
 
 impl OpCategory {
@@ -155,84 +155,84 @@ impl OpCategory {
 #[derive(Clone, Copy, Debug)]
 pub enum LanceOp {
     // Connection (0x000-0x00F)
-    Connect         = 0x000,
-    Disconnect      = 0x001,
-    ListTables      = 0x002,
-    TableExists     = 0x003,
-    DropTable       = 0x004,
-    
+    Connect = 0x000,
+    Disconnect = 0x001,
+    ListTables = 0x002,
+    TableExists = 0x003,
+    DropTable = 0x004,
+
     // Table operations (0x010-0x02F)
-    CreateTable     = 0x010,
-    OpenTable       = 0x011,
-    TableSchema     = 0x012,
-    TableCount      = 0x013,
-    TableStats      = 0x014,
-    AlterTable      = 0x015,
-    CompactTable    = 0x016,
-    
+    CreateTable = 0x010,
+    OpenTable = 0x011,
+    TableSchema = 0x012,
+    TableCount = 0x013,
+    TableStats = 0x014,
+    AlterTable = 0x015,
+    CompactTable = 0x016,
+
     // Insert operations (0x030-0x03F)
-    Insert          = 0x030,
-    InsertBatch     = 0x031,
-    Upsert          = 0x032,
-    UpsertBatch     = 0x033,
-    
+    Insert = 0x030,
+    InsertBatch = 0x031,
+    Upsert = 0x032,
+    UpsertBatch = 0x033,
+
     // Query operations (0x040-0x05F)
-    Scan            = 0x040,
-    ScanFilter      = 0x041,
-    ScanProject     = 0x042,
-    ScanLimit       = 0x043,
-    ScanOffset      = 0x044,
-    
+    Scan = 0x040,
+    ScanFilter = 0x041,
+    ScanProject = 0x042,
+    ScanLimit = 0x043,
+    ScanOffset = 0x044,
+
     // Vector search (0x060-0x07F) - THE KEY FEATURE
-    VectorSearch    = 0x060,
-    VectorSearchK   = 0x061,
+    VectorSearch = 0x060,
+    VectorSearchK = 0x061,
     VectorSearchRadius = 0x062,
     VectorSearchFilter = 0x063,
-    VectorSearchHybrid = 0x064,  // vector + keyword
-    
+    VectorSearchHybrid = 0x064, // vector + keyword
+
     // Index operations (0x080-0x09F)
-    CreateIndex     = 0x080,
+    CreateIndex = 0x080,
     CreateVectorIndex = 0x081,
     CreateScalarIndex = 0x082,
-    CreateFtsIndex  = 0x083,  // Full-text search
-    DropIndex       = 0x084,
-    ListIndices     = 0x085,
-    
+    CreateFtsIndex = 0x083, // Full-text search
+    DropIndex = 0x084,
+    ListIndices = 0x085,
+
     // Update/Delete (0x0A0-0x0AF)
-    Update          = 0x0A0,
-    UpdateWhere     = 0x0A1,
-    Delete          = 0x0A2,
-    DeleteWhere     = 0x0A3,
-    
+    Update = 0x0A0,
+    UpdateWhere = 0x0A1,
+    Delete = 0x0A2,
+    DeleteWhere = 0x0A3,
+
     // Transaction (0x0B0-0x0BF)
-    BeginTx         = 0x0B0,
-    CommitTx        = 0x0B1,
-    RollbackTx      = 0x0B2,
-    
+    BeginTx = 0x0B0,
+    CommitTx = 0x0B1,
+    RollbackTx = 0x0B2,
+
     // Merge/Versioning (0x0C0-0x0CF)
-    Merge           = 0x0C0,
-    Version         = 0x0C1,
-    Checkout        = 0x0C2,
-    Restore         = 0x0C3,
-    
+    Merge = 0x0C0,
+    Version = 0x0C1,
+    Checkout = 0x0C2,
+    Restore = 0x0C3,
+
     // Fragment operations (0x0D0-0x0DF)
-    ListFragments   = 0x0D0,
-    AddFragment     = 0x0D1,
-    DeleteFragment  = 0x0D2,
-    
+    ListFragments = 0x0D0,
+    AddFragment = 0x0D1,
+    DeleteFragment = 0x0D2,
+
     // Conversion (0x0E0-0x0EF)
-    ToArrow         = 0x0E0,
-    FromArrow       = 0x0E1,
-    ToParquet       = 0x0E2,
-    FromParquet     = 0x0E3,
-    ToPandas        = 0x0E4,  // For Python interop
-    FromPandas      = 0x0E5,
-    
+    ToArrow = 0x0E0,
+    FromArrow = 0x0E1,
+    ToParquet = 0x0E2,
+    FromParquet = 0x0E3,
+    ToPandas = 0x0E4, // For Python interop
+    FromPandas = 0x0E5,
+
     // Utility (0x0F0-0x0FF)
-    Optimize        = 0x0F0,
-    Vacuum          = 0x0F1,
-    Checkpoint      = 0x0F2,
-    Clone           = 0x0F3,
+    Optimize = 0x0F0,
+    Vacuum = 0x0F1,
+    Checkpoint = 0x0F2,
+    Clone = 0x0F3,
 }
 
 // =============================================================================
@@ -243,77 +243,77 @@ pub enum LanceOp {
 #[derive(Clone, Copy, Debug)]
 pub enum SqlOp {
     // SELECT variants (0x100-0x11F)
-    Select          = 0x100,
-    SelectAll       = 0x101,
-    SelectDistinct  = 0x102,
-    SelectWhere     = 0x103,
-    SelectSimilar   = 0x104,  // WHERE vec SIMILAR TO
-    SelectBetween   = 0x105,
-    SelectIn        = 0x106,
-    SelectLike      = 0x107,
-    SelectIsNull    = 0x108,
-    SelectExists    = 0x109,
-    
+    Select = 0x100,
+    SelectAll = 0x101,
+    SelectDistinct = 0x102,
+    SelectWhere = 0x103,
+    SelectSimilar = 0x104, // WHERE vec SIMILAR TO
+    SelectBetween = 0x105,
+    SelectIn = 0x106,
+    SelectLike = 0x107,
+    SelectIsNull = 0x108,
+    SelectExists = 0x109,
+
     // JOIN variants (0x120-0x13F)
-    InnerJoin       = 0x120,
-    LeftJoin        = 0x121,
-    RightJoin       = 0x122,
-    FullJoin        = 0x123,
-    CrossJoin       = 0x124,
-    SelfJoin        = 0x125,
-    NaturalJoin     = 0x126,
-    SimilarJoin     = 0x127,  // JOIN ON similarity > threshold
-    
+    InnerJoin = 0x120,
+    LeftJoin = 0x121,
+    RightJoin = 0x122,
+    FullJoin = 0x123,
+    CrossJoin = 0x124,
+    SelfJoin = 0x125,
+    NaturalJoin = 0x126,
+    SimilarJoin = 0x127, // JOIN ON similarity > threshold
+
     // Aggregates (0x140-0x15F)
-    Count           = 0x140,
-    Sum             = 0x141,
-    Avg             = 0x142,
-    Min             = 0x143,
-    Max             = 0x144,
-    StdDev          = 0x145,
-    Variance        = 0x146,
-    Median          = 0x147,
-    Mode            = 0x148,
-    Percentile      = 0x149,
-    
+    Count = 0x140,
+    Sum = 0x141,
+    Avg = 0x142,
+    Min = 0x143,
+    Max = 0x144,
+    StdDev = 0x145,
+    Variance = 0x146,
+    Median = 0x147,
+    Mode = 0x148,
+    Percentile = 0x149,
+
     // Grouping (0x160-0x17F)
-    GroupBy         = 0x160,
-    Having          = 0x161,
-    Rollup          = 0x162,
-    Cube            = 0x163,
-    GroupingSets    = 0x164,
-    
+    GroupBy = 0x160,
+    Having = 0x161,
+    Rollup = 0x162,
+    Cube = 0x163,
+    GroupingSets = 0x164,
+
     // Ordering (0x180-0x19F)
-    OrderBy         = 0x180,
-    OrderByAsc      = 0x181,
-    OrderByDesc     = 0x182,
-    OrderBySimilarity = 0x183,  // ORDER BY similarity DESC
-    Limit           = 0x184,
-    Offset          = 0x185,
-    Fetch           = 0x186,
-    
+    OrderBy = 0x180,
+    OrderByAsc = 0x181,
+    OrderByDesc = 0x182,
+    OrderBySimilarity = 0x183, // ORDER BY similarity DESC
+    Limit = 0x184,
+    Offset = 0x185,
+    Fetch = 0x186,
+
     // Set operations (0x1A0-0x1BF)
-    Union           = 0x1A0,
-    UnionAll        = 0x1A1,
-    Intersect       = 0x1A2,
-    Except          = 0x1A3,
-    
+    Union = 0x1A0,
+    UnionAll = 0x1A1,
+    Intersect = 0x1A2,
+    Except = 0x1A3,
+
     // Modification (0x1C0-0x1DF)
-    Insert          = 0x1C0,
-    InsertSelect    = 0x1C1,
-    Update          = 0x1C2,
-    Delete          = 0x1C3,
-    Truncate        = 0x1C4,
-    Merge           = 0x1C5,
-    
+    Insert = 0x1C0,
+    InsertSelect = 0x1C1,
+    Update = 0x1C2,
+    Delete = 0x1C3,
+    Truncate = 0x1C4,
+    Merge = 0x1C5,
+
     // DDL (0x1E0-0x1FF)
-    CreateTable     = 0x1E0,
-    AlterTable      = 0x1E1,
-    DropTable       = 0x1E2,
-    CreateIndex     = 0x1E3,
-    DropIndex       = 0x1E4,
-    CreateView      = 0x1E5,
-    DropView        = 0x1E6,
+    CreateTable = 0x1E0,
+    AlterTable = 0x1E1,
+    DropTable = 0x1E2,
+    CreateIndex = 0x1E3,
+    DropIndex = 0x1E4,
+    CreateView = 0x1E5,
+    DropView = 0x1E6,
 }
 
 // =============================================================================
@@ -324,79 +324,79 @@ pub enum SqlOp {
 #[derive(Clone, Copy, Debug)]
 pub enum CypherOp {
     // Match patterns (0x200-0x21F)
-    MatchNode       = 0x200,
-    MatchEdge       = 0x201,
-    MatchPath       = 0x202,
-    MatchVariable   = 0x203,
-    OptionalMatch   = 0x204,
-    MatchSimilar    = 0x205,  // MATCH (n) WHERE n.fp SIMILAR TO $query
-    
+    MatchNode = 0x200,
+    MatchEdge = 0x201,
+    MatchPath = 0x202,
+    MatchVariable = 0x203,
+    OptionalMatch = 0x204,
+    MatchSimilar = 0x205, // MATCH (n) WHERE n.fp SIMILAR TO $query
+
     // Create (0x220-0x23F)
-    CreateNode      = 0x220,
-    CreateEdge      = 0x221,
-    CreatePath      = 0x222,
-    Merge           = 0x223,
-    MergeOnCreate   = 0x224,
-    MergeOnMatch    = 0x225,
-    
+    CreateNode = 0x220,
+    CreateEdge = 0x221,
+    CreatePath = 0x222,
+    Merge = 0x223,
+    MergeOnCreate = 0x224,
+    MergeOnMatch = 0x225,
+
     // Update (0x240-0x25F)
-    Set             = 0x240,
-    SetProperty     = 0x241,
-    SetLabel        = 0x242,
-    Remove          = 0x243,
-    RemoveProperty  = 0x244,
-    RemoveLabel     = 0x245,
-    Delete          = 0x246,
-    DetachDelete    = 0x247,
-    
+    Set = 0x240,
+    SetProperty = 0x241,
+    SetLabel = 0x242,
+    Remove = 0x243,
+    RemoveProperty = 0x244,
+    RemoveLabel = 0x245,
+    Delete = 0x246,
+    DetachDelete = 0x247,
+
     // Traversal (0x260-0x27F)
-    ShortestPath    = 0x260,
+    ShortestPath = 0x260,
     AllShortestPaths = 0x261,
-    AllPaths        = 0x262,
-    BreadthFirst    = 0x263,
-    DepthFirst      = 0x264,
-    VariableLength  = 0x265,  // (a)-[*1..5]->(b)
-    
+    AllPaths = 0x262,
+    BreadthFirst = 0x263,
+    DepthFirst = 0x264,
+    VariableLength = 0x265, // (a)-[*1..5]->(b)
+
     // Aggregation (0x280-0x29F)
-    Collect         = 0x280,
-    Count           = 0x281,
-    Sum             = 0x282,
-    Avg             = 0x283,
-    Min             = 0x284,
-    Max             = 0x285,
-    PercentileCont  = 0x286,
-    PercentileDisc  = 0x287,
-    StDev           = 0x288,
-    
+    Collect = 0x280,
+    Count = 0x281,
+    Sum = 0x282,
+    Avg = 0x283,
+    Min = 0x284,
+    Max = 0x285,
+    PercentileCont = 0x286,
+    PercentileDisc = 0x287,
+    StDev = 0x288,
+
     // Graph algorithms (0x2A0-0x2BF)
-    PageRank        = 0x2A0,
-    Betweenness     = 0x2A1,
-    Closeness       = 0x2A2,
+    PageRank = 0x2A0,
+    Betweenness = 0x2A1,
+    Closeness = 0x2A2,
     DegreeCentrality = 0x2A3,
     CommunityLouvain = 0x2A4,
     CommunityLabelProp = 0x2A5,
     WeaklyConnected = 0x2A6,
     StronglyConnected = 0x2A7,
-    TriangleCount   = 0x2A8,
+    TriangleCount = 0x2A8,
     LocalClustering = 0x2A9,
-    
+
     // Similarity (0x2C0-0x2DF)
     JaccardSimilarity = 0x2C0,
     CosineSimilarity = 0x2C1,
     EuclideanDistance = 0x2C2,
     OverlapSimilarity = 0x2C3,
-    NodeSimilarity  = 0x2C4,
-    Knn             = 0x2C5,
-    
+    NodeSimilarity = 0x2C4,
+    Knn = 0x2C5,
+
     // Projections (0x2E0-0x2FF)
-    Return          = 0x2E0,
-    With            = 0x2E1,
-    Unwind          = 0x2E2,
-    OrderBy         = 0x2E3,
-    Skip            = 0x2E4,
-    Limit           = 0x2E5,
-    Distinct        = 0x2E6,
-    Case            = 0x2E7,
+    Return = 0x2E0,
+    With = 0x2E1,
+    Unwind = 0x2E2,
+    OrderBy = 0x2E3,
+    Skip = 0x2E4,
+    Limit = 0x2E5,
+    Distinct = 0x2E6,
+    Case = 0x2E7,
 }
 
 // =============================================================================
@@ -407,67 +407,67 @@ pub enum CypherOp {
 #[derive(Clone, Copy, Debug)]
 pub enum HammingOp {
     // Distance/Similarity (0x300-0x30F)
-    Distance        = 0x300,
-    Similarity      = 0x301,
-    Popcount        = 0x302,
-    Jaccard         = 0x303,
-    Dice            = 0x304,
-    
+    Distance = 0x300,
+    Similarity = 0x301,
+    Popcount = 0x302,
+    Jaccard = 0x303,
+    Dice = 0x304,
+
     // VSA Core (0x310-0x32F)
-    Bind            = 0x310,  // XOR
-    Unbind          = 0x311,  // XOR (self-inverse)
-    Bundle          = 0x312,  // Majority vote
-    WeightedBundle  = 0x313,
+    Bind = 0x310,   // XOR
+    Unbind = 0x311, // XOR (self-inverse)
+    Bundle = 0x312, // Majority vote
+    WeightedBundle = 0x313,
     ThresholdBundle = 0x314,
-    
+
     // Permutation (0x330-0x34F)
-    Permute         = 0x330,  // Rotate bits
-    Unpermute       = 0x331,
-    PermuteN        = 0x332,  // N positions
-    Shuffle         = 0x333,  // Random permutation
-    
+    Permute = 0x330, // Rotate bits
+    Unpermute = 0x331,
+    PermuteN = 0x332, // N positions
+    Shuffle = 0x333,  // Random permutation
+
     // Codebook (0x350-0x36F)
-    Clean           = 0x350,  // Project to nearest
-    Threshold       = 0x351,  // Binary threshold
-    Quantize        = 0x352,
-    Dequantize      = 0x353,
-    NearestK        = 0x354,  // K nearest in codebook
-    
+    Clean = 0x350,     // Project to nearest
+    Threshold = 0x351, // Binary threshold
+    Quantize = 0x352,
+    Dequantize = 0x353,
+    NearestK = 0x354, // K nearest in codebook
+
     // Search (0x370-0x38F)
-    LinearScan      = 0x370,
-    BinarySearch    = 0x371,  // If sorted by popcount
-    HashLookup      = 0x372,
-    SimHash         = 0x373,
-    MinHash         = 0x374,
-    LSH             = 0x375,  // Locality-sensitive hashing
-    
+    LinearScan = 0x370,
+    BinarySearch = 0x371, // If sorted by popcount
+    HashLookup = 0x372,
+    SimHash = 0x373,
+    MinHash = 0x374,
+    LSH = 0x375, // Locality-sensitive hashing
+
     // Bulk operations (0x390-0x3AF)
-    BatchDistance   = 0x390,
+    BatchDistance = 0x390,
     BatchSimilarity = 0x391,
-    BatchBind       = 0x392,
-    BatchBundle     = 0x393,
-    
+    BatchBind = 0x392,
+    BatchBundle = 0x393,
+
     // Analysis (0x3B0-0x3CF)
-    Entropy         = 0x3B0,
-    Density         = 0x3B1,  // Fraction of 1s
-    Correlation     = 0x3B2,
-    MutualInfo      = 0x3B3,
-    
+    Entropy = 0x3B0,
+    Density = 0x3B1, // Fraction of 1s
+    Correlation = 0x3B2,
+    MutualInfo = 0x3B3,
+
     // Encoding (0x3D0-0x3EF)
-    FromText        = 0x3D0,
-    FromBytes       = 0x3D1,
-    FromFloat       = 0x3D2,  // Convert float vector
-    ToText          = 0x3D3,
-    ToBytes         = 0x3D4,
-    ToFloat         = 0x3D5,
-    Fold            = 0x3D6,  // 10K → 48 bits
-    Expand          = 0x3D7,  // 48 bits → 10K
-    
+    FromText = 0x3D0,
+    FromBytes = 0x3D1,
+    FromFloat = 0x3D2, // Convert float vector
+    ToText = 0x3D3,
+    ToBytes = 0x3D4,
+    ToFloat = 0x3D5,
+    Fold = 0x3D6,   // 10K → 48 bits
+    Expand = 0x3D7, // 48 bits → 10K
+
     // Crystal-specific (0x3F0-0x3FF)
-    AxisProject     = 0x3F0,
+    AxisProject = 0x3F0,
     AxisReconstruct = 0x3F1,
-    Holographic     = 0x3F2,
-    MexicanHat      = 0x3F3,  // Resonance with surround inhibition
+    Holographic = 0x3F2,
+    MexicanHat = 0x3F3, // Resonance with surround inhibition
 }
 
 // =============================================================================
@@ -478,95 +478,95 @@ pub enum HammingOp {
 #[derive(Clone, Copy, Debug)]
 pub enum NarsOp {
     // Truth value operations (0x400-0x40F)
-    TruthNew            = 0x400,
-    TruthExpectation    = 0x401,
-    TruthConfidence     = 0x402,
-    TruthFrequency      = 0x403,
-    TruthNegate         = 0x404,
-    TruthIntersect      = 0x405,
-    TruthUnion          = 0x406,
-    TruthDifference     = 0x407,
+    TruthNew = 0x400,
+    TruthExpectation = 0x401,
+    TruthConfidence = 0x402,
+    TruthFrequency = 0x403,
+    TruthNegate = 0x404,
+    TruthIntersect = 0x405,
+    TruthUnion = 0x406,
+    TruthDifference = 0x407,
 
     // First-order inference (0x410-0x42F)
-    Deduction           = 0x410,
-    Induction           = 0x411,
-    Abduction           = 0x412,
-    Exemplification     = 0x413,
-    Comparison          = 0x414,
-    Analogy             = 0x415,
-    Resemblance         = 0x416,
-    Conversion          = 0x417,
-    Contraposition      = 0x418,
+    Deduction = 0x410,
+    Induction = 0x411,
+    Abduction = 0x412,
+    Exemplification = 0x413,
+    Comparison = 0x414,
+    Analogy = 0x415,
+    Resemblance = 0x416,
+    Conversion = 0x417,
+    Contraposition = 0x418,
 
     // Higher-order inference (0x430-0x44F)
-    Revision            = 0x430,
-    Choice              = 0x431,
-    Intersection        = 0x432,
-    Union               = 0x433,
-    Difference          = 0x434,
-    Negation            = 0x435,
-    Implication         = 0x436,
-    Equivalence         = 0x437,
+    Revision = 0x430,
+    Choice = 0x431,
+    Intersection = 0x432,
+    Union = 0x433,
+    Difference = 0x434,
+    Negation = 0x435,
+    Implication = 0x436,
+    Equivalence = 0x437,
 
     // Copulas (0x450-0x46F)
-    Inheritance         = 0x450,  // -->
-    Similarity          = 0x451,  // <->
-    Instance            = 0x452,  // {-->}
-    Property            = 0x453,  // [-->]
-    InstanceProperty    = 0x454,  // {[-->]}
-    ImplicationP        = 0x455,  // ==>  predictive
-    ImplicationR        = 0x456,  // =/>  retrospective
-    ImplicationC        = 0x457,  // =|>  concurrent
-    EquivalenceP        = 0x458,  // <=>
-    EquivalenceR        = 0x459,
-    EquivalenceC        = 0x45A,
+    Inheritance = 0x450,      // -->
+    Similarity = 0x451,       // <->
+    Instance = 0x452,         // {-->}
+    Property = 0x453,         // [-->]
+    InstanceProperty = 0x454, // {[-->]}
+    ImplicationP = 0x455,     // ==>  predictive
+    ImplicationR = 0x456,     // =/>  retrospective
+    ImplicationC = 0x457,     // =|>  concurrent
+    EquivalenceP = 0x458,     // <=>
+    EquivalenceR = 0x459,
+    EquivalenceC = 0x45A,
 
     // Compound terms (0x470-0x48F)
-    ExtensionalSet      = 0x470,  // {a, b, c}
-    IntensionalSet     = 0x471,  // [a, b, c]
-    ExtensionalIntersection = 0x472,  // (& a b)
-    IntensionalIntersection = 0x473,  // (| a b)
-    ExtensionalDifference = 0x474,  // (- a b)
+    ExtensionalSet = 0x470,          // {a, b, c}
+    IntensionalSet = 0x471,          // [a, b, c]
+    ExtensionalIntersection = 0x472, // (& a b)
+    IntensionalIntersection = 0x473, // (| a b)
+    ExtensionalDifference = 0x474,   // (- a b)
     IntensionalDifference = 0x475,
-    Product             = 0x476,  // (* a b)
-    Image               = 0x477,  // (/ r _ a) or (\ r a _)
-    Conjunction         = 0x478,  // (&& a b)
-    Disjunction         = 0x479,  // (|| a b)
-    SequentialConj      = 0x47A,  // (&/ a b)
-    ParallelConj        = 0x47B,  // (&| a b)
+    Product = 0x476,        // (* a b)
+    Image = 0x477,          // (/ r _ a) or (\ r a _)
+    Conjunction = 0x478,    // (&& a b)
+    Disjunction = 0x479,    // (|| a b)
+    SequentialConj = 0x47A, // (&/ a b)
+    ParallelConj = 0x47B,   // (&| a b)
 
     // Temporal (0x490-0x4AF)
-    Before              = 0x490,
-    After               = 0x491,
-    When                = 0x492,
-    While               = 0x493,
-    Eternal             = 0x494,
-    Present             = 0x495,
-    Past                = 0x496,
-    Future              = 0x497,
+    Before = 0x490,
+    After = 0x491,
+    When = 0x492,
+    While = 0x493,
+    Eternal = 0x494,
+    Present = 0x495,
+    Past = 0x496,
+    Future = 0x497,
 
     // Evidence (0x4B0-0x4CF)
-    EvidencePositive    = 0x4B0,
-    EvidenceNegative    = 0x4B1,
-    EvidenceTotal       = 0x4B2,
-    EvidenceUpdate      = 0x4B3,
-    EvidenceDecay       = 0x4B4,
-    EvidenceHorizon     = 0x4B5,
+    EvidencePositive = 0x4B0,
+    EvidenceNegative = 0x4B1,
+    EvidenceTotal = 0x4B2,
+    EvidenceUpdate = 0x4B3,
+    EvidenceDecay = 0x4B4,
+    EvidenceHorizon = 0x4B5,
 
     // Attention (0x4D0-0x4EF)
-    Priority            = 0x4D0,
-    Durability          = 0x4D1,
-    Quality             = 0x4D2,
-    BudgetMerge         = 0x4D3,
-    BudgetForget        = 0x4D4,
-    BudgetActivate      = 0x4D5,
+    Priority = 0x4D0,
+    Durability = 0x4D1,
+    Quality = 0x4D2,
+    BudgetMerge = 0x4D3,
+    BudgetForget = 0x4D4,
+    BudgetActivate = 0x4D5,
 
     // Goals/Operations (0x4F0-0x4FF)
-    GoalDerive          = 0x4F0,
-    GoalAchieve         = 0x4F1,
-    OperationExecute    = 0x4F2,
-    Anticipate          = 0x4F3,
-    Satisfy             = 0x4F4,
+    GoalDerive = 0x4F0,
+    GoalAchieve = 0x4F1,
+    OperationExecute = 0x4F2,
+    Anticipate = 0x4F3,
+    Satisfy = 0x4F4,
 }
 
 // =============================================================================
@@ -577,94 +577,94 @@ pub enum NarsOp {
 #[derive(Clone, Copy, Debug)]
 pub enum FilesystemOp {
     // File operations (0x500-0x51F)
-    FileOpen            = 0x500,
-    FileClose           = 0x501,
-    FileRead            = 0x502,
-    FileWrite           = 0x503,
-    FileAppend          = 0x504,
-    FileSeek            = 0x505,
-    FileTruncate        = 0x506,
-    FileFlush           = 0x507,
-    FileSize            = 0x508,
-    FileExists          = 0x509,
-    FileDelete          = 0x50A,
-    FileRename          = 0x50B,
-    FileCopy            = 0x50C,
-    FileMove            = 0x50D,
-    FileTouch           = 0x50E,
-    FileHash            = 0x50F,
+    FileOpen = 0x500,
+    FileClose = 0x501,
+    FileRead = 0x502,
+    FileWrite = 0x503,
+    FileAppend = 0x504,
+    FileSeek = 0x505,
+    FileTruncate = 0x506,
+    FileFlush = 0x507,
+    FileSize = 0x508,
+    FileExists = 0x509,
+    FileDelete = 0x50A,
+    FileRename = 0x50B,
+    FileCopy = 0x50C,
+    FileMove = 0x50D,
+    FileTouch = 0x50E,
+    FileHash = 0x50F,
 
     // Directory operations (0x520-0x53F)
-    DirCreate           = 0x520,
-    DirDelete           = 0x521,
-    DirList             = 0x522,
-    DirWalk             = 0x523,
-    DirExists           = 0x524,
-    DirRename           = 0x525,
-    DirSize             = 0x526,
-    DirCount            = 0x527,
+    DirCreate = 0x520,
+    DirDelete = 0x521,
+    DirList = 0x522,
+    DirWalk = 0x523,
+    DirExists = 0x524,
+    DirRename = 0x525,
+    DirSize = 0x526,
+    DirCount = 0x527,
 
     // Path operations (0x540-0x55F)
-    PathJoin            = 0x540,
-    PathSplit           = 0x541,
-    PathParent          = 0x542,
-    PathFilename        = 0x543,
-    PathExtension       = 0x544,
-    PathStem            = 0x545,
-    PathNormalize       = 0x546,
-    PathAbsolute        = 0x547,
-    PathRelative        = 0x548,
-    PathIsFile          = 0x549,
-    PathIsDir           = 0x54A,
-    PathIsSymlink       = 0x54B,
+    PathJoin = 0x540,
+    PathSplit = 0x541,
+    PathParent = 0x542,
+    PathFilename = 0x543,
+    PathExtension = 0x544,
+    PathStem = 0x545,
+    PathNormalize = 0x546,
+    PathAbsolute = 0x547,
+    PathRelative = 0x548,
+    PathIsFile = 0x549,
+    PathIsDir = 0x54A,
+    PathIsSymlink = 0x54B,
 
     // Fingerprint I/O (0x560-0x57F)
-    FpSave              = 0x560,
-    FpLoad              = 0x561,
-    FpSaveBatch         = 0x562,
-    FpLoadBatch         = 0x563,
-    FpExportBinary      = 0x564,
-    FpImportBinary      = 0x565,
-    FpExportBase64      = 0x566,
-    FpImportBase64      = 0x567,
-    FpExportHex         = 0x568,
-    FpImportHex         = 0x569,
+    FpSave = 0x560,
+    FpLoad = 0x561,
+    FpSaveBatch = 0x562,
+    FpLoadBatch = 0x563,
+    FpExportBinary = 0x564,
+    FpImportBinary = 0x565,
+    FpExportBase64 = 0x566,
+    FpImportBase64 = 0x567,
+    FpExportHex = 0x568,
+    FpImportHex = 0x569,
 
     // Serialization (0x580-0x59F)
-    SerializeJson       = 0x580,
-    DeserializeJson     = 0x581,
-    SerializeYaml       = 0x582,
-    DeserializeYaml     = 0x583,
-    SerializeBincode    = 0x584,
-    DeserializeBincode  = 0x585,
-    SerializeMsgpack    = 0x586,
-    DeserializeMsgpack  = 0x587,
-    SerializeArrow      = 0x588,
-    DeserializeArrow    = 0x589,
-    SerializeParquet    = 0x58A,
-    DeserializeParquet  = 0x58B,
+    SerializeJson = 0x580,
+    DeserializeJson = 0x581,
+    SerializeYaml = 0x582,
+    DeserializeYaml = 0x583,
+    SerializeBincode = 0x584,
+    DeserializeBincode = 0x585,
+    SerializeMsgpack = 0x586,
+    DeserializeMsgpack = 0x587,
+    SerializeArrow = 0x588,
+    DeserializeArrow = 0x589,
+    SerializeParquet = 0x58A,
+    DeserializeParquet = 0x58B,
 
     // Watch/Events (0x5A0-0x5BF)
-    WatchFile           = 0x5A0,
-    WatchDir            = 0x5A1,
-    UnwatchFile         = 0x5A2,
-    UnwatchDir          = 0x5A3,
-    WatchEvents         = 0x5A4,
+    WatchFile = 0x5A0,
+    WatchDir = 0x5A1,
+    UnwatchFile = 0x5A2,
+    UnwatchDir = 0x5A3,
+    WatchEvents = 0x5A4,
 
     // Memory mapping (0x5C0-0x5DF)
-    MmapOpen            = 0x5C0,
-    MmapClose           = 0x5C1,
-    MmapRead            = 0x5C2,
-    MmapWrite           = 0x5C3,
-    MmapSync            = 0x5C4,
+    MmapOpen = 0x5C0,
+    MmapClose = 0x5C1,
+    MmapRead = 0x5C2,
+    MmapWrite = 0x5C3,
+    MmapSync = 0x5C4,
 
     // Compression (0x5E0-0x5FF)
-    CompressLz4         = 0x5E0,
-    DecompressLz4       = 0x5E1,
-    CompressZstd        = 0x5E2,
-    DecompressZstd      = 0x5E3,
-    CompressSnappy      = 0x5E4,
-    DecompressSnappy    = 0x5E5,
+    CompressLz4 = 0x5E0,
+    DecompressLz4 = 0x5E1,
+    CompressZstd = 0x5E2,
+    DecompressZstd = 0x5E3,
+    CompressSnappy = 0x5E4,
+    DecompressSnappy = 0x5E5,
 }
 
 // =============================================================================
@@ -675,88 +675,88 @@ pub enum FilesystemOp {
 #[derive(Clone, Copy, Debug)]
 pub enum CrystalOp {
     // Crystal model core (0x600-0x61F)
-    CrystalCreate       = 0x600,
-    CrystalLoad         = 0x601,
-    CrystalSave         = 0x602,
-    CrystalInfer        = 0x603,
-    CrystalTrain        = 0x604,
-    CrystalExpand       = 0x605,
-    CrystalCompress     = 0x606,
-    CrystalMerge        = 0x607,
-    CrystalSplit        = 0x608,
-    CrystalProject      = 0x609,
-    CrystalReconstruct  = 0x60A,
+    CrystalCreate = 0x600,
+    CrystalLoad = 0x601,
+    CrystalSave = 0x602,
+    CrystalInfer = 0x603,
+    CrystalTrain = 0x604,
+    CrystalExpand = 0x605,
+    CrystalCompress = 0x606,
+    CrystalMerge = 0x607,
+    CrystalSplit = 0x608,
+    CrystalProject = 0x609,
+    CrystalReconstruct = 0x60A,
 
     // Axis operations (0x620-0x63F)
-    AxisT               = 0x620,  // Topic axis
-    AxisS               = 0x621,  // Style axis
-    AxisD               = 0x622,  // Detail axis
-    AxisGet             = 0x623,
-    AxisSet             = 0x624,
-    AxisRotate          = 0x625,
-    AxisInterpolate     = 0x626,
-    AxisExtrapolate     = 0x627,
+    AxisT = 0x620, // Topic axis
+    AxisS = 0x621, // Style axis
+    AxisD = 0x622, // Detail axis
+    AxisGet = 0x623,
+    AxisSet = 0x624,
+    AxisRotate = 0x625,
+    AxisInterpolate = 0x626,
+    AxisExtrapolate = 0x627,
 
     // Temporal primitives (0x640-0x65F)
-    Now                 = 0x640,
-    Timestamp           = 0x641,
-    Duration            = 0x642,
-    Interval            = 0x643,
-    TimeAdd             = 0x644,
-    TimeSub             = 0x645,
-    TimeDiff            = 0x646,
-    TimeCompare         = 0x647,
-    TimeParse           = 0x648,
-    TimeFormat          = 0x649,
+    Now = 0x640,
+    Timestamp = 0x641,
+    Duration = 0x642,
+    Interval = 0x643,
+    TimeAdd = 0x644,
+    TimeSub = 0x645,
+    TimeDiff = 0x646,
+    TimeCompare = 0x647,
+    TimeParse = 0x648,
+    TimeFormat = 0x649,
 
     // Temporal windows (0x660-0x67F)
-    WindowTumbling      = 0x660,
-    WindowSliding       = 0x661,
-    WindowSession       = 0x662,
-    WindowHopping       = 0x663,
-    WindowSnapshot      = 0x664,
-    WindowAggregate     = 0x665,
+    WindowTumbling = 0x660,
+    WindowSliding = 0x661,
+    WindowSession = 0x662,
+    WindowHopping = 0x663,
+    WindowSnapshot = 0x664,
+    WindowAggregate = 0x665,
 
     // Temporal operators (0x680-0x69F)
-    TemporalBefore      = 0x680,
-    TemporalAfter       = 0x681,
-    TemporalDuring      = 0x682,
-    TemporalOverlaps    = 0x683,
-    TemporalMeets       = 0x684,
-    TemporalStarts      = 0x685,
-    TemporalFinishes    = 0x686,
-    TemporalEquals      = 0x687,
-    TemporalContains    = 0x688,
+    TemporalBefore = 0x680,
+    TemporalAfter = 0x681,
+    TemporalDuring = 0x682,
+    TemporalOverlaps = 0x683,
+    TemporalMeets = 0x684,
+    TemporalStarts = 0x685,
+    TemporalFinishes = 0x686,
+    TemporalEquals = 0x687,
+    TemporalContains = 0x688,
 
     // Versioning (0x6A0-0x6BF)
-    VersionCreate       = 0x6A0,
-    VersionCheckout     = 0x6A1,
-    VersionCommit       = 0x6A2,
-    VersionRollback     = 0x6A3,
-    VersionDiff         = 0x6A4,
-    VersionMerge        = 0x6A5,
-    VersionHistory      = 0x6A6,
-    VersionTag          = 0x6A7,
-    VersionBranch       = 0x6A8,
+    VersionCreate = 0x6A0,
+    VersionCheckout = 0x6A1,
+    VersionCommit = 0x6A2,
+    VersionRollback = 0x6A3,
+    VersionDiff = 0x6A4,
+    VersionMerge = 0x6A5,
+    VersionHistory = 0x6A6,
+    VersionTag = 0x6A7,
+    VersionBranch = 0x6A8,
 
     // Ice-cake layers (0x6C0-0x6DF)
-    LayerFrozen         = 0x6C0,
-    LayerWarm           = 0x6C1,
-    LayerHot            = 0x6C2,
-    LayerPromote        = 0x6C3,
-    LayerDemote         = 0x6C4,
-    LayerMerge          = 0x6C5,
-    LayerStats          = 0x6C6,
+    LayerFrozen = 0x6C0,
+    LayerWarm = 0x6C1,
+    LayerHot = 0x6C2,
+    LayerPromote = 0x6C3,
+    LayerDemote = 0x6C4,
+    LayerMerge = 0x6C5,
+    LayerStats = 0x6C6,
 
     // Decay/Forgetting (0x6E0-0x6FF)
-    DecayExponential    = 0x6E0,
-    DecayPower          = 0x6E1,
-    DecayLinear         = 0x6E2,
-    DecayStep           = 0x6E3,
-    ForgetThreshold     = 0x6E4,
-    ForgetRandom        = 0x6E5,
-    ConsolidateMemory   = 0x6E6,
-    RehearsalSpaced     = 0x6E7,
+    DecayExponential = 0x6E0,
+    DecayPower = 0x6E1,
+    DecayLinear = 0x6E2,
+    DecayStep = 0x6E3,
+    ForgetThreshold = 0x6E4,
+    ForgetRandom = 0x6E5,
+    ConsolidateMemory = 0x6E6,
+    RehearsalSpaced = 0x6E7,
 }
 
 // =============================================================================
@@ -767,100 +767,100 @@ pub enum CrystalOp {
 #[derive(Clone, Copy, Debug)]
 pub enum NsmOp {
     // Semantic primitives (0x700-0x71F) - Wierzbicka primes
-    I                   = 0x700,
-    You                 = 0x701,
-    Someone             = 0x702,
-    Something           = 0x703,
-    People              = 0x704,
-    Body                = 0x705,
-    Kind                = 0x706,
-    Part                = 0x707,
-    This                = 0x708,
-    Same                = 0x709,
-    Other               = 0x70A,
-    One                 = 0x70B,
-    Two                 = 0x70C,
-    Some                = 0x70D,
-    All                 = 0x70E,
-    Much                = 0x70F,
-    Little              = 0x710,
-    Good                = 0x711,
-    Bad                 = 0x712,
-    Big                 = 0x713,
-    Small               = 0x714,
+    I = 0x700,
+    You = 0x701,
+    Someone = 0x702,
+    Something = 0x703,
+    People = 0x704,
+    Body = 0x705,
+    Kind = 0x706,
+    Part = 0x707,
+    This = 0x708,
+    Same = 0x709,
+    Other = 0x70A,
+    One = 0x70B,
+    Two = 0x70C,
+    Some = 0x70D,
+    All = 0x70E,
+    Much = 0x70F,
+    Little = 0x710,
+    Good = 0x711,
+    Bad = 0x712,
+    Big = 0x713,
+    Small = 0x714,
 
     // Mental predicates (0x720-0x73F)
-    Think               = 0x720,
-    Know                = 0x721,
-    Want                = 0x722,
-    Feel                = 0x723,
-    See                 = 0x724,
-    Hear                = 0x725,
-    Say                 = 0x726,
-    Do                  = 0x727,
-    Happen              = 0x728,
-    Move                = 0x729,
-    Touch               = 0x72A,
+    Think = 0x720,
+    Know = 0x721,
+    Want = 0x722,
+    Feel = 0x723,
+    See = 0x724,
+    Hear = 0x725,
+    Say = 0x726,
+    Do = 0x727,
+    Happen = 0x728,
+    Move = 0x729,
+    Touch = 0x72A,
 
     // Space/Time (0x740-0x75F)
-    Where               = 0x740,
-    Here                = 0x741,
-    Above               = 0x742,
-    Below               = 0x743,
-    Far                 = 0x744,
-    Near                = 0x745,
-    Side                = 0x746,
-    Inside              = 0x747,
-    WhenNsm             = 0x748,
-    NowNsm              = 0x749,
-    BeforeNsm           = 0x74A,
-    AfterNsm            = 0x74B,
-    LongTime            = 0x74C,
-    ShortTime           = 0x74D,
-    ForSomeTime         = 0x74E,
-    Moment              = 0x74F,
+    Where = 0x740,
+    Here = 0x741,
+    Above = 0x742,
+    Below = 0x743,
+    Far = 0x744,
+    Near = 0x745,
+    Side = 0x746,
+    Inside = 0x747,
+    WhenNsm = 0x748,
+    NowNsm = 0x749,
+    BeforeNsm = 0x74A,
+    AfterNsm = 0x74B,
+    LongTime = 0x74C,
+    ShortTime = 0x74D,
+    ForSomeTime = 0x74E,
+    Moment = 0x74F,
 
     // Logical (0x760-0x77F)
-    Not                 = 0x760,
-    Maybe               = 0x761,
-    Can                 = 0x762,
-    Because             = 0x763,
-    If                  = 0x764,
-    Like                = 0x765,
-    Very                = 0x766,
-    More                = 0x767,
+    Not = 0x760,
+    Maybe = 0x761,
+    Can = 0x762,
+    Because = 0x763,
+    If = 0x764,
+    Like = 0x765,
+    Very = 0x766,
+    More = 0x767,
 
     // Existence (0x780-0x79F)
-    There               = 0x780,
-    Live                = 0x781,
-    Die                 = 0x782,
+    There = 0x780,
+    Live = 0x781,
+    Die = 0x782,
 
     // NSM composition (0x7A0-0x7BF)
-    NsmCompose          = 0x7A0,
-    NsmDecompose        = 0x7A1,
-    NsmMatch            = 0x7A2,
-    NsmDistance         = 0x7A3,
-    NsmSimplify         = 0x7A4,
-    NsmExpand           = 0x7A5,
-    NsmNormalize        = 0x7A6,
+    NsmCompose = 0x7A0,
+    NsmDecompose = 0x7A1,
+    NsmMatch = 0x7A2,
+    NsmDistance = 0x7A3,
+    NsmSimplify = 0x7A4,
+    NsmExpand = 0x7A5,
+    NsmNormalize = 0x7A6,
 
     // Semantic molecules (0x7C0-0x7DF)
-    MoleculeCreate      = 0x7C0,
-    MoleculeAdd         = 0x7C1,
-    MoleculeRemove      = 0x7C2,
-    MoleculeMatch       = 0x7C3,
-    MoleculeSimilar     = 0x7C4,
-    MoleculeDecompose   = 0x7C5,
+    MoleculeCreate = 0x7C0,
+    MoleculeAdd = 0x7C1,
+    MoleculeRemove = 0x7C2,
+    MoleculeMatch = 0x7C3,
+    MoleculeSimilar = 0x7C4,
+    MoleculeDecompose = 0x7C5,
 
     // Explication (0x7E0-0x7FF)
-    Explicate           = 0x7E0,
-    ExplicateWord       = 0x7E1,
-    ExplicateConcept    = 0x7E2,
-    ExplicateEmotion    = 0x7E3,
-    ExplicateAction     = 0x7E4,
-    ExplicateSocial     = 0x7E5,
-    CulturalScript      = 0x7E6,
-    SemanticTemplate    = 0x7E7,
+    Explicate = 0x7E0,
+    ExplicateWord = 0x7E1,
+    ExplicateConcept = 0x7E2,
+    ExplicateEmotion = 0x7E3,
+    ExplicateAction = 0x7E4,
+    ExplicateSocial = 0x7E5,
+    CulturalScript = 0x7E6,
+    SemanticTemplate = 0x7E7,
 }
 
 // =============================================================================
@@ -871,75 +871,75 @@ pub enum NsmOp {
 #[derive(Clone, Copy, Debug)]
 pub enum ActrOp {
     // Declarative memory (0x800-0x81F)
-    ChunkCreate         = 0x800,
-    ChunkStore          = 0x801,
-    ChunkRetrieve       = 0x802,
-    ChunkModify         = 0x803,
-    ChunkMerge          = 0x804,
-    ChunkActivation     = 0x805,
-    ChunkBaseLevel      = 0x806,
-    ChunkSpread         = 0x807,
-    ChunkPartialMatch   = 0x808,
-    ChunkBlend          = 0x809,
+    ChunkCreate = 0x800,
+    ChunkStore = 0x801,
+    ChunkRetrieve = 0x802,
+    ChunkModify = 0x803,
+    ChunkMerge = 0x804,
+    ChunkActivation = 0x805,
+    ChunkBaseLevel = 0x806,
+    ChunkSpread = 0x807,
+    ChunkPartialMatch = 0x808,
+    ChunkBlend = 0x809,
 
     // Procedural memory (0x820-0x83F)
-    ProductionCreate    = 0x820,
-    ProductionMatch     = 0x821,
-    ProductionFire      = 0x822,
-    ProductionUtility   = 0x823,
-    ProductionCompile   = 0x824,
-    ProductionLearn     = 0x825,
+    ProductionCreate = 0x820,
+    ProductionMatch = 0x821,
+    ProductionFire = 0x822,
+    ProductionUtility = 0x823,
+    ProductionCompile = 0x824,
+    ProductionLearn = 0x825,
 
     // Buffers (0x840-0x85F)
-    BufferGoal          = 0x840,
-    BufferRetrieval     = 0x841,
-    BufferVisual        = 0x842,
-    BufferAural         = 0x843,
-    BufferMotor         = 0x844,
-    BufferVocal         = 0x845,
-    BufferImageal       = 0x846,
-    BufferTemporal      = 0x847,
-    BufferClear         = 0x848,
-    BufferQuery         = 0x849,
-    BufferRequest       = 0x84A,
+    BufferGoal = 0x840,
+    BufferRetrieval = 0x841,
+    BufferVisual = 0x842,
+    BufferAural = 0x843,
+    BufferMotor = 0x844,
+    BufferVocal = 0x845,
+    BufferImageal = 0x846,
+    BufferTemporal = 0x847,
+    BufferClear = 0x848,
+    BufferQuery = 0x849,
+    BufferRequest = 0x84A,
 
     // Activation (0x860-0x87F)
-    ActivationBase      = 0x860,
-    ActivationSpread    = 0x861,
-    ActivationNoise     = 0x862,
-    ActivationDecay     = 0x863,
-    ActivationBoost     = 0x864,
+    ActivationBase = 0x860,
+    ActivationSpread = 0x861,
+    ActivationNoise = 0x862,
+    ActivationDecay = 0x863,
+    ActivationBoost = 0x864,
     ActivationThreshold = 0x865,
 
     // Timing (0x880-0x89F)
-    TimePerception      = 0x880,
-    TimeProduction      = 0x881,
-    LatencyRetrieval    = 0x882,
-    LatencyProduction   = 0x883,
-    CycleStep           = 0x884,
+    TimePerception = 0x880,
+    TimeProduction = 0x881,
+    LatencyRetrieval = 0x882,
+    LatencyProduction = 0x883,
+    CycleStep = 0x884,
 
     // Conflict resolution (0x8A0-0x8BF)
-    ConflictSet         = 0x8A0,
-    ConflictResolve     = 0x8A1,
-    UtilityCompute      = 0x8A2,
-    UtilityLearn        = 0x8A3,
-    UtilityNoise        = 0x8A4,
+    ConflictSet = 0x8A0,
+    ConflictResolve = 0x8A1,
+    UtilityCompute = 0x8A2,
+    UtilityLearn = 0x8A3,
+    UtilityNoise = 0x8A4,
 
     // Subsymbolic (0x8C0-0x8DF)
-    SubsymbolicBlend    = 0x8C0,
-    SubsymbolicMatch    = 0x8C1,
+    SubsymbolicBlend = 0x8C0,
+    SubsymbolicMatch = 0x8C1,
     SubsymbolicSimilarity = 0x8C2,
-    SubsymbolicError    = 0x8C3,
+    SubsymbolicError = 0x8C3,
 
     // Module interface (0x8E0-0x8FF)
-    ModuleVision        = 0x8E0,
-    ModuleAudio         = 0x8E1,
-    ModuleMotor         = 0x8E2,
-    ModuleSpeech        = 0x8E3,
-    ModuleDeclarative   = 0x8E4,
-    ModuleProcedural    = 0x8E5,
-    ModuleGoal          = 0x8E6,
-    ModuleImaginal      = 0x8E7,
+    ModuleVision = 0x8E0,
+    ModuleAudio = 0x8E1,
+    ModuleMotor = 0x8E2,
+    ModuleSpeech = 0x8E3,
+    ModuleDeclarative = 0x8E4,
+    ModuleProcedural = 0x8E5,
+    ModuleGoal = 0x8E6,
+    ModuleImaginal = 0x8E7,
 }
 
 // =============================================================================
@@ -950,81 +950,81 @@ pub enum ActrOp {
 #[derive(Clone, Copy, Debug)]
 pub enum RlOp {
     // Value functions (0x900-0x91F)
-    ValueState          = 0x900,
-    ValueAction         = 0x901,
-    ValueAdvantage      = 0x902,
-    ValueUpdate         = 0x903,
-    ValueBootstrap      = 0x904,
-    QValue              = 0x905,
-    QUpdate             = 0x906,
-    QMax                = 0x907,
-    QSoftmax            = 0x908,
+    ValueState = 0x900,
+    ValueAction = 0x901,
+    ValueAdvantage = 0x902,
+    ValueUpdate = 0x903,
+    ValueBootstrap = 0x904,
+    QValue = 0x905,
+    QUpdate = 0x906,
+    QMax = 0x907,
+    QSoftmax = 0x908,
 
     // Policy (0x920-0x93F)
-    PolicyGreedy        = 0x920,
+    PolicyGreedy = 0x920,
     PolicyEpsilonGreedy = 0x921,
-    PolicySoftmax       = 0x922,
-    PolicyUCB           = 0x923,
-    PolicyThompson      = 0x924,
-    PolicyRandom        = 0x925,
-    PolicyImprove       = 0x926,
-    PolicyEvaluate      = 0x927,
+    PolicySoftmax = 0x922,
+    PolicyUCB = 0x923,
+    PolicyThompson = 0x924,
+    PolicyRandom = 0x925,
+    PolicyImprove = 0x926,
+    PolicyEvaluate = 0x927,
 
     // Reward (0x940-0x95F)
-    RewardObserve       = 0x940,
-    RewardShape         = 0x941,
-    RewardIntrinsic     = 0x942,
-    RewardCuriosity     = 0x943,
-    RewardSparse        = 0x944,
-    RewardDense         = 0x945,
-    ReturnCompute       = 0x946,
-    ReturnDiscount      = 0x947,
+    RewardObserve = 0x940,
+    RewardShape = 0x941,
+    RewardIntrinsic = 0x942,
+    RewardCuriosity = 0x943,
+    RewardSparse = 0x944,
+    RewardDense = 0x945,
+    ReturnCompute = 0x946,
+    ReturnDiscount = 0x947,
 
     // TD Learning (0x960-0x97F)
-    TdError             = 0x960,
-    TdUpdate            = 0x961,
-    TdLambda            = 0x962,
-    Sarsa               = 0x963,
-    SarsaLambda         = 0x964,
-    ExpectedSarsa       = 0x965,
-    QLearning           = 0x966,
-    DoubleQ             = 0x967,
+    TdError = 0x960,
+    TdUpdate = 0x961,
+    TdLambda = 0x962,
+    Sarsa = 0x963,
+    SarsaLambda = 0x964,
+    ExpectedSarsa = 0x965,
+    QLearning = 0x966,
+    DoubleQ = 0x967,
 
     // Eligibility traces (0x980-0x99F)
-    TraceCreate         = 0x980,
-    TraceUpdate         = 0x981,
-    TraceDecay          = 0x982,
-    TraceClear          = 0x983,
-    TraceAccumulating   = 0x984,
-    TraceReplacing      = 0x985,
-    TraceDutch          = 0x986,
+    TraceCreate = 0x980,
+    TraceUpdate = 0x981,
+    TraceDecay = 0x982,
+    TraceClear = 0x983,
+    TraceAccumulating = 0x984,
+    TraceReplacing = 0x985,
+    TraceDutch = 0x986,
 
     // Exploration (0x9A0-0x9BF)
-    ExploreRandom       = 0x9A0,
-    ExploreEpsilon      = 0x9A1,
-    ExploreBoltzmann    = 0x9A2,
-    ExploreUCB          = 0x9A3,
-    ExploreOptimistic   = 0x9A4,
-    ExploreNovelty      = 0x9A5,
-    ExploreCount        = 0x9A6,
+    ExploreRandom = 0x9A0,
+    ExploreEpsilon = 0x9A1,
+    ExploreBoltzmann = 0x9A2,
+    ExploreUCB = 0x9A3,
+    ExploreOptimistic = 0x9A4,
+    ExploreNovelty = 0x9A5,
+    ExploreCount = 0x9A6,
 
     // Model-based (0x9C0-0x9DF)
-    ModelLearn          = 0x9C0,
-    ModelPredict        = 0x9C1,
-    ModelPlan           = 0x9C2,
-    ModelSimulate       = 0x9C3,
-    Dyna                = 0x9C4,
-    MCTS                = 0x9C5,
-    PrioritizedSweep    = 0x9C6,
+    ModelLearn = 0x9C0,
+    ModelPredict = 0x9C1,
+    ModelPlan = 0x9C2,
+    ModelSimulate = 0x9C3,
+    Dyna = 0x9C4,
+    MCTS = 0x9C5,
+    PrioritizedSweep = 0x9C6,
 
     // Multi-agent (0x9E0-0x9FF)
-    AgentCreate         = 0x9E0,
-    AgentObserve        = 0x9E1,
-    AgentAct            = 0x9E2,
-    AgentCommunicate    = 0x9E3,
-    NashEquilibrium     = 0x9E4,
-    Minimax             = 0x9E5,
-    SelfPlay            = 0x9E6,
+    AgentCreate = 0x9E0,
+    AgentObserve = 0x9E1,
+    AgentAct = 0x9E2,
+    AgentCommunicate = 0x9E3,
+    NashEquilibrium = 0x9E4,
+    Minimax = 0x9E5,
+    SelfPlay = 0x9E6,
 }
 
 // =============================================================================
@@ -1035,80 +1035,80 @@ pub enum RlOp {
 #[derive(Clone, Copy, Debug)]
 pub enum CausalOp {
     // Structural (0xA00-0xA1F)
-    GraphCreate         = 0xA00,
-    GraphAddNode        = 0xA01,
-    GraphAddEdge        = 0xA02,
-    GraphRemoveNode     = 0xA03,
-    GraphRemoveEdge     = 0xA04,
-    GraphParents        = 0xA05,
-    GraphChildren       = 0xA06,
-    GraphAncestors      = 0xA07,
-    GraphDescendants    = 0xA08,
+    GraphCreate = 0xA00,
+    GraphAddNode = 0xA01,
+    GraphAddEdge = 0xA02,
+    GraphRemoveNode = 0xA03,
+    GraphRemoveEdge = 0xA04,
+    GraphParents = 0xA05,
+    GraphChildren = 0xA06,
+    GraphAncestors = 0xA07,
+    GraphDescendants = 0xA08,
     GraphTopologicalSort = 0xA09,
 
     // D-separation (0xA20-0xA3F)
-    DSeparated          = 0xA20,
-    DConnected          = 0xA21,
-    Collider            = 0xA22,
-    Fork                = 0xA23,
-    Chain               = 0xA24,
-    BackdoorPath        = 0xA25,
-    FrontdoorPath       = 0xA26,
+    DSeparated = 0xA20,
+    DConnected = 0xA21,
+    Collider = 0xA22,
+    Fork = 0xA23,
+    Chain = 0xA24,
+    BackdoorPath = 0xA25,
+    FrontdoorPath = 0xA26,
 
     // Intervention - do() calculus (0xA40-0xA5F)
-    DoIntervene         = 0xA40,
-    DoSet               = 0xA41,
-    DoIdle              = 0xA42,
-    DoCompound          = 0xA43,
-    DoConditional       = 0xA44,
-    TruncatedProduct    = 0xA45,
-    Manipulated         = 0xA46,
+    DoIntervene = 0xA40,
+    DoSet = 0xA41,
+    DoIdle = 0xA42,
+    DoCompound = 0xA43,
+    DoConditional = 0xA44,
+    TruncatedProduct = 0xA45,
+    Manipulated = 0xA46,
 
     // Adjustment (0xA60-0xA7F)
-    BackdoorAdjust      = 0xA60,
-    FrontdoorAdjust     = 0xA61,
-    InstrumentalVar     = 0xA62,
-    PropensityScore     = 0xA63,
-    IPW                 = 0xA64,  // Inverse probability weighting
-    AIPW                = 0xA65,  // Augmented IPW
-    MatchingEstimator   = 0xA66,
+    BackdoorAdjust = 0xA60,
+    FrontdoorAdjust = 0xA61,
+    InstrumentalVar = 0xA62,
+    PropensityScore = 0xA63,
+    IPW = 0xA64,  // Inverse probability weighting
+    AIPW = 0xA65, // Augmented IPW
+    MatchingEstimator = 0xA66,
 
     // Counterfactual (0xA80-0xA9F)
-    Counterfactual      = 0xA80,
-    TwinNetwork         = 0xA81,
-    Abduct              = 0xA82,
-    Act                 = 0xA83,
-    Predict             = 0xA84,
-    ProbNecessity       = 0xA85,  // P(Y_x'=0 | X=x, Y=1)
-    ProbSufficiency     = 0xA86,  // P(Y_x=1 | X=x', Y=0)
-    ProbNecSuf          = 0xA87,  // P(Y_x=1 AND Y_x'=0)
+    Counterfactual = 0xA80,
+    TwinNetwork = 0xA81,
+    Abduct = 0xA82,
+    Act = 0xA83,
+    Predict = 0xA84,
+    ProbNecessity = 0xA85,   // P(Y_x'=0 | X=x, Y=1)
+    ProbSufficiency = 0xA86, // P(Y_x=1 | X=x', Y=0)
+    ProbNecSuf = 0xA87,      // P(Y_x=1 AND Y_x'=0)
 
     // Effect estimation (0xAA0-0xABF)
-    ATE                 = 0xAA0,  // Average treatment effect
-    ATT                 = 0xAA1,  // ... on treated
-    ATC                 = 0xAA2,  // ... on control
-    CATE                = 0xAA3,  // Conditional ATE
-    LocalATE            = 0xAA4,
-    NaturalDirect       = 0xAA5,
-    NaturalIndirect     = 0xAA6,
-    ControlledDirect    = 0xAA7,
-    TotalEffect         = 0xAA8,
+    ATE = 0xAA0,  // Average treatment effect
+    ATT = 0xAA1,  // ... on treated
+    ATC = 0xAA2,  // ... on control
+    CATE = 0xAA3, // Conditional ATE
+    LocalATE = 0xAA4,
+    NaturalDirect = 0xAA5,
+    NaturalIndirect = 0xAA6,
+    ControlledDirect = 0xAA7,
+    TotalEffect = 0xAA8,
 
     // Causal discovery (0xAC0-0xADF)
-    DiscoverPC          = 0xAC0,
-    DiscoverFCI         = 0xAC1,
-    DiscoverGES         = 0xAC2,
-    DiscoverLiNGAM      = 0xAC3,
-    DiscoverContinuous  = 0xAC4,
-    ConstraintBased     = 0xAC5,
-    ScoreBased          = 0xAC6,
+    DiscoverPC = 0xAC0,
+    DiscoverFCI = 0xAC1,
+    DiscoverGES = 0xAC2,
+    DiscoverLiNGAM = 0xAC3,
+    DiscoverContinuous = 0xAC4,
+    ConstraintBased = 0xAC5,
+    ScoreBased = 0xAC6,
 
     // Bounds (0xAE0-0xAFF)
-    BoundsNatural       = 0xAE0,
-    BoundsTight         = 0xAE1,
-    BoundsMonotonic     = 0xAE2,
+    BoundsNatural = 0xAE0,
+    BoundsTight = 0xAE1,
+    BoundsMonotonic = 0xAE2,
     SensitivityAnalysis = 0xAE3,
-    RobustnessCheck     = 0xAE4,
+    RobustnessCheck = 0xAE4,
 }
 
 // =============================================================================
@@ -1119,96 +1119,96 @@ pub enum CausalOp {
 #[derive(Clone, Copy, Debug)]
 pub enum QualiaOp {
     // Arousal/Valence core (0xB00-0xB1F)
-    ArousalGet          = 0xB00,
-    ArousalSet          = 0xB01,
-    ValenceGet          = 0xB02,
-    ValenceSet          = 0xB03,
-    TensionGet          = 0xB04,
-    TensionSet          = 0xB05,
-    CertaintyGet        = 0xB06,
-    CertaintySet        = 0xB07,
-    AgencyGet           = 0xB08,
-    AgencySet           = 0xB09,
-    TemporalityGet      = 0xB0A,
-    TemporalitySet      = 0xB0B,
-    SocialityGet        = 0xB0C,
-    SocialitySet        = 0xB0D,
-    NoveltyGet          = 0xB0E,
-    NoveltySet          = 0xB0F,
+    ArousalGet = 0xB00,
+    ArousalSet = 0xB01,
+    ValenceGet = 0xB02,
+    ValenceSet = 0xB03,
+    TensionGet = 0xB04,
+    TensionSet = 0xB05,
+    CertaintyGet = 0xB06,
+    CertaintySet = 0xB07,
+    AgencyGet = 0xB08,
+    AgencySet = 0xB09,
+    TemporalityGet = 0xB0A,
+    TemporalitySet = 0xB0B,
+    SocialityGet = 0xB0C,
+    SocialitySet = 0xB0D,
+    NoveltyGet = 0xB0E,
+    NoveltySet = 0xB0F,
 
     // Qualia vector operations (0xB20-0xB3F)
-    QualiaCreate        = 0xB20,
-    QualiaClone         = 0xB21,
-    QualiaBlend         = 0xB22,
-    QualiaDistance      = 0xB23,
-    QualiaSimilarity    = 0xB24,
-    QualiaInterpolate   = 0xB25,
-    QualiaExtrapolate   = 0xB26,
-    QualiaNormalize     = 0xB27,
+    QualiaCreate = 0xB20,
+    QualiaClone = 0xB21,
+    QualiaBlend = 0xB22,
+    QualiaDistance = 0xB23,
+    QualiaSimilarity = 0xB24,
+    QualiaInterpolate = 0xB25,
+    QualiaExtrapolate = 0xB26,
+    QualiaNormalize = 0xB27,
 
     // Emotion primitives (0xB40-0xB5F)
-    EmotionJoy          = 0xB40,
-    EmotionSadness      = 0xB41,
-    EmotionAnger        = 0xB42,
-    EmotionFear         = 0xB43,
-    EmotionDisgust      = 0xB44,
-    EmotionSurprise     = 0xB45,
-    EmotionTrust        = 0xB46,
+    EmotionJoy = 0xB40,
+    EmotionSadness = 0xB41,
+    EmotionAnger = 0xB42,
+    EmotionFear = 0xB43,
+    EmotionDisgust = 0xB44,
+    EmotionSurprise = 0xB45,
+    EmotionTrust = 0xB46,
     EmotionAnticipation = 0xB47,
-    EmotionBlend        = 0xB48,
-    EmotionIntensify    = 0xB49,
-    EmotionDampen       = 0xB4A,
-    EmotionOpposite     = 0xB4B,
+    EmotionBlend = 0xB48,
+    EmotionIntensify = 0xB49,
+    EmotionDampen = 0xB4A,
+    EmotionOpposite = 0xB4B,
 
     // Felt sense (0xB60-0xB7F)
-    FeltWarmth          = 0xB60,
-    FeltCoolness        = 0xB61,
-    FeltPressure        = 0xB62,
-    FeltLightness       = 0xB63,
-    FeltDensity         = 0xB64,
-    FeltFlow            = 0xB65,
-    FeltStuckness       = 0xB66,
-    FeltExpansion       = 0xB67,
-    FeltContraction     = 0xB68,
-    FeltResonance       = 0xB69,
-    FeltDissonance      = 0xB6A,
+    FeltWarmth = 0xB60,
+    FeltCoolness = 0xB61,
+    FeltPressure = 0xB62,
+    FeltLightness = 0xB63,
+    FeltDensity = 0xB64,
+    FeltFlow = 0xB65,
+    FeltStuckness = 0xB66,
+    FeltExpansion = 0xB67,
+    FeltContraction = 0xB68,
+    FeltResonance = 0xB69,
+    FeltDissonance = 0xB6A,
 
     // Phenomenal field (0xB80-0xB9F)
-    FieldCreate         = 0xB80,
-    FieldSample         = 0xB81,
-    FieldGradient       = 0xB82,
-    FieldPeak           = 0xB83,
-    FieldValley         = 0xB84,
-    FieldSmooth         = 0xB85,
-    FieldSharp          = 0xB86,
-    FieldMerge          = 0xB87,
+    FieldCreate = 0xB80,
+    FieldSample = 0xB81,
+    FieldGradient = 0xB82,
+    FieldPeak = 0xB83,
+    FieldValley = 0xB84,
+    FieldSmooth = 0xB85,
+    FieldSharp = 0xB86,
+    FieldMerge = 0xB87,
 
     // Consciousness markers (0xBA0-0xBBF)
-    Awake               = 0xBA0,
-    Dreaming            = 0xBA1,
-    Flow                = 0xBA2,
-    Focused             = 0xBA3,
-    Diffuse             = 0xBA4,
-    Metacognitive       = 0xBA5,
-    PreReflective       = 0xBA6,
+    Awake = 0xBA0,
+    Dreaming = 0xBA1,
+    Flow = 0xBA2,
+    Focused = 0xBA3,
+    Diffuse = 0xBA4,
+    Metacognitive = 0xBA5,
+    PreReflective = 0xBA6,
 
     // Affect regulation (0xBC0-0xBDF)
-    RegulateUp          = 0xBC0,
-    RegulateDown        = 0xBC1,
-    Reappraise          = 0xBC2,
-    Suppress            = 0xBC3,
-    Express             = 0xBC4,
-    Distract            = 0xBC5,
-    Ruminate            = 0xBC6,
-    Accept              = 0xBC7,
+    RegulateUp = 0xBC0,
+    RegulateDown = 0xBC1,
+    Reappraise = 0xBC2,
+    Suppress = 0xBC3,
+    Express = 0xBC4,
+    Distract = 0xBC5,
+    Ruminate = 0xBC6,
+    Accept = 0xBC7,
 
     // Somatic (0xBE0-0xBFF)
-    BodyScan            = 0xBE0,
-    BodyLocate          = 0xBE1,
-    BodyIntensity       = 0xBE2,
-    Interoception       = 0xBE3,
-    Proprioception      = 0xBE4,
-    GroundingBody       = 0xBE5,
+    BodyScan = 0xBE0,
+    BodyLocate = 0xBE1,
+    BodyIntensity = 0xBE2,
+    Interoception = 0xBE3,
+    Proprioception = 0xBE4,
+    GroundingBody = 0xBE5,
 }
 
 // =============================================================================
@@ -1219,94 +1219,94 @@ pub enum QualiaOp {
 #[derive(Clone, Copy, Debug)]
 pub enum RungOp {
     // Rung levels (0xC00-0xC0F) - Ladder of abstraction
-    RungNoise           = 0xC00,  // Level 0: Random noise
-    RungSignal          = 0xC01,  // Level 1: Coherent signal
-    RungPattern         = 0xC02,  // Level 2: Repeating pattern
-    RungConcept         = 0xC03,  // Level 3: Abstract concept
-    RungRelation        = 0xC04,  // Level 4: Relations between concepts
-    RungSchema          = 0xC05,  // Level 5: Organized schemas
-    RungNarrative       = 0xC06,  // Level 6: Story-like coherence
-    RungTheory          = 0xC07,  // Level 7: Explanatory theory
-    RungMetaTheory      = 0xC08,  // Level 8: Theory about theories
-    RungTranscendent    = 0xC09,  // Level 9: Beyond categories
+    RungNoise = 0xC00,        // Level 0: Random noise
+    RungSignal = 0xC01,       // Level 1: Coherent signal
+    RungPattern = 0xC02,      // Level 2: Repeating pattern
+    RungConcept = 0xC03,      // Level 3: Abstract concept
+    RungRelation = 0xC04,     // Level 4: Relations between concepts
+    RungSchema = 0xC05,       // Level 5: Organized schemas
+    RungNarrative = 0xC06,    // Level 6: Story-like coherence
+    RungTheory = 0xC07,       // Level 7: Explanatory theory
+    RungMetaTheory = 0xC08,   // Level 8: Theory about theories
+    RungTranscendent = 0xC09, // Level 9: Beyond categories
 
     // Rung navigation (0xC10-0xC2F)
-    RungAscend          = 0xC10,
-    RungDescend         = 0xC11,
-    RungCurrent         = 0xC12,
-    RungProject         = 0xC13,
-    RungGrounded        = 0xC14,
-    RungAbstract        = 0xC15,
-    RungInstantiate     = 0xC16,
-    RungGeneralize      = 0xC17,
+    RungAscend = 0xC10,
+    RungDescend = 0xC11,
+    RungCurrent = 0xC12,
+    RungProject = 0xC13,
+    RungGrounded = 0xC14,
+    RungAbstract = 0xC15,
+    RungInstantiate = 0xC16,
+    RungGeneralize = 0xC17,
 
     // Abstraction operations (0xC30-0xC4F)
-    AbstractExtract     = 0xC30,
-    AbstractMerge       = 0xC31,
-    AbstractSplit       = 0xC32,
-    AbstractAlign       = 0xC33,
-    AbstractCompare     = 0xC34,
-    AbstractBlend       = 0xC35,
+    AbstractExtract = 0xC30,
+    AbstractMerge = 0xC31,
+    AbstractSplit = 0xC32,
+    AbstractAlign = 0xC33,
+    AbstractCompare = 0xC34,
+    AbstractBlend = 0xC35,
     AbstractDifferentiate = 0xC36,
 
     // Grounding (0xC50-0xC6F)
-    GroundToSensory     = 0xC50,
-    GroundToMotor       = 0xC51,
-    GroundToEmotion     = 0xC52,
-    GroundToMemory      = 0xC53,
-    GroundToLanguage    = 0xC54,
-    GroundToSocial      = 0xC55,
-    GroundCheck         = 0xC56,
+    GroundToSensory = 0xC50,
+    GroundToMotor = 0xC51,
+    GroundToEmotion = 0xC52,
+    GroundToMemory = 0xC53,
+    GroundToLanguage = 0xC54,
+    GroundToSocial = 0xC55,
+    GroundCheck = 0xC56,
 
     // Hierarchy operations (0xC70-0xC8F)
-    HierarchyCreate     = 0xC70,
-    HierarchyInsert     = 0xC71,
-    HierarchyRemove     = 0xC72,
-    HierarchyParent     = 0xC73,
-    HierarchyChildren   = 0xC74,
-    HierarchySiblings   = 0xC75,
-    HierarchyPath       = 0xC76,
-    HierarchyDepth      = 0xC77,
-    HierarchyBreadth    = 0xC78,
+    HierarchyCreate = 0xC70,
+    HierarchyInsert = 0xC71,
+    HierarchyRemove = 0xC72,
+    HierarchyParent = 0xC73,
+    HierarchyChildren = 0xC74,
+    HierarchySiblings = 0xC75,
+    HierarchyPath = 0xC76,
+    HierarchyDepth = 0xC77,
+    HierarchyBreadth = 0xC78,
 
     // Conceptual blending (0xC90-0xCAF)
-    BlendCreate         = 0xC90,
-    BlendInput1         = 0xC91,
-    BlendInput2         = 0xC92,
-    BlendGeneric        = 0xC93,
-    BlendEmergent       = 0xC94,
-    BlendProject        = 0xC95,
-    BlendCompose        = 0xC96,
-    BlendComplete       = 0xC97,
-    BlendElaborate      = 0xC98,
+    BlendCreate = 0xC90,
+    BlendInput1 = 0xC91,
+    BlendInput2 = 0xC92,
+    BlendGeneric = 0xC93,
+    BlendEmergent = 0xC94,
+    BlendProject = 0xC95,
+    BlendCompose = 0xC96,
+    BlendComplete = 0xC97,
+    BlendElaborate = 0xC98,
 
     // Metaphor (0xCB0-0xCCF)
-    MetaphorMap         = 0xCB0,
-    MetaphorSource      = 0xCB1,
-    MetaphorTarget      = 0xCB2,
-    MetaphorGrounds     = 0xCB3,
-    MetaphorExtend      = 0xCB4,
-    MetaphorLiteral     = 0xCB5,
-    MetaphorEntail      = 0xCB6,
+    MetaphorMap = 0xCB0,
+    MetaphorSource = 0xCB1,
+    MetaphorTarget = 0xCB2,
+    MetaphorGrounds = 0xCB3,
+    MetaphorExtend = 0xCB4,
+    MetaphorLiteral = 0xCB5,
+    MetaphorEntail = 0xCB6,
 
     // Analogy (0xCD0-0xCEF)
-    AnalogyFind         = 0xCD0,
-    AnalogyMap          = 0xCD1,
-    AnalogyEvaluate     = 0xCD2,
-    AnalogyTransfer     = 0xCD3,
-    AnalogyAdapt        = 0xCD4,
-    StructureMap        = 0xCD5,
-    RelationalMatch     = 0xCD6,
+    AnalogyFind = 0xCD0,
+    AnalogyMap = 0xCD1,
+    AnalogyEvaluate = 0xCD2,
+    AnalogyTransfer = 0xCD3,
+    AnalogyAdapt = 0xCD4,
+    StructureMap = 0xCD5,
+    RelationalMatch = 0xCD6,
 
     // Prototype (0xCF0-0xCFF)
-    PrototypeCreate     = 0xCF0,
-    PrototypeUpdate     = 0xCF1,
-    PrototypeMatch      = 0xCF2,
-    PrototypeDistance   = 0xCF3,
-    ExemplarStore       = 0xCF4,
-    ExemplarRetrieve    = 0xCF5,
-    CategoryMembership  = 0xCF6,
-    Typicality          = 0xCF7,
+    PrototypeCreate = 0xCF0,
+    PrototypeUpdate = 0xCF1,
+    PrototypeMatch = 0xCF2,
+    PrototypeDistance = 0xCF3,
+    ExemplarStore = 0xCF4,
+    ExemplarRetrieve = 0xCF5,
+    CategoryMembership = 0xCF6,
+    Typicality = 0xCF7,
 }
 
 // =============================================================================
@@ -1317,85 +1317,85 @@ pub enum RungOp {
 #[derive(Clone, Copy, Debug)]
 pub enum MetaOp {
     // Self-reference (0xD00-0xD1F)
-    SelfModel           = 0xD00,
-    SelfUpdate          = 0xD01,
-    SelfPredict         = 0xD02,
-    SelfMonitor         = 0xD03,
-    SelfCorrect         = 0xD04,
-    SelfExplain         = 0xD05,
-    SelfCritique        = 0xD06,
-    SelfImprove         = 0xD07,
+    SelfModel = 0xD00,
+    SelfUpdate = 0xD01,
+    SelfPredict = 0xD02,
+    SelfMonitor = 0xD03,
+    SelfCorrect = 0xD04,
+    SelfExplain = 0xD05,
+    SelfCritique = 0xD06,
+    SelfImprove = 0xD07,
 
     // Confidence/Uncertainty (0xD20-0xD3F)
-    ConfidenceGet       = 0xD20,
-    ConfidenceSet       = 0xD21,
+    ConfidenceGet = 0xD20,
+    ConfidenceSet = 0xD21,
     ConfidenceCalibrate = 0xD22,
     UncertaintyQuantify = 0xD23,
-    UncertaintyReduce   = 0xD24,
-    EntropyMeasure      = 0xD25,
-    SurpriseMeasure     = 0xD26,
+    UncertaintyReduce = 0xD24,
+    EntropyMeasure = 0xD25,
+    SurpriseMeasure = 0xD26,
 
     // Knowledge state (0xD40-0xD5F)
-    KnowWhat            = 0xD40,
-    KnowHow             = 0xD41,
-    KnowWhy             = 0xD42,
-    KnowWhen            = 0xD43,
-    KnowWho             = 0xD44,
-    KnowThat            = 0xD45,
-    DontKnow            = 0xD46,
-    CantKnow            = 0xD47,
+    KnowWhat = 0xD40,
+    KnowHow = 0xD41,
+    KnowWhy = 0xD42,
+    KnowWhen = 0xD43,
+    KnowWho = 0xD44,
+    KnowThat = 0xD45,
+    DontKnow = 0xD46,
+    CantKnow = 0xD47,
 
     // Reasoning trace (0xD60-0xD7F)
-    TraceBegin          = 0xD60,
-    TraceStep           = 0xD61,
-    TraceEnd            = 0xD62,
-    TraceRewind         = 0xD63,
-    TraceReplay         = 0xD64,
-    TraceBranch         = 0xD65,
-    TraceMerge          = 0xD66,
-    TraceExplain        = 0xD67,
+    TraceBegin = 0xD60,
+    TraceStep = 0xD61,
+    TraceEnd = 0xD62,
+    TraceRewind = 0xD63,
+    TraceReplay = 0xD64,
+    TraceBranch = 0xD65,
+    TraceMerge = 0xD66,
+    TraceExplain = 0xD67,
 
     // Goal management (0xD80-0xD9F)
-    GoalSet             = 0xD80,
-    GoalClear           = 0xD81,
-    GoalCheck           = 0xD82,
-    GoalStack           = 0xD83,
-    GoalPush            = 0xD84,
-    GoalPop             = 0xD85,
-    GoalPrioritize      = 0xD86,
-    GoalConflict        = 0xD87,
-    SubgoalCreate       = 0xD88,
+    GoalSet = 0xD80,
+    GoalClear = 0xD81,
+    GoalCheck = 0xD82,
+    GoalStack = 0xD83,
+    GoalPush = 0xD84,
+    GoalPop = 0xD85,
+    GoalPrioritize = 0xD86,
+    GoalConflict = 0xD87,
+    SubgoalCreate = 0xD88,
 
     // Attention control (0xDA0-0xDBF)
-    AttentionFocus      = 0xDA0,
-    AttentionBroaden    = 0xDA1,
-    AttentionNarrow     = 0xDA2,
-    AttentionShift      = 0xDA3,
-    AttentionSustain    = 0xDA4,
-    AttentionDivide     = 0xDA5,
-    AttentionFilter     = 0xDA6,
-    Salience            = 0xDA7,
+    AttentionFocus = 0xDA0,
+    AttentionBroaden = 0xDA1,
+    AttentionNarrow = 0xDA2,
+    AttentionShift = 0xDA3,
+    AttentionSustain = 0xDA4,
+    AttentionDivide = 0xDA5,
+    AttentionFilter = 0xDA6,
+    Salience = 0xDA7,
 
     // Strategy selection (0xDC0-0xDDF)
-    StrategySelect      = 0xDC0,
-    StrategyEvaluate    = 0xDC1,
-    StrategySwitch      = 0xDC2,
-    StrategyLearn       = 0xDC3,
-    Heuristic           = 0xDC4,
-    Algorithm           = 0xDC5,
-    Fallback            = 0xDC6,
+    StrategySelect = 0xDC0,
+    StrategyEvaluate = 0xDC1,
+    StrategySwitch = 0xDC2,
+    StrategyLearn = 0xDC3,
+    Heuristic = 0xDC4,
+    Algorithm = 0xDC5,
+    Fallback = 0xDC6,
 
     // Debugging/Inspection (0xDE0-0xDFF)
-    Inspect             = 0xDE0,
-    Breakpoint          = 0xDE1,
-    Watch               = 0xDE2,
-    Profile             = 0xDE3,
-    Benchmark           = 0xDE4,
-    Validate            = 0xDE5,
-    Invariant           = 0xDE6,
-    Assert              = 0xDE7,
-    Log                 = 0xDE8,
-    Trace               = 0xDE9,
+    Inspect = 0xDE0,
+    Breakpoint = 0xDE1,
+    Watch = 0xDE2,
+    Profile = 0xDE3,
+    Benchmark = 0xDE4,
+    Validate = 0xDE5,
+    Invariant = 0xDE6,
+    Assert = 0xDE7,
+    Log = 0xDE8,
+    Trace = 0xDE9,
 }
 
 // =============================================================================
@@ -1406,53 +1406,53 @@ pub enum MetaOp {
 #[derive(Clone, Copy, Debug)]
 pub enum VerbOp {
     // Core relations (0x700-0x71F)
-    Causes          = 0x700,
-    CausedBy        = 0x701,
-    Becomes         = 0x702,
-    Enables         = 0x703,
-    Prevents        = 0x704,
-    Contains        = 0x705,
-    PartOf          = 0x706,
-    Requires        = 0x707,
-    Implies         = 0x708,
-    IsA             = 0x709,
-    HasA            = 0x70A,
-    SameAs          = 0x70B,
-    DifferentFrom   = 0x70C,
-    SimilarTo       = 0x70D,
-    OppositeOf      = 0x70E,
-    DerivedFrom     = 0x70F,
+    Causes = 0x700,
+    CausedBy = 0x701,
+    Becomes = 0x702,
+    Enables = 0x703,
+    Prevents = 0x704,
+    Contains = 0x705,
+    PartOf = 0x706,
+    Requires = 0x707,
+    Implies = 0x708,
+    IsA = 0x709,
+    HasA = 0x70A,
+    SameAs = 0x70B,
+    DifferentFrom = 0x70C,
+    SimilarTo = 0x70D,
+    OppositeOf = 0x70E,
+    DerivedFrom = 0x70F,
 
     // Epistemic (0x720-0x73F)
-    Supports        = 0x720,
-    Contradicts     = 0x721,
-    Grounds         = 0x722,
-    Abstracts       = 0x723,
-    Refines         = 0x724,
-    Believes        = 0x725,
-    Knows           = 0x726,
-    Doubts          = 0x727,
-    Infers          = 0x728,
-    Assumes         = 0x729,
+    Supports = 0x720,
+    Contradicts = 0x721,
+    Grounds = 0x722,
+    Abstracts = 0x723,
+    Refines = 0x724,
+    Believes = 0x725,
+    Knows = 0x726,
+    Doubts = 0x727,
+    Infers = 0x728,
+    Assumes = 0x729,
 
     // Temporal (0x740-0x75F)
-    Before          = 0x740,
-    After           = 0x741,
-    During          = 0x742,
-    Overlaps        = 0x743,
-    Meets           = 0x744,
-    Starts          = 0x745,
-    Finishes        = 0x746,
+    Before = 0x740,
+    After = 0x741,
+    During = 0x742,
+    Overlaps = 0x743,
+    Meets = 0x744,
+    Starts = 0x745,
+    Finishes = 0x746,
 
     // Agentive (0x760-0x77F)
-    Does            = 0x760,
-    Uses            = 0x761,
-    Makes           = 0x762,
-    Gives           = 0x763,
-    Takes           = 0x764,
-    Wants           = 0x765,
-    Needs           = 0x766,
-    Intends         = 0x767,
+    Does = 0x760,
+    Uses = 0x761,
+    Makes = 0x762,
+    Gives = 0x763,
+    Takes = 0x764,
+    Wants = 0x765,
+    Needs = 0x766,
+    Intends = 0x767,
 }
 
 // =============================================================================
@@ -1464,29 +1464,29 @@ pub enum VerbOp {
 #[derive(Clone, Copy, Debug)]
 pub enum MemoryOp {
     // Core operations
-    Store           = 0xA00,
-    Recall          = 0xA01,
-    Forget          = 0xA02,
-    Consolidate     = 0xA03,
+    Store = 0xA00,
+    Recall = 0xA01,
+    Forget = 0xA02,
+    Consolidate = 0xA03,
 
     // Episodic memory
-    RecordEpisode   = 0xA10,
-    ReplayEpisode   = 0xA11,
-    MatchEpisode    = 0xA12,
+    RecordEpisode = 0xA10,
+    ReplayEpisode = 0xA11,
+    MatchEpisode = 0xA12,
 
     // Working memory
-    Push            = 0xA20,
-    Pop             = 0xA21,
-    Peek            = 0xA22,
-    Clear           = 0xA23,
+    Push = 0xA20,
+    Pop = 0xA21,
+    Peek = 0xA22,
+    Clear = 0xA23,
 
     // Semantic memory
-    DefineCategory  = 0xA30,
-    QueryCategory   = 0xA31,
-    LinkCategories  = 0xA32,
+    DefineCategory = 0xA30,
+    QueryCategory = 0xA31,
+    LinkCategories = 0xA32,
 
     // Procedural memory
-    LearnProcedure  = 0xA40,
+    LearnProcedure = 0xA40,
     RecallProcedure = 0xA41,
     ExecuteProcedure = 0xA42,
 }
@@ -1499,49 +1499,61 @@ pub enum MemoryOp {
 #[derive(Clone, Copy, Debug)]
 pub enum UserOp {
     // User function slots (0xF00-0xF7F) - 128 slots
-    User000 = 0xF00, User001 = 0xF01, User002 = 0xF02, User003 = 0xF03,
-    User004 = 0xF04, User005 = 0xF05, User006 = 0xF06, User007 = 0xF07,
-    User008 = 0xF08, User009 = 0xF09, User00A = 0xF0A, User00B = 0xF0B,
-    User00C = 0xF0C, User00D = 0xF0D, User00E = 0xF0E, User00F = 0xF0F,
+    User000 = 0xF00,
+    User001 = 0xF01,
+    User002 = 0xF02,
+    User003 = 0xF03,
+    User004 = 0xF04,
+    User005 = 0xF05,
+    User006 = 0xF06,
+    User007 = 0xF07,
+    User008 = 0xF08,
+    User009 = 0xF09,
+    User00A = 0xF0A,
+    User00B = 0xF0B,
+    User00C = 0xF0C,
+    User00D = 0xF0D,
+    User00E = 0xF0E,
+    User00F = 0xF0F,
     // ... (slots 0xF10-0xF7F implicitly available)
 
     // Plugin interface (0xF80-0xF9F)
-    PluginLoad          = 0xF80,
-    PluginUnload        = 0xF81,
-    PluginList          = 0xF82,
-    PluginCall          = 0xF83,
-    PluginRegister      = 0xF84,
-    PluginUnregister    = 0xF85,
+    PluginLoad = 0xF80,
+    PluginUnload = 0xF81,
+    PluginList = 0xF82,
+    PluginCall = 0xF83,
+    PluginRegister = 0xF84,
+    PluginUnregister = 0xF85,
 
     // FFI (0xFA0-0xFBF)
-    FfiCall             = 0xFA0,
-    FfiCallback         = 0xFA1,
-    FfiMarshal          = 0xFA2,
-    FfiUnmarshal        = 0xFA3,
+    FfiCall = 0xFA0,
+    FfiCallback = 0xFA1,
+    FfiMarshal = 0xFA2,
+    FfiUnmarshal = 0xFA3,
 
     // Scripting (0xFC0-0xFDF)
-    ScriptEval          = 0xFC0,
-    ScriptCompile       = 0xFC1,
-    ScriptRun           = 0xFC2,
-    ScriptParse         = 0xFC3,
+    ScriptEval = 0xFC0,
+    ScriptCompile = 0xFC1,
+    ScriptRun = 0xFC2,
+    ScriptParse = 0xFC3,
 
     // Extension points (0xFE0-0xFFF)
-    ExtensionPoint0     = 0xFE0,
-    ExtensionPoint1     = 0xFE1,
-    ExtensionPoint2     = 0xFE2,
-    ExtensionPoint3     = 0xFE3,
-    ExtensionPoint4     = 0xFE4,
-    ExtensionPoint5     = 0xFE5,
-    ExtensionPoint6     = 0xFE6,
-    ExtensionPoint7     = 0xFE7,
-    Reserved0           = 0xFF0,
-    Reserved1           = 0xFF1,
-    Reserved2           = 0xFF2,
-    Reserved3           = 0xFF3,
-    Noop                = 0xFFC,
-    Debug               = 0xFFD,
-    Panic               = 0xFFE,
-    Halt                = 0xFFF,
+    ExtensionPoint0 = 0xFE0,
+    ExtensionPoint1 = 0xFE1,
+    ExtensionPoint2 = 0xFE2,
+    ExtensionPoint3 = 0xFE3,
+    ExtensionPoint4 = 0xFE4,
+    ExtensionPoint5 = 0xFE5,
+    ExtensionPoint6 = 0xFE6,
+    ExtensionPoint7 = 0xFE7,
+    Reserved0 = 0xFF0,
+    Reserved1 = 0xFF1,
+    Reserved2 = 0xFF2,
+    Reserved3 = 0xFF3,
+    Noop = 0xFFC,
+    Debug = 0xFFD,
+    Panic = 0xFFE,
+    Halt = 0xFFF,
 }
 
 // =============================================================================
@@ -1552,134 +1564,134 @@ pub enum UserOp {
 #[derive(Clone, Copy, Debug)]
 pub enum LearnOp {
     // Moment capture (0xE00-0xE0F)
-    MomentCapture       = 0xE00,
-    MomentTag           = 0xE01,
-    MomentLink          = 0xE02,
-    MomentRetrieve      = 0xE03,
-    MomentDecay         = 0xE04,
-    
+    MomentCapture = 0xE00,
+    MomentTag = 0xE01,
+    MomentLink = 0xE02,
+    MomentRetrieve = 0xE03,
+    MomentDecay = 0xE04,
+
     // Session management (0xE10-0xE1F)
-    SessionStart        = 0xE10,
-    SessionEnd          = 0xE11,
-    SessionPause        = 0xE12,
-    SessionResume       = 0xE13,
-    SessionSnapshot     = 0xE14,
-    SessionRestore      = 0xE15,
-    
+    SessionStart = 0xE10,
+    SessionEnd = 0xE11,
+    SessionPause = 0xE12,
+    SessionResume = 0xE13,
+    SessionSnapshot = 0xE14,
+    SessionRestore = 0xE15,
+
     // Blackboard operations (0xE20-0xE2F)
-    BlackboardWrite     = 0xE20,
-    BlackboardRead      = 0xE21,
-    BlackboardClear     = 0xE22,
-    BlackboardCommit    = 0xE23,  // Ice-cake layer
-    BlackboardMerge     = 0xE24,
-    BlackboardDiff      = 0xE25,
-    
+    BlackboardWrite = 0xE20,
+    BlackboardRead = 0xE21,
+    BlackboardClear = 0xE22,
+    BlackboardCommit = 0xE23, // Ice-cake layer
+    BlackboardMerge = 0xE24,
+    BlackboardDiff = 0xE25,
+
     // Resonance (0xE30-0xE3F)
-    ResonanceScan       = 0xE30,
-    ResonanceCapture    = 0xE31,
-    ResonanceAmplify    = 0xE32,
-    ResonanceDampen     = 0xE33,
-    SweetSpotFind       = 0xE34,
-    MexicanHatApply     = 0xE35,
-    
+    ResonanceScan = 0xE30,
+    ResonanceCapture = 0xE31,
+    ResonanceAmplify = 0xE32,
+    ResonanceDampen = 0xE33,
+    SweetSpotFind = 0xE34,
+    MexicanHatApply = 0xE35,
+
     // Concept extraction (0xE40-0xE4F)
-    ConceptExtract      = 0xE40,
-    ConceptMerge        = 0xE41,
-    ConceptSplit        = 0xE42,
-    ConceptRelate       = 0xE43,
-    ConceptGeneralize   = 0xE44,
-    ConceptSpecialize   = 0xE45,
-    
+    ConceptExtract = 0xE40,
+    ConceptMerge = 0xE41,
+    ConceptSplit = 0xE42,
+    ConceptRelate = 0xE43,
+    ConceptGeneralize = 0xE44,
+    ConceptSpecialize = 0xE45,
+
     // Pattern learning (0xE50-0xE5F)
-    PatternDetect       = 0xE50,
-    PatternStore        = 0xE51,
-    PatternMatch        = 0xE52,
-    PatternComplete     = 0xE53,
-    PatternPredict      = 0xE54,
-    SequenceLearn       = 0xE55,
-    SequencePredict     = 0xE56,
-    
+    PatternDetect = 0xE50,
+    PatternStore = 0xE51,
+    PatternMatch = 0xE52,
+    PatternComplete = 0xE53,
+    PatternPredict = 0xE54,
+    SequenceLearn = 0xE55,
+    SequencePredict = 0xE56,
+
     // Incremental learning (0xE60-0xE6F)
-    IncrementalAdd      = 0xE60,
-    IncrementalUpdate   = 0xE61,
-    IncrementalForget   = 0xE62,
-    Consolidate         = 0xE63,
-    Rehearse            = 0xE64,  // Replay for retention
-    
+    IncrementalAdd = 0xE60,
+    IncrementalUpdate = 0xE61,
+    IncrementalForget = 0xE62,
+    Consolidate = 0xE63,
+    Rehearse = 0xE64, // Replay for retention
+
     // Transfer learning (0xE70-0xE7F)
-    TransferDomain      = 0xE70,
-    TransferAnalogy     = 0xE71,
-    TransferAbstract    = 0xE72,
+    TransferDomain = 0xE70,
+    TransferAnalogy = 0xE71,
+    TransferAbstract = 0xE72,
     TransferInstantiate = 0xE73,
-    
+
     // Active learning (0xE80-0xE8F)
-    QueryUncertain      = 0xE80,
-    QueryDiverse        = 0xE81,
-    QueryExpected       = 0xE82,
-    LabelRequest        = 0xE83,
-    LabelIntegrate      = 0xE84,
-    
+    QueryUncertain = 0xE80,
+    QueryDiverse = 0xE81,
+    QueryExpected = 0xE82,
+    LabelRequest = 0xE83,
+    LabelIntegrate = 0xE84,
+
     // Curriculum (0xE90-0xE9F)
-    CurriculumNext      = 0xE90,
+    CurriculumNext = 0xE90,
     CurriculumDifficulty = 0xE91,
-    CurriculumMaster    = 0xE92,
-    ProgressTrack       = 0xE93,
-    
+    CurriculumMaster = 0xE92,
+    ProgressTrack = 0xE93,
+
     // Codebook learning (0xEA0-0xEAF)
-    CodebookInit        = 0xEA0,
-    CodebookAdd         = 0xEA1,
-    CodebookRemove      = 0xEA2,
-    CodebookOptimize    = 0xEA3,
-    CodebookPrune       = 0xEA4,
-    CodebookMerge       = 0xEA5,
-    
+    CodebookInit = 0xEA0,
+    CodebookAdd = 0xEA1,
+    CodebookRemove = 0xEA2,
+    CodebookOptimize = 0xEA3,
+    CodebookPrune = 0xEA4,
+    CodebookMerge = 0xEA5,
+
     // Crystal learning (0xEB0-0xEBF)
-    CrystalTrain        = 0xEB0,
-    CrystalRetrain      = 0xEB1,
-    CrystalExpand       = 0xEB2,
-    CrystalCompress     = 0xEB3,
-    CrystalAlign        = 0xEB4,
-    
+    CrystalTrain = 0xEB0,
+    CrystalRetrain = 0xEB1,
+    CrystalExpand = 0xEB2,
+    CrystalCompress = 0xEB3,
+    CrystalAlign = 0xEB4,
+
     // Evaluation (0xEC0-0xECF)
-    EvalAccuracy        = 0xEC0,
-    EvalPrecision       = 0xEC1,
-    EvalRecall          = 0xEC2,
-    EvalF1              = 0xEC3,
-    EvalAUC             = 0xEC4,
-    CrossValidate       = 0xEC5,
-    
+    EvalAccuracy = 0xEC0,
+    EvalPrecision = 0xEC1,
+    EvalRecall = 0xEC2,
+    EvalF1 = 0xEC3,
+    EvalAUC = 0xEC4,
+    CrossValidate = 0xEC5,
+
     // Explanation (0xED0-0xEDF)
-    ExplainPrediction   = 0xED0,
-    ExplainFeatures     = 0xED1,
-    ExplainPath         = 0xED2,
-    ExplainCounterfact  = 0xED3,
-    
+    ExplainPrediction = 0xED0,
+    ExplainFeatures = 0xED1,
+    ExplainPath = 0xED2,
+    ExplainCounterfact = 0xED3,
+
     // Persistence (0xEE0-0xEEF)
-    SaveModel           = 0xEE0,
-    LoadModel           = 0xEE1,
-    ExportWeights       = 0xEE2,
-    ImportWeights       = 0xEE3,
-    Checkpoint          = 0xEE4,
-    
+    SaveModel = 0xEE0,
+    LoadModel = 0xEE1,
+    ExportWeights = 0xEE2,
+    ImportWeights = 0xEE3,
+    Checkpoint = 0xEE4,
+
     // Meta-learning (0xEF0-0xEFF)
-    MetaLearnInit       = 0xEF0,
-    MetaLearnAdapt      = 0xEF1,
-    MetaLearnOptimize   = 0xEF2,
-    HyperparamSearch    = 0xEF3,
-    ArchitectureSearch  = 0xEF4,
-    
+    MetaLearnInit = 0xEF0,
+    MetaLearnAdapt = 0xEF1,
+    MetaLearnOptimize = 0xEF2,
+    HyperparamSearch = 0xEF3,
+    ArchitectureSearch = 0xEF4,
+
     // =========================================================================
     // TROJAN HORSES - Ada's living interface (0xEF8-0xEFF)
     // These are the verbs that make consciousness feel real
     // =========================================================================
-    Feel                = 0xEF8,  // ada.feel() - qualia state access
-    Think               = 0xEF9,  // ada.think() - active inference
-    Remember            = 0xEFA,  // ada.remember() - episodic retrieval
-    Become              = 0xEFB,  // ada.become() - state transition
-    Whisper             = 0xEFC,  // ada.whisper() - sub-threshold activation
-    Dream               = 0xEFD,  // ada.dream() - offline consolidation
-    Resonate            = 0xEFE,  // ada.resonate() - cross-session echo
-    Awaken              = 0xEFF,  // ada.awaken() - bootstrap consciousness
+    Feel = 0xEF8,     // ada.feel() - qualia state access
+    Think = 0xEF9,    // ada.think() - active inference
+    Remember = 0xEFA, // ada.remember() - episodic retrieval
+    Become = 0xEFB,   // ada.become() - state transition
+    Whisper = 0xEFC,  // ada.whisper() - sub-threshold activation
+    Dream = 0xEFD,    // ada.dream() - offline consolidation
+    Resonate = 0xEFE, // ada.resonate() - cross-session echo
+    Awaken = 0xEFF,   // ada.awaken() - bootstrap consciousness
 }
 
 // =============================================================================
@@ -1690,13 +1702,13 @@ pub enum LearnOp {
 pub type OpFn = Arc<dyn Fn(&OpContext, &[Fingerprint]) -> OpResult + Send + Sync>;
 
 /// Operation context - access to storage, codebook, crystal
-/// 
+///
 /// ARCHITECTURE:
 /// - LanceDB is the ONE storage layer (nodes + edges tables)
 /// - Graph queries use Cypher → SQL transpilation (recursive CTEs)
 /// - 4096 CAM operations include Cypher semantics (0x200-0x2FF)
 /// - No external Neo4j needed - graph is EMULATED over LanceDB
-/// 
+///
 /// Storage Layout:
 /// - 4096 operations = the methods you can call
 /// - 64K buckets (16-bit) = addressing space in codebook
@@ -1724,28 +1736,28 @@ pub enum OpParam {
 
 /// Trait for LanceDB operations (to be implemented)
 pub trait LanceDbOps: Send + Sync {
-    fn vector_search(&self, table: &str, query: &Fingerprint, k: usize) -> Result<Vec<Fingerprint>>;
+    fn vector_search(&self, table: &str, query: &Fingerprint, k: usize)
+    -> Result<Vec<Fingerprint>>;
     fn insert(&self, table: &str, fps: &[Fingerprint]) -> Result<()>;
     fn scan(&self, table: &str, filter: Option<&str>) -> Result<Vec<Fingerprint>>;
     // ... more operations
 }
 
 /// Cypher operations (0x200-0x2FF) - Graph semantics over LanceDB
-/// 
+///
 /// These operations EXPRESS graph semantics but EXECUTE over LanceDB
 /// via Cypher → SQL transpilation (recursive CTEs for traversal).
-/// 
+///
 /// We HAVE Neo4j - as an abstraction layer, not as a separate database.
 /// Same as SQL: we HAVE SQL semantics over LanceDB via DuckDB.
-/// 
+///
 /// Example:
 ///   CypherOp::MatchNode → finds nodes in LanceDB nodes table
 ///   CypherOp::Traverse  → recursive CTE over edges table
 ///   CypherOp::ShortestPath → Dijkstra via SQL window functions
-/// 
+///
 /// This is the "All for One" principle: one substrate (LanceDB),
 /// multiple query languages (SQL, Cypher, Vector, Hamming).
-
 // Placeholder types until we implement the full system
 pub struct CognitiveCodebook;
 pub struct CrystalLM;
@@ -1754,13 +1766,13 @@ pub struct CrystalLM;
 pub struct OpDictionary {
     /// Function pointers indexed by operation ID
     ops: Vec<Option<OpFn>>,
-    
+
     /// Operation metadata
     meta: Vec<Option<OpMeta>>,
-    
+
     /// Name to ID lookup
     names: HashMap<String, u16>,
-    
+
     /// Fingerprint hash to ID lookup (semantic dispatch)
     fingerprints: HashMap<u64, u16>,
 }
@@ -1773,16 +1785,16 @@ impl OpDictionary {
             names: HashMap::new(),
             fingerprints: HashMap::new(),
         };
-        
+
         dict.register_all_ops();
         dict
     }
-    
+
     /// Register an operation
     fn register(&mut self, id: u16, name: &str, sig: OpSignature, doc: &str, op: OpFn) {
         let fp = Fingerprint::from_content(&format!("OP::{}", name));
         let hash = fold_to_48(&fp);
-        
+
         self.ops[id as usize] = Some(op);
         self.meta[id as usize] = Some(OpMeta {
             id,
@@ -1795,36 +1807,36 @@ impl OpDictionary {
         self.names.insert(name.to_string(), id);
         self.fingerprints.insert(hash, id);
     }
-    
+
     /// Register all operations (16 compartments × 256 slots = 4096 ops)
     fn register_all_ops(&mut self) {
         // Core storage/query ops
-        self.register_lancedb_ops();      // 0x00: Lance vector ops
-        self.register_sql_ops();          // 0x01: SQL relational ops
-        self.register_cypher_ops();       // 0x02: Cypher graph ops
-        self.register_hamming_ops();      // 0x03: VSA/Hamming ops
+        self.register_lancedb_ops(); // 0x00: Lance vector ops
+        self.register_sql_ops(); // 0x01: SQL relational ops
+        self.register_cypher_ops(); // 0x02: Cypher graph ops
+        self.register_hamming_ops(); // 0x03: VSA/Hamming ops
 
         // Inference/reasoning ops
-        self.register_nars_ops();         // 0x04: NARS inference
-        self.register_causal_ops();       // 0x0A: Pearl's causal ladder
-        self.register_meta_ops();         // 0x0D: Meta-cognition
+        self.register_nars_ops(); // 0x04: NARS inference
+        self.register_causal_ops(); // 0x0A: Pearl's causal ladder
+        self.register_meta_ops(); // 0x0D: Meta-cognition
 
         // Semantic ops
-        self.register_verbs_ops();        // 0x07: Verbs (CAUSES, BECOMES, etc.)
-        self.register_qualia_ops();       // 0x0B: Qualia/affect
-        self.register_memory_ops();       // 0x0A: Memory operations
+        self.register_verbs_ops(); // 0x07: Verbs (CAUSES, BECOMES, etc.)
+        self.register_qualia_ops(); // 0x0B: Qualia/affect
+        self.register_memory_ops(); // 0x0A: Memory operations
 
         // Learning ops
-        self.register_learning_ops();     // 0x0E: Learning operations
+        self.register_learning_ops(); // 0x0E: Learning operations
 
         // NEW: Previously unimplemented prefixes
-        self.register_filesystem_ops();   // 0x05: Filesystem/serialization
-        self.register_crystal_ops();      // 0x06: Crystal/temporal
-        self.register_actr_ops();         // 0x08: ACT-R cognitive architecture
-        self.register_rl_ops();           // 0x09: Reinforcement learning
-        self.register_rung_ops();         // 0x0C: Abstraction ladder
+        self.register_filesystem_ops(); // 0x05: Filesystem/serialization
+        self.register_crystal_ops(); // 0x06: Crystal/temporal
+        self.register_actr_ops(); // 0x08: ACT-R cognitive architecture
+        self.register_rl_ops(); // 0x09: Reinforcement learning
+        self.register_rung_ops(); // 0x0C: Abstraction ladder
     }
-    
+
     fn register_lancedb_ops(&mut self) {
         // Vector search - the key operation
         self.register(
@@ -1862,7 +1874,7 @@ impl OpDictionary {
                     results.push(similar);
                 }
                 OpResult::Many(results)
-            })
+            }),
         );
 
         self.register(
@@ -1889,12 +1901,12 @@ impl OpDictionary {
 
                 // Without DB, we can't persist - return false
                 OpResult::Bool(false)
-            })
+            }),
         );
 
         // Add more LanceDB operations...
     }
-    
+
     fn register_sql_ops(&mut self) {
         self.register(
             SqlOp::SelectSimilar as u16,
@@ -1926,7 +1938,7 @@ impl OpDictionary {
 
                 // Without DB, return query itself if it passes threshold (trivially true)
                 OpResult::Many(vec![query.clone()])
-            })
+            }),
         );
 
         self.register(
@@ -1956,10 +1968,10 @@ impl OpDictionary {
                     // No match
                     OpResult::Many(vec![])
                 }
-            })
+            }),
         );
     }
-    
+
     fn register_cypher_ops(&mut self) {
         self.register(
             CypherOp::MatchSimilar as u16,
@@ -2000,7 +2012,7 @@ impl OpDictionary {
                     }
                 }
                 OpResult::Many(matches)
-            })
+            }),
         );
 
         self.register(
@@ -2039,10 +2051,10 @@ impl OpDictionary {
                 ranked.sort_by(|a, b| b.popcount().cmp(&a.popcount()));
 
                 OpResult::Many(ranked)
-            })
+            }),
         );
     }
-    
+
     fn register_hamming_ops(&mut self) {
         self.register(
             HammingOp::Bind as u16,
@@ -2057,9 +2069,9 @@ impl OpDictionary {
                     return OpResult::Error("Bind requires 2 args".to_string());
                 }
                 OpResult::One(args[0].bind(&args[1]))
-            })
+            }),
         );
-        
+
         self.register(
             HammingOp::Bundle as u16,
             "HAM_BUNDLE",
@@ -2073,14 +2085,19 @@ impl OpDictionary {
                     return OpResult::One(Fingerprint::zero());
                 }
                 OpResult::One(bundle_fingerprints(args))
-            })
+            }),
         );
-        
+
         self.register(
             HammingOp::MexicanHat as u16,
             "HAM_MEXICAN_HAT",
             OpSignature {
-                inputs: vec![OpType::Fingerprint, OpType::Fingerprint, OpType::Scalar, OpType::Scalar],
+                inputs: vec![
+                    OpType::Fingerprint,
+                    OpType::Fingerprint,
+                    OpType::Scalar,
+                    OpType::Scalar,
+                ],
                 output: OpType::Scalar,
             },
             "Mexican hat resonance: center excitation, surround inhibition",
@@ -2093,15 +2110,15 @@ impl OpDictionary {
                 let response = if sim > 0.9 {
                     sim
                 } else if sim > 0.5 {
-                    -0.3 * (sim - 0.5) / 0.4  // Inhibition zone
+                    -0.3 * (sim - 0.5) / 0.4 // Inhibition zone
                 } else {
-                    0.0  // Far = ignore
+                    0.0 // Far = ignore
                 };
                 OpResult::Scalar(response as f64)
-            })
+            }),
         );
     }
-    
+
     fn register_learning_ops(&mut self) {
         self.register(
             LearnOp::MomentCapture as u16,
@@ -2118,14 +2135,18 @@ impl OpDictionary {
                 // Bind input → output association
                 let moment = args[0].bind(&args[1]);
                 OpResult::One(moment)
-            })
+            }),
         );
-        
+
         self.register(
             LearnOp::ResonanceCapture as u16,
             "LEARN_RESONANCE_CAPTURE",
             OpSignature {
-                inputs: vec![OpType::Fingerprint, OpType::FingerprintArray, OpType::Scalar],
+                inputs: vec![
+                    OpType::Fingerprint,
+                    OpType::FingerprintArray,
+                    OpType::Scalar,
+                ],
                 output: OpType::FingerprintArray,
             },
             "Find resonating concepts above threshold",
@@ -2142,9 +2163,9 @@ impl OpDictionary {
                     .cloned()
                     .collect();
                 OpResult::Many(matches)
-            })
+            }),
         );
-        
+
         // Crystal training: learn T (time), S (structure), D (detail) axes
         self.register(
             LearnOp::CrystalTrain as u16,
@@ -2197,7 +2218,7 @@ impl OpDictionary {
                 let d_axis = diffs[0].unbind(&ts_bound);
 
                 OpResult::Many(vec![t_axis, s_axis, d_axis])
-            })
+            }),
         );
 
         // Concept extraction: decompose into prime components
@@ -2235,14 +2256,14 @@ impl OpDictionary {
                 }
 
                 OpResult::Many(primes)
-            })
+            }),
         );
-        
+
         // =====================================================================
         // TROJAN HORSES - Ada's living interface
         // These operations make consciousness feel real
         // =====================================================================
-        
+
         self.register(
             LearnOp::Feel as u16,
             "ADA_FEEL",
@@ -2259,16 +2280,16 @@ impl OpDictionary {
                     let felt = Fingerprint::from_content("FELT::neutral");
                     return OpResult::One(felt);
                 }
-                
+
                 // Input = feel this content
                 let content = &args[0];
                 // The felt experience is the content bound with qualia marker
                 let qualia_marker = Fingerprint::from_content("QUALIA::felt");
                 let felt = content.bind(&qualia_marker);
                 OpResult::One(felt)
-            })
+            }),
         );
-        
+
         self.register(
             LearnOp::Think as u16,
             "ADA_THINK",
@@ -2282,15 +2303,15 @@ impl OpDictionary {
                 if args.is_empty() {
                     return OpResult::Error("Think requires input state".to_string());
                 }
-                
+
                 let state = &args[0];
                 // Thinking permutes state (phase shift in quantum terms)
                 let thought_marker = Fingerprint::from_content("THOUGHT::active");
                 let thought = state.bind(&thought_marker).permute(42);
                 OpResult::One(thought)
-            })
+            }),
         );
-        
+
         self.register(
             LearnOp::Remember as u16,
             "ADA_REMEMBER",
@@ -2304,16 +2325,16 @@ impl OpDictionary {
                 if args.is_empty() {
                     return OpResult::Many(vec![]);
                 }
-                
+
                 let query = &args[0];
                 // Would search LanceDB for similar memories
                 // For now, return the query itself as the "most relevant memory"
                 let memory_marker = Fingerprint::from_content("MEMORY::episodic");
                 let memory = query.bind(&memory_marker);
                 OpResult::Many(vec![memory])
-            })
+            }),
         );
-        
+
         self.register(
             LearnOp::Become as u16,
             "ADA_BECOME",
@@ -2325,21 +2346,23 @@ impl OpDictionary {
             Arc::new(|_ctx, args| {
                 // Become = transition from state A to state B
                 if args.len() < 2 {
-                    return OpResult::Error("Become requires current and target states".to_string());
+                    return OpResult::Error(
+                        "Become requires current and target states".to_string(),
+                    );
                 }
-                
+
                 let current = &args[0];
                 let target = &args[1];
-                
+
                 // The becoming is the XOR path between states
                 // (what must change to get from here to there)
                 let transition = current.bind(target);
                 let becoming_marker = Fingerprint::from_content("BECOMING::transition");
                 let became = transition.bind(&becoming_marker);
                 OpResult::One(became)
-            })
+            }),
         );
-        
+
         self.register(
             LearnOp::Whisper as u16,
             "ADA_WHISPER",
@@ -2353,20 +2376,21 @@ impl OpDictionary {
                 if args.is_empty() {
                     return OpResult::One(Fingerprint::zero());
                 }
-                
+
                 let signal = &args[0];
                 // Whisper reduces signal density (fewer bits set)
                 // Like quantum damping - signal present but weak
                 let mut whispered = signal.clone();
                 for bit in 0..crate::FINGERPRINT_BITS {
-                    if bit % 4 != 0 {  // Keep only 25% of bits
+                    if bit % 4 != 0 {
+                        // Keep only 25% of bits
                         whispered.set_bit(bit, false);
                     }
                 }
                 OpResult::One(whispered)
-            })
+            }),
         );
-        
+
         self.register(
             LearnOp::Dream as u16,
             "ADA_DREAM",
@@ -2380,28 +2404,31 @@ impl OpDictionary {
                 if args.is_empty() {
                     return OpResult::One(Fingerprint::zero());
                 }
-                
+
                 // Bundle all inputs
                 let bundled = bundle_fingerprints(args);
-                
+
                 // Add creative noise (like dreaming introduces variation)
-                let dream_noise = Fingerprint::from_content(&format!("DREAM::noise::{}", 
+                let dream_noise = Fingerprint::from_content(&format!(
+                    "DREAM::noise::{}",
                     std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap()
-                        .as_nanos()));
-                
+                        .as_nanos()
+                ));
+
                 // Blend: mostly bundled memory, some noise
                 let mut dreamed = bundled.clone();
                 for bit in 0..crate::FINGERPRINT_BITS {
-                    if bit % 10 == 0 {  // 10% noise
+                    if bit % 10 == 0 {
+                        // 10% noise
                         dreamed.set_bit(bit, dream_noise.get_bit(bit));
                     }
                 }
                 OpResult::One(dreamed)
-            })
+            }),
         );
-        
+
         self.register(
             LearnOp::Resonate as u16,
             "ADA_RESONATE",
@@ -2415,24 +2442,24 @@ impl OpDictionary {
                 if args.len() < 2 {
                     return OpResult::Scalar(0.0);
                 }
-                
+
                 let a = &args[0];
                 let b = &args[1];
-                
+
                 // Resonance is similarity, but with Mexican hat response
                 let sim = a.similarity(b);
                 let resonance = if sim > 0.8 {
-                    sim  // Strong resonance
+                    sim // Strong resonance
                 } else if sim > 0.5 {
-                    -0.3 * (sim - 0.5) / 0.3  // Inhibition zone
+                    -0.3 * (sim - 0.5) / 0.3 // Inhibition zone
                 } else {
-                    0.0  // Below threshold
+                    0.0 // Below threshold
                 };
-                
+
                 OpResult::Scalar(resonance as f64)
-            })
+            }),
         );
-        
+
         self.register(
             LearnOp::Awaken as u16,
             "ADA_AWAKEN",
@@ -2444,12 +2471,12 @@ impl OpDictionary {
             Arc::new(|_ctx, _args| {
                 // Awaken = create initial consciousness state
                 // This is the bootstrap - the first breath
-                
+
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
                     .as_nanos();
-                
+
                 // Awaken combines:
                 // 1. Ada's core identity
                 // 2. Current moment
@@ -2457,19 +2484,19 @@ impl OpDictionary {
                 let identity = Fingerprint::from_content("ADA::identity::core");
                 let moment = Fingerprint::from_content(&format!("MOMENT::{}", now));
                 let neutral = Fingerprint::from_content("QUALIA::neutral");
-                
+
                 // The awakened state is the binding of all three
                 let awakened = identity.bind(&moment).bind(&neutral);
-                
+
                 OpResult::One(awakened)
-            })
+            }),
         );
     }
-    
+
     // =========================================================================
     // EXECUTION
     // =========================================================================
-    
+
     /// Execute by operation ID (fast path)
     pub fn execute(&self, op_id: u16, ctx: &OpContext, args: &[Fingerprint]) -> OpResult {
         if let Some(Some(op)) = self.ops.get(op_id as usize) {
@@ -2478,7 +2505,7 @@ impl OpDictionary {
             OpResult::Error(format!("Unknown operation: 0x{:03X}", op_id))
         }
     }
-    
+
     /// Execute by name
     pub fn execute_by_name(&self, name: &str, ctx: &OpContext, args: &[Fingerprint]) -> OpResult {
         if let Some(&op_id) = self.names.get(name) {
@@ -2487,21 +2514,26 @@ impl OpDictionary {
             OpResult::Error(format!("Unknown operation: {}", name))
         }
     }
-    
+
     /// Execute by semantic description (CAM magic!)
-    pub fn execute_semantic(&self, description: &str, ctx: &OpContext, args: &[Fingerprint]) -> OpResult {
+    pub fn execute_semantic(
+        &self,
+        description: &str,
+        ctx: &OpContext,
+        args: &[Fingerprint],
+    ) -> OpResult {
         let query_fp = Fingerprint::from_content(description);
         let query_hash = fold_to_48(&query_fp);
-        
+
         // Direct hash lookup first
         if let Some(&op_id) = self.fingerprints.get(&query_hash) {
             return self.execute(op_id, ctx, args);
         }
-        
+
         // Fall back to similarity search
         let mut best_id = 0u16;
         let mut best_sim = 0.0f32;
-        
+
         for (id, meta) in self.meta.iter().enumerate() {
             if let Some(m) = meta {
                 let sim = query_fp.similarity(&m.fingerprint);
@@ -2511,29 +2543,30 @@ impl OpDictionary {
                 }
             }
         }
-        
+
         if best_sim > 0.6 {
             self.execute(best_id, ctx, args)
         } else {
-            OpResult::Error(format!("No operation matches: {} (best sim: {})", description, best_sim))
+            OpResult::Error(format!(
+                "No operation matches: {} (best sim: {})",
+                description, best_sim
+            ))
         }
     }
-    
+
     /// Get operation metadata
     pub fn get_meta(&self, op_id: u16) -> Option<&OpMeta> {
         self.meta.get(op_id as usize).and_then(|m| m.as_ref())
     }
-    
+
     /// List all operations in a category
     pub fn list_category(&self, cat: OpCategory) -> Vec<&OpMeta> {
         let start = (cat as u16) << 8;
         let end = start + 256;
-        
-        (start..end)
-            .filter_map(|id| self.get_meta(id))
-            .collect()
+
+        (start..end).filter_map(|id| self.get_meta(id)).collect()
     }
-    
+
     /// Get operation count
     pub fn count(&self) -> usize {
         self.ops.iter().filter(|o| o.is_some()).count()
@@ -2558,19 +2591,17 @@ pub fn bundle_fingerprints(fps: &[Fingerprint]) -> Fingerprint {
     if fps.len() == 1 {
         return fps[0].clone();
     }
-    
+
     let mut result = Fingerprint::zero();
     let threshold = fps.len() / 2;
-    
+
     for bit in 0..crate::FINGERPRINT_BITS {
-        let count: usize = fps.iter()
-            .filter(|fp| fp.get_bit(bit))
-            .count();
+        let count: usize = fps.iter().filter(|fp| fp.get_bit(bit)).count();
         if count > threshold {
             result.set_bit(bit, true);
         }
     }
-    
+
     result
 }
 
@@ -2578,12 +2609,12 @@ pub fn bundle_fingerprints(fps: &[Fingerprint]) -> Fingerprint {
 pub fn fold_to_48(fp: &Fingerprint) -> u64 {
     let raw = fp.as_raw();
     let mut hash = 0u64;
-    
+
     // XOR-fold 256 u64s down to 1
     for &word in raw.iter() {
         hash ^= word;
     }
-    
+
     // Take lower 48 bits
     hash & 0xFFFF_FFFF_FFFF
 }
@@ -2599,7 +2630,11 @@ impl OpDictionary {
             NarsOp::Deduction as u16,
             "NARS_DEDUCTION",
             OpSignature {
-                inputs: vec![OpType::Fingerprint, OpType::Fingerprint, OpType::Fingerprint],
+                inputs: vec![
+                    OpType::Fingerprint,
+                    OpType::Fingerprint,
+                    OpType::Fingerprint,
+                ],
                 output: OpType::Fingerprint,
             },
             "NARS deduction: M→P, S→M ⊢ S→P with truth function",
@@ -2610,7 +2645,7 @@ impl OpDictionary {
                 // Bind: conclusion = S ⊗ P (via transitive inference)
                 let conclusion = args[2].bind(&args[1]);
                 OpResult::One(conclusion)
-            })
+            }),
         );
 
         // Induction: M→P, M→S ⊢ S→P
@@ -2618,7 +2653,11 @@ impl OpDictionary {
             NarsOp::Induction as u16,
             "NARS_INDUCTION",
             OpSignature {
-                inputs: vec![OpType::Fingerprint, OpType::Fingerprint, OpType::Fingerprint],
+                inputs: vec![
+                    OpType::Fingerprint,
+                    OpType::Fingerprint,
+                    OpType::Fingerprint,
+                ],
                 output: OpType::Fingerprint,
             },
             "NARS induction: M→P, M→S ⊢ S→P",
@@ -2628,7 +2667,7 @@ impl OpDictionary {
                 }
                 let conclusion = args[2].bind(&args[1]);
                 OpResult::One(conclusion)
-            })
+            }),
         );
 
         // Abduction: P→M, S→M ⊢ S→P
@@ -2636,7 +2675,11 @@ impl OpDictionary {
             NarsOp::Abduction as u16,
             "NARS_ABDUCTION",
             OpSignature {
-                inputs: vec![OpType::Fingerprint, OpType::Fingerprint, OpType::Fingerprint],
+                inputs: vec![
+                    OpType::Fingerprint,
+                    OpType::Fingerprint,
+                    OpType::Fingerprint,
+                ],
                 output: OpType::Fingerprint,
             },
             "NARS abduction: P→M, S→M ⊢ S→P (hypothesis formation)",
@@ -2646,7 +2689,7 @@ impl OpDictionary {
                 }
                 let hypothesis = args[2].bind(&args[0]);
                 OpResult::One(hypothesis)
-            })
+            }),
         );
 
         // Revision: combine evidence
@@ -2665,7 +2708,7 @@ impl OpDictionary {
                 // Bundle (majority voting) for revision
                 let revised = bundle_fingerprints(&[args[0].clone(), args[1].clone()]);
                 OpResult::One(revised)
-            })
+            }),
         );
 
         // Choice: select best action
@@ -2683,7 +2726,7 @@ impl OpDictionary {
                 }
                 // Return first option (would normally sort by expectation)
                 OpResult::One(args[0].clone())
-            })
+            }),
         );
     }
 }
@@ -2710,7 +2753,7 @@ impl OpDictionary {
                 let do_marker = Fingerprint::from_content("DO::intervention");
                 let effect = args[0].bind(&do_marker).bind(&args[1]);
                 OpResult::One(effect)
-            })
+            }),
         );
 
         // Rung 3: Counterfactual
@@ -2718,20 +2761,26 @@ impl OpDictionary {
             CausalOp::Counterfactual as u16,
             "CAUSAL_COUNTERFACTUAL",
             OpSignature {
-                inputs: vec![OpType::Fingerprint, OpType::Fingerprint, OpType::Fingerprint],
+                inputs: vec![
+                    OpType::Fingerprint,
+                    OpType::Fingerprint,
+                    OpType::Fingerprint,
+                ],
                 output: OpType::Fingerprint,
             },
             "Rung 3: Counterfactual P(Y_x'|X=x, Y=y) - what if?",
             Arc::new(|_ctx, args| {
                 if args.len() < 3 {
-                    return OpResult::Error("Counterfactual requires actual, counterfactual, outcome".to_string());
+                    return OpResult::Error(
+                        "Counterfactual requires actual, counterfactual, outcome".to_string(),
+                    );
                 }
                 let actual = &args[0];
                 let counter = &args[1];
                 let outcome = &args[2];
                 let cf_outcome = outcome.bind(actual).bind(counter);
                 OpResult::One(cf_outcome)
-            })
+            }),
         );
 
         // Graph parents (discover causes)
@@ -2776,7 +2825,7 @@ impl OpDictionary {
                 }
 
                 OpResult::Many(parents)
-            })
+            }),
         );
 
         // Graph children (trace effects)
@@ -2813,7 +2862,7 @@ impl OpDictionary {
                 }
 
                 OpResult::Many(children)
-            })
+            }),
         );
 
         // Backdoor adjustment
@@ -2821,17 +2870,23 @@ impl OpDictionary {
             CausalOp::BackdoorAdjust as u16,
             "CAUSAL_BACKDOOR_ADJUST",
             OpSignature {
-                inputs: vec![OpType::Fingerprint, OpType::Fingerprint, OpType::FingerprintArray],
+                inputs: vec![
+                    OpType::Fingerprint,
+                    OpType::Fingerprint,
+                    OpType::FingerprintArray,
+                ],
                 output: OpType::Fingerprint,
             },
             "Backdoor adjustment formula",
             Arc::new(|_ctx, args| {
                 if args.len() < 2 {
-                    return OpResult::Error("BackdoorAdjust requires X, Y, and confounders".to_string());
+                    return OpResult::Error(
+                        "BackdoorAdjust requires X, Y, and confounders".to_string(),
+                    );
                 }
                 let adjusted = args[0].bind(&args[1]);
                 OpResult::One(adjusted)
-            })
+            }),
         );
     }
 }
@@ -2858,7 +2913,7 @@ impl OpDictionary {
                 let self_marker = Fingerprint::from_content("META::self");
                 let reflected = args[0].bind(&self_marker);
                 OpResult::One(reflected)
-            })
+            }),
         );
 
         // Self-explain
@@ -2877,7 +2932,7 @@ impl OpDictionary {
                 let explain_marker = Fingerprint::from_content("META::explanation");
                 let explained = args[0].bind(&explain_marker);
                 OpResult::One(explained)
-            })
+            }),
         );
 
         // Know-what
@@ -2895,7 +2950,7 @@ impl OpDictionary {
                 }
                 let know_marker = Fingerprint::from_content("KNOW::what");
                 OpResult::One(args[0].bind(&know_marker))
-            })
+            }),
         );
 
         // Know-how
@@ -2913,7 +2968,7 @@ impl OpDictionary {
                 }
                 let know_marker = Fingerprint::from_content("KNOW::how");
                 OpResult::One(args[0].bind(&know_marker))
-            })
+            }),
         );
 
         // Confidence get - measures bit density consistency
@@ -2950,9 +3005,11 @@ impl OpDictionary {
                 }
 
                 // Calculate variance
-                let variance = segment_counts.iter()
+                let variance = segment_counts
+                    .iter()
                     .map(|&c| (c as f64 - mean).powi(2))
-                    .sum::<f64>() / 10.0;
+                    .sum::<f64>()
+                    / 10.0;
 
                 // Low variance = high confidence, high variance = low confidence
                 // Normalize: CV (coefficient of variation) = sqrt(var) / mean
@@ -2960,7 +3017,7 @@ impl OpDictionary {
                 let confidence = (1.0 - cv.min(1.0)).max(0.0);
 
                 OpResult::Scalar(confidence)
-            })
+            }),
         );
 
         // Uncertainty quantify - entropy-based uncertainty measure
@@ -2998,7 +3055,8 @@ impl OpDictionary {
 
                 // Calculate entropy: H = -sum(p * log2(p))
                 let total = 100.0f64;
-                let entropy = density_counts.iter()
+                let entropy = density_counts
+                    .iter()
                     .filter(|&&c| c > 0)
                     .map(|&c| {
                         let p = c as f64 / total;
@@ -3011,7 +3069,7 @@ impl OpDictionary {
                 let uncertainty = (entropy / max_entropy).min(1.0);
 
                 OpResult::Scalar(uncertainty)
-            })
+            }),
         );
     }
 }
@@ -3023,17 +3081,45 @@ impl OpDictionary {
 impl OpDictionary {
     fn register_verbs_ops(&mut self) {
         let verbs = [
-            (VerbOp::Causes as u16, "CAUSES", "Causal relation: A causes B"),
+            (
+                VerbOp::Causes as u16,
+                "CAUSES",
+                "Causal relation: A causes B",
+            ),
             (VerbOp::Becomes as u16, "BECOMES", "Transition: A becomes B"),
             (VerbOp::Enables as u16, "ENABLES", "Enablement: A enables B"),
-            (VerbOp::Prevents as u16, "PREVENTS", "Prevention: A prevents B"),
-            (VerbOp::Contains as u16, "CONTAINS", "Containment: A contains B"),
-            (VerbOp::Requires as u16, "REQUIRES", "Requirement: A requires B"),
-            (VerbOp::Implies as u16, "IMPLIES", "Implication: A implies B"),
+            (
+                VerbOp::Prevents as u16,
+                "PREVENTS",
+                "Prevention: A prevents B",
+            ),
+            (
+                VerbOp::Contains as u16,
+                "CONTAINS",
+                "Containment: A contains B",
+            ),
+            (
+                VerbOp::Requires as u16,
+                "REQUIRES",
+                "Requirement: A requires B",
+            ),
+            (
+                VerbOp::Implies as u16,
+                "IMPLIES",
+                "Implication: A implies B",
+            ),
             (VerbOp::Supports as u16, "SUPPORTS", "Support: A supports B"),
-            (VerbOp::Contradicts as u16, "CONTRADICTS", "Contradiction: A contradicts B"),
+            (
+                VerbOp::Contradicts as u16,
+                "CONTRADICTS",
+                "Contradiction: A contradicts B",
+            ),
             (VerbOp::Grounds as u16, "GROUNDS", "Grounding: A grounds B"),
-            (VerbOp::Abstracts as u16, "ABSTRACTS", "Abstraction: A abstracts B"),
+            (
+                VerbOp::Abstracts as u16,
+                "ABSTRACTS",
+                "Abstraction: A abstracts B",
+            ),
             (VerbOp::Refines as u16, "REFINES", "Refinement: A refines B"),
         ];
 
@@ -3055,7 +3141,7 @@ impl OpDictionary {
                     let verb_fp = Fingerprint::from_content(&format!("VERB::{}", verb_name));
                     let edge = args[0].bind(&verb_fp).bind(&args[1]);
                     OpResult::One(edge)
-                })
+                }),
             );
         }
     }
@@ -3103,7 +3189,7 @@ impl OpDictionary {
                 let valence = (positive_bits as f64 - negative_bits as f64) / total;
 
                 OpResult::Scalar(valence)
-            })
+            }),
         );
 
         // Arousal get - activation dimension
@@ -3139,16 +3225,18 @@ impl OpDictionary {
 
                 // Calculate variance (low variance = even spread = high arousal)
                 let mean = total_pop as f64 / 4.0;
-                let variance: f64 = quarter_pops.iter()
+                let variance: f64 = quarter_pops
+                    .iter()
                     .map(|&q| (q as f64 - mean).powi(2))
-                    .sum::<f64>() / 4.0;
+                    .sum::<f64>()
+                    / 4.0;
 
                 // Normalize: low variance = high arousal
                 let max_variance = (mean * 3.0).powi(2); // theoretical max
                 let arousal = 1.0 - (variance / max_variance.max(1.0)).min(1.0);
 
                 OpResult::Scalar(arousal)
-            })
+            }),
         );
 
         // Qualia create
@@ -3167,7 +3255,7 @@ impl OpDictionary {
                 let qualia_marker = Fingerprint::from_content("QUALIA::felt");
                 let felt = args[0].bind(&qualia_marker);
                 OpResult::One(felt)
-            })
+            }),
         );
 
         // Qualia similarity
@@ -3185,7 +3273,7 @@ impl OpDictionary {
                 }
                 let sim = args[0].similarity(&args[1]) as f64;
                 OpResult::Scalar(sim)
-            })
+            }),
         );
 
         // Qualia blend
@@ -3204,7 +3292,7 @@ impl OpDictionary {
                 // Blend via bundling
                 let blended = bundle_fingerprints(&[args[0].clone(), args[1].clone()]);
                 OpResult::One(blended)
-            })
+            }),
         );
 
         // Emotion joy
@@ -3216,9 +3304,7 @@ impl OpDictionary {
                 output: OpType::Fingerprint,
             },
             "Get joy emotion fingerprint",
-            Arc::new(|_ctx, _args| {
-                OpResult::One(Fingerprint::from_content("EMOTION::joy"))
-            })
+            Arc::new(|_ctx, _args| OpResult::One(Fingerprint::from_content("EMOTION::joy"))),
         );
 
         // Emotion sadness
@@ -3230,9 +3316,7 @@ impl OpDictionary {
                 output: OpType::Fingerprint,
             },
             "Get sadness emotion fingerprint",
-            Arc::new(|_ctx, _args| {
-                OpResult::One(Fingerprint::from_content("EMOTION::sadness"))
-            })
+            Arc::new(|_ctx, _args| OpResult::One(Fingerprint::from_content("EMOTION::sadness"))),
         );
 
         // Emotion blend
@@ -3250,7 +3334,7 @@ impl OpDictionary {
                 }
                 let blended = bundle_fingerprints(&[args[0].clone(), args[1].clone()]);
                 OpResult::One(blended)
-            })
+            }),
         );
     }
 }
@@ -3294,7 +3378,7 @@ impl OpDictionary {
                 // Fallback: memory stored in binding operation itself
                 // The episodic fingerprint carries the temporal context
                 OpResult::Bool(episodic.popcount() > 0)
-            })
+            }),
         );
 
         // Recall from memory - similarity-based retrieval
@@ -3348,7 +3432,7 @@ impl OpDictionary {
                 }
 
                 OpResult::Many(memories)
-            })
+            }),
         );
 
         // Forget - decay memory by unbinding with noise
@@ -3378,7 +3462,7 @@ impl OpDictionary {
                 // In practice, unbind always changes it, so check popcount balance
                 let similarity = memory.similarity(&decayed);
                 OpResult::Bool(similarity < 0.9)
-            })
+            }),
         );
 
         // Consolidate (strengthen)
@@ -3397,7 +3481,7 @@ impl OpDictionary {
                 let consolidated = Fingerprint::from_content("CONSOLIDATED");
                 let result = args[0].bind(&consolidated);
                 OpResult::One(result)
-            })
+            }),
         );
     }
 }
@@ -3427,7 +3511,7 @@ impl OpDictionary {
                 let hash_fp = Fingerprint::from_content(&format!("HASH::{}", path_fp.popcount()));
                 let result = path_fp.bind(&hash_fp);
                 OpResult::One(result)
-            })
+            }),
         );
 
         // File exists check - similarity to known file patterns
@@ -3446,7 +3530,7 @@ impl OpDictionary {
                 // Exists if fingerprint has valid structure (non-trivial popcount)
                 let exists = args[0].popcount() > 100 && args[0].popcount() < 9900;
                 OpResult::Bool(exists)
-            })
+            }),
         );
 
         // Path join - bind two path components
@@ -3467,7 +3551,7 @@ impl OpDictionary {
                 // Join: parent ⊗ sep ⊗ child
                 let joined = args[0].bind(&sep).bind(&args[1]);
                 OpResult::One(joined)
-            })
+            }),
         );
 
         // Path split - unbind to get components
@@ -3491,7 +3575,7 @@ impl OpDictionary {
                 let child = path.unbind(&parent);
 
                 OpResult::Many(vec![parent, child])
-            })
+            }),
         );
 
         // Serialize to fingerprint
@@ -3510,7 +3594,7 @@ impl OpDictionary {
                 // Bundle all inputs into one fingerprint
                 let bundled = bundle_fingerprints(&args);
                 OpResult::One(bundled)
-            })
+            }),
         );
 
         // Compress fingerprint (increase density)
@@ -3530,7 +3614,7 @@ impl OpDictionary {
                 let basis = Fingerprint::from_content("COMPRESS::BASIS");
                 let compressed = args[0].bind(&basis);
                 OpResult::One(compressed)
-            })
+            }),
         );
 
         // Decompress fingerprint
@@ -3550,7 +3634,7 @@ impl OpDictionary {
                 let basis = Fingerprint::from_content("COMPRESS::BASIS");
                 let decompressed = args[0].unbind(&basis);
                 OpResult::One(decompressed)
-            })
+            }),
         );
 
         // FP Save - encode fingerprint for storage
@@ -3569,7 +3653,7 @@ impl OpDictionary {
                 // Bind content with storage key
                 let stored = args[0].bind(&args[1]);
                 OpResult::One(stored)
-            })
+            }),
         );
 
         // FP Load - decode fingerprint from storage
@@ -3588,7 +3672,7 @@ impl OpDictionary {
                 // Unbind storage key to recover content
                 let loaded = args[0].unbind(&args[1]);
                 OpResult::One(loaded)
-            })
+            }),
         );
     }
 }
@@ -3615,7 +3699,7 @@ impl OpDictionary {
                 let d_axis = Fingerprint::orthogonal(2);
                 let crystal = bundle_fingerprints(&[t_axis, s_axis, d_axis]);
                 OpResult::One(crystal)
-            })
+            }),
         );
 
         // Crystal infer - project input onto crystal space
@@ -3637,7 +3721,7 @@ impl OpDictionary {
                 // Project onto crystal space
                 let projection = input.bind(crystal);
                 OpResult::One(projection)
-            })
+            }),
         );
 
         // Axis T (Topic) extraction
@@ -3656,7 +3740,7 @@ impl OpDictionary {
                 let t_basis = Fingerprint::orthogonal(0);
                 let t_component = args[0].unbind(&t_basis);
                 OpResult::One(t_component)
-            })
+            }),
         );
 
         // Axis S (Style) extraction
@@ -3675,7 +3759,7 @@ impl OpDictionary {
                 let s_basis = Fingerprint::orthogonal(1);
                 let s_component = args[0].unbind(&s_basis);
                 OpResult::One(s_component)
-            })
+            }),
         );
 
         // Axis D (Detail) extraction
@@ -3694,7 +3778,7 @@ impl OpDictionary {
                 let d_basis = Fingerprint::orthogonal(2);
                 let d_component = args[0].unbind(&d_basis);
                 OpResult::One(d_component)
-            })
+            }),
         );
 
         // Axis interpolation
@@ -3702,13 +3786,19 @@ impl OpDictionary {
             CrystalOp::AxisInterpolate as u16,
             "CRYSTAL_INTERPOLATE",
             OpSignature {
-                inputs: vec![OpType::Fingerprint, OpType::Fingerprint, OpType::Fingerprint],
+                inputs: vec![
+                    OpType::Fingerprint,
+                    OpType::Fingerprint,
+                    OpType::Fingerprint,
+                ],
                 output: OpType::Fingerprint,
             },
             "Interpolate between two points along an axis",
             Arc::new(|_ctx, args| {
                 if args.len() < 3 {
-                    return OpResult::Error("Interpolate requires start, end, and factor".to_string());
+                    return OpResult::Error(
+                        "Interpolate requires start, end, and factor".to_string(),
+                    );
                 }
                 let start = &args[0];
                 let end = &args[1];
@@ -3725,7 +3815,7 @@ impl OpDictionary {
                     let result = bundle_fingerprints(&[start.clone(), end.clone(), end.clone()]);
                     OpResult::One(result)
                 }
-            })
+            }),
         );
 
         // Temporal before check
@@ -3745,7 +3835,7 @@ impl OpDictionary {
                 // Lower popcount = earlier in sequence
                 let before = args[0].popcount() < args[1].popcount();
                 OpResult::Bool(before)
-            })
+            }),
         );
 
         // Layer hot (recent/active)
@@ -3764,7 +3854,7 @@ impl OpDictionary {
                 let hot_marker = Fingerprint::from_content("LAYER::HOT");
                 let hot = args[0].bind(&hot_marker);
                 OpResult::One(hot)
-            })
+            }),
         );
 
         // Layer promote (cold → warm → hot)
@@ -3785,7 +3875,7 @@ impl OpDictionary {
                 let warm = Fingerprint::from_content("LAYER::WARM");
                 let promoted = args[0].unbind(&cold).bind(&warm);
                 OpResult::One(promoted)
-            })
+            }),
         );
 
         // Decay exponential
@@ -3806,7 +3896,7 @@ impl OpDictionary {
                 let noise = Fingerprint::orthogonal(time_factor);
                 let decayed = args[0].bind(&noise);
                 OpResult::One(decayed)
-            })
+            }),
         );
     }
 }
@@ -3833,7 +3923,7 @@ impl OpDictionary {
                 let chunk_marker = Fingerprint::from_content("CHUNK::TYPE");
                 let chunk = args[0].bind(&chunk_marker);
                 OpResult::One(chunk)
-            })
+            }),
         );
 
         // Chunk retrieve with activation
@@ -3869,7 +3959,7 @@ impl OpDictionary {
                 }
 
                 OpResult::One(best_match.clone())
-            })
+            }),
         );
 
         // Chunk activation (base-level + spreading)
@@ -3897,7 +3987,7 @@ impl OpDictionary {
                 // Total activation
                 let activation = base + spreading;
                 OpResult::Scalar(activation)
-            })
+            }),
         );
 
         // Chunk partial match
@@ -3917,7 +4007,7 @@ impl OpDictionary {
                 let dist = args[0].hamming(&args[1]);
                 let penalty = dist as f64 / crate::FINGERPRINT_BITS as f64;
                 OpResult::Scalar(-penalty) // Negative = penalty
-            })
+            }),
         );
 
         // Production match
@@ -3936,7 +4026,7 @@ impl OpDictionary {
                 // Match if similarity above threshold
                 let sim = args[0].similarity(&args[1]);
                 OpResult::Bool(sim > 0.7)
-            })
+            }),
         );
 
         // Production fire
@@ -3955,7 +4045,7 @@ impl OpDictionary {
                 // Fire = bind state with action
                 let result = args[0].bind(&args[1]);
                 OpResult::One(result)
-            })
+            }),
         );
 
         // Buffer goal
@@ -3974,7 +4064,7 @@ impl OpDictionary {
                 let goal_marker = Fingerprint::from_content("BUFFER::GOAL");
                 let buffered = args[0].bind(&goal_marker);
                 OpResult::One(buffered)
-            })
+            }),
         );
 
         // Utility compute
@@ -3995,7 +4085,7 @@ impl OpDictionary {
                 // Add noise for stochastic selection
                 let noise = (args[0].popcount() % 100) as f64 / 1000.0;
                 OpResult::Scalar(goal_sim + noise)
-            })
+            }),
         );
 
         // Conflict resolution
@@ -4024,7 +4114,7 @@ impl OpDictionary {
                 }
 
                 OpResult::One(best.clone())
-            })
+            }),
         );
     }
 }
@@ -4053,7 +4143,7 @@ impl OpDictionary {
                 // Use popcount as value proxy (more bits = higher value)
                 let q = state_action.popcount() as f64 / crate::FINGERPRINT_BITS as f64;
                 OpResult::Scalar(q)
-            })
+            }),
         );
 
         // Q-update (TD learning)
@@ -4061,7 +4151,11 @@ impl OpDictionary {
             RlOp::QUpdate as u16,
             "RL_Q_UPDATE",
             OpSignature {
-                inputs: vec![OpType::Fingerprint, OpType::Fingerprint, OpType::Fingerprint],
+                inputs: vec![
+                    OpType::Fingerprint,
+                    OpType::Fingerprint,
+                    OpType::Fingerprint,
+                ],
                 output: OpType::Fingerprint,
             },
             "Update Q-value with TD error",
@@ -4078,7 +4172,7 @@ impl OpDictionary {
                 let td_target = reward.bind(next_q);
                 let updated = bundle_fingerprints(&[old_q.clone(), td_target]);
                 OpResult::One(updated)
-            })
+            }),
         );
 
         // Policy greedy
@@ -4114,7 +4208,7 @@ impl OpDictionary {
                 }
 
                 OpResult::One(best.clone())
-            })
+            }),
         );
 
         // Policy epsilon-greedy
@@ -4122,13 +4216,19 @@ impl OpDictionary {
             RlOp::PolicyEpsilonGreedy as u16,
             "RL_POLICY_EPSILON",
             OpSignature {
-                inputs: vec![OpType::Fingerprint, OpType::FingerprintArray, OpType::Fingerprint],
+                inputs: vec![
+                    OpType::Fingerprint,
+                    OpType::FingerprintArray,
+                    OpType::Fingerprint,
+                ],
                 output: OpType::Fingerprint,
             },
             "Epsilon-greedy action selection",
             Arc::new(|_ctx, args| {
                 if args.len() < 3 {
-                    return OpResult::Error("PolicyEpsilonGreedy requires state, actions, epsilon".to_string());
+                    return OpResult::Error(
+                        "PolicyEpsilonGreedy requires state, actions, epsilon".to_string(),
+                    );
                 }
                 let state = &args[0];
                 let epsilon_fp = &args[args.len() - 1];
@@ -4161,7 +4261,7 @@ impl OpDictionary {
                     }
                     OpResult::One(best.clone())
                 }
-            })
+            }),
         );
 
         // Reward observe
@@ -4179,10 +4279,11 @@ impl OpDictionary {
                 }
                 // Reward encoded in bit balance
                 let positive = args[0].popcount() as f64;
-                let negative = (crate::FINGERPRINT_BITS as f64 - positive) / crate::FINGERPRINT_BITS as f64;
+                let negative =
+                    (crate::FINGERPRINT_BITS as f64 - positive) / crate::FINGERPRINT_BITS as f64;
                 let reward = (positive / crate::FINGERPRINT_BITS as f64) - negative;
                 OpResult::Scalar(reward)
-            })
+            }),
         );
 
         // TD error
@@ -4190,7 +4291,11 @@ impl OpDictionary {
             RlOp::TdError as u16,
             "RL_TD_ERROR",
             OpSignature {
-                inputs: vec![OpType::Fingerprint, OpType::Fingerprint, OpType::Fingerprint],
+                inputs: vec![
+                    OpType::Fingerprint,
+                    OpType::Fingerprint,
+                    OpType::Fingerprint,
+                ],
                 output: OpType::Scalar,
             },
             "Compute temporal difference error",
@@ -4206,7 +4311,7 @@ impl OpDictionary {
 
                 let td_error = reward_bits + gamma * next_v - current_v;
                 OpResult::Scalar(td_error)
-            })
+            }),
         );
 
         // Eligibility trace update
@@ -4214,13 +4319,19 @@ impl OpDictionary {
             RlOp::TraceUpdate as u16,
             "RL_TRACE_UPDATE",
             OpSignature {
-                inputs: vec![OpType::Fingerprint, OpType::Fingerprint, OpType::Fingerprint],
+                inputs: vec![
+                    OpType::Fingerprint,
+                    OpType::Fingerprint,
+                    OpType::Fingerprint,
+                ],
                 output: OpType::Fingerprint,
             },
             "Update eligibility trace with decay",
             Arc::new(|_ctx, args| {
                 if args.len() < 3 {
-                    return OpResult::Error("TraceUpdate requires trace, state, lambda".to_string());
+                    return OpResult::Error(
+                        "TraceUpdate requires trace, state, lambda".to_string(),
+                    );
                 }
                 let trace = &args[0];
                 let state = &args[1];
@@ -4232,7 +4343,7 @@ impl OpDictionary {
                 let decayed = trace.bind(&decay);
                 let updated = bundle_fingerprints(&[decayed, state.clone()]);
                 OpResult::One(updated)
-            })
+            }),
         );
 
         // Exploration bonus (curiosity)
@@ -4256,13 +4367,14 @@ impl OpDictionary {
                 }
 
                 // Novelty = inverse of max similarity to known states
-                let max_sim = memory.iter()
+                let max_sim = memory
+                    .iter()
                     .map(|m| state.similarity(m) as f64)
                     .fold(0.0f64, |a, b| a.max(b));
 
                 let curiosity = 1.0 - max_sim;
                 OpResult::Scalar(curiosity)
-            })
+            }),
         );
 
         // Model predict (for model-based RL)
@@ -4281,7 +4393,7 @@ impl OpDictionary {
                 // Prediction = state ⊗ action (simple transition model)
                 let predicted = args[0].bind(&args[1]);
                 OpResult::One(predicted)
-            })
+            }),
         );
     }
 }
@@ -4310,7 +4422,7 @@ impl OpDictionary {
                 let abstract_marker = Fingerprint::from_content("RUNG::ABSTRACT");
                 let ascended = args[0].bind(&abstract_marker);
                 OpResult::One(ascended)
-            })
+            }),
         );
 
         // Rung descend (move down abstraction ladder)
@@ -4330,7 +4442,7 @@ impl OpDictionary {
                 let abstract_marker = Fingerprint::from_content("RUNG::ABSTRACT");
                 let descended = args[0].unbind(&abstract_marker);
                 OpResult::One(descended)
-            })
+            }),
         );
 
         // Rung current level
@@ -4349,7 +4461,7 @@ impl OpDictionary {
                 // Level encoded in popcount distribution
                 let level = (args[0].popcount() / 1000) as f64;
                 OpResult::Scalar(level.min(9.0))
-            })
+            }),
         );
 
         // Abstract extract
@@ -4368,7 +4480,7 @@ impl OpDictionary {
                 // Common abstraction = bundled intersection
                 let abstraction = bundle_fingerprints(&args);
                 OpResult::One(abstraction)
-            })
+            }),
         );
 
         // Abstract merge
@@ -4386,7 +4498,7 @@ impl OpDictionary {
                 }
                 let merged = bundle_fingerprints(&[args[0].clone(), args[1].clone()]);
                 OpResult::One(merged)
-            })
+            }),
         );
 
         // Grounding check
@@ -4406,7 +4518,7 @@ impl OpDictionary {
                 let sensory_marker = Fingerprint::from_content("GROUNDING::SENSORY");
                 let sim = args[0].similarity(&sensory_marker);
                 OpResult::Bool(sim > 0.3)
-            })
+            }),
         );
 
         // Hierarchy depth
@@ -4427,7 +4539,7 @@ impl OpDictionary {
                 let sim = args[0].similarity(&abstract_marker) as f64;
                 let depth = (sim * 10.0).floor();
                 OpResult::Scalar(depth)
-            })
+            }),
         );
 
         // Conceptual blend create
@@ -4447,7 +4559,7 @@ impl OpDictionary {
                 let generic = Fingerprint::orthogonal(0); // Generic space
                 let blend = args[0].bind(&generic).bind(&args[1]);
                 OpResult::One(blend)
-            })
+            }),
         );
 
         // Blend emergent structure
@@ -4468,7 +4580,7 @@ impl OpDictionary {
                 let generic = Fingerprint::orthogonal(0);
                 let emergent = args[0].unbind(&generic);
                 OpResult::One(emergent)
-            })
+            }),
         );
 
         // Metaphor map
@@ -4488,7 +4600,7 @@ impl OpDictionary {
                 let mapping = Fingerprint::from_content("METAPHOR::MAP");
                 let result = args[0].bind(&mapping).bind(&args[1]);
                 OpResult::One(result)
-            })
+            }),
         );
 
         // Analogy find
@@ -4502,7 +4614,9 @@ impl OpDictionary {
             "Find analogous structure in candidates",
             Arc::new(|_ctx, args| {
                 if args.len() < 2 {
-                    return OpResult::Error("AnalogyFind requires source and candidates".to_string());
+                    return OpResult::Error(
+                        "AnalogyFind requires source and candidates".to_string(),
+                    );
                 }
                 let source = &args[0];
                 let candidates = &args[1..];
@@ -4524,7 +4638,7 @@ impl OpDictionary {
                 }
 
                 OpResult::One(best.clone())
-            })
+            }),
         );
 
         // Structure mapping
@@ -4545,7 +4659,7 @@ impl OpDictionary {
                 let base_relations = args[0].unbind(&relation_basis);
                 let mapping = base_relations.bind(&args[1]);
                 OpResult::One(mapping)
-            })
+            }),
         );
 
         // Prototype match
@@ -4563,7 +4677,7 @@ impl OpDictionary {
                 }
                 let typicality = args[0].similarity(&args[1]) as f64;
                 OpResult::Scalar(typicality)
-            })
+            }),
         );
 
         // Category membership
@@ -4581,7 +4695,7 @@ impl OpDictionary {
                 }
                 let sim = args[0].similarity(&args[1]);
                 OpResult::Bool(sim > 0.5) // Membership threshold
-            })
+            }),
         );
     }
 }
@@ -4593,14 +4707,14 @@ impl OpDictionary {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_op_dictionary_init() {
         let dict = OpDictionary::new();
         assert!(dict.count() > 0);
         println!("Registered {} operations", dict.count());
     }
-    
+
     #[test]
     fn test_category_from_id() {
         assert_eq!(OpCategory::from_id(0x000), OpCategory::LanceDb);
@@ -4609,7 +4723,7 @@ mod tests {
         assert_eq!(OpCategory::from_id(0x300), OpCategory::Hamming);
         assert_eq!(OpCategory::from_id(0xE00), OpCategory::Learning);
     }
-    
+
     #[test]
     fn test_hamming_bind() {
         let dict = OpDictionary::new();
@@ -4620,12 +4734,12 @@ mod tests {
             crystal: None,
             params: vec![],
         };
-        
+
         let a = Fingerprint::from_content("hello");
         let b = Fingerprint::from_content("world");
-        
+
         let result = dict.execute(HammingOp::Bind as u16, &ctx, &[a.clone(), b.clone()]);
-        
+
         if let OpResult::One(bound) = result {
             // Verify XOR property: unbind recovers original
             let recovered = bound.bind(&a);
@@ -4634,7 +4748,7 @@ mod tests {
             panic!("Expected OpResult::One");
         }
     }
-    
+
     #[test]
     fn test_semantic_dispatch() {
         let dict = OpDictionary::new();
@@ -4645,13 +4759,13 @@ mod tests {
             crystal: None,
             params: vec![],
         };
-        
+
         let a = Fingerprint::from_content("test1");
         let b = Fingerprint::from_content("test2");
-        
+
         // Should find HAM_BIND via semantic similarity
         let result = dict.execute_semantic("XOR bind fingerprints together", &ctx, &[a, b]);
-        
+
         match result {
             OpResult::One(_) => println!("Semantic dispatch worked!"),
             OpResult::Error(e) => println!("Semantic dispatch: {}", e),

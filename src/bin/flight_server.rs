@@ -26,10 +26,10 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use tonic::transport::Server;
 
+use ladybug::VERSION;
 use ladybug::flight::LadybugFlightService;
 use ladybug::search::HdrIndex;
 use ladybug::storage::BindSpace;
-use ladybug::VERSION;
 
 use arrow_flight::flight_service_server::FlightServiceServer;
 
@@ -88,10 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let hdr_index = Arc::new(RwLock::new(HdrIndex::new()));
 
     // Create Flight service
-    let service = LadybugFlightService::new(
-        Arc::clone(&bind_space),
-        Arc::clone(&hdr_index),
-    );
+    let service = LadybugFlightService::new(Arc::clone(&bind_space), Arc::clone(&hdr_index));
 
     println!("Starting Arrow Flight server on {}", addr);
 

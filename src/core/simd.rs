@@ -6,23 +6,32 @@
 //! - NEON + CNT (ARM)
 //! - Scalar fallback
 
-use crate::core::Fingerprint;
 use crate::FINGERPRINT_U64;
-
+use crate::core::Fingerprint;
 
 /// Compute Hamming distance between two fingerprints.
-/// 
+///
 /// Automatically dispatches to the best SIMD implementation available.
 #[inline]
 pub fn hamming_distance(a: &Fingerprint, b: &Fingerprint) -> u32 {
     #[cfg(all(target_arch = "x86_64", target_feature = "avx512vpopcntdq"))]
-    { return unsafe { hamming_avx512(a, b) }; }
+    {
+        return unsafe { hamming_avx512(a, b) };
+    }
 
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2", not(target_feature = "avx512vpopcntdq")))]
-    { return unsafe { hamming_avx2(a, b) }; }
+    #[cfg(all(
+        target_arch = "x86_64",
+        target_feature = "avx2",
+        not(target_feature = "avx512vpopcntdq")
+    ))]
+    {
+        return unsafe { hamming_avx2(a, b) };
+    }
 
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    { return unsafe { hamming_neon(a, b) }; }
+    {
+        return unsafe { hamming_neon(a, b) };
+    }
 
     // Scalar fallback
     #[cfg(not(any(
@@ -30,7 +39,9 @@ pub fn hamming_distance(a: &Fingerprint, b: &Fingerprint) -> u32 {
         all(target_arch = "x86_64", target_feature = "avx2"),
         all(target_arch = "aarch64", target_feature = "neon"),
     )))]
-    { return hamming_scalar(a, b); }
+    {
+        return hamming_scalar(a, b);
+    }
 }
 
 /// Scalar implementation (works everywhere)
@@ -38,7 +49,7 @@ pub fn hamming_distance(a: &Fingerprint, b: &Fingerprint) -> u32 {
 pub fn hamming_scalar(a: &Fingerprint, b: &Fingerprint) -> u32 {
     let a_data = a.as_raw();
     let b_data = b.as_raw();
-    
+
     let mut total = 0u32;
     for i in 0..FINGERPRINT_U64 {
         total += (a_data[i] ^ b_data[i]).count_ones();
@@ -94,8 +105,8 @@ unsafe fn hamming_avx2(a: &Fingerprint, b: &Fingerprint) -> u32 {
 
         // Lookup table for 4-bit popcount
         let lookup = _mm256_setr_epi8(
-            0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4,
-            0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4,
+            0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4, 0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2,
+            3, 3, 4,
         );
         let low_mask = _mm256_set1_epi8(0x0f);
 
@@ -157,10 +168,10 @@ unsafe fn hamming_neon(a: &Fingerprint, b: &Fingerprint) -> u32 {
             let va = vld1q_u8(a_ptr.add(i));
             let vb = vld1q_u8(b_ptr.add(i));
             let xor = veorq_u8(va, vb);
-            let cnt = vcntq_u8(xor);  // Count bits per byte
+            let cnt = vcntq_u8(xor); // Count bits per byte
 
             // Sum to 64-bit
-            let sum16 = vpaddlq_u8(cnt);   // u8 -> u16
+            let sum16 = vpaddlq_u8(cnt); // u8 -> u16
             let sum32 = vpaddlq_u16(sum16); // u16 -> u32
             let sum64 = vpaddlq_u32(sum32); // u32 -> u64
             sum = vaddq_u64(sum, sum64);
@@ -183,12 +194,9 @@ unsafe fn hamming_neon(a: &Fingerprint, b: &Fingerprint) -> u32 {
 
 /// Batch Hamming distance computation (parallel)
 #[cfg(feature = "parallel")]
-pub fn batch_hamming(
-    query: &Fingerprint,
-    corpus: &[Fingerprint],
-) -> Vec<u32> {
+pub fn batch_hamming(query: &Fingerprint, corpus: &[Fingerprint]) -> Vec<u32> {
     use rayon::prelude::*;
-    
+
     corpus
         .par_iter()
         .map(|fp| hamming_distance(query, fp))
@@ -197,10 +205,7 @@ pub fn batch_hamming(
 
 /// Non-parallel batch Hamming
 #[cfg(not(feature = "parallel"))]
-pub fn batch_hamming(
-    query: &Fingerprint,
-    corpus: &[Fingerprint],
-) -> Vec<u32> {
+pub fn batch_hamming(query: &Fingerprint, corpus: &[Fingerprint]) -> Vec<u32> {
     corpus
         .iter()
         .map(|fp| hamming_distance(query, fp))
@@ -226,28 +231,25 @@ impl HammingEngine {
                 .unwrap(),
         }
     }
-    
+
     /// Index corpus
     pub fn index(&mut self, corpus: Vec<Fingerprint>) {
         self.corpus = corpus;
     }
-    
+
     /// Search for k nearest neighbors
     pub fn search(&self, query: &Fingerprint, k: usize) -> Vec<(usize, u32, f32)> {
         let distances = batch_hamming(query, &self.corpus);
-        
+
         // Find top-k by distance
-        let mut indexed: Vec<(usize, u32)> = distances
-            .into_iter()
-            .enumerate()
-            .collect();
-        
+        let mut indexed: Vec<(usize, u32)> = distances.into_iter().enumerate().collect();
+
         // Partial sort for top-k
         let k = k.min(indexed.len());
         indexed.select_nth_unstable_by_key(k.saturating_sub(1), |&(_, d)| d);
         indexed.truncate(k);
         indexed.sort_by_key(|&(_, d)| d);
-        
+
         // Convert to (index, distance, similarity)
         indexed
             .into_iter()
@@ -257,7 +259,7 @@ impl HammingEngine {
             })
             .collect()
     }
-    
+
     /// Search with threshold
     pub fn search_threshold(
         &self,
@@ -266,17 +268,17 @@ impl HammingEngine {
         limit: usize,
     ) -> Vec<(usize, u32, f32)> {
         let max_distance = ((1.0 - threshold) * crate::FINGERPRINT_BITS as f32) as u32;
-        
+
         let mut results = self.search(query, limit);
         results.retain(|&(_, dist, _)| dist <= max_distance);
         results
     }
-    
+
     /// Corpus size
     pub fn len(&self) -> usize {
         self.corpus.len()
     }
-    
+
     pub fn is_empty(&self) -> bool {
         self.corpus.is_empty()
     }
@@ -292,13 +294,17 @@ impl Default for HammingEngine {
 pub fn simd_level() -> &'static str {
     #[cfg(all(target_arch = "x86_64", target_feature = "avx512vpopcntdq"))]
     return "avx512-vpopcnt";
-    
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2", not(target_feature = "avx512vpopcntdq")))]
+
+    #[cfg(all(
+        target_arch = "x86_64",
+        target_feature = "avx2",
+        not(target_feature = "avx512vpopcntdq")
+    ))]
     return "avx2";
-    
+
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     return "neon";
-    
+
     #[allow(unreachable_code)]
     "scalar"
 }
@@ -306,13 +312,13 @@ pub fn simd_level() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_hamming_self_is_zero() {
         let fp = Fingerprint::from_content("test");
         assert_eq!(hamming_distance(&fp, &fp), 0);
     }
-    
+
     #[test]
     fn test_hamming_inverse() {
         let a = Fingerprint::zero();
@@ -321,22 +327,22 @@ mod tests {
         // since 16384 % 64 == 0, no padding contamination
         assert_eq!(hamming_distance(&a, &b), crate::FINGERPRINT_BITS as u32);
     }
-    
+
     #[test]
     fn test_hamming_symmetry() {
         let a = Fingerprint::from_content("hello");
         let b = Fingerprint::from_content("world");
         assert_eq!(hamming_distance(&a, &b), hamming_distance(&b, &a));
     }
-    
+
     #[test]
     fn test_scalar_matches_simd() {
         let a = Fingerprint::from_content("test_a");
         let b = Fingerprint::from_content("test_b");
-        
+
         let scalar = hamming_scalar(&a, &b);
         let simd = hamming_distance(&a, &b);
-        
+
         assert_eq!(scalar, simd);
     }
 }

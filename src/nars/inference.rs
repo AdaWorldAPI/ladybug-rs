@@ -8,10 +8,10 @@ use crate::nars::TruthValue;
 pub trait InferenceRule {
     /// Apply the inference rule to two truth values
     fn apply(premise1: &TruthValue, premise2: &TruthValue) -> TruthValue;
-    
+
     /// Name of the rule
     fn name() -> &'static str;
-    
+
     /// Description of what this rule does
     fn description() -> &'static str;
 }
@@ -26,9 +26,11 @@ impl InferenceRule for Deduction {
     fn apply(p1: &TruthValue, p2: &TruthValue) -> TruthValue {
         p1.deduction(p2)
     }
-    
-    fn name() -> &'static str { "deduction" }
-    
+
+    fn name() -> &'static str {
+        "deduction"
+    }
+
     fn description() -> &'static str {
         "A→B, B→C ⊢ A→C (forward chaining)"
     }
@@ -44,9 +46,11 @@ impl InferenceRule for Induction {
     fn apply(p1: &TruthValue, p2: &TruthValue) -> TruthValue {
         p1.induction(p2)
     }
-    
-    fn name() -> &'static str { "induction" }
-    
+
+    fn name() -> &'static str {
+        "induction"
+    }
+
     fn description() -> &'static str {
         "A→B, A→C ⊢ B→C (generalization)"
     }
@@ -62,9 +66,11 @@ impl InferenceRule for Abduction {
     fn apply(p1: &TruthValue, p2: &TruthValue) -> TruthValue {
         p1.abduction(p2)
     }
-    
-    fn name() -> &'static str { "abduction" }
-    
+
+    fn name() -> &'static str {
+        "abduction"
+    }
+
     fn description() -> &'static str {
         "A→B, C→B ⊢ A→C (cause inference)"
     }
@@ -80,9 +86,11 @@ impl InferenceRule for Analogy {
     fn apply(p1: &TruthValue, p2: &TruthValue) -> TruthValue {
         p1.analogy(p2)
     }
-    
-    fn name() -> &'static str { "analogy" }
-    
+
+    fn name() -> &'static str {
+        "analogy"
+    }
+
     fn description() -> &'static str {
         "A→B, A↔C ⊢ C→B (similarity transfer)"
     }
@@ -97,9 +105,11 @@ impl InferenceRule for Comparison {
     fn apply(p1: &TruthValue, p2: &TruthValue) -> TruthValue {
         p1.comparison(p2)
     }
-    
-    fn name() -> &'static str { "comparison" }
-    
+
+    fn name() -> &'static str {
+        "comparison"
+    }
+
     fn description() -> &'static str {
         "A→B, C→B ⊢ A↔C (similarity from shared property)"
     }
@@ -124,7 +134,7 @@ pub fn apply_rule(
 /// All available inference rules
 pub const INFERENCE_RULES: &[&str] = &[
     "deduction",
-    "induction", 
+    "induction",
     "abduction",
     "analogy",
     "comparison",
@@ -133,27 +143,27 @@ pub const INFERENCE_RULES: &[&str] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_deduction_reduces_confidence() {
         let p1 = TruthValue::new(0.9, 0.9);
         let p2 = TruthValue::new(0.9, 0.9);
-        
+
         let conclusion = Deduction::apply(&p1, &p2);
-        
+
         // Chained inference should reduce confidence
         assert!(conclusion.confidence < p1.confidence);
         assert!(conclusion.confidence < p2.confidence);
     }
-    
+
     #[test]
     fn test_rule_dispatch() {
         let p1 = TruthValue::new(0.8, 0.8);
         let p2 = TruthValue::new(0.7, 0.7);
-        
+
         let result = apply_rule("deduction", &p1, &p2);
         assert!(result.is_some());
-        
+
         let result = apply_rule("invalid_rule", &p1, &p2);
         assert!(result.is_none());
     }

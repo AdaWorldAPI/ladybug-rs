@@ -40,10 +40,10 @@
 //! }
 //! ```
 
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use parking_lot::RwLock;
 
 #[cfg(feature = "flight")]
 use tonic::transport::Channel;
@@ -76,9 +76,9 @@ impl Transport {
     /// Approximate throughput (fingerprints/sec)
     pub fn expected_throughput(&self) -> u64 {
         match self {
-            Transport::ArrowFlight => 3_000_000,  // ~3M fps (zero-copy)
-            Transport::McpSse => 100_000,         // ~100K fps (streaming)
-            Transport::HttpJson => 10_000,        // ~10K fps (serialization overhead)
+            Transport::ArrowFlight => 3_000_000, // ~3M fps (zero-copy)
+            Transport::McpSse => 100_000,        // ~100K fps (streaming)
+            Transport::HttpJson => 10_000,       // ~10K fps (serialization overhead)
         }
     }
 
@@ -123,7 +123,10 @@ pub struct Capabilities {
 impl Capabilities {
     /// Get the best available transport
     pub fn best_transport(&self) -> Transport {
-        self.transports.first().copied().unwrap_or(Transport::HttpJson)
+        self.transports
+            .first()
+            .copied()
+            .unwrap_or(Transport::HttpJson)
     }
 
     /// Check if a specific transport is available
@@ -139,11 +142,20 @@ impl Capabilities {
     /// Get capabilities as feature flags (for Python SDK)
     pub fn as_feature_flags(&self) -> HashMap<String, bool> {
         let mut flags = HashMap::new();
-        flags.insert("flight".to_string(), self.has_transport(Transport::ArrowFlight));
+        flags.insert(
+            "flight".to_string(),
+            self.has_transport(Transport::ArrowFlight),
+        );
         flags.insert("sse".to_string(), self.has_transport(Transport::McpSse));
         flags.insert("json".to_string(), self.has_transport(Transport::HttpJson));
-        flags.insert("streaming".to_string(), self.best_transport().supports_streaming());
-        flags.insert("zero_copy".to_string(), self.best_transport().supports_zero_copy());
+        flags.insert(
+            "streaming".to_string(),
+            self.best_transport().supports_streaming(),
+        );
+        flags.insert(
+            "zero_copy".to_string(),
+            self.best_transport().supports_zero_copy(),
+        );
         flags.insert("dn_tree".to_string(), self.dn_tree);
         flags.insert("acid".to_string(), self.acid);
         flags.insert("work_stealing".to_string(), self.work_stealing);
@@ -319,9 +331,9 @@ impl CapabilitiesChecker {
     /// Probe Arrow Flight endpoint
     #[cfg(feature = "flight")]
     async fn probe_flight(&self) -> Result<ProbeResult, ProbeError> {
-        use tonic::transport::Endpoint;
-        use arrow_flight::flight_service_client::FlightServiceClient;
         use arrow_flight::Criteria;
+        use arrow_flight::flight_service_client::FlightServiceClient;
+        use tonic::transport::Endpoint;
 
         let endpoint = format!("http://{}", self.endpoint);
         let channel = Endpoint::from_shared(endpoint)
@@ -334,7 +346,9 @@ impl CapabilitiesChecker {
         let mut client = FlightServiceClient::new(channel);
 
         // Try to list flights to verify connectivity
-        let request = tonic::Request::new(Criteria { expression: bytes::Bytes::new() });
+        let request = tonic::Request::new(Criteria {
+            expression: bytes::Bytes::new(),
+        });
         let response = client.list_flights(request).await;
 
         if response.is_ok() {
@@ -479,7 +493,8 @@ impl ProbeResult {
                     if let Some(quote_start) = json[start + colon..].find('"') {
                         let after_quote = start + colon + quote_start + 1;
                         if let Some(quote_end) = json[after_quote..].find('"') {
-                            result.version = Some(json[after_quote..after_quote + quote_end].to_string());
+                            result.version =
+                                Some(json[after_quote..after_quote + quote_end].to_string());
                         }
                     }
                 }
@@ -516,7 +531,8 @@ pub struct TransportAdapter {
     capabilities: Capabilities,
     endpoint: String,
     #[cfg(feature = "flight")]
-    flight_client: Option<Arc<RwLock<arrow_flight::flight_service_client::FlightServiceClient<Channel>>>>,
+    flight_client:
+        Option<Arc<RwLock<arrow_flight::flight_service_client::FlightServiceClient<Channel>>>>,
 }
 
 impl TransportAdapter {
@@ -564,8 +580,8 @@ impl TransportAdapter {
 
     #[cfg(feature = "flight")]
     async fn execute_flight(&self, action: &str, params: &[u8]) -> Result<Vec<u8>, TransportError> {
-        use arrow_flight::flight_service_client::FlightServiceClient;
         use arrow_flight::Action;
+        use arrow_flight::flight_service_client::FlightServiceClient;
         use tonic::transport::Endpoint;
 
         let endpoint = format!("http://{}", self.endpoint);
@@ -590,7 +606,11 @@ impl TransportAdapter {
 
         // Collect all results
         let mut result = Vec::new();
-        while let Some(response) = stream.message().await.map_err(|e| TransportError::ActionFailed(e.to_string()))? {
+        while let Some(response) = stream
+            .message()
+            .await
+            .map_err(|e| TransportError::ActionFailed(e.to_string()))?
+        {
             result.extend(response.body);
         }
 
@@ -598,7 +618,11 @@ impl TransportAdapter {
     }
 
     #[cfg(not(feature = "flight"))]
-    async fn execute_flight(&self, _action: &str, _params: &[u8]) -> Result<Vec<u8>, TransportError> {
+    async fn execute_flight(
+        &self,
+        _action: &str,
+        _params: &[u8],
+    ) -> Result<Vec<u8>, TransportError> {
         Err(TransportError::NotSupported)
     }
 
@@ -617,13 +641,17 @@ impl TransportAdapter {
                 .map_err(|e| TransportError::ActionFailed(e.to_string()))?;
 
             if response.status().is_success() {
-                let bytes = response.bytes().await
+                let bytes = response
+                    .bytes()
+                    .await
                     .map_err(|e| TransportError::ActionFailed(e.to_string()))?;
                 return Ok(bytes.to_vec());
             }
         }
 
-        Err(TransportError::ActionFailed("SSE request failed".to_string()))
+        Err(TransportError::ActionFailed(
+            "SSE request failed".to_string(),
+        ))
     }
 
     async fn execute_json(&self, _action: &str, _params: &[u8]) -> Result<Vec<u8>, TransportError> {
@@ -640,13 +668,17 @@ impl TransportAdapter {
                 .map_err(|e| TransportError::ActionFailed(e.to_string()))?;
 
             if response.status().is_success() {
-                let bytes = response.bytes().await
+                let bytes = response
+                    .bytes()
+                    .await
                     .map_err(|e| TransportError::ActionFailed(e.to_string()))?;
                 return Ok(bytes.to_vec());
             }
         }
 
-        Err(TransportError::ActionFailed("JSON request failed".to_string()))
+        Err(TransportError::ActionFailed(
+            "JSON request failed".to_string(),
+        ))
     }
 }
 

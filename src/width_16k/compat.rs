@@ -11,11 +11,11 @@
 //! - **xor_fold**: XOR surplus resonance words back into the core region.
 //!   With 16K Fingerprint this is identity (no surplus beyond resonance).
 
-use crate::core::Fingerprint;
-use crate::core::DIM_U64 as WORDS_FP;
-use super::VECTOR_WORDS as WORDS_16K;
 use super::RESONANCE_WORDS;
+use super::VECTOR_WORDS as WORDS_16K;
 use super::schema::SchemaSidecar;
+use crate::core::DIM_U64 as WORDS_FP;
+use crate::core::Fingerprint;
 
 /// Extend a Fingerprint into a 16K record.
 ///
@@ -103,7 +103,10 @@ mod tests {
         let record = zero_extend_with_schema(&fp, &schema);
 
         // Resonance zone preserved (metadata region 224-255 overwritten by schema)
-        assert_eq!(&record[..super::RESONANCE_WORDS], &fp.as_raw()[..super::RESONANCE_WORDS]);
+        assert_eq!(
+            &record[..super::RESONANCE_WORDS],
+            &fp.as_raw()[..super::RESONANCE_WORDS]
+        );
         // Schema written
         let recovered = SchemaSidecar::read_from_words(&record);
         assert_eq!(recovered.identity.depth, 5);

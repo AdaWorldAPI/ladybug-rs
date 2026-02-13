@@ -71,8 +71,8 @@
 //! 7. **Rung plugins** — causal rung escalation strategies
 //! 8. **DataFusion plugins** — custom UDFs over kernel state
 
-use serde::{Deserialize, Serialize};
 use crate::storage::bind_space::{Addr, BindSpace, FINGERPRINT_WORDS};
+use serde::{Deserialize, Serialize};
 
 // =============================================================================
 // KERNEL ZONE
@@ -126,34 +126,50 @@ impl KernelZone {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum KernelOp {
     // === Core VSA operations (zero-copy on fingerprint arrays) ===
-
     /// Write fingerprint at address
     Bind { addr: Addr, label: Option<String> },
     /// Read fingerprint from address (zero-copy reference)
     Query { addr: Addr },
     /// XOR-compose two fingerprints (associative binding)
-    XorBind { addr_a: Addr, addr_b: Addr, target: Addr },
+    XorBind {
+        addr_a: Addr,
+        addr_b: Addr,
+        target: Addr,
+    },
     /// XOR-extract component from composite (A ⊗ B ⊗ B = A)
-    XorUnbind { composite: Addr, known: Addr, target: Addr },
+    XorUnbind {
+        composite: Addr,
+        known: Addr,
+        target: Addr,
+    },
     /// Majority-vote bundle (noise elimination)
     Bundle { sources: Vec<Addr>, target: Addr },
     /// Permute fingerprint (position encoding)
-    Permute { addr: Addr, shift: usize, target: Addr },
+    Permute {
+        addr: Addr,
+        shift: usize,
+        target: Addr,
+    },
 
     // === Search operations (parallel across prefixes) ===
-
     /// HDR resonance search (Hamming similarity)
-    Resonate { zone: Option<KernelZone>, threshold: f32, limit: usize },
+    Resonate {
+        zone: Option<KernelZone>,
+        threshold: f32,
+        limit: usize,
+    },
     /// Mexican hat resonance (center excitation + surround inhibition)
-    MexicanHat { zone: Option<KernelZone>, center_weight: f32, edge_weight: f32 },
+    MexicanHat {
+        zone: Option<KernelZone>,
+        center_weight: f32,
+        edge_weight: f32,
+    },
 
     // === Collapse gate (dispersion → action) ===
-
     /// Evaluate collapse gate on candidate scores
     Collapse { candidates: Vec<Addr> },
 
     // === NARS inference (truth-value propagation) ===
-
     /// Deduction: {M→P, S→M} ⊢ S→P (strong conclusion)
     Deduce { premise1: Addr, premise2: Addr },
     /// Induction: {M→P, M→S} ⊢ S→P (weak generalization)
@@ -164,7 +180,6 @@ pub enum KernelOp {
     Revise { existing: Addr, evidence: Addr },
 
     // === Causal inference (Pearl's 3 rungs) ===
-
     /// Rung 1 — SEE: P(Y|X) correlation query
     Correlate { x: Addr, k: usize },
     /// Rung 2 — DO: P(Y|do(X)) intervention query
@@ -172,19 +187,25 @@ pub enum KernelOp {
     /// Rung 3 — IMAGINE: P(Y_x|X=x') counterfactual query
     Imagine { state: Addr, alt_action: Addr },
     /// Rung escalation: auto-promote query to highest valid rung
-    Escalate { state: Addr, action: Option<Addr>, alt_action: Option<Addr> },
+    Escalate {
+        state: Addr,
+        action: Option<Addr>,
+        alt_action: Option<Addr>,
+    },
 
     // === Crystal operations (semantic memory) ===
-
     /// Crystallize: commit fingerprint from Fluid → Node zone
     Crystallize { fluid_addr: Addr, node_addr: Addr },
     /// Dissolve: move fingerprint from Node → Fluid zone (with TTL)
-    Dissolve { node_addr: Addr, fluid_addr: Addr, ttl_seconds: u64 },
+    Dissolve {
+        node_addr: Addr,
+        fluid_addr: Addr,
+        ttl_seconds: u64,
+    },
     /// Crystal query: search crystal geometry for semantic neighbors
     CrystalQuery { center: Addr, radius: usize },
 
     // === Meta-awareness (kernel observes itself) ===
-
     /// Introspect: report kernel population, hot zones, operation counts
     Introspect,
     /// Zone density: count populated slots in a zone
@@ -402,13 +423,41 @@ pub struct DataFusionColumn {
 /// - `rung(addr)` — highest causal rung available for address
 pub fn datafusion_table_mappings() -> Vec<DataFusionMapping> {
     let fp_columns = vec![
-        DataFusionColumn { name: "prefix".into(), data_type: "UInt8".into(), description: "Prefix byte".into() },
-        DataFusionColumn { name: "slot".into(), data_type: "UInt8".into(), description: "Slot byte".into() },
-        DataFusionColumn { name: "addr".into(), data_type: "UInt16".into(), description: "Full 16-bit address".into() },
-        DataFusionColumn { name: "label".into(), data_type: "Utf8".into(), description: "Human-readable label".into() },
-        DataFusionColumn { name: "fingerprint".into(), data_type: "FixedSizeBinary(2048)".into(), description: "16K-bit fingerprint".into() },
-        DataFusionColumn { name: "popcount".into(), data_type: "UInt32".into(), description: "Set bits in fingerprint".into() },
-        DataFusionColumn { name: "zone".into(), data_type: "Utf8".into(), description: "Surface/Fluid/Node".into() },
+        DataFusionColumn {
+            name: "prefix".into(),
+            data_type: "UInt8".into(),
+            description: "Prefix byte".into(),
+        },
+        DataFusionColumn {
+            name: "slot".into(),
+            data_type: "UInt8".into(),
+            description: "Slot byte".into(),
+        },
+        DataFusionColumn {
+            name: "addr".into(),
+            data_type: "UInt16".into(),
+            description: "Full 16-bit address".into(),
+        },
+        DataFusionColumn {
+            name: "label".into(),
+            data_type: "Utf8".into(),
+            description: "Human-readable label".into(),
+        },
+        DataFusionColumn {
+            name: "fingerprint".into(),
+            data_type: "FixedSizeBinary(2048)".into(),
+            description: "16K-bit fingerprint".into(),
+        },
+        DataFusionColumn {
+            name: "popcount".into(),
+            data_type: "UInt32".into(),
+            description: "Set bits in fingerprint".into(),
+        },
+        DataFusionColumn {
+            name: "zone".into(),
+            data_type: "Utf8".into(),
+            description: "Surface/Fluid/Node".into(),
+        },
     ];
 
     vec![
@@ -463,22 +512,134 @@ pub struct PrefixAllocation {
 /// The complete prefix map of the kernel
 pub fn core_prefix_map() -> Vec<PrefixAllocation> {
     vec![
-        PrefixAllocation { prefix: 0x00, name: "lance".into(), purpose: "Lance query addresses".into(), slot_layout: "0x00-0xFF: query fingerprints".into(), active: true, plugin: None },
-        PrefixAllocation { prefix: 0x01, name: "sql".into(), purpose: "SQL query addresses".into(), slot_layout: "0x00-0xFF: query fingerprints".into(), active: true, plugin: None },
-        PrefixAllocation { prefix: 0x02, name: "cypher".into(), purpose: "Cypher graph query addresses".into(), slot_layout: "0x00-0xFF: query fingerprints".into(), active: true, plugin: None },
-        PrefixAllocation { prefix: 0x03, name: "graphql".into(), purpose: "GraphQL query addresses".into(), slot_layout: "0x00-0xFF: query fingerprints".into(), active: true, plugin: None },
-        PrefixAllocation { prefix: 0x04, name: "nars".into(), purpose: "NARS inference addresses".into(), slot_layout: "0x00-0xFF: NAL term fingerprints".into(), active: true, plugin: None },
-        PrefixAllocation { prefix: 0x05, name: "causal".into(), purpose: "Causal inference (Pearl's 3 rungs)".into(), slot_layout: "0x00-0xFF: causal model fingerprints".into(), active: true, plugin: None },
-        PrefixAllocation { prefix: 0x06, name: "meta".into(), purpose: "Meta-cognitive state".into(), slot_layout: "0x00-0xFF: meta fingerprints".into(), active: true, plugin: None },
-        PrefixAllocation { prefix: 0x07, name: "verbs".into(), purpose: "Verb/action fingerprints".into(), slot_layout: "0x00-0xFF: verb fingerprints".into(), active: true, plugin: None },
-        PrefixAllocation { prefix: 0x08, name: "concepts".into(), purpose: "Concept fingerprints".into(), slot_layout: "0x00-0xFF: concept fingerprints".into(), active: true, plugin: None },
-        PrefixAllocation { prefix: 0x09, name: "qualia".into(), purpose: "Qualia/experience state".into(), slot_layout: "0x00-0xFF: qualia fingerprints".into(), active: true, plugin: None },
-        PrefixAllocation { prefix: 0x0A, name: "memory".into(), purpose: "Memory management".into(), slot_layout: "0x00-0xFF: memory fingerprints".into(), active: true, plugin: None },
-        PrefixAllocation { prefix: 0x0B, name: "learning".into(), purpose: "Learning/CAM ops".into(), slot_layout: "0x00-0xFF: learning fingerprints".into(), active: true, plugin: None },
-        PrefixAllocation { prefix: 0x0C, name: "agents".into(), purpose: "Agent Registry (crewAI)".into(), slot_layout: "0x00-0x7F: agent cards, 0x80-0xFF: persona fingerprints".into(), active: true, plugin: Some("orchestration".into()) },
-        PrefixAllocation { prefix: 0x0D, name: "thinking".into(), purpose: "Thinking Style Templates".into(), slot_layout: "0x00-0x0B: 12 base, 0x0C-0xFF: custom".into(), active: true, plugin: Some("orchestration".into()) },
-        PrefixAllocation { prefix: 0x0E, name: "blackboard".into(), purpose: "Agent Blackboards".into(), slot_layout: "0x00-0xFF: per-agent state".into(), active: true, plugin: Some("orchestration".into()) },
-        PrefixAllocation { prefix: 0x0F, name: "a2a".into(), purpose: "A2A Message Routing".into(), slot_layout: "0x00-0xFF: directional channels".into(), active: true, plugin: Some("orchestration".into()) },
+        PrefixAllocation {
+            prefix: 0x00,
+            name: "lance".into(),
+            purpose: "Lance query addresses".into(),
+            slot_layout: "0x00-0xFF: query fingerprints".into(),
+            active: true,
+            plugin: None,
+        },
+        PrefixAllocation {
+            prefix: 0x01,
+            name: "sql".into(),
+            purpose: "SQL query addresses".into(),
+            slot_layout: "0x00-0xFF: query fingerprints".into(),
+            active: true,
+            plugin: None,
+        },
+        PrefixAllocation {
+            prefix: 0x02,
+            name: "cypher".into(),
+            purpose: "Cypher graph query addresses".into(),
+            slot_layout: "0x00-0xFF: query fingerprints".into(),
+            active: true,
+            plugin: None,
+        },
+        PrefixAllocation {
+            prefix: 0x03,
+            name: "graphql".into(),
+            purpose: "GraphQL query addresses".into(),
+            slot_layout: "0x00-0xFF: query fingerprints".into(),
+            active: true,
+            plugin: None,
+        },
+        PrefixAllocation {
+            prefix: 0x04,
+            name: "nars".into(),
+            purpose: "NARS inference addresses".into(),
+            slot_layout: "0x00-0xFF: NAL term fingerprints".into(),
+            active: true,
+            plugin: None,
+        },
+        PrefixAllocation {
+            prefix: 0x05,
+            name: "causal".into(),
+            purpose: "Causal inference (Pearl's 3 rungs)".into(),
+            slot_layout: "0x00-0xFF: causal model fingerprints".into(),
+            active: true,
+            plugin: None,
+        },
+        PrefixAllocation {
+            prefix: 0x06,
+            name: "meta".into(),
+            purpose: "Meta-cognitive state".into(),
+            slot_layout: "0x00-0xFF: meta fingerprints".into(),
+            active: true,
+            plugin: None,
+        },
+        PrefixAllocation {
+            prefix: 0x07,
+            name: "verbs".into(),
+            purpose: "Verb/action fingerprints".into(),
+            slot_layout: "0x00-0xFF: verb fingerprints".into(),
+            active: true,
+            plugin: None,
+        },
+        PrefixAllocation {
+            prefix: 0x08,
+            name: "concepts".into(),
+            purpose: "Concept fingerprints".into(),
+            slot_layout: "0x00-0xFF: concept fingerprints".into(),
+            active: true,
+            plugin: None,
+        },
+        PrefixAllocation {
+            prefix: 0x09,
+            name: "qualia".into(),
+            purpose: "Qualia/experience state".into(),
+            slot_layout: "0x00-0xFF: qualia fingerprints".into(),
+            active: true,
+            plugin: None,
+        },
+        PrefixAllocation {
+            prefix: 0x0A,
+            name: "memory".into(),
+            purpose: "Memory management".into(),
+            slot_layout: "0x00-0xFF: memory fingerprints".into(),
+            active: true,
+            plugin: None,
+        },
+        PrefixAllocation {
+            prefix: 0x0B,
+            name: "learning".into(),
+            purpose: "Learning/CAM ops".into(),
+            slot_layout: "0x00-0xFF: learning fingerprints".into(),
+            active: true,
+            plugin: None,
+        },
+        PrefixAllocation {
+            prefix: 0x0C,
+            name: "agents".into(),
+            purpose: "Agent Registry (crewAI)".into(),
+            slot_layout: "0x00-0x7F: agent cards, 0x80-0xFF: persona fingerprints".into(),
+            active: true,
+            plugin: Some("orchestration".into()),
+        },
+        PrefixAllocation {
+            prefix: 0x0D,
+            name: "thinking".into(),
+            purpose: "Thinking Style Templates".into(),
+            slot_layout: "0x00-0x0B: 12 base, 0x0C-0xFF: custom".into(),
+            active: true,
+            plugin: Some("orchestration".into()),
+        },
+        PrefixAllocation {
+            prefix: 0x0E,
+            name: "blackboard".into(),
+            purpose: "Agent Blackboards".into(),
+            slot_layout: "0x00-0xFF: per-agent state".into(),
+            active: true,
+            plugin: Some("orchestration".into()),
+        },
+        PrefixAllocation {
+            prefix: 0x0F,
+            name: "a2a".into(),
+            purpose: "A2A Message Routing".into(),
+            slot_layout: "0x00-0xFF: directional channels".into(),
+            active: true,
+            plugin: Some("orchestration".into()),
+        },
     ]
 }
 
@@ -566,14 +727,22 @@ impl ExpansionRegistry {
         }
     }
 
-    pub fn allocate_prefix(&mut self, name: &str, purpose: &str, plugin: &str) -> Result<u8, String> {
+    pub fn allocate_prefix(
+        &mut self,
+        name: &str,
+        purpose: &str,
+        plugin: &str,
+    ) -> Result<u8, String> {
         if self.next_fluid_prefix >= 0x80 {
             return Err("Fluid zone exhausted (112 prefixes max)".into());
         }
         let prefix = self.next_fluid_prefix;
         self.prefix_plugins.push(PrefixAllocation {
-            prefix, name: name.into(), purpose: purpose.into(),
-            slot_layout: "Plugin-defined".into(), active: true,
+            prefix,
+            name: name.into(),
+            purpose: purpose.into(),
+            slot_layout: "Plugin-defined".into(),
+            active: true,
             plugin: Some(plugin.into()),
         });
         self.next_fluid_prefix += 1;
@@ -612,9 +781,15 @@ impl ExpansionRegistry {
         Ok(())
     }
 
-    pub fn register_rung_strategy(&mut self, strategy: RungEscalationStrategy) -> Result<(), String> {
+    pub fn register_rung_strategy(
+        &mut self,
+        strategy: RungEscalationStrategy,
+    ) -> Result<(), String> {
         if self.rung_strategies.iter().any(|s| s.name == strategy.name) {
-            return Err(format!("Rung strategy '{}' already registered", strategy.name));
+            return Err(format!(
+                "Rung strategy '{}' already registered",
+                strategy.name
+            ));
         }
         self.rung_strategies.push(strategy);
         Ok(())
@@ -626,11 +801,21 @@ impl ExpansionRegistry {
         all
     }
 
-    pub fn operators(&self) -> &[KernelOperator] { &self.operators }
-    pub fn protocols(&self) -> &[ProtocolExtension] { &self.protocols }
-    pub fn strategies(&self) -> &[CollapseStrategy] { &self.strategies }
-    pub fn crystals(&self) -> &[CrystalPlugin] { &self.crystals }
-    pub fn rung_strategies(&self) -> &[RungEscalationStrategy] { &self.rung_strategies }
+    pub fn operators(&self) -> &[KernelOperator] {
+        &self.operators
+    }
+    pub fn protocols(&self) -> &[ProtocolExtension] {
+        &self.protocols
+    }
+    pub fn strategies(&self) -> &[CollapseStrategy] {
+        &self.strategies
+    }
+    pub fn crystals(&self) -> &[CrystalPlugin] {
+        &self.crystals
+    }
+    pub fn rung_strategies(&self) -> &[RungEscalationStrategy] {
+        &self.rung_strategies
+    }
 
     pub fn summary(&self) -> ExpansionSummary {
         ExpansionSummary {
@@ -647,7 +832,9 @@ impl ExpansionRegistry {
 }
 
 impl Default for ExpansionRegistry {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Summary of kernel expansion state
@@ -687,7 +874,9 @@ pub struct SemanticKernel {
 
 impl SemanticKernel {
     pub fn new() -> Self {
-        Self { expansion: ExpansionRegistry::new() }
+        Self {
+            expansion: ExpansionRegistry::new(),
+        }
     }
 
     // =========================================================================
@@ -765,7 +954,8 @@ impl SemanticKernel {
             return false;
         }
 
-        let sources: Vec<[u64; FINGERPRINT_WORDS]> = source_addrs.iter()
+        let sources: Vec<[u64; FINGERPRINT_WORDS]> = source_addrs
+            .iter()
             .filter_map(|&addr| space.read(addr).map(|n| n.fingerprint))
             .collect();
 
@@ -779,9 +969,7 @@ impl SemanticKernel {
         for word_idx in 0..FINGERPRINT_WORDS {
             for bit in 0..64 {
                 let mask = 1u64 << bit;
-                let count = sources.iter()
-                    .filter(|fp| fp[word_idx] & mask != 0)
-                    .count();
+                let count = sources.iter().filter(|fp| fp[word_idx] & mask != 0).count();
                 if count > threshold {
                     result[word_idx] |= mask;
                 }
@@ -881,18 +1069,30 @@ impl SemanticKernel {
         candidate_addrs: &[Addr],
         reference: &[u64; FINGERPRINT_WORDS],
     ) -> (crate::cognitive::GateState, f32, Option<usize>, Option<f32>) {
-        let scores: Vec<f32> = candidate_addrs.iter()
-            .filter_map(|&addr| space.read(addr).map(|n| Self::hamming_similarity(&n.fingerprint, reference)))
+        let scores: Vec<f32> = candidate_addrs
+            .iter()
+            .filter_map(|&addr| {
+                space
+                    .read(addr)
+                    .map(|n| Self::hamming_similarity(&n.fingerprint, reference))
+            })
             .collect();
 
         if scores.is_empty() {
-            return (crate::cognitive::GateState::Block, f32::INFINITY, None, None);
+            return (
+                crate::cognitive::GateState::Block,
+                f32::INFINITY,
+                None,
+                None,
+            );
         }
 
         let sd = crate::cognitive::calculate_sd(&scores);
         let gate = crate::cognitive::get_gate_state(sd);
 
-        let (winner_idx, winner_score) = scores.iter().enumerate()
+        let (winner_idx, winner_score) = scores
+            .iter()
+            .enumerate()
             .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
             .map(|(i, &s)| (i, s))
             .unwrap_or((0, 0.0));
@@ -1031,18 +1231,14 @@ impl SemanticKernel {
     /// Crystallize: promote fingerprint from Fluid → Node zone.
     /// This is the "commit" operation — meaning has stabilized enough
     /// to become a permanent concept.
-    pub fn crystallize(
-        &self,
-        space: &mut BindSpace,
-        fluid_addr: Addr,
-        node_addr: Addr,
-    ) -> bool {
+    pub fn crystallize(&self, space: &mut BindSpace, fluid_addr: Addr, node_addr: Addr) -> bool {
         let fp = match space.read(fluid_addr) {
             Some(node) => node.fingerprint,
             None => return false,
         };
 
-        let label = space.read(fluid_addr)
+        let label = space
+            .read(fluid_addr)
             .and_then(|n| n.label.clone())
             .map(|l| format!("crystallized:{}", l));
 
@@ -1053,18 +1249,14 @@ impl SemanticKernel {
     /// Dissolve: move fingerprint from Node → Fluid zone.
     /// The fingerprint gets a TTL in the fluid zone and will eventually
     /// evict unless re-crystallized.
-    pub fn dissolve(
-        &self,
-        space: &mut BindSpace,
-        node_addr: Addr,
-        fluid_addr: Addr,
-    ) -> bool {
+    pub fn dissolve(&self, space: &mut BindSpace, node_addr: Addr, fluid_addr: Addr) -> bool {
         let fp = match space.read(node_addr) {
             Some(node) => node.fingerprint,
             None => return false,
         };
 
-        let label = space.read(node_addr)
+        let label = space
+            .read(node_addr)
             .and_then(|n| n.label.clone())
             .map(|l| format!("dissolved:{}", l));
 
@@ -1098,14 +1290,14 @@ impl SemanticKernel {
                 if let Some(node) = space.read(addr) {
                     if node.fingerprint.iter().any(|&w| w != 0) {
                         populated_slots += 1;
-                        let pc: u64 = node.fingerprint.iter()
-                            .map(|w| w.count_ones() as u64)
-                            .sum();
+                        let pc: u64 = node.fingerprint.iter().map(|w| w.count_ones() as u64).sum();
                         prefix_popcount += pc;
                         total_popcount_all += pc;
 
                         // Track most complex
-                        if most_complex.len() < 10 || pc > most_complex.last().map(|x| x.1).unwrap_or(0) {
+                        if most_complex.len() < 10
+                            || pc > most_complex.last().map(|x| x.1).unwrap_or(0)
+                        {
                             most_complex.push((addr, pc));
                             most_complex.sort_by(|a, b| b.1.cmp(&a.1));
                             most_complex.truncate(10);
@@ -1123,7 +1315,9 @@ impl SemanticKernel {
                     KernelZone::Node { .. } => node_populated += populated_slots as usize,
                 }
 
-                let name = self.expansion.all_prefixes()
+                let name = self
+                    .expansion
+                    .all_prefixes()
                     .iter()
                     .find(|p| p.prefix == prefix)
                     .map(|p| p.name.clone())
@@ -1187,7 +1381,10 @@ impl SemanticKernel {
 
     /// Get the prefix allocation for an address
     pub fn prefix_info(&self, prefix: u8) -> Option<PrefixAllocation> {
-        self.expansion.all_prefixes().into_iter().find(|p| p.prefix == prefix)
+        self.expansion
+            .all_prefixes()
+            .into_iter()
+            .find(|p| p.prefix == prefix)
     }
 
     /// Describe the kernel's current state
@@ -1200,8 +1397,11 @@ impl SemanticKernel {
                 "Fluid (0x10-0x7F): Working memory + Agent state + Crystal".to_string(),
                 "Node (0x80-0xFF): Universal bind targets (crystallized)".to_string(),
             ],
-            fingerprint_width: format!("{} words x 64 bits = {} bits",
-                FINGERPRINT_WORDS, FINGERPRINT_WORDS * 64),
+            fingerprint_width: format!(
+                "{} words x 64 bits = {} bits",
+                FINGERPRINT_WORDS,
+                FINGERPRINT_WORDS * 64
+            ),
             operations: vec![
                 "bind/query — read/write fingerprints".to_string(),
                 "xor_bind/xor_unbind — VSA composition (O(1) encode/decode)".to_string(),
@@ -1214,7 +1414,8 @@ impl SemanticKernel {
                 "crystallize/dissolve — Fluid ↔ Node promotion".to_string(),
                 "introspect — kernel self-awareness".to_string(),
             ],
-            datafusion_tables: datafusion_table_mappings().iter()
+            datafusion_tables: datafusion_table_mappings()
+                .iter()
                 .map(|m| format!("{} ({})", m.table_name, m.zone.prefix()))
                 .collect(),
             expansion,
@@ -1223,7 +1424,9 @@ impl SemanticKernel {
 }
 
 impl Default for SemanticKernel {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Description of the kernel for introspection
@@ -1247,11 +1450,26 @@ mod tests {
 
     #[test]
     fn test_kernel_zone_classification() {
-        assert_eq!(KernelZone::from_prefix(0x00), KernelZone::Surface { prefix: 0x00 });
-        assert_eq!(KernelZone::from_prefix(0x0F), KernelZone::Surface { prefix: 0x0F });
-        assert_eq!(KernelZone::from_prefix(0x10), KernelZone::Fluid { prefix: 0x10 });
-        assert_eq!(KernelZone::from_prefix(0x7F), KernelZone::Fluid { prefix: 0x7F });
-        assert_eq!(KernelZone::from_prefix(0x80), KernelZone::Node { prefix: 0x80 });
+        assert_eq!(
+            KernelZone::from_prefix(0x00),
+            KernelZone::Surface { prefix: 0x00 }
+        );
+        assert_eq!(
+            KernelZone::from_prefix(0x0F),
+            KernelZone::Surface { prefix: 0x0F }
+        );
+        assert_eq!(
+            KernelZone::from_prefix(0x10),
+            KernelZone::Fluid { prefix: 0x10 }
+        );
+        assert_eq!(
+            KernelZone::from_prefix(0x7F),
+            KernelZone::Fluid { prefix: 0x7F }
+        );
+        assert_eq!(
+            KernelZone::from_prefix(0x80),
+            KernelZone::Node { prefix: 0x80 }
+        );
     }
 
     #[test]
@@ -1266,9 +1484,13 @@ mod tests {
     #[test]
     fn test_expansion_prefix_allocation() {
         let mut reg = ExpansionRegistry::new();
-        let prefix = reg.allocate_prefix("custom_memory", "Plugin working memory", "my_plugin").unwrap();
+        let prefix = reg
+            .allocate_prefix("custom_memory", "Plugin working memory", "my_plugin")
+            .unwrap();
         assert_eq!(prefix, 0x10);
-        let prefix2 = reg.allocate_prefix("custom_edges", "Plugin edge store", "my_plugin").unwrap();
+        let prefix2 = reg
+            .allocate_prefix("custom_edges", "Plugin edge store", "my_plugin")
+            .unwrap();
         assert_eq!(prefix2, 0x11);
         let summary = reg.summary();
         assert_eq!(summary.plugin_prefixes, 2);
@@ -1278,14 +1500,22 @@ mod tests {
     fn test_operator_registration() {
         let mut reg = ExpansionRegistry::new();
         reg.register_operator(KernelOperator {
-            name: "custom_op".into(), opcode_range: (0x100, 0x1FF),
-            target_prefix: 0x10, description: "Custom".into(),
-        }).unwrap();
+            name: "custom_op".into(),
+            opcode_range: (0x100, 0x1FF),
+            target_prefix: 0x10,
+            description: "Custom".into(),
+        })
+        .unwrap();
         assert_eq!(reg.operators().len(), 1);
-        assert!(reg.register_operator(KernelOperator {
-            name: "custom_op".into(), opcode_range: (0x200, 0x2FF),
-            target_prefix: 0x11, description: "Dup".into(),
-        }).is_err());
+        assert!(
+            reg.register_operator(KernelOperator {
+                name: "custom_op".into(),
+                opcode_range: (0x200, 0x2FF),
+                target_prefix: 0x11,
+                description: "Dup".into(),
+            })
+            .is_err()
+        );
     }
 
     #[test]
@@ -1389,7 +1619,13 @@ mod tests {
         let addr = Addr::new(0x80, 0x01);
         kernel.bind(&mut space, addr, target_fp, Some("target"));
 
-        let results = kernel.resonate(&space, &target_fp, Some(KernelZone::Node { prefix: 0x80 }), 0.4, 10);
+        let results = kernel.resonate(
+            &space,
+            &target_fp,
+            Some(KernelZone::Node { prefix: 0x80 }),
+            0.4,
+            10,
+        );
         assert!(!results.is_empty());
         assert_eq!(results[0].0, addr);
         assert!((results[0].1 - 1.0).abs() < 0.01);
@@ -1459,16 +1695,24 @@ mod tests {
     fn test_crystal_and_rung_plugin_registration() {
         let mut reg = ExpansionRegistry::new();
         reg.register_crystal(CrystalPlugin {
-            name: "context_5x5x5".into(), dimensions: 3, cells_per_dim: 5,
-            total_cells: 125, fluid_prefix_start: 0x10, prefix_count: 5,
+            name: "context_5x5x5".into(),
+            dimensions: 3,
+            cells_per_dim: 5,
+            total_cells: 125,
+            fluid_prefix_start: 0x10,
+            prefix_count: 5,
             description: "ContextCrystal 5x5x5".into(),
-        }).unwrap();
+        })
+        .unwrap();
 
         reg.register_rung_strategy(RungEscalationStrategy {
-            name: "conservative".into(), see_confidence_floor: 0.9,
-            do_confidence_floor: 0.8, auto_escalate_on_confounders: true,
+            name: "conservative".into(),
+            see_confidence_floor: 0.9,
+            do_confidence_floor: 0.8,
+            auto_escalate_on_confounders: true,
             description: "Only accept high-confidence answers at each rung".into(),
-        }).unwrap();
+        })
+        .unwrap();
 
         assert_eq!(reg.crystals().len(), 1);
         assert_eq!(reg.rung_strategies().len(), 1);
@@ -1478,13 +1722,18 @@ mod tests {
     fn test_protocol_and_strategy_registration() {
         let mut reg = ExpansionRegistry::new();
         reg.register_protocol(ProtocolExtension {
-            name: "heartbeat".into(), message_kind: "Heartbeat".into(),
+            name: "heartbeat".into(),
+            message_kind: "Heartbeat".into(),
             description: "Periodic health check".into(),
-        }).unwrap();
+        })
+        .unwrap();
         reg.register_strategy(CollapseStrategy {
-            name: "strict".into(), flow_threshold: Some(0.05), block_threshold: Some(0.20),
+            name: "strict".into(),
+            flow_threshold: Some(0.05),
+            block_threshold: Some(0.20),
             description: "Strict collapse".into(),
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(reg.protocols().len(), 1);
         assert_eq!(reg.strategies().len(), 1);
     }

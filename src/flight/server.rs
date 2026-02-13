@@ -52,25 +52,23 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use arrow_array::{
-    ArrayRef, FixedSizeBinaryArray, Float32Array, RecordBatch,
-    StringArray, UInt16Array, UInt32Array, UInt8Array,
+    ArrayRef, FixedSizeBinaryArray, Float32Array, RecordBatch, StringArray, UInt8Array,
+    UInt16Array, UInt32Array,
 };
-use arrow_schema::{DataType, Field, Schema, SchemaRef};
-use arrow_ipc::writer::IpcWriteOptions;
 use arrow_flight::{
-    flight_service_server::FlightService,
-    encode::FlightDataEncoderBuilder,
     Action, ActionType, Criteria, Empty, FlightData, FlightDescriptor, FlightInfo,
-    HandshakeRequest, HandshakeResponse, PollInfo, PutResult, SchemaAsIpc, SchemaResult,
-    Ticket,
+    HandshakeRequest, HandshakeResponse, PollInfo, PutResult, SchemaAsIpc, SchemaResult, Ticket,
+    encode::FlightDataEncoderBuilder, flight_service_server::FlightService,
 };
+use arrow_ipc::writer::IpcWriteOptions;
+use arrow_schema::{DataType, Field, Schema, SchemaRef};
 use futures::{Stream, StreamExt, stream};
 use parking_lot::RwLock;
 use tonic::{Request, Response, Status, Streaming};
 
+use crate::search::HdrIndex;
 use crate::storage::BindSpace;
 use crate::storage::bind_space::{Addr, FINGERPRINT_WORDS};
-use crate::search::HdrIndex;
 
 use super::actions::execute_action;
 
@@ -100,7 +98,11 @@ const MAX_SEARCH_RESULTS: usize = 10000;
 pub fn fingerprint_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
         Field::new("address", DataType::UInt16, false),
-        Field::new("fingerprint", DataType::FixedSizeBinary((FINGERPRINT_WORDS * 8) as i32), false),
+        Field::new(
+            "fingerprint",
+            DataType::FixedSizeBinary((FINGERPRINT_WORDS * 8) as i32),
+            false,
+        ),
         Field::new("label", DataType::Utf8, true),
         Field::new("zone", DataType::Utf8, false),
         Field::new("distance", DataType::UInt32, true),
@@ -112,7 +114,11 @@ pub fn fingerprint_schema() -> SchemaRef {
 pub fn search_result_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
         Field::new("address", DataType::UInt16, false),
-        Field::new("fingerprint", DataType::FixedSizeBinary((FINGERPRINT_WORDS * 8) as i32), false),
+        Field::new(
+            "fingerprint",
+            DataType::FixedSizeBinary((FINGERPRINT_WORDS * 8) as i32),
+            false,
+        ),
         Field::new("label", DataType::Utf8, true),
         Field::new("distance", DataType::UInt32, false),
         Field::new("similarity", DataType::Float32, false),
@@ -164,7 +170,9 @@ impl LadybugFlightService {
             bind_space,
             hdr_index,
             #[cfg(feature = "crewai")]
-            crew_bridge: Arc::new(RwLock::new(crate::orchestration::crew_bridge::CrewBridge::new())),
+            crew_bridge: Arc::new(RwLock::new(
+                crate::orchestration::crew_bridge::CrewBridge::new(),
+            )),
         }
     }
 
@@ -175,7 +183,11 @@ impl LadybugFlightService {
         hdr_index: Arc<RwLock<HdrIndex>>,
         crew_bridge: Arc<RwLock<crate::orchestration::crew_bridge::CrewBridge>>,
     ) -> Self {
-        Self { bind_space, hdr_index, crew_bridge }
+        Self {
+            bind_space,
+            hdr_index,
+            crew_bridge,
+        }
     }
 }
 
@@ -217,7 +229,9 @@ impl FlightService for LadybugFlightService {
                 .try_with_schema(&schema)
                 .map_err(|e| Status::internal(e.to_string()))?
                 .with_descriptor(FlightDescriptor::new_path(vec!["all".to_string()]))
-                .with_total_records((stats.surface_count + stats.fluid_count + stats.node_count) as i64),
+                .with_total_records(
+                    (stats.surface_count + stats.fluid_count + stats.node_count) as i64,
+                ),
             FlightInfo::new()
                 .try_with_schema(&schema)
                 .map_err(|e| Status::internal(e.to_string()))?
@@ -277,7 +291,9 @@ impl FlightService for LadybugFlightService {
         let descriptor = request.into_inner();
 
         // Use search schema for search/topk tickets
-        let schema = if descriptor.path.first()
+        let schema = if descriptor
+            .path
+            .first()
             .map(|s| s.starts_with("search") || s.starts_with("topk"))
             .unwrap_or(false)
         {
@@ -327,13 +343,14 @@ impl FlightService for LadybugFlightService {
                 let parts: Vec<&str> = ticket_str.split(':').collect();
                 if parts.len() != 3 {
                     return Err(Status::invalid_argument(
-                        "Invalid search format. Use: search:<query_hex>:<threshold>"
+                        "Invalid search format. Use: search:<query_hex>:<threshold>",
                     ));
                 }
 
                 let query = hex::decode(parts[1])
                     .map_err(|_| Status::invalid_argument("Invalid query hex"))?;
-                let threshold: u32 = parts[2].parse()
+                let threshold: u32 = parts[2]
+                    .parse()
                     .map_err(|_| Status::invalid_argument("Invalid threshold"))?;
 
                 let output = stream_search_results(bind_space, hdr_index, query, threshold);
@@ -343,13 +360,14 @@ impl FlightService for LadybugFlightService {
                 let parts: Vec<&str> = ticket_str.split(':').collect();
                 if parts.len() != 3 {
                     return Err(Status::invalid_argument(
-                        "Invalid topk format. Use: topk:<query_hex>:<k>"
+                        "Invalid topk format. Use: topk:<query_hex>:<k>",
                     ));
                 }
 
                 let query = hex::decode(parts[1])
                     .map_err(|_| Status::invalid_argument("Invalid query hex"))?;
-                let k: usize = parts[2].parse()
+                let k: usize = parts[2]
+                    .parse()
                     .map_err(|_| Status::invalid_argument("Invalid k"))?;
 
                 let output = stream_topk_results(bind_space, hdr_index, query, k);
@@ -364,13 +382,14 @@ impl FlightService for LadybugFlightService {
                 let parts: Vec<&str> = ticket_str.split(':').collect();
                 if parts.len() < 3 {
                     return Err(Status::invalid_argument(
-                        "Invalid traverse format. Use: traverse:<source_hex>:<max_hops>[:<verb>]"
+                        "Invalid traverse format. Use: traverse:<source_hex>:<max_hops>[:<verb>]",
                     ));
                 }
 
                 let source: u16 = u16::from_str_radix(parts[1], 16)
                     .map_err(|_| Status::invalid_argument("Invalid source address hex"))?;
-                let max_hops: usize = parts[2].parse()
+                let max_hops: usize = parts[2]
+                    .parse()
                     .map_err(|_| Status::invalid_argument("Invalid max_hops"))?;
                 let verb_name = parts.get(3).map(|s| s.to_string());
 
@@ -382,7 +401,7 @@ impl FlightService for LadybugFlightService {
                 let parts: Vec<&str> = ticket_str.split(':').collect();
                 if parts.len() != 2 {
                     return Err(Status::invalid_argument(
-                        "Invalid neighbors format. Use: neighbors:<addr_hex>"
+                        "Invalid neighbors format. Use: neighbors:<addr_hex>",
                     ));
                 }
 
@@ -486,7 +505,8 @@ impl FlightService for LadybugFlightService {
                 &body,
                 self.crew_bridge.clone(),
                 self.bind_space.clone(),
-            ).map_err(|e| Status::internal(e))?;
+            )
+            .map_err(|e| Status::internal(e))?;
 
             let flight_result = arrow_flight::Result {
                 body: bytes::Bytes::from(result),
@@ -495,9 +515,14 @@ impl FlightService for LadybugFlightService {
             return Ok(Response::new(Box::pin(output)));
         }
 
-        let result = execute_action(action_type, &body, self.bind_space.clone(), self.hdr_index.clone())
-            .await
-            .map_err(|e| Status::internal(e))?;
+        let result = execute_action(
+            action_type,
+            &body,
+            self.bind_space.clone(),
+            self.hdr_index.clone(),
+        )
+        .await
+        .map_err(|e| Status::internal(e))?;
 
         let flight_result = arrow_flight::Result {
             body: bytes::Bytes::from(result),
@@ -514,11 +539,14 @@ impl FlightService for LadybugFlightService {
         let actions = vec![
             ActionType {
                 r#type: "encode".to_string(),
-                description: "Encode text/data to 10K-bit fingerprint. Args: {text?, data?, style?}".to_string(),
+                description:
+                    "Encode text/data to 10K-bit fingerprint. Args: {text?, data?, style?}"
+                        .to_string(),
             },
             ActionType {
                 r#type: "bind".to_string(),
-                description: "Bind fingerprint to address. Args: {address, fingerprint, label?}".to_string(),
+                description: "Bind fingerprint to address. Args: {address, fingerprint, label?}"
+                    .to_string(),
             },
             ActionType {
                 r#type: "read".to_string(),
@@ -542,11 +570,13 @@ impl FlightService for LadybugFlightService {
             },
             ActionType {
                 r#type: "traverse".to_string(),
-                description: "BFS graph traversal via CSR. Args: {source, max_hops, verb?}".to_string(),
+                description: "BFS graph traversal via CSR. Args: {source, max_hops, verb?}"
+                    .to_string(),
             },
             ActionType {
                 r#type: "hydrate".to_string(),
-                description: "Hydrate sparse addresses to fingerprints. Args: {addresses: [u16]}".to_string(),
+                description: "Hydrate sparse addresses to fingerprints. Args: {addresses: [u16]}"
+                    .to_string(),
             },
         ];
 
@@ -829,7 +859,12 @@ fn stream_all_fingerprints(
                                     0x10..=0x7F => "fluid",
                                     _ => "node",
                                 };
-                                buffer.push((addr.0, node.fingerprint, node.label.clone(), zone.to_string()));
+                                buffer.push((
+                                    addr.0,
+                                    node.fingerprint,
+                                    node.label.clone(),
+                                    zone.to_string(),
+                                ));
                             }
                         }
                     }
@@ -859,9 +894,7 @@ fn stream_all_fingerprints(
 
                     Some((stream::iter(flight_data), (bs, prefixes, schema, buffer)))
                 }
-                Err(e) => {
-                    Some((stream::iter(vec![Err(e)]), (bs, prefixes, schema, buffer)))
-                }
+                Err(e) => Some((stream::iter(vec![Err(e)]), (bs, prefixes, schema, buffer))),
             }
         },
     )
@@ -921,10 +954,8 @@ fn stream_search_results(
                     .with_schema(schema_clone)
                     .build(stream::once(async { Ok(batch) }));
 
-                let flight_data: Vec<FlightData> = encoder
-                    .filter_map(|r| async { r.ok() })
-                    .collect()
-                    .await;
+                let flight_data: Vec<FlightData> =
+                    encoder.filter_map(|r| async { r.ok() }).collect().await;
 
                 flight_data
             }
@@ -984,10 +1015,8 @@ fn stream_topk_results(
                     .with_schema(schema_clone)
                     .build(stream::once(async { Ok(batch) }));
 
-                let flight_data: Vec<FlightData> = encoder
-                    .filter_map(|r| async { r.ok() })
-                    .collect()
-                    .await;
+                let flight_data: Vec<FlightData> =
+                    encoder.filter_map(|r| async { r.ok() }).collect().await;
 
                 flight_data
             }
@@ -1021,10 +1050,8 @@ fn stream_edges(
                     .with_schema(schema_clone)
                     .build(stream::once(async { Ok(batch) }));
 
-                let flight_data: Vec<FlightData> = encoder
-                    .filter_map(|r| async { r.ok() })
-                    .collect()
-                    .await;
+                let flight_data: Vec<FlightData> =
+                    encoder.filter_map(|r| async { r.ok() }).collect().await;
 
                 flight_data
             }
@@ -1035,10 +1062,7 @@ fn stream_edges(
 }
 
 /// Build edge RecordBatch from BindSpace (reads directly from edge list + CSR)
-fn build_edge_batch(
-    space: &BindSpace,
-    schema: &SchemaRef,
-) -> Result<RecordBatch, Status> {
+fn build_edge_batch(space: &BindSpace, schema: &SchemaRef) -> Result<RecordBatch, Status> {
     let mut sources = Vec::new();
     let mut targets = Vec::new();
     let mut verbs = Vec::new();
@@ -1076,8 +1100,7 @@ fn build_edge_batch(
         Arc::new(Float32Array::from(weights)),
     ];
 
-    RecordBatch::try_new(schema.clone(), columns)
-        .map_err(|e| Status::internal(e.to_string()))
+    RecordBatch::try_new(schema.clone(), columns).map_err(|e| Status::internal(e.to_string()))
 }
 
 /// Stream BFS traversal results from BindSpace via CSR
@@ -1107,10 +1130,8 @@ fn stream_traversal(
                     .with_schema(schema_clone)
                     .build(stream::once(async { Ok(batch) }));
 
-                let flight_data: Vec<FlightData> = encoder
-                    .filter_map(|r| async { r.ok() })
-                    .collect()
-                    .await;
+                let flight_data: Vec<FlightData> =
+                    encoder.filter_map(|r| async { r.ok() }).collect().await;
 
                 flight_data
             }
@@ -1156,13 +1177,9 @@ fn build_traversal_batch(
                     sources_col.push(source);
                     hops_col.push(hop as u32);
                     targets_col.push(edge.to.0);
-                    target_labels_col.push(
-                        space.read(edge.to).and_then(|n| n.label.clone()),
-                    );
+                    target_labels_col.push(space.read(edge.to).and_then(|n| n.label.clone()));
                     via_verbs_col.push(edge.verb.0);
-                    via_verb_labels_col.push(
-                        space.read(edge.verb).and_then(|n| n.label.clone()),
-                    );
+                    via_verb_labels_col.push(space.read(edge.verb).and_then(|n| n.label.clone()));
 
                     next_frontier.push(edge.to);
                 }
@@ -1188,8 +1205,7 @@ fn build_traversal_batch(
         Arc::new(StringArray::from(via_verb_labels_col)),
     ];
 
-    RecordBatch::try_new(schema.clone(), columns)
-        .map_err(|e| Status::internal(e.to_string()))
+    RecordBatch::try_new(schema.clone(), columns).map_err(|e| Status::internal(e.to_string()))
 }
 
 // =============================================================================
@@ -1202,18 +1218,17 @@ fn build_fingerprint_batch(
     schema: &SchemaRef,
 ) -> Result<RecordBatch, Status> {
     let addresses: Vec<u16> = data.iter().map(|(a, _, _, _)| *a).collect();
-    let fingerprints: Vec<Vec<u8>> = data.iter()
+    let fingerprints: Vec<Vec<u8>> = data
+        .iter()
         .map(|(_, fp, _, _)| fp.iter().flat_map(|w| w.to_le_bytes()).collect())
         .collect();
-    let labels: Vec<Option<&str>> = data.iter()
-        .map(|(_, _, l, _)| l.as_deref())
-        .collect();
+    let labels: Vec<Option<&str>> = data.iter().map(|(_, _, l, _)| l.as_deref()).collect();
     let zones: Vec<&str> = data.iter().map(|(_, _, _, z)| z.as_str()).collect();
 
     let addr_array: ArrayRef = Arc::new(UInt16Array::from(addresses));
     let fp_array: ArrayRef = Arc::new(
         FixedSizeBinaryArray::try_from_iter(fingerprints.iter().map(|v| v.as_slice()))
-            .map_err(|e| Status::internal(e.to_string()))?
+            .map_err(|e| Status::internal(e.to_string()))?,
     );
     let label_array: ArrayRef = Arc::new(StringArray::from(labels));
     let zone_array: ArrayRef = Arc::new(StringArray::from(zones));
@@ -1222,8 +1237,16 @@ fn build_fingerprint_batch(
 
     RecordBatch::try_new(
         schema.clone(),
-        vec![addr_array, fp_array, label_array, zone_array, dist_array, sim_array],
-    ).map_err(|e| Status::internal(e.to_string()))
+        vec![
+            addr_array,
+            fp_array,
+            label_array,
+            zone_array,
+            dist_array,
+            sim_array,
+        ],
+    )
+    .map_err(|e| Status::internal(e.to_string()))
 }
 
 /// Build search result data from HDR results
@@ -1232,17 +1255,31 @@ fn build_search_result_data(
     _hdr: &HdrIndex,
     results: &[(usize, u32)],
 ) -> Vec<(u16, [u64; FINGERPRINT_WORDS], Option<String>, u32, f32, u8)> {
-    results.iter()
+    results
+        .iter()
         .filter_map(|(idx, dist)| {
             // Get fingerprint from HDR index
             // Note: We don't have direct address mapping, so we use index as pseudo-address
             // In a real implementation, HDR index would store (addr, fingerprint) pairs
             let addr = *idx as u16;
             let similarity = 1.0 - (*dist as f32 / crate::FINGERPRINT_BITS as f32);
-            let cascade_level = if *dist < 1000 { 0 } else if *dist < 3000 { 1 } else { 2 };
+            let cascade_level = if *dist < 1000 {
+                0
+            } else if *dist < 3000 {
+                1
+            } else {
+                2
+            };
 
             // Return placeholder fingerprint - real impl would look up from index
-            Some((addr, [0u64; FINGERPRINT_WORDS], None, *dist, similarity, cascade_level))
+            Some((
+                addr,
+                [0u64; FINGERPRINT_WORDS],
+                None,
+                *dist,
+                similarity,
+                cascade_level,
+            ))
         })
         .collect()
 }
@@ -1253,12 +1290,11 @@ fn build_search_batch(
     schema: &SchemaRef,
 ) -> Result<RecordBatch, Status> {
     let addresses: Vec<u16> = data.iter().map(|(a, _, _, _, _, _)| *a).collect();
-    let fingerprints: Vec<Vec<u8>> = data.iter()
+    let fingerprints: Vec<Vec<u8>> = data
+        .iter()
         .map(|(_, fp, _, _, _, _)| fp.iter().flat_map(|w| w.to_le_bytes()).collect())
         .collect();
-    let labels: Vec<Option<&str>> = data.iter()
-        .map(|(_, _, l, _, _, _)| l.as_deref())
-        .collect();
+    let labels: Vec<Option<&str>> = data.iter().map(|(_, _, l, _, _, _)| l.as_deref()).collect();
     let distances: Vec<u32> = data.iter().map(|(_, _, _, d, _, _)| *d).collect();
     let similarities: Vec<f32> = data.iter().map(|(_, _, _, _, s, _)| *s).collect();
     let levels: Vec<u8> = data.iter().map(|(_, _, _, _, _, l)| *l).collect();
@@ -1266,7 +1302,7 @@ fn build_search_batch(
     let addr_array: ArrayRef = Arc::new(UInt16Array::from(addresses));
     let fp_array: ArrayRef = Arc::new(
         FixedSizeBinaryArray::try_from_iter(fingerprints.iter().map(|v| v.as_slice()))
-            .map_err(|e| Status::internal(e.to_string()))?
+            .map_err(|e| Status::internal(e.to_string()))?,
     );
     let label_array: ArrayRef = Arc::new(StringArray::from(labels));
     let dist_array: ArrayRef = Arc::new(UInt32Array::from(distances));
@@ -1275,8 +1311,16 @@ fn build_search_batch(
 
     RecordBatch::try_new(
         schema.clone(),
-        vec![addr_array, fp_array, label_array, dist_array, sim_array, level_array],
-    ).map_err(|e| Status::internal(e.to_string()))
+        vec![
+            addr_array,
+            fp_array,
+            label_array,
+            dist_array,
+            sim_array,
+            level_array,
+        ],
+    )
+    .map_err(|e| Status::internal(e.to_string()))
 }
 
 /// Decode FlightData and ingest into BindSpace

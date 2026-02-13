@@ -49,7 +49,8 @@ pub fn chain_encode(containers: &[Container]) -> (Container, Vec<(Container, u32
     }
 
     let first = containers[0].clone();
-    let deltas: Vec<(Container, u32)> = containers.windows(2)
+    let deltas: Vec<(Container, u32)> = containers
+        .windows(2)
         .map(|pair| delta_encode(&pair[0], &pair[1]))
         .collect();
 

@@ -25,19 +25,43 @@ impl RecallReport {
     pub fn print(&self) {
         println!("\n╔════════════════════════════════════════════════════════════════╗");
         println!("║                    RECALL MEASUREMENT                          ║");
-        println!("║                    {} vectors, {} queries               ║",
-            format_num(self.num_vectors), format_num(self.num_queries));
+        println!(
+            "║                    {} vectors, {} queries               ║",
+            format_num(self.num_vectors),
+            format_num(self.num_queries)
+        );
         println!("╠════════════════════════════════════════════════════════════════╣");
         println!("║ RECALL@K                                                       ║");
-        println!("║   Recall@1:   {:>6.2}%                                         ║", self.recall_at_1 * 100.0);
-        println!("║   Recall@10:  {:>6.2}%                                         ║", self.recall_at_10 * 100.0);
-        println!("║   Recall@100: {:>6.2}%                                         ║", self.recall_at_100 * 100.0);
+        println!(
+            "║   Recall@1:   {:>6.2}%                                         ║",
+            self.recall_at_1 * 100.0
+        );
+        println!(
+            "║   Recall@10:  {:>6.2}%                                         ║",
+            self.recall_at_10 * 100.0
+        );
+        println!(
+            "║   Recall@100: {:>6.2}%                                         ║",
+            self.recall_at_100 * 100.0
+        );
         println!("╠════════════════════════════════════════════════════════════════╣");
         println!("║ HDR CASCADE STAGES (filtering retention)                       ║");
-        println!("║   1-bit sketch:  {:>6.2}% pass                                 ║", self.hdr_recall_1bit * 100.0);
-        println!("║   4-bit count:   {:>6.2}% pass                                 ║", self.hdr_recall_4bit * 100.0);
-        println!("║   8-bit count:   {:>6.2}% pass                                 ║", self.hdr_recall_8bit * 100.0);
-        println!("║   Full popcount: {:>6.2}% final                                ║", self.hdr_recall_full * 100.0);
+        println!(
+            "║   1-bit sketch:  {:>6.2}% pass                                 ║",
+            self.hdr_recall_1bit * 100.0
+        );
+        println!(
+            "║   4-bit count:   {:>6.2}% pass                                 ║",
+            self.hdr_recall_4bit * 100.0
+        );
+        println!(
+            "║   8-bit count:   {:>6.2}% pass                                 ║",
+            self.hdr_recall_8bit * 100.0
+        );
+        println!(
+            "║   Full popcount: {:>6.2}% final                                ║",
+            self.hdr_recall_full * 100.0
+        );
         println!("╚════════════════════════════════════════════════════════════════╝");
     }
 }
@@ -60,7 +84,8 @@ pub fn measure_recall(
     // Measure recall at different K
     let recall_at_1 = measure_recall_at_k(&substrate, queries, &ground_truth, 1);
     let recall_at_10 = measure_recall_at_k(&substrate, queries, &ground_truth, 10);
-    let recall_at_100 = measure_recall_at_k(&substrate, queries, &ground_truth, ground_truth_k.min(100));
+    let recall_at_100 =
+        measure_recall_at_k(&substrate, queries, &ground_truth, ground_truth_k.min(100));
 
     // Measure HDR cascade stages
     let (hdr_1, hdr_4, hdr_8, hdr_full) = measure_hdr_stages(database, queries, &ground_truth);
@@ -89,9 +114,7 @@ fn measure_recall_at_k(
 
     for (query, truth) in queries.iter().zip(ground_truth.iter()) {
         let results = substrate.resonate(query, k);
-        let predictions: Vec<usize> = results.iter()
-            .map(|(addr, _)| addr.0 as usize)
-            .collect();
+        let predictions: Vec<usize> = results.iter().map(|(addr, _)| addr.0 as usize).collect();
 
         let truth_at_k: Vec<usize> = truth.iter().take(k).cloned().collect();
 
@@ -125,10 +148,13 @@ fn measure_hdr_stages(
 
         // 1-bit: very loose filter, keeps ~10% of database
         let threshold_1bit = (FINGERPRINT_WORDS * 64 / 2) as u32; // 50% hamming
-        let pass_1bit: Vec<usize> = database.iter()
+        let pass_1bit: Vec<usize> = database
+            .iter()
             .enumerate()
             .filter(|(_, fp)| {
-                let dist: u32 = query.iter().zip(fp.iter())
+                let dist: u32 = query
+                    .iter()
+                    .zip(fp.iter())
                     .map(|(a, b)| (a ^ b).count_ones())
                     .sum();
                 dist < threshold_1bit
@@ -142,9 +168,12 @@ fn measure_hdr_stages(
 
         // 4-bit: tighter filter
         let threshold_4bit = (FINGERPRINT_WORDS * 64 / 4) as u32; // 25% hamming
-        let pass_4bit: Vec<usize> = pass_1bit.iter()
+        let pass_4bit: Vec<usize> = pass_1bit
+            .iter()
             .filter(|&&i| {
-                let dist: u32 = query.iter().zip(database[i].iter())
+                let dist: u32 = query
+                    .iter()
+                    .zip(database[i].iter())
                     .map(|(a, b)| (a ^ b).count_ones())
                     .sum();
                 dist < threshold_4bit
@@ -156,9 +185,12 @@ fn measure_hdr_stages(
 
         // 8-bit: even tighter
         let threshold_8bit = (FINGERPRINT_WORDS * 64 / 8) as u32; // 12.5% hamming
-        let pass_8bit: Vec<usize> = pass_4bit.iter()
+        let pass_8bit: Vec<usize> = pass_4bit
+            .iter()
             .filter(|&&i| {
-                let dist: u32 = query.iter().zip(database[i].iter())
+                let dist: u32 = query
+                    .iter()
+                    .zip(database[i].iter())
                     .map(|(a, b)| (a ^ b).count_ones())
                     .sum();
                 dist < threshold_8bit

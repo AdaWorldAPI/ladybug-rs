@@ -57,7 +57,7 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
-use super::quantum_5d::{Coord5D, PhaseTag5D, QuantumCell5D, Crystal5D, CellResolution};
+use super::quantum_5d::{CellResolution, Coord5D, Crystal5D, PhaseTag5D, QuantumCell5D};
 
 // =============================================================================
 // BITCHAIN CELL (5D variant)
@@ -230,7 +230,6 @@ impl BitchainCell5D {
     }
 }
 
-
 // =============================================================================
 // BITCHAIN CRYSTAL 5^5
 // =============================================================================
@@ -358,7 +357,9 @@ impl BitchainCrystal5x5 {
             return 0.0;
         }
 
-        let tensions: Vec<f64> = self.strings.values()
+        let tensions: Vec<f64> = self
+            .strings
+            .values()
             .filter_map(|s| s.current())
             .map(|c| c.string_tension())
             .collect();
@@ -373,7 +374,9 @@ impl BitchainCrystal5x5 {
 
     /// Bell test with work-constrained correlations
     pub fn bell_test(&self, samples: usize) -> BitchainBellResult {
-        let active: Vec<_> = self.strings.iter()
+        let active: Vec<_> = self
+            .strings
+            .iter()
             .filter_map(|(idx, s)| s.current().map(|c| (*idx, c)))
             .collect();
 
@@ -405,9 +408,8 @@ impl BitchainCrystal5x5 {
 
             // Use SparseFingerprint similarity (returns f64)
             let corr = |x: &crate::storage::lance_zero_copy::SparseFingerprint,
-                        y: &crate::storage::lance_zero_copy::SparseFingerprint| -> f32 {
-                2.0 * x.similarity(y) as f32 - 1.0
-            };
+                        y: &crate::storage::lance_zero_copy::SparseFingerprint|
+             -> f32 { 2.0 * x.similarity(y) as f32 - 1.0 };
 
             e_ab += corr(a, b);
             e_ab_prime += corr(a, &b_prime);
@@ -471,10 +473,19 @@ impl BitchainBellResult {
     pub fn analysis(&self) -> String {
         let mut s = String::new();
         s.push_str(&format!("S value: {:.4}\n", self.s_value));
-        s.push_str(&format!("Classical limit (|S| ≤ 2): {}\n", self.s_value.abs() <= 2.0));
-        s.push_str(&format!("Tsirelson bound (|S| ≤ 2.828): {}\n", self.bounded_by_tsirelson));
+        s.push_str(&format!(
+            "Classical limit (|S| ≤ 2): {}\n",
+            self.s_value.abs() <= 2.0
+        ));
+        s.push_str(&format!(
+            "Tsirelson bound (|S| ≤ 2.828): {}\n",
+            self.bounded_by_tsirelson
+        ));
         s.push_str(&format!("Difficulty: {} bits\n", self.difficulty));
-        s.push_str(&format!("Total work: 2^{:.2} hashes\n", (self.total_work as f64).log2()));
+        s.push_str(&format!(
+            "Total work: 2^{:.2} hashes\n",
+            (self.total_work as f64).log2()
+        ));
         s.push_str(&format!("String tension: {:.4}\n", self.tension));
         s
     }

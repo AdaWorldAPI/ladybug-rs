@@ -6,7 +6,7 @@
 //! - CHAODA (Ishaq et al.): Anomaly detection on CLAM tree — structural outliers ARE contradictions
 
 use super::TruthValue;
-use crate::search::hdr_cascade::{hamming_distance, WORDS};
+use crate::search::hdr_cascade::{WORDS, hamming_distance};
 
 const TOTAL_BITS: f32 = 16384.0;
 
@@ -108,15 +108,15 @@ mod tests {
         fp_b[100] ^= 0xFF; // Slightly different
 
         let truths = vec![
-            TruthValue::new(0.9, 0.8),  // Strongly positive
-            TruthValue::new(0.1, 0.8),  // Strongly negative
+            TruthValue::new(0.9, 0.8), // Strongly positive
+            TruthValue::new(0.1, 0.8), // Strongly negative
         ];
 
         let contradictions = detect_contradictions(
             &[fp_a, fp_b],
             &truths,
-            0.9,  // Very similar structures
-            0.5,  // At least 0.5 truth gap
+            0.9, // Very similar structures
+            0.5, // At least 0.5 truth gap
         );
         assert_eq!(contradictions.len(), 1);
         assert!(contradictions[0].truth_conflict > 0.5);
@@ -127,18 +127,13 @@ mod tests {
         let fp_a = [0xAAAA_AAAA_AAAA_AAAAu64; WORDS];
         let fp_b = [0x5555_5555_5555_5555u64; WORDS];
 
-        let truths = vec![
-            TruthValue::new(0.9, 0.8),
-            TruthValue::new(0.1, 0.8),
-        ];
+        let truths = vec![TruthValue::new(0.9, 0.8), TruthValue::new(0.1, 0.8)];
 
-        let contradictions = detect_contradictions(
-            &[fp_a, fp_b],
-            &truths,
-            0.7,
-            0.5,
+        let contradictions = detect_contradictions(&[fp_a, fp_b], &truths, 0.7, 0.5);
+        assert!(
+            contradictions.is_empty(),
+            "Different structures shouldn't contradict"
         );
-        assert!(contradictions.is_empty(), "Different structures shouldn't contradict");
     }
 
     #[test]
@@ -158,10 +153,7 @@ mod tests {
         ];
         assert!(coherence_score(&coherent) > 0.9);
 
-        let incoherent = vec![
-            TruthValue::new(0.9, 0.8),
-            TruthValue::new(0.1, 0.8),
-        ];
+        let incoherent = vec![TruthValue::new(0.9, 0.8), TruthValue::new(0.1, 0.8)];
         assert!(coherence_score(&incoherent) < 0.3);
     }
 }

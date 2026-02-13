@@ -21,22 +21,22 @@ use std::collections::{BTreeMap, HashMap};
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum CognitiveDomain {
-    NsmPrime       = 0x0,  // 65 semantic primes
-    NsmRole        = 0x1,  // 10 thematic roles
-    SpoSubject     = 0x2,  // Subject slot markers
-    SpoPredicate   = 0x3,  // Predicate slot markers
-    SpoObject      = 0x4,  // Object slot markers
-    Qualia         = 0x5,  // 8 affect channels
-    NarsTerm       = 0x6,  // NARS terms and copulas
-    NarsInference  = 0x7,  // NARS inference rules
-    Causality      = 0x8,  // Causal relations
-    Temporal       = 0x9,  // Temporal relations
-    YamlTemplate   = 0xA,  // Speech act templates
-    RungLevel      = 0xB,  // Meaning depth (0-9)
-    CrystalPos     = 0xC,  // Crystal coordinates
-    LearnedConcept = 0xD,  // Dynamically learned
-    MetaPattern    = 0xE,  // Meta-level patterns
-    Reserved       = 0xF,  // Future use
+    NsmPrime = 0x0,       // 65 semantic primes
+    NsmRole = 0x1,        // 10 thematic roles
+    SpoSubject = 0x2,     // Subject slot markers
+    SpoPredicate = 0x3,   // Predicate slot markers
+    SpoObject = 0x4,      // Object slot markers
+    Qualia = 0x5,         // 8 affect channels
+    NarsTerm = 0x6,       // NARS terms and copulas
+    NarsInference = 0x7,  // NARS inference rules
+    Causality = 0x8,      // Causal relations
+    Temporal = 0x9,       // Temporal relations
+    YamlTemplate = 0xA,   // Speech act templates
+    RungLevel = 0xB,      // Meaning depth (0-9)
+    CrystalPos = 0xC,     // Crystal coordinates
+    LearnedConcept = 0xD, // Dynamically learned
+    MetaPattern = 0xE,    // Meta-level patterns
+    Reserved = 0xF,       // Future use
 }
 
 impl CognitiveDomain {
@@ -69,22 +69,22 @@ impl CognitiveDomain {
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NsmCategory {
-    Substantive   = 0x0,  // I, YOU, SOMEONE, SOMETHING, PEOPLE, BODY
-    Relational    = 0x1,  // KIND, PART
-    Determiner    = 0x2,  // THIS, THE_SAME, OTHER, ELSE, ANOTHER
-    Quantifier    = 0x3,  // ONE, TWO, SOME, ALL, MUCH, MANY, LITTLE, FEW
-    Evaluator     = 0x4,  // GOOD, BAD
-    Descriptor    = 0x5,  // BIG, SMALL
-    Mental        = 0x6,  // THINK, KNOW, WANT, DONT_WANT, FEEL, SEE, HEAR
-    Speech        = 0x7,  // SAY, WORDS, TRUE
-    Action        = 0x8,  // DO, HAPPEN, MOVE
-    Existence     = 0x9,  // BE, THERE_IS, BE_SOMETHING, MINE
-    Life          = 0xA,  // LIVE, DIE
-    Time          = 0xB,  // WHEN, TIME, NOW, BEFORE, AFTER, A_LONG_TIME, A_SHORT_TIME, FOR_SOME_TIME, MOMENT
-    Space         = 0xC,  // WHERE, PLACE, HERE, ABOVE, BELOW, FAR, NEAR, SIDE, INSIDE, TOUCH
-    Logical       = 0xD,  // NOT, MAYBE, CAN, BECAUSE, IF
-    Intensifier   = 0xE,  // VERY, MORE
-    Similarity    = 0xF,  // LIKE, AS, WAY
+    Substantive = 0x0, // I, YOU, SOMEONE, SOMETHING, PEOPLE, BODY
+    Relational = 0x1,  // KIND, PART
+    Determiner = 0x2,  // THIS, THE_SAME, OTHER, ELSE, ANOTHER
+    Quantifier = 0x3,  // ONE, TWO, SOME, ALL, MUCH, MANY, LITTLE, FEW
+    Evaluator = 0x4,   // GOOD, BAD
+    Descriptor = 0x5,  // BIG, SMALL
+    Mental = 0x6,      // THINK, KNOW, WANT, DONT_WANT, FEEL, SEE, HEAR
+    Speech = 0x7,      // SAY, WORDS, TRUE
+    Action = 0x8,      // DO, HAPPEN, MOVE
+    Existence = 0x9,   // BE, THERE_IS, BE_SOMETHING, MINE
+    Life = 0xA,        // LIVE, DIE
+    Time = 0xB, // WHEN, TIME, NOW, BEFORE, AFTER, A_LONG_TIME, A_SHORT_TIME, FOR_SOME_TIME, MOMENT
+    Space = 0xC, // WHERE, PLACE, HERE, ABOVE, BELOW, FAR, NEAR, SIDE, INSIDE, TOUCH
+    Logical = 0xD, // NOT, MAYBE, CAN, BECAUSE, IF
+    Intensifier = 0xE, // VERY, MORE
+    Similarity = 0xF, // LIKE, AS, WAY
 }
 
 // =============================================================================
@@ -94,14 +94,14 @@ pub enum NsmCategory {
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum QualiaChannel {
-    Arousal       = 0x0,  // Activation/energy (high=alert, low=calm) - Russell 1980
-    Valence       = 0x1,  // Hedonic tone (positive/negative)
-    Tension       = 0x2,  // Stress/relaxation continuum
-    Certainty     = 0x3,  // Confidence/doubt (epistemic)
-    Agency        = 0x4,  // Control/helplessness (locus)
-    Temporality   = 0x5,  // Urgency/patience (time pressure)
-    Sociality     = 0x6,  // Approach/avoidance (social orientation)
-    Novelty       = 0x7,  // Familiarity/surprise (pattern deviation)
+    Arousal = 0x0,     // Activation/energy (high=alert, low=calm) - Russell 1980
+    Valence = 0x1,     // Hedonic tone (positive/negative)
+    Tension = 0x2,     // Stress/relaxation continuum
+    Certainty = 0x3,   // Confidence/doubt (epistemic)
+    Agency = 0x4,      // Control/helplessness (locus)
+    Temporality = 0x5, // Urgency/patience (time pressure)
+    Sociality = 0x6,   // Approach/avoidance (social orientation)
+    Novelty = 0x7,     // Familiarity/surprise (pattern deviation)
 }
 
 // =============================================================================
@@ -111,33 +111,33 @@ pub enum QualiaChannel {
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NarsCopula {
-    Inheritance   = 0x0,  // S --> P  (is-a)
-    Similarity    = 0x1,  // S <-> P  (similar-to)
-    Implication   = 0x2,  // S ==> P  (if-then)
-    Equivalence   = 0x3,  // S <=> P  (iff)
-    Instance      = 0x4,  // S {-- P  (instance-of)
-    Property      = 0x5,  // S --] P  (has-property)
-    InstanceProp  = 0x6,  // S {-] P  (instance-property)
-    Conjunction   = 0x7,  // S && P
-    Disjunction   = 0x8,  // S || P
-    Negation      = 0x9,  // --S
-    Sequential    = 0xA,  // S &/ P   (sequential conjunction)
-    Parallel      = 0xB,  // S &| P   (parallel conjunction)
+    Inheritance = 0x0,  // S --> P  (is-a)
+    Similarity = 0x1,   // S <-> P  (similar-to)
+    Implication = 0x2,  // S ==> P  (if-then)
+    Equivalence = 0x3,  // S <=> P  (iff)
+    Instance = 0x4,     // S {-- P  (instance-of)
+    Property = 0x5,     // S --] P  (has-property)
+    InstanceProp = 0x6, // S {-] P  (instance-property)
+    Conjunction = 0x7,  // S && P
+    Disjunction = 0x8,  // S || P
+    Negation = 0x9,     // --S
+    Sequential = 0xA,   // S &/ P   (sequential conjunction)
+    Parallel = 0xB,     // S &| P   (parallel conjunction)
 }
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NarsInference {
-    Deduction     = 0x0,  // {M-->P, S-->M} |- S-->P
-    Induction     = 0x1,  // {M-->P, M-->S} |- S-->P
-    Abduction     = 0x2,  // {P-->M, S-->M} |- S-->P
+    Deduction = 0x0,       // {M-->P, S-->M} |- S-->P
+    Induction = 0x1,       // {M-->P, M-->S} |- S-->P
+    Abduction = 0x2,       // {P-->M, S-->M} |- S-->P
     Exemplification = 0x3, // {P-->M, S-->M} |- P-->S
-    Comparison    = 0x4,  // {M-->P, M-->S} |- S<->P
-    Analogy       = 0x5,  // {M-->P, S<->M} |- S-->P
-    Resemblance   = 0x6,  // {M<->P, S<->M} |- S<->P
-    Revision      = 0x7,  // {S-->P <f1,c1>, S-->P <f2,c2>} |- S-->P <f,c>
-    Choice        = 0x8,  // Select higher-confidence
-    Decision      = 0x9,  // Act on sufficient evidence
+    Comparison = 0x4,      // {M-->P, M-->S} |- S<->P
+    Analogy = 0x5,         // {M-->P, S<->M} |- S-->P
+    Resemblance = 0x6,     // {M<->P, S<->M} |- S<->P
+    Revision = 0x7,        // {S-->P <f1,c1>, S-->P <f2,c2>} |- S-->P <f,c>
+    Choice = 0x8,          // Select higher-confidence
+    Decision = 0x9,        // Act on sufficient evidence
 }
 
 // =============================================================================
@@ -147,14 +147,14 @@ pub enum NarsInference {
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CausalityType {
-    Enables       = 0x0,  // A makes B possible
-    Causes        = 0x1,  // A directly causes B
-    Prevents      = 0x2,  // A blocks B
-    Maintains     = 0x3,  // A keeps B true
-    Triggers      = 0x4,  // A initiates B
-    Terminates    = 0x5,  // A ends B
-    Modulates     = 0x6,  // A adjusts strength of B
-    Correlates    = 0x7,  // A and B co-occur (no direction)
+    Enables = 0x0,    // A makes B possible
+    Causes = 0x1,     // A directly causes B
+    Prevents = 0x2,   // A blocks B
+    Maintains = 0x3,  // A keeps B true
+    Triggers = 0x4,   // A initiates B
+    Terminates = 0x5, // A ends B
+    Modulates = 0x6,  // A adjusts strength of B
+    Correlates = 0x7, // A and B co-occur (no direction)
 }
 
 // =============================================================================
@@ -164,22 +164,22 @@ pub enum CausalityType {
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TemporalRelation {
-    Before        = 0x0,  // A entirely before B
-    After         = 0x1,  // A entirely after B
-    Meets         = 0x2,  // A ends when B starts
-    MetBy         = 0x3,  // A starts when B ends
-    Overlaps      = 0x4,  // A starts before B, ends during B
-    OverlappedBy  = 0x5,  // B starts before A, ends during A
-    During        = 0x6,  // A contained within B
-    Contains      = 0x7,  // B contained within A
-    Starts        = 0x8,  // A starts with B, ends before B
-    StartedBy     = 0x9,  // B starts with A, ends before A
-    Finishes      = 0xA,  // A starts after B, ends with B
-    FinishedBy    = 0xB,  // B starts after A, ends with A
-    Equals        = 0xC,  // A and B same interval
-    Now           = 0xD,  // Present moment
-    Always        = 0xE,  // Eternal/timeless
-    Never         = 0xF,  // Non-occurrence
+    Before = 0x0,       // A entirely before B
+    After = 0x1,        // A entirely after B
+    Meets = 0x2,        // A ends when B starts
+    MetBy = 0x3,        // A starts when B ends
+    Overlaps = 0x4,     // A starts before B, ends during B
+    OverlappedBy = 0x5, // B starts before A, ends during A
+    During = 0x6,       // A contained within B
+    Contains = 0x7,     // B contained within A
+    Starts = 0x8,       // A starts with B, ends before B
+    StartedBy = 0x9,    // B starts with A, ends before A
+    Finishes = 0xA,     // A starts after B, ends with B
+    FinishedBy = 0xB,   // B starts after A, ends with A
+    Equals = 0xC,       // A and B same interval
+    Now = 0xD,          // Present moment
+    Always = 0xE,       // Eternal/timeless
+    Never = 0xF,        // Non-occurrence
 }
 
 // =============================================================================
@@ -189,22 +189,22 @@ pub enum TemporalRelation {
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum YamlTemplate {
-    Greeting      = 0x0,  // Acknowledge presence
-    Farewell      = 0x1,  // End interaction
-    Question      = 0x2,  // Request information
-    Statement     = 0x3,  // Assert information
-    Command       = 0x4,  // Direct action
-    Request       = 0x5,  // Polite action request
-    Offer         = 0x6,  // Propose to do
-    Promise       = 0x7,  // Commit to future
-    Warning       = 0x8,  // Alert to danger
-    Apology       = 0x9,  // Express regret
-    Gratitude     = 0xA,  // Express thanks
-    Complaint     = 0xB,  // Express dissatisfaction
-    Explanation   = 0xC,  // Provide reasoning
-    Narrative     = 0xD,  // Tell story
-    Opinion       = 0xE,  // Express view
-    Hypothesis    = 0xF,  // Propose possibility
+    Greeting = 0x0,    // Acknowledge presence
+    Farewell = 0x1,    // End interaction
+    Question = 0x2,    // Request information
+    Statement = 0x3,   // Assert information
+    Command = 0x4,     // Direct action
+    Request = 0x5,     // Polite action request
+    Offer = 0x6,       // Propose to do
+    Promise = 0x7,     // Commit to future
+    Warning = 0x8,     // Alert to danger
+    Apology = 0x9,     // Express regret
+    Gratitude = 0xA,   // Express thanks
+    Complaint = 0xB,   // Express dissatisfaction
+    Explanation = 0xC, // Provide reasoning
+    Narrative = 0xD,   // Tell story
+    Opinion = 0xE,     // Express view
+    Hypothesis = 0xF,  // Propose possibility
 }
 
 // =============================================================================
@@ -214,22 +214,22 @@ pub enum YamlTemplate {
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ThematicRole {
-    Agent         = 0x0,  // Who does it
-    Patient       = 0x1,  // Who/what is affected
-    Theme         = 0x2,  // What moves/changes
-    Experiencer   = 0x3,  // Who perceives/feels
-    Beneficiary   = 0x4,  // For whom
-    Instrument    = 0x5,  // With what
-    Location      = 0x6,  // Where
-    Source        = 0x7,  // From where
-    Goal          = 0x8,  // To where / purpose
-    Time          = 0x9,  // When
-    Manner        = 0xA,  // How
-    Cause         = 0xB,  // Why (efficient cause)
-    Purpose       = 0xC,  // Why (final cause)
-    Condition     = 0xD,  // Under what circumstances
-    Extent        = 0xE,  // How much
-    Attribute     = 0xF,  // Quality/property
+    Agent = 0x0,       // Who does it
+    Patient = 0x1,     // Who/what is affected
+    Theme = 0x2,       // What moves/changes
+    Experiencer = 0x3, // Who perceives/feels
+    Beneficiary = 0x4, // For whom
+    Instrument = 0x5,  // With what
+    Location = 0x6,    // Where
+    Source = 0x7,      // From where
+    Goal = 0x8,        // To where / purpose
+    Time = 0x9,        // When
+    Manner = 0xA,      // How
+    Cause = 0xB,       // Why (efficient cause)
+    Purpose = 0xC,     // Why (final cause)
+    Condition = 0xD,   // Under what circumstances
+    Extent = 0xE,      // How much
+    Attribute = 0xF,   // Quality/property
 }
 
 // =============================================================================
@@ -237,7 +237,7 @@ pub enum ThematicRole {
 // =============================================================================
 
 /// 64-bit cognitive address: 16-bit bucket + 48-bit content hash
-/// 
+///
 /// Layout:
 /// ```text
 /// [63:60] Domain (4 bits)     - CognitiveDomain enum
@@ -255,95 +255,96 @@ impl CognitiveAddress {
         let s = ((subtype & 0xF) as u64) << 56;
         let i = (index as u64) << 48;
         let h = hash & 0xFFFF_FFFF_FFFF; // 48 bits
-        
+
         Self(d | s | i | h)
     }
-    
+
     /// Create for NSM prime
     pub fn nsm_prime(category: NsmCategory, index: u8, hash: u64) -> Self {
         Self::new(CognitiveDomain::NsmPrime, category as u8, index, hash)
     }
-    
+
     /// Create for role
     pub fn role(role: ThematicRole, hash: u64) -> Self {
         Self::new(CognitiveDomain::NsmRole, 0, role as u8, hash)
     }
-    
+
     /// Create for qualia
     pub fn qualia(channel: QualiaChannel, level: u8, hash: u64) -> Self {
         Self::new(CognitiveDomain::Qualia, channel as u8, level, hash)
     }
-    
+
     /// Create for NARS copula
     pub fn nars_copula(copula: NarsCopula, hash: u64) -> Self {
         Self::new(CognitiveDomain::NarsTerm, copula as u8, 0, hash)
     }
-    
+
     /// Create for NARS inference
     pub fn nars_inference(inference: NarsInference, hash: u64) -> Self {
         Self::new(CognitiveDomain::NarsInference, inference as u8, 0, hash)
     }
-    
+
     /// Create for YAML template
     pub fn yaml_template(template: YamlTemplate, hash: u64) -> Self {
         Self::new(CognitiveDomain::YamlTemplate, template as u8, 0, hash)
     }
-    
+
     /// Create for causality
     pub fn causality(cause_type: CausalityType, hash: u64) -> Self {
         Self::new(CognitiveDomain::Causality, cause_type as u8, 0, hash)
     }
-    
+
     /// Create for temporal
     pub fn temporal(relation: TemporalRelation, hash: u64) -> Self {
         Self::new(CognitiveDomain::Temporal, relation as u8, 0, hash)
     }
-    
+
     /// Create for rung level
     pub fn rung(level: u8, hash: u64) -> Self {
         Self::new(CognitiveDomain::RungLevel, level.min(9), 0, hash)
     }
-    
+
     /// Create for learned concept
     pub fn learned(hash: u64) -> Self {
         Self::new(CognitiveDomain::LearnedConcept, 0, 0, hash)
     }
-    
+
     /// Extract domain
     pub fn domain(&self) -> CognitiveDomain {
         CognitiveDomain::from_u8(((self.0 >> 60) & 0xF) as u8)
     }
-    
+
     /// Extract subtype
     pub fn subtype(&self) -> u8 {
         ((self.0 >> 56) & 0xF) as u8
     }
-    
+
     /// Extract index
     pub fn index(&self) -> u8 {
         ((self.0 >> 48) & 0xFF) as u8
     }
-    
+
     /// Extract 48-bit content hash
     pub fn hash(&self) -> u64 {
         self.0 & 0xFFFF_FFFF_FFFF
     }
-    
+
     /// Extract 16-bit bucket (for BTree indexing)
     pub fn bucket(&self) -> u16 {
         (self.0 >> 48) as u16
     }
-    
+
     /// Check if same bucket (domain + subtype + index)
     pub fn same_bucket(&self, other: &Self) -> bool {
         self.bucket() == other.bucket()
     }
-    
+
     /// Get human-readable name
     pub fn name(&self) -> String {
         match self.domain() {
             CognitiveDomain::NsmPrime => {
-                format!("NSM::{:?}[{}]", 
+                format!(
+                    "NSM::{:?}[{}]",
                     match self.subtype() {
                         0 => "Substantive",
                         1 => "Relational",
@@ -367,38 +368,44 @@ impl CognitiveAddress {
                 )
             }
             CognitiveDomain::NsmRole => {
-                format!("Role::{}", match self.index() {
-                    0 => "Agent",
-                    1 => "Patient", 
-                    2 => "Theme",
-                    3 => "Experiencer",
-                    4 => "Beneficiary",
-                    5 => "Instrument",
-                    6 => "Location",
-                    7 => "Source",
-                    8 => "Goal",
-                    9 => "Time",
-                    10 => "Manner",
-                    11 => "Cause",
-                    12 => "Purpose",
-                    13 => "Condition",
-                    14 => "Extent",
-                    15 => "Attribute",
-                    _ => "Unknown",
-                })
+                format!(
+                    "Role::{}",
+                    match self.index() {
+                        0 => "Agent",
+                        1 => "Patient",
+                        2 => "Theme",
+                        3 => "Experiencer",
+                        4 => "Beneficiary",
+                        5 => "Instrument",
+                        6 => "Location",
+                        7 => "Source",
+                        8 => "Goal",
+                        9 => "Time",
+                        10 => "Manner",
+                        11 => "Cause",
+                        12 => "Purpose",
+                        13 => "Condition",
+                        14 => "Extent",
+                        15 => "Attribute",
+                        _ => "Unknown",
+                    }
+                )
             }
             CognitiveDomain::Qualia => {
-                format!("Qualia::{}", match self.subtype() {
-                    0 => "Arousal",
-                    1 => "Valence",
-                    2 => "Tension",
-                    3 => "Certainty",
-                    4 => "Agency",
-                    5 => "Temporality",
-                    6 => "Sociality",
-                    7 => "Novelty",
-                    _ => "Unknown",
-                })
+                format!(
+                    "Qualia::{}",
+                    match self.subtype() {
+                        0 => "Arousal",
+                        1 => "Valence",
+                        2 => "Tension",
+                        3 => "Certainty",
+                        4 => "Agency",
+                        5 => "Temporality",
+                        6 => "Sociality",
+                        7 => "Novelty",
+                        _ => "Unknown",
+                    }
+                )
             }
             _ => format!("{:?}[{}:{}]", self.domain(), self.subtype(), self.index()),
         }
@@ -412,7 +419,7 @@ impl CognitiveAddress {
 /// Fold 10K fingerprint to 48 bits while preserving similarity relationships
 pub fn fold_to_48(fp: &Fingerprint) -> u64 {
     let mut result = 0u64;
-    
+
     // XOR-fold: each output bit is XOR of ~208 input bits
     // This preserves relative Hamming distances
     for i in 0..48 {
@@ -429,12 +436,12 @@ pub fn fold_to_48(fp: &Fingerprint) -> u64 {
         if extra_start < 16384 && fp.get_bit(extra_start) {
             bit = !bit;
         }
-        
+
         if bit {
             result |= 1u64 << i;
         }
     }
-    
+
     result
 }
 
@@ -442,7 +449,7 @@ pub fn fold_to_48(fp: &Fingerprint) -> u64 {
 /// (Lossy but useful for initial resonance)
 pub fn expand_from_48(hash: u64) -> Fingerprint {
     let mut fp = Fingerprint::zero();
-    
+
     // Replicate each bit across its fold region
     for i in 0..48 {
         let bit = (hash >> i) & 1 == 1;
@@ -456,7 +463,7 @@ pub fn expand_from_48(hash: u64) -> Fingerprint {
             }
         }
     }
-    
+
     fp
 }
 
@@ -476,16 +483,16 @@ pub struct CodebookEntry {
 pub struct CognitiveCodebook {
     /// BTree index: bucket → entries (for range queries)
     btree: BTreeMap<u16, Vec<CodebookEntry>>,
-    
+
     /// Hash index: 48-bit hash → address (for O(1) lookup)
     hash_index: HashMap<u64, CognitiveAddress>,
-    
+
     /// Full fingerprints by address
     fingerprints: HashMap<CognitiveAddress, Fingerprint>,
-    
+
     /// Name to address mapping
     names: HashMap<String, CognitiveAddress>,
-    
+
     /// Statistics
     total_entries: usize,
 }
@@ -506,7 +513,7 @@ impl CognitiveCodebook {
             names: HashMap::new(),
             total_entries: 0,
         };
-        
+
         codebook.init_nsm_primes();
         codebook.init_roles();
         codebook.init_qualia();
@@ -516,123 +523,133 @@ impl CognitiveCodebook {
         codebook.init_temporal();
         codebook.init_yaml_templates();
         codebook.init_rung_levels();
-        
+
         codebook
     }
-    
+
     // -------------------------------------------------------------------------
     // Initialization
     // -------------------------------------------------------------------------
-    
+
     fn init_nsm_primes(&mut self) {
         let mut idx = 0usize;
-        
+
         // Substantives
         for name in ["I", "YOU", "SOMEONE", "SOMETHING", "PEOPLE", "BODY"] {
             self.add_nsm_prime(NsmCategory::Substantive, name, idx);
             idx += 1;
         }
-        
+
         // Relational
         for name in ["KIND", "PART"] {
             self.add_nsm_prime(NsmCategory::Relational, name, idx);
             idx += 1;
         }
-        
+
         // Determiners
         for name in ["THIS", "THE_SAME", "OTHER", "ELSE", "ANOTHER"] {
             self.add_nsm_prime(NsmCategory::Determiner, name, idx);
             idx += 1;
         }
-        
+
         // Quantifiers
         for name in ["ONE", "TWO", "SOME", "ALL", "MUCH", "MANY", "LITTLE", "FEW"] {
             self.add_nsm_prime(NsmCategory::Quantifier, name, idx);
             idx += 1;
         }
-        
+
         // Evaluators
         for name in ["GOOD", "BAD"] {
             self.add_nsm_prime(NsmCategory::Evaluator, name, idx);
             idx += 1;
         }
-        
+
         // Descriptors
         for name in ["BIG", "SMALL"] {
             self.add_nsm_prime(NsmCategory::Descriptor, name, idx);
             idx += 1;
         }
-        
+
         // Mental predicates
         for name in ["THINK", "KNOW", "WANT", "DONT_WANT", "FEEL", "SEE", "HEAR"] {
             self.add_nsm_prime(NsmCategory::Mental, name, idx);
             idx += 1;
         }
-        
+
         // Speech
         for name in ["SAY", "WORDS", "TRUE"] {
             self.add_nsm_prime(NsmCategory::Speech, name, idx);
             idx += 1;
         }
-        
+
         // Actions
         for name in ["DO", "HAPPEN", "MOVE"] {
             self.add_nsm_prime(NsmCategory::Action, name, idx);
             idx += 1;
         }
-        
+
         // Existence
         for name in ["BE", "THERE_IS", "IS_PART_OF", "MINE"] {
             self.add_nsm_prime(NsmCategory::Existence, name, idx);
             idx += 1;
         }
-        
+
         // Life
         for name in ["LIVE", "DIE"] {
             self.add_nsm_prime(NsmCategory::Life, name, idx);
             idx += 1;
         }
-        
+
         // Time
-        for name in ["WHEN", "TIME", "NOW", "BEFORE", "AFTER", 
-                     "A_LONG_TIME", "A_SHORT_TIME", "FOR_SOME_TIME", "MOMENT"] {
+        for name in [
+            "WHEN",
+            "TIME",
+            "NOW",
+            "BEFORE",
+            "AFTER",
+            "A_LONG_TIME",
+            "A_SHORT_TIME",
+            "FOR_SOME_TIME",
+            "MOMENT",
+        ] {
             self.add_nsm_prime(NsmCategory::Time, name, idx);
             idx += 1;
         }
-        
+
         // Space
-        for name in ["WHERE", "PLACE", "HERE", "ABOVE", "BELOW", 
-                     "FAR", "NEAR", "SIDE", "INSIDE", "TOUCH"] {
+        for name in [
+            "WHERE", "PLACE", "HERE", "ABOVE", "BELOW", "FAR", "NEAR", "SIDE", "INSIDE", "TOUCH",
+        ] {
             self.add_nsm_prime(NsmCategory::Space, name, idx);
             idx += 1;
         }
-        
+
         // Logical
         for name in ["NOT", "MAYBE", "CAN", "BECAUSE", "IF"] {
             self.add_nsm_prime(NsmCategory::Logical, name, idx);
             idx += 1;
         }
-        
+
         // Intensifiers
         for name in ["VERY", "MORE"] {
             self.add_nsm_prime(NsmCategory::Intensifier, name, idx);
             idx += 1;
         }
-        
+
         // Similarity
         for name in ["LIKE", "AS", "WAY"] {
             self.add_nsm_prime(NsmCategory::Similarity, name, idx);
             idx += 1;
         }
     }
-    
+
     fn add_nsm_prime(&mut self, category: NsmCategory, name: &str, global_idx: usize) {
         let fp = Fingerprint::orthogonal(global_idx);
         let hash = fold_to_48(&fp);
         let addr = CognitiveAddress::nsm_prime(category, global_idx as u8, hash);
         self.insert(addr, name.to_string(), fp);
     }
-    
+
     fn init_roles(&mut self) {
         let roles = [
             (ThematicRole::Agent, "R_AGENT"),
@@ -652,7 +669,7 @@ impl CognitiveCodebook {
             (ThematicRole::Extent, "R_EXTENT"),
             (ThematicRole::Attribute, "R_ATTRIBUTE"),
         ];
-        
+
         for (idx, (role, name)) in roles.iter().enumerate() {
             let fp = Fingerprint::orthogonal(100 + idx); // Offset from primes
             let hash = fold_to_48(&fp);
@@ -660,7 +677,7 @@ impl CognitiveCodebook {
             self.insert(addr, name.to_string(), fp);
         }
     }
-    
+
     fn init_qualia(&mut self) {
         let channels = [
             (QualiaChannel::Arousal, "Q_AROUSAL"),
@@ -672,7 +689,7 @@ impl CognitiveCodebook {
             (QualiaChannel::Sociality, "Q_SOCIALITY"),
             (QualiaChannel::Novelty, "Q_NOVELTY"),
         ];
-        
+
         for (idx, (channel, name)) in channels.iter().enumerate() {
             let fp = Fingerprint::orthogonal(200 + idx);
             let hash = fold_to_48(&fp);
@@ -680,23 +697,23 @@ impl CognitiveCodebook {
             self.insert(addr, name.to_string(), fp);
         }
     }
-    
+
     fn init_nars_copulas(&mut self) {
         let copulas = [
-            (NarsCopula::Inheritance, "NARS_INHERIT"),      // -->
-            (NarsCopula::Similarity, "NARS_SIMILAR"),       // <->
-            (NarsCopula::Implication, "NARS_IMPLIES"),      // ==>
-            (NarsCopula::Equivalence, "NARS_EQUIV"),        // <=>
-            (NarsCopula::Instance, "NARS_INSTANCE"),        // {--
-            (NarsCopula::Property, "NARS_PROPERTY"),        // --]
-            (NarsCopula::InstanceProp, "NARS_INST_PROP"),   // {-]
-            (NarsCopula::Conjunction, "NARS_AND"),          // &&
-            (NarsCopula::Disjunction, "NARS_OR"),           // ||
-            (NarsCopula::Negation, "NARS_NOT"),             // --
-            (NarsCopula::Sequential, "NARS_SEQ"),           // &/
-            (NarsCopula::Parallel, "NARS_PAR"),             // &|
+            (NarsCopula::Inheritance, "NARS_INHERIT"),    // -->
+            (NarsCopula::Similarity, "NARS_SIMILAR"),     // <->
+            (NarsCopula::Implication, "NARS_IMPLIES"),    // ==>
+            (NarsCopula::Equivalence, "NARS_EQUIV"),      // <=>
+            (NarsCopula::Instance, "NARS_INSTANCE"),      // {--
+            (NarsCopula::Property, "NARS_PROPERTY"),      // --]
+            (NarsCopula::InstanceProp, "NARS_INST_PROP"), // {-]
+            (NarsCopula::Conjunction, "NARS_AND"),        // &&
+            (NarsCopula::Disjunction, "NARS_OR"),         // ||
+            (NarsCopula::Negation, "NARS_NOT"),           // --
+            (NarsCopula::Sequential, "NARS_SEQ"),         // &/
+            (NarsCopula::Parallel, "NARS_PAR"),           // &|
         ];
-        
+
         for (idx, (copula, name)) in copulas.iter().enumerate() {
             let fp = Fingerprint::orthogonal(300 + idx);
             let hash = fold_to_48(&fp);
@@ -704,7 +721,7 @@ impl CognitiveCodebook {
             self.insert(addr, name.to_string(), fp);
         }
     }
-    
+
     fn init_nars_inference(&mut self) {
         let inferences = [
             (NarsInference::Deduction, "INF_DEDUCTION"),
@@ -718,7 +735,7 @@ impl CognitiveCodebook {
             (NarsInference::Choice, "INF_CHOICE"),
             (NarsInference::Decision, "INF_DECISION"),
         ];
-        
+
         for (idx, (inference, name)) in inferences.iter().enumerate() {
             let fp = Fingerprint::orthogonal(350 + idx);
             let hash = fold_to_48(&fp);
@@ -726,7 +743,7 @@ impl CognitiveCodebook {
             self.insert(addr, name.to_string(), fp);
         }
     }
-    
+
     fn init_causality(&mut self) {
         let causes = [
             (CausalityType::Enables, "CAUSE_ENABLES"),
@@ -738,7 +755,7 @@ impl CognitiveCodebook {
             (CausalityType::Modulates, "CAUSE_MODULATES"),
             (CausalityType::Correlates, "CAUSE_CORRELATES"),
         ];
-        
+
         for (idx, (cause, name)) in causes.iter().enumerate() {
             let fp = Fingerprint::orthogonal(400 + idx);
             let hash = fold_to_48(&fp);
@@ -746,7 +763,7 @@ impl CognitiveCodebook {
             self.insert(addr, name.to_string(), fp);
         }
     }
-    
+
     fn init_temporal(&mut self) {
         let relations = [
             (TemporalRelation::Before, "TIME_BEFORE"),
@@ -766,7 +783,7 @@ impl CognitiveCodebook {
             (TemporalRelation::Always, "TIME_ALWAYS"),
             (TemporalRelation::Never, "TIME_NEVER"),
         ];
-        
+
         for (idx, (relation, name)) in relations.iter().enumerate() {
             let fp = Fingerprint::orthogonal(450 + idx);
             let hash = fold_to_48(&fp);
@@ -774,7 +791,7 @@ impl CognitiveCodebook {
             self.insert(addr, name.to_string(), fp);
         }
     }
-    
+
     fn init_yaml_templates(&mut self) {
         let templates = [
             (YamlTemplate::Greeting, "TPL_GREETING"),
@@ -794,7 +811,7 @@ impl CognitiveCodebook {
             (YamlTemplate::Opinion, "TPL_OPINION"),
             (YamlTemplate::Hypothesis, "TPL_HYPOTHESIS"),
         ];
-        
+
         for (idx, (template, name)) in templates.iter().enumerate() {
             let fp = Fingerprint::orthogonal(500 + idx);
             let hash = fold_to_48(&fp);
@@ -802,7 +819,7 @@ impl CognitiveCodebook {
             self.insert(addr, name.to_string(), fp);
         }
     }
-    
+
     fn init_rung_levels(&mut self) {
         let rungs = [
             (0, "RUNG_0_NOISE"),
@@ -816,7 +833,7 @@ impl CognitiveCodebook {
             (8, "RUNG_8_EPISTEME"),
             (9, "RUNG_9_TRANSCENDENT"),
         ];
-        
+
         for (level, name) in rungs.iter() {
             let fp = Fingerprint::orthogonal(600 + *level as usize);
             let hash = fold_to_48(&fp);
@@ -824,11 +841,11 @@ impl CognitiveCodebook {
             self.insert(addr, name.to_string(), fp);
         }
     }
-    
+
     // -------------------------------------------------------------------------
     // Core Operations
     // -------------------------------------------------------------------------
-    
+
     /// Insert entry into codebook
     fn insert(&mut self, addr: CognitiveAddress, name: String, fp: Fingerprint) {
         let entry = CodebookEntry {
@@ -836,77 +853,87 @@ impl CognitiveCodebook {
             name: name.clone(),
             fingerprint: fp.clone(),
         };
-        
+
         // BTree index
-        self.btree.entry(addr.bucket())
+        self.btree
+            .entry(addr.bucket())
             .or_insert_with(Vec::new)
             .push(entry);
-        
+
         // Hash index
         self.hash_index.insert(addr.hash(), addr);
-        
+
         // Fingerprint storage
         self.fingerprints.insert(addr, fp);
-        
+
         // Name index
         self.names.insert(name, addr);
-        
+
         self.total_entries += 1;
     }
-    
+
     /// Get fingerprint by address
     pub fn get(&self, addr: &CognitiveAddress) -> Option<&Fingerprint> {
         self.fingerprints.get(addr)
     }
-    
+
     /// Get fingerprint by name
     pub fn get_by_name(&self, name: &str) -> Option<&Fingerprint> {
-        self.names.get(name).and_then(|addr| self.fingerprints.get(addr))
+        self.names
+            .get(name)
+            .and_then(|addr| self.fingerprints.get(addr))
     }
-    
+
     /// Get address by name
     pub fn address_of(&self, name: &str) -> Option<CognitiveAddress> {
         self.names.get(name).copied()
     }
-    
+
     /// Get fingerprint by 48-bit hash
     pub fn get_by_hash(&self, hash: u64) -> Option<&Fingerprint> {
-        self.hash_index.get(&hash)
+        self.hash_index
+            .get(&hash)
             .and_then(|addr| self.fingerprints.get(addr))
     }
-    
+
     /// Range query by domain
     pub fn by_domain(&self, domain: CognitiveDomain) -> Vec<&CodebookEntry> {
         let prefix = (domain as u16) << 12;
         let end = prefix + 0x1000;
-        
-        self.btree.range(prefix..end)
+
+        self.btree
+            .range(prefix..end)
             .flat_map(|(_, entries)| entries.iter())
             .collect()
     }
-    
+
     /// Find best matching entry for a fingerprint
     pub fn find_best_match(&self, query: &Fingerprint) -> Option<(&CognitiveAddress, f32)> {
         let mut best: Option<(&CognitiveAddress, f32)> = None;
-        
+
         for (addr, fp) in &self.fingerprints {
             let sim = query.similarity(fp);
             if best.map_or(true, |(_, best_sim)| sim > best_sim) {
                 best = Some((addr, sim));
             }
         }
-        
+
         best
     }
-    
+
     /// Find all matches above threshold
-    pub fn find_matches(&self, query: &Fingerprint, threshold: f32) -> Vec<(&CognitiveAddress, f32)> {
-        self.fingerprints.iter()
+    pub fn find_matches(
+        &self,
+        query: &Fingerprint,
+        threshold: f32,
+    ) -> Vec<(&CognitiveAddress, f32)> {
+        self.fingerprints
+            .iter()
             .map(|(addr, fp)| (addr, query.similarity(fp)))
             .filter(|(_, sim)| *sim >= threshold)
             .collect()
     }
-    
+
     /// Learn new concept
     pub fn learn(&mut self, name: &str, fp: Fingerprint) -> CognitiveAddress {
         let hash = fold_to_48(&fp);
@@ -914,33 +941,32 @@ impl CognitiveCodebook {
         self.insert(addr, name.to_string(), fp);
         addr
     }
-    
+
     /// Clean fingerprint against codebook (noise elimination)
     pub fn clean(&self, fp: &Fingerprint, threshold: f32) -> Fingerprint {
         let matches = self.find_matches(fp, threshold);
-        
+
         if matches.is_empty() {
             return Fingerprint::zero();
         }
-        
+
         // Weighted bundle of matching concepts
-        let components: Vec<(Fingerprint, f32)> = matches.iter()
-            .filter_map(|(addr, sim)| {
-                self.fingerprints.get(addr).map(|f| (f.clone(), *sim))
-            })
+        let components: Vec<(Fingerprint, f32)> = matches
+            .iter()
+            .filter_map(|(addr, sim)| self.fingerprints.get(addr).map(|f| (f.clone(), *sim)))
             .collect();
-        
+
         weighted_bundle(&components)
     }
-    
+
     /// Get statistics
     pub fn stats(&self) -> CodebookStats {
         let mut by_domain = HashMap::new();
-        
+
         for addr in self.fingerprints.keys() {
             *by_domain.entry(addr.domain()).or_insert(0) += 1;
         }
-        
+
         CodebookStats {
             total_entries: self.total_entries,
             by_domain,
@@ -954,7 +980,7 @@ fn weighted_bundle(fps: &[(Fingerprint, f32)]) -> Fingerprint {
     if fps.is_empty() {
         return Fingerprint::zero();
     }
-    
+
     let mut counts = vec![0.0f32; 16384];
     let mut total_weight = 0.0f32;
 
@@ -966,20 +992,20 @@ fn weighted_bundle(fps: &[(Fingerprint, f32)]) -> Fingerprint {
         }
         total_weight += weight;
     }
-    
+
     if total_weight == 0.0 {
         return Fingerprint::zero();
     }
-    
+
     let threshold = total_weight / 2.0;
     let mut result = Fingerprint::zero();
-    
+
     for (i, &count) in counts.iter().enumerate() {
         if count > threshold {
             result.set_bit(i, true);
         }
     }
-    
+
     result
 }
 
@@ -1000,8 +1026,10 @@ impl CodebookStats {
         for (domain, count) in &self.by_domain {
             println!("  {:?}: {}", domain, count);
         }
-        println!("Memory estimate: ~{} KB", 
-            (self.total_entries * (8 + crate::FINGERPRINT_BYTES)) / 1024); // addr + fp
+        println!(
+            "Memory estimate: ~{} KB",
+            (self.total_entries * (8 + crate::FINGERPRINT_BYTES)) / 1024
+        ); // addr + fp
     }
 }
 
@@ -1012,109 +1040,105 @@ impl CodebookStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_cognitive_address() {
         let addr = CognitiveAddress::nsm_prime(NsmCategory::Mental, 3, 0xABCDEF);
-        
+
         assert_eq!(addr.domain(), CognitiveDomain::NsmPrime);
         assert_eq!(addr.subtype(), NsmCategory::Mental as u8);
         assert_eq!(addr.index(), 3);
         assert_eq!(addr.hash(), 0xABCDEF);
-        
+
         println!("Address: {:016X}", addr.0);
         println!("Bucket: {:04X}", addr.bucket());
         println!("Name: {}", addr.name());
     }
-    
+
     #[test]
     fn test_fold_unfold() {
         let original = Fingerprint::orthogonal(42);
         let hash = fold_to_48(&original);
         let expanded = expand_from_48(hash);
-        
+
         // Similarity should be preserved somewhat
         let sim = original.similarity(&expanded);
         println!("Fold/unfold similarity: {:.3}", sim);
         assert!(sim > 0.3); // At least some correlation
     }
-    
+
     #[test]
     fn test_codebook_init() {
         let codebook = CognitiveCodebook::new();
         let stats = codebook.stats();
         stats.print();
-        
+
         // Should have ~120+ built-in concepts
         assert!(stats.total_entries >= 100);
-        
+
         // Check we can find known concepts
         let think = codebook.get_by_name("THINK");
         assert!(think.is_some());
-        
+
         let agent = codebook.get_by_name("R_AGENT");
         assert!(agent.is_some());
-        
+
         let valence = codebook.get_by_name("Q_VALENCE");
         assert!(valence.is_some());
     }
-    
+
     #[test]
     fn test_domain_query() {
         let codebook = CognitiveCodebook::new();
-        
+
         let mental_primes = codebook.by_domain(CognitiveDomain::NsmPrime);
         println!("NSM Primes: {}", mental_primes.len());
-        
+
         for entry in mental_primes.iter().take(10) {
             println!("  {} -> {:?}", entry.name, entry.address.name());
         }
-        
+
         assert!(!mental_primes.is_empty());
     }
-    
+
     #[test]
     fn test_clean() {
         let codebook = CognitiveCodebook::new();
-        
+
         // Create noisy fingerprint
         let think = codebook.get_by_name("THINK").unwrap().clone();
         let know = codebook.get_by_name("KNOW").unwrap().clone();
         let noise = Fingerprint::random();
-        
+
         // Mix with noise
-        let noisy = weighted_bundle(&[
-            (think.clone(), 0.6),
-            (know.clone(), 0.3),
-            (noise, 0.1),
-        ]);
-        
+        let noisy = weighted_bundle(&[(think.clone(), 0.6), (know.clone(), 0.3), (noise, 0.1)]);
+
         // Clean
         let cleaned = codebook.clean(&noisy, 0.2);
-        
+
         // Should be more similar to original than noisy
         let sim_think = cleaned.similarity(&think);
         let sim_know = cleaned.similarity(&know);
-        
+
         println!("Cleaned similarity to THINK: {:.3}", sim_think);
         println!("Cleaned similarity to KNOW: {:.3}", sim_know);
-        
+
         assert!(sim_think > 0.3 || sim_know > 0.3);
     }
-    
+
     #[test]
     fn test_learn() {
         let mut codebook = CognitiveCodebook::new();
-        
+
         let initial_count = codebook.stats().total_entries;
-        
+
         // Learn new concept
         let new_fp = Fingerprint::from_content("consciousness");
         let addr = codebook.learn("CONSCIOUSNESS", new_fp.clone());
-        
+
         assert_eq!(addr.domain(), CognitiveDomain::LearnedConcept);
         assert_eq!(codebook.stats().total_entries, initial_count + 1);
-        
+
         // Can retrieve it
         let retrieved = codebook.get_by_name("CONSCIOUSNESS").unwrap();
         assert_eq!(retrieved.similarity(&new_fp), 1.0);

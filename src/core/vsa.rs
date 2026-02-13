@@ -1,10 +1,10 @@
 //! Vector Symbolic Architecture (VSA) operations.
-//! 
+//!
 //! VSA provides a mathematical framework for representing and manipulating
 //! symbolic information in high-dimensional binary vectors.
 
-use crate::core::Fingerprint;
 use crate::FINGERPRINT_U64;
+use crate::core::Fingerprint;
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -12,29 +12,33 @@ use rayon::prelude::*;
 /// VSA operations trait
 pub trait VsaOps {
     /// Bind two representations (XOR) - creates compound
-    /// 
+    ///
     /// `bind(red, apple)` → "red apple"
     fn bind(&self, other: &Self) -> Self;
-    
+
     /// Unbind to recover component
-    /// 
+    ///
     /// `unbind(red_apple, red)` ≈ apple
     fn unbind(&self, other: &Self) -> Self;
-    
+
     /// Bundle multiple representations (majority vote) - creates prototype
-    /// 
+    ///
     /// `bundle([cat1, cat2, cat3])` → "generic cat"
-    fn bundle(items: &[Self]) -> Self where Self: Sized;
-    
+    fn bundle(items: &[Self]) -> Self
+    where
+        Self: Sized;
+
     /// Permute for sequence encoding
-    /// 
+    ///
     /// `permute(word, 3)` → word at position 3
     fn permute(&self, positions: i32) -> Self;
-    
+
     /// Create sequence from ordered items
-    /// 
+    ///
     /// `sequence([a, b, c])` → a + permute(b, 1) + permute(c, 2)
-    fn sequence(items: &[Self]) -> Self where Self: Sized;
+    fn sequence(items: &[Self]) -> Self
+    where
+        Self: Sized;
 }
 
 impl VsaOps for Fingerprint {
@@ -42,21 +46,21 @@ impl VsaOps for Fingerprint {
     fn bind(&self, other: &Self) -> Self {
         Fingerprint::bind(self, other)
     }
-    
+
     #[inline]
     fn unbind(&self, other: &Self) -> Self {
         Fingerprint::unbind(self, other)
     }
-    
+
     fn bundle(items: &[Self]) -> Self {
         if items.is_empty() {
             return Fingerprint::zero();
         }
-        
+
         if items.len() == 1 {
             return items[0].clone();
         }
-        
+
         // Majority vote for each bit
         let threshold = items.len() / 2;
         let even = items.len() % 2 == 0;
@@ -85,27 +89,27 @@ impl VsaOps for Fingerprint {
                 data[word] |= 1 << bit;
             }
         }
-        
+
         Fingerprint::from_raw(data)
     }
-    
+
     #[inline]
     fn permute(&self, positions: i32) -> Self {
         Fingerprint::permute(self, positions)
     }
-    
+
     fn sequence(items: &[Self]) -> Self {
         if items.is_empty() {
             return Fingerprint::zero();
         }
-        
+
         // Create sequence: sum of permuted items
         let permuted: Vec<Fingerprint> = items
             .iter()
             .enumerate()
             .map(|(i, item)| item.permute(i as i32))
             .collect();
-        
+
         Self::bundle(&permuted)
     }
 }
@@ -118,7 +122,7 @@ pub fn cleanup(
 ) -> Option<Fingerprint> {
     let mut best_idx = 0;
     let mut best_sim = 0.0f32;
-    
+
     for (i, item) in codebook.iter().enumerate() {
         let sim = noisy.similarity(item);
         if sim > best_sim {
@@ -126,7 +130,7 @@ pub fn cleanup(
             best_idx = i;
         }
     }
-    
+
     if best_sim >= threshold {
         Some(codebook[best_idx].clone())
     } else {
@@ -136,11 +140,7 @@ pub fn cleanup(
 
 /// Resonance query - find items above similarity threshold
 #[cfg(feature = "parallel")]
-pub fn resonate(
-    query: &Fingerprint,
-    corpus: &[Fingerprint],
-    threshold: f32,
-) -> Vec<(usize, f32)> {
+pub fn resonate(query: &Fingerprint, corpus: &[Fingerprint], threshold: f32) -> Vec<(usize, f32)> {
     corpus
         .par_iter()
         .enumerate()
@@ -156,11 +156,7 @@ pub fn resonate(
 }
 
 #[cfg(not(feature = "parallel"))]
-pub fn resonate(
-    query: &Fingerprint,
-    corpus: &[Fingerprint],
-    threshold: f32,
-) -> Vec<(usize, f32)> {
+pub fn resonate(query: &Fingerprint, corpus: &[Fingerprint], threshold: f32) -> Vec<(usize, f32)> {
     corpus
         .iter()
         .enumerate()
@@ -176,7 +172,7 @@ pub fn resonate(
 }
 
 /// Analogy completion: A is to B as C is to ?
-/// 
+///
 /// Uses the relation: ? ≈ unbind(bind(A, B), C) = A ⊕ B ⊕ C
 pub fn analogy(
     a: &Fingerprint,
@@ -186,10 +182,10 @@ pub fn analogy(
 ) -> Option<Fingerprint> {
     // Compute the transformation from A to B
     let a_to_b = a.bind(b);
-    
+
     // Apply same transformation to C
     let predicted = a_to_b.bind(c);
-    
+
     // Clean up with codebook
     cleanup(&predicted, codebook, 0.5)
 }
@@ -205,10 +201,7 @@ pub fn analogy(
 /// # Science
 /// - Plate (2003): Holographic Reduced Representations — bind/unbind algebra
 /// - Kanerva (2009): Hyperdimensional Computing — XOR self-inverse property
-pub fn fusion_quality(
-    a: &Fingerprint,
-    b: &Fingerprint,
-) -> (f32, f32) {
+pub fn fusion_quality(a: &Fingerprint, b: &Fingerprint) -> (f32, f32) {
     let fused = a.bind(b);
     let recovered_a = fused.unbind(b);
     let recovered_b = fused.unbind(a);
@@ -241,7 +234,9 @@ pub fn multi_fusion_quality(items: &[Fingerprint]) -> f32 {
     for i in 0..items.len() {
         // key = XOR of all items except items[i]
         // total XOR key = items[i] (because XOR is self-inverse)
-        let key = items.iter().enumerate()
+        let key = items
+            .iter()
+            .enumerate()
             .filter(|(j, _)| *j != i)
             .fold(Fingerprint::zero(), |acc, (_, item)| acc.bind(item));
 
@@ -263,29 +258,29 @@ mod tests {
         let cat2 = Fingerprint::from_content("cat instance 2");
         let cat3 = Fingerprint::from_content("cat instance 3");
         let _dog = Fingerprint::from_content("dog");
-        
+
         let prototype = Fingerprint::bundle(&[cat1.clone(), cat2.clone(), cat3.clone()]);
-        
+
         // Prototype should be similar to all cats
         assert!(prototype.similarity(&cat1) > 0.4);
         assert!(prototype.similarity(&cat2) > 0.4);
         assert!(prototype.similarity(&cat3) > 0.4);
-        
+
         // But less similar to dog (random baseline ~0.5)
         // Note: With random fingerprints, similarity is ~0.5
     }
-    
+
     #[test]
     fn test_sequence_encoding() {
         let word1 = Fingerprint::from_content("the");
         let word2 = Fingerprint::from_content("quick");
         let word3 = Fingerprint::from_content("fox");
-        
+
         let seq = Fingerprint::sequence(&[word1.clone(), word2.clone(), word3.clone()]);
-        
+
         // Sequence should be unique
         assert!(seq.similarity(&word1) < 0.9);
-        
+
         // But we can decode first word
         let _decoded_first = seq.unbind(&Fingerprint::zero().permute(0));
         // (This is a simplified test - real decoding needs iterative cleanup)
@@ -320,7 +315,10 @@ mod tests {
             .collect();
         let max_dist = multi_fusion_quality(&items);
         // XOR multi-bind is exactly recoverable
-        assert_eq!(max_dist, 0.0, "Multi-way bind should be exactly recoverable");
+        assert_eq!(
+            max_dist, 0.0,
+            "Multi-way bind should be exactly recoverable"
+        );
     }
 
     #[test]
@@ -329,7 +327,10 @@ mod tests {
         let a = Fingerprint::from_content("original");
         let b = Fingerprint::from_content("key");
         let roundtrip = a.bind(&b).bind(&b);
-        assert_eq!(a.hamming(&roundtrip), 0,
-            "XOR self-inverse must be EXACT, zero Hamming distance");
+        assert_eq!(
+            a.hamming(&roundtrip),
+            0,
+            "XOR self-inverse must be EXACT, zero Hamming distance"
+        );
     }
 }

@@ -1,3 +1,4 @@
+#![allow(clippy::needless_range_loop, clippy::type_complexity)]
 //! LadybugDB Multi-Protocol Server
 //!
 //! Three transport layers — one BindSpace:
@@ -35,13 +36,13 @@
 use std::collections::HashMap;
 use std::env;
 use std::io::{BufRead, BufReader, Write};
-use std::net::{TcpListener, TcpStream, SocketAddr, UdpSocket};
+use std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
 use arrow_array::{
-    ArrayRef, FixedSizeBinaryArray, Float32Array, RecordBatch,
-    StringArray, UInt32Array, BooleanArray,
+    ArrayRef, BooleanArray, FixedSizeBinaryArray, Float32Array, RecordBatch, StringArray,
+    UInt32Array,
 };
 use arrow_ipc::writer::StreamWriter;
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
@@ -49,8 +50,8 @@ use arrow_schema::{DataType, Field, Schema, SchemaRef};
 use ladybug::core::Fingerprint;
 use ladybug::core::simd::{self, hamming_distance};
 use ladybug::nars::TruthValue;
-use ladybug::storage::service::{CognitiveService, ServiceConfig, CpuFeatures};
-use ladybug::storage::{Addr, BindSpace, CogRedis, RedisResult, FINGERPRINT_WORDS};
+use ladybug::storage::service::{CognitiveService, CpuFeatures, ServiceConfig};
+use ladybug::storage::{Addr, BindSpace, CogRedis, FINGERPRINT_WORDS, RedisResult};
 use ladybug::{FINGERPRINT_BITS, FINGERPRINT_BYTES, VERSION};
 
 // =============================================================================
@@ -86,13 +87,13 @@ const UDP_MAX_RESULT_ADDRS: usize = 95;
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum UdpOp {
-    Ping      = 0,
-    Pong      = 1,
-    Search    = 2,
-    Traverse  = 3,
-    Result    = 4,
-    Edges     = 5,
-    Hydrate   = 6,
+    Ping = 0,
+    Pong = 1,
+    Search = 2,
+    Traverse = 3,
+    Result = 4,
+    Edges = 5,
+    Hydrate = 6,
 }
 
 impl UdpOp {
@@ -111,9 +112,9 @@ impl UdpOp {
 }
 
 /// UDP header flags
-const UDP_FLAG_SIMD_ALIGNED: u16   = 0x0001;
+const UDP_FLAG_SIMD_ALIGNED: u16 = 0x0001;
 const UDP_FLAG_HAS_FINGERPRINT: u16 = 0x0002;
-const UDP_FLAG_HAS_POPCOUNT: u16   = 0x0004;
+const UDP_FLAG_HAS_POPCOUNT: u16 = 0x0004;
 
 /// UDP packet header (222 bytes)
 ///
@@ -151,9 +152,15 @@ struct UdpHeader {
 
 impl UdpHeader {
     fn parse(buf: &[u8]) -> Option<Self> {
-        if buf.len() < UDP_HEADER_SIZE { return None; }
-        if &buf[0..4] != &UDP_MAGIC { return None; }
-        if buf[4] != UDP_VERSION { return None; }
+        if buf.len() < UDP_HEADER_SIZE {
+            return None;
+        }
+        if buf[0..4] != UDP_MAGIC {
+            return None;
+        }
+        if buf[4] != UDP_VERSION {
+            return None;
+        }
 
         let op = UdpOp::from_byte(buf[5])?;
         let flags = u16::from_le_bytes([buf[6], buf[7]]);
@@ -179,9 +186,19 @@ impl UdpHeader {
         }
 
         Some(Self {
-            op, flags, sequence, source_addr, query_addr,
-            max_hops, verb_filter, top_k, max_distance,
-            popcount_hint, result_count, payload_len, result_addrs,
+            op,
+            flags,
+            sequence,
+            source_addr,
+            query_addr,
+            max_hops,
+            verb_filter,
+            top_k,
+            max_distance,
+            popcount_hint,
+            result_count,
+            payload_len,
+            result_addrs,
         })
     }
 
@@ -203,7 +220,12 @@ impl UdpHeader {
         result_buf[30..32].copy_from_slice(&self.payload_len.to_le_bytes());
 
         // Write result addresses
-        for (i, &addr) in self.result_addrs.iter().enumerate().take(UDP_MAX_RESULT_ADDRS) {
+        for (i, &addr) in self
+            .result_addrs
+            .iter()
+            .enumerate()
+            .take(UDP_MAX_RESULT_ADDRS)
+        {
             let off = 32 + i * 2;
             if off + 1 < UDP_HEADER_SIZE {
                 result_buf[off..off + 2].copy_from_slice(&addr.to_le_bytes());
@@ -260,8 +282,7 @@ impl ServerConfig {
             .and_then(|p| p.parse().ok())
             .unwrap_or(default_port);
 
-        let data_dir = env::var("LADYBUG_DATA_DIR")
-            .unwrap_or_else(|_| "./data".to_string());
+        let data_dir = env::var("LADYBUG_DATA_DIR").unwrap_or_else(|_| "./data".to_string());
 
         let cpu = CpuFeatures::detect();
 
@@ -285,16 +306,12 @@ fn detect_environment() -> Environment {
     }
 
     // Claude Code detection
-    if env::var("CLAUDE_CODE").is_ok()
-        || env::var("CLAUDE_SESSION_ID").is_ok()
-    {
+    if env::var("CLAUDE_CODE").is_ok() || env::var("CLAUDE_SESSION_ID").is_ok() {
         return Environment::ClaudeCode;
     }
 
     // Docker detection
-    if std::path::Path::new("/.dockerenv").exists()
-        || env::var("DOCKER_CONTAINER").is_ok()
-    {
+    if std::path::Path::new("/.dockerenv").exists() || env::var("DOCKER_CONTAINER").is_ok() {
         return Environment::Docker;
     }
 
@@ -323,7 +340,11 @@ fn hostname_matches(pattern: &str) -> bool {
 /// Schema for fingerprint responses
 fn fingerprint_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
-        Field::new("fingerprint", DataType::FixedSizeBinary(FINGERPRINT_BYTES as i32), false),
+        Field::new(
+            "fingerprint",
+            DataType::FixedSizeBinary(FINGERPRINT_BYTES as i32),
+            false,
+        ),
         Field::new("popcount", DataType::UInt32, false),
         Field::new("density", DataType::Float32, false),
         Field::new("bits", DataType::UInt32, false),
@@ -382,9 +403,11 @@ fn health_schema() -> SchemaRef {
 
 /// Schema for count responses
 fn count_schema() -> SchemaRef {
-    Arc::new(Schema::new(vec![
-        Field::new("count", DataType::UInt32, false),
-    ]))
+    Arc::new(Schema::new(vec![Field::new(
+        "count",
+        DataType::UInt32,
+        false,
+    )]))
 }
 
 /// Schema for graph edge responses
@@ -416,7 +439,11 @@ fn hydrate_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
         Field::new("address", DataType::UInt32, false),
         Field::new("label", DataType::Utf8, true),
-        Field::new("fingerprint", DataType::FixedSizeBinary(FINGERPRINT_BYTES as i32), false),
+        Field::new(
+            "fingerprint",
+            DataType::FixedSizeBinary(FINGERPRINT_BYTES as i32),
+            false,
+        ),
         Field::new("popcount", DataType::UInt32, false),
     ]))
 }
@@ -464,8 +491,7 @@ impl DbState {
             ..Default::default()
         };
 
-        let service = CognitiveService::new(svc_config)
-            .expect("Failed to create CognitiveService");
+        let service = CognitiveService::new(svc_config).expect("Failed to create CognitiveService");
 
         Self {
             fingerprints: Vec::new(),
@@ -486,8 +512,8 @@ type SharedState = Arc<RwLock<DbState>>;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ResponseFormat {
-    Arrow,  // Default - Arrow IPC
-    Json,   // Legacy fallback only
+    Arrow, // Default - Arrow IPC
+    Json,  // Legacy fallback only
 }
 
 fn parse_accept_header(headers: &HashMap<String, String>) -> ResponseFormat {
@@ -515,7 +541,7 @@ fn handle_connection(stream: &mut TcpStream, state: &SharedState) {
     }
 
     // Parse method and path
-    let parts: Vec<&str> = request_line.trim().split_whitespace().collect();
+    let parts: Vec<&str> = request_line.split_whitespace().collect();
     if parts.len() < 2 {
         let resp = http_arrow_error(400, "bad_request");
         let _ = stream.write_all(&resp);
@@ -560,7 +586,13 @@ fn handle_connection(stream: &mut TcpStream, state: &SharedState) {
     let _ = stream.flush();
 }
 
-fn route(method: &str, path: &str, body: &str, state: &SharedState, format: ResponseFormat) -> Vec<u8> {
+fn route(
+    method: &str,
+    path: &str,
+    body: &str,
+    state: &SharedState,
+    format: ResponseFormat,
+) -> Vec<u8> {
     match (method, path) {
         // Health endpoints - always return appropriate format
         ("GET", "/health") | ("GET", "/healthz") => handle_health(state, format),
@@ -643,7 +675,8 @@ fn handle_health(state: &SharedState, format: ResponseFormat) -> Vec<u8> {
                     Arc::new(UInt32Array::from(vec![uptime])) as ArrayRef,
                     Arc::new(UInt32Array::from(vec![count])) as ArrayRef,
                 ],
-            ).unwrap();
+            )
+            .unwrap();
             http_arrow(200, &batch)
         }
         ResponseFormat::Json => {
@@ -659,13 +692,16 @@ fn handle_health(state: &SharedState, format: ResponseFormat) -> Vec<u8> {
 fn handle_ready(format: ResponseFormat) -> Vec<u8> {
     match format {
         ResponseFormat::Arrow => {
-            let schema = Arc::new(Schema::new(vec![
-                Field::new("status", DataType::Utf8, false),
-            ]));
+            let schema = Arc::new(Schema::new(vec![Field::new(
+                "status",
+                DataType::Utf8,
+                false,
+            )]));
             let batch = RecordBatch::try_new(
                 schema,
                 vec![Arc::new(StringArray::from(vec!["ready"])) as ArrayRef],
-            ).unwrap();
+            )
+            .unwrap();
             http_arrow(200, &batch)
         }
         ResponseFormat::Json => http_json(200, r#"{"status":"ready"}"#),
@@ -693,15 +729,20 @@ fn handle_info(state: &SharedState, format: ResponseFormat) -> Vec<u8> {
                     Arc::new(UInt32Array::from(vec![uptime])) as ArrayRef,
                     Arc::new(UInt32Array::from(vec![count])) as ArrayRef,
                 ],
-            ).unwrap();
+            )
+            .unwrap();
             http_arrow(200, &batch)
         }
         ResponseFormat::Json => {
             let json = format!(
                 r#"{{"version":"{}","fingerprint_bits":{},"fingerprint_bytes":{},"simd":"{}","cpu":{{"avx512":{},"avx2":{},"cores":{}}},"indexed_count":{}}}"#,
-                VERSION, FINGERPRINT_BITS, FINGERPRINT_BYTES,
+                VERSION,
+                FINGERPRINT_BITS,
+                FINGERPRINT_BYTES,
                 simd::simd_level(),
-                db.cpu.has_avx512f, db.cpu.has_avx2, db.cpu.physical_cores,
+                db.cpu.has_avx512f,
+                db.cpu.has_avx2,
+                db.cpu.physical_cores,
                 db.fingerprints.len()
             );
             http_json(200, &json)
@@ -730,14 +771,20 @@ fn handle_simd(format: ResponseFormat) -> Vec<u8> {
                     Arc::new(BooleanArray::from(vec![cpu.has_avx2])) as ArrayRef,
                     Arc::new(UInt32Array::from(vec![cpu.physical_cores as u32])) as ArrayRef,
                 ],
-            ).unwrap();
+            )
+            .unwrap();
             http_arrow(200, &batch)
         }
         ResponseFormat::Json => {
             let json = format!(
                 r#"{{"level":"{}","avx512f":{},"avx512vpopcntdq":{},"avx2":{},"sse42":{},"physical_cores":{},"optimal_batch_size":{}}}"#,
-                simd::simd_level(), cpu.has_avx512f, cpu.has_avx512vpopcntdq,
-                cpu.has_avx2, cpu.has_sse42, cpu.physical_cores, cpu.optimal_batch_size()
+                simd::simd_level(),
+                cpu.has_avx512f,
+                cpu.has_avx512vpopcntdq,
+                cpu.has_avx2,
+                cpu.has_sse42,
+                cpu.physical_cores,
+                cpu.optimal_batch_size()
             );
             http_json(200, &json)
         }
@@ -746,8 +793,8 @@ fn handle_simd(format: ResponseFormat) -> Vec<u8> {
 
 fn handle_fingerprint_create(body: &str, format: ResponseFormat) -> Vec<u8> {
     // Parse JSON input (input is always JSON for backwards compat)
-    let fp = if let Some(content) = extract_json_str(body, "text")
-        .or_else(|| extract_json_str(body, "content"))
+    let fp = if let Some(content) =
+        extract_json_str(body, "text").or_else(|| extract_json_str(body, "content"))
     {
         Fingerprint::from_content(&content)
     } else if let Some(b64) = extract_json_str(body, "bytes") {
@@ -755,7 +802,7 @@ fn handle_fingerprint_create(body: &str, format: ResponseFormat) -> Vec<u8> {
             Ok(bytes) => match Fingerprint::from_bytes(&bytes) {
                 Ok(fp) => fp,
                 Err(e) => return http_error(400, "invalid_fingerprint", &e.to_string(), format),
-            }
+            },
             Err(e) => return http_error(400, "invalid_base64", &e, format),
         }
     } else {
@@ -768,21 +815,26 @@ fn handle_fingerprint_create(body: &str, format: ResponseFormat) -> Vec<u8> {
             let batch = RecordBatch::try_new(
                 schema,
                 vec![
-                    Arc::new(FixedSizeBinaryArray::try_from_iter(
-                        std::iter::once(fp.as_bytes())
-                    ).unwrap()) as ArrayRef,
+                    Arc::new(
+                        FixedSizeBinaryArray::try_from_iter(std::iter::once(fp.as_bytes()))
+                            .unwrap(),
+                    ) as ArrayRef,
                     Arc::new(UInt32Array::from(vec![fp.popcount()])) as ArrayRef,
                     Arc::new(Float32Array::from(vec![fp.density()])) as ArrayRef,
                     Arc::new(UInt32Array::from(vec![FINGERPRINT_BITS as u32])) as ArrayRef,
                 ],
-            ).unwrap();
+            )
+            .unwrap();
             http_arrow(200, &batch)
         }
         ResponseFormat::Json => {
             let b64 = base64_encode(fp.as_bytes());
             let json = format!(
                 r#"{{"fingerprint":"{}","popcount":{},"density":{:.4},"bits":{}}}"#,
-                b64, fp.popcount(), fp.density(), FINGERPRINT_BITS
+                b64,
+                fp.popcount(),
+                fp.density(),
+                FINGERPRINT_BITS
             );
             http_json(200, &json)
         }
@@ -795,7 +847,10 @@ fn handle_fingerprint_batch(body: &str, format: ResponseFormat) -> Vec<u8> {
         return http_error(400, "missing_field", "need contents array", format);
     }
 
-    let fps: Vec<Fingerprint> = contents.iter().map(|c| Fingerprint::from_content(c)).collect();
+    let fps: Vec<Fingerprint> = contents
+        .iter()
+        .map(|c| Fingerprint::from_content(c))
+        .collect();
 
     match format {
         ResponseFormat::Arrow => {
@@ -804,23 +859,41 @@ fn handle_fingerprint_batch(body: &str, format: ResponseFormat) -> Vec<u8> {
             let batch = RecordBatch::try_new(
                 schema,
                 vec![
-                    Arc::new(FixedSizeBinaryArray::try_from_iter(fp_bytes.into_iter()).unwrap()) as ArrayRef,
-                    Arc::new(UInt32Array::from(fps.iter().map(|fp| fp.popcount()).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(Float32Array::from(fps.iter().map(|fp| fp.density()).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(UInt32Array::from(vec![FINGERPRINT_BITS as u32; fps.len()])) as ArrayRef,
+                    Arc::new(FixedSizeBinaryArray::try_from_iter(fp_bytes.into_iter()).unwrap())
+                        as ArrayRef,
+                    Arc::new(UInt32Array::from(
+                        fps.iter().map(|fp| fp.popcount()).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(Float32Array::from(
+                        fps.iter().map(|fp| fp.density()).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(UInt32Array::from(vec![FINGERPRINT_BITS as u32; fps.len()]))
+                        as ArrayRef,
                 ],
-            ).unwrap();
+            )
+            .unwrap();
             http_arrow(200, &batch)
         }
         ResponseFormat::Json => {
-            let results: Vec<String> = fps.iter().zip(contents.iter()).map(|(fp, c)| {
-                let b64 = base64_encode(fp.as_bytes());
-                format!(
-                    r#"{{"content":"{}","fingerprint":"{}","popcount":{},"density":{:.4}}}"#,
-                    c, b64, fp.popcount(), fp.density()
-                )
-            }).collect();
-            let json = format!(r#"{{"fingerprints":[{}],"count":{}}}"#, results.join(","), results.len());
+            let results: Vec<String> = fps
+                .iter()
+                .zip(contents.iter())
+                .map(|(fp, c)| {
+                    let b64 = base64_encode(fp.as_bytes());
+                    format!(
+                        r#"{{"content":"{}","fingerprint":"{}","popcount":{},"density":{:.4}}}"#,
+                        c,
+                        b64,
+                        fp.popcount(),
+                        fp.density()
+                    )
+                })
+                .collect();
+            let json = format!(
+                r#"{{"fingerprints":[{}],"count":{}}}"#,
+                results.join(","),
+                results.len()
+            );
             http_json(200, &json)
         }
     }
@@ -846,7 +919,8 @@ fn handle_hamming(body: &str, format: ResponseFormat) -> Vec<u8> {
                     Arc::new(Float32Array::from(vec![sim])) as ArrayRef,
                     Arc::new(UInt32Array::from(vec![FINGERPRINT_BITS as u32])) as ArrayRef,
                 ],
-            ).unwrap();
+            )
+            .unwrap();
             http_arrow(200, &batch)
         }
         ResponseFormat::Json => {
@@ -877,20 +951,24 @@ fn handle_bind(body: &str, format: ResponseFormat) -> Vec<u8> {
             let batch = RecordBatch::try_new(
                 schema,
                 vec![
-                    Arc::new(FixedSizeBinaryArray::try_from_iter(
-                        std::iter::once(result.as_bytes())
-                    ).unwrap()) as ArrayRef,
+                    Arc::new(
+                        FixedSizeBinaryArray::try_from_iter(std::iter::once(result.as_bytes()))
+                            .unwrap(),
+                    ) as ArrayRef,
                     Arc::new(UInt32Array::from(vec![result.popcount()])) as ArrayRef,
                     Arc::new(Float32Array::from(vec![result.density()])) as ArrayRef,
                     Arc::new(UInt32Array::from(vec![FINGERPRINT_BITS as u32])) as ArrayRef,
                 ],
-            ).unwrap();
+            )
+            .unwrap();
             http_arrow(200, &batch)
         }
         ResponseFormat::Json => {
             let json = format!(
                 r#"{{"result":"{}","popcount":{},"density":{:.4}}}"#,
-                base64_encode(result.as_bytes()), result.popcount(), result.density()
+                base64_encode(result.as_bytes()),
+                result.popcount(),
+                result.density()
             );
             http_json(200, &json)
         }
@@ -921,20 +999,25 @@ fn handle_bundle(body: &str, format: ResponseFormat) -> Vec<u8> {
             let batch = RecordBatch::try_new(
                 schema,
                 vec![
-                    Arc::new(FixedSizeBinaryArray::try_from_iter(
-                        std::iter::once(result.as_bytes())
-                    ).unwrap()) as ArrayRef,
+                    Arc::new(
+                        FixedSizeBinaryArray::try_from_iter(std::iter::once(result.as_bytes()))
+                            .unwrap(),
+                    ) as ArrayRef,
                     Arc::new(UInt32Array::from(vec![result.popcount()])) as ArrayRef,
                     Arc::new(Float32Array::from(vec![result.density()])) as ArrayRef,
                     Arc::new(UInt32Array::from(vec![FINGERPRINT_BITS as u32])) as ArrayRef,
                 ],
-            ).unwrap();
+            )
+            .unwrap();
             http_arrow(200, &batch)
         }
         ResponseFormat::Json => {
             let json = format!(
                 r#"{{"result":"{}","popcount":{},"density":{:.4},"input_count":{}}}"#,
-                base64_encode(result.as_bytes()), result.popcount(), result.density(), fps.len()
+                base64_encode(result.as_bytes()),
+                result.popcount(),
+                result.density(),
+                fps.len()
             );
             http_json(200, &json)
         }
@@ -954,7 +1037,10 @@ fn handle_topk(body: &str, state: &SharedState, format: ResponseFormat) -> Vec<u
         _ => 0.0_f32,
     };
 
-    let mut scored: Vec<(usize, u32, f32)> = db.fingerprints.iter().enumerate()
+    let mut scored: Vec<(usize, u32, f32)> = db
+        .fingerprints
+        .iter()
+        .enumerate()
         .map(|(i, (_, fp, _))| {
             let dist = hamming_distance(&query, fp);
             let base_sim = 1.0 - (dist as f32 / FINGERPRINT_BITS as f32);
@@ -972,16 +1058,37 @@ fn handle_topk(body: &str, state: &SharedState, format: ResponseFormat) -> Vec<u
             let batch = RecordBatch::try_new(
                 schema,
                 vec![
-                    Arc::new(UInt32Array::from(scored.iter().map(|(i, _, _)| *i as u32).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(StringArray::from(scored.iter().map(|(i, _, _)| db.fingerprints[*i].0.as_str()).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(UInt32Array::from(scored.iter().map(|(_, d, _)| *d).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(Float32Array::from(scored.iter().map(|(_, _, s)| *s).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(StringArray::from(scored.iter().map(|(i, _, _)| {
-                        let meta = &db.fingerprints[*i].2;
-                        if meta.is_empty() { None } else { Some(format!("{:?}", meta)) }
-                    }).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(UInt32Array::from(
+                        scored.iter().map(|(i, _, _)| *i as u32).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(StringArray::from(
+                        scored
+                            .iter()
+                            .map(|(i, _, _)| db.fingerprints[*i].0.as_str())
+                            .collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(UInt32Array::from(
+                        scored.iter().map(|(_, d, _)| *d).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(Float32Array::from(
+                        scored.iter().map(|(_, _, s)| *s).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(StringArray::from(
+                        scored
+                            .iter()
+                            .map(|(i, _, _)| {
+                                let meta = &db.fingerprints[*i].2;
+                                if meta.is_empty() {
+                                    None
+                                } else {
+                                    Some(format!("{:?}", meta))
+                                }
+                            })
+                            .collect::<Vec<_>>(),
+                    )) as ArrayRef,
                 ],
-            ).unwrap();
+            )
+            .unwrap();
             http_arrow(200, &batch)
         }
         ResponseFormat::Json => {
@@ -996,8 +1103,13 @@ fn handle_topk(body: &str, state: &SharedState, format: ResponseFormat) -> Vec<u
                 )
             }).collect();
 
-            let json = format!(r#"{{"results":[{}],"count":{},"style":"{}","total_indexed":{}}}"#,
-                results.join(","), results.len(), style, db.fingerprints.len());
+            let json = format!(
+                r#"{{"results":[{}],"count":{},"style":"{}","total_indexed":{}}}"#,
+                results.join(","),
+                results.len(),
+                style,
+                db.fingerprints.len()
+            );
             http_json(200, &json)
         }
     }
@@ -1017,7 +1129,9 @@ fn handle_threshold(body: &str, state: &SharedState, format: ResponseFormat) -> 
         if dist <= max_distance {
             let sim = 1.0 - (dist as f32 / FINGERPRINT_BITS as f32);
             results.push((idx, dist, sim));
-            if results.len() >= limit { break; }
+            if results.len() >= limit {
+                break;
+            }
         }
     }
 
@@ -1027,13 +1141,28 @@ fn handle_threshold(body: &str, state: &SharedState, format: ResponseFormat) -> 
             let batch = RecordBatch::try_new(
                 schema,
                 vec![
-                    Arc::new(UInt32Array::from(results.iter().map(|(i, _, _)| *i as u32).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(StringArray::from(results.iter().map(|(i, _, _)| db.fingerprints[*i].0.as_str()).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(UInt32Array::from(results.iter().map(|(_, d, _)| *d).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(Float32Array::from(results.iter().map(|(_, _, s)| *s).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(UInt32Array::from(
+                        results
+                            .iter()
+                            .map(|(i, _, _)| *i as u32)
+                            .collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(StringArray::from(
+                        results
+                            .iter()
+                            .map(|(i, _, _)| db.fingerprints[*i].0.as_str())
+                            .collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(UInt32Array::from(
+                        results.iter().map(|(_, d, _)| *d).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(Float32Array::from(
+                        results.iter().map(|(_, _, s)| *s).collect::<Vec<_>>(),
+                    )) as ArrayRef,
                     Arc::new(StringArray::from(vec![None::<&str>; results.len()])) as ArrayRef,
                 ],
-            ).unwrap();
+            )
+            .unwrap();
             http_arrow(200, &batch)
         }
         ResponseFormat::Json => {
@@ -1048,8 +1177,13 @@ fn handle_threshold(body: &str, state: &SharedState, format: ResponseFormat) -> 
                 )
             }).collect();
 
-            let json = format!(r#"{{"results":[{}],"count":{},"max_distance":{},"total_indexed":{}}}"#,
-                results_json.join(","), results.len(), max_distance, db.fingerprints.len());
+            let json = format!(
+                r#"{{"results":[{}],"count":{},"max_distance":{},"total_indexed":{}}}"#,
+                results_json.join(","),
+                results.len(),
+                max_distance,
+                db.fingerprints.len()
+            );
             http_json(200, &json)
         }
     }
@@ -1063,10 +1197,17 @@ fn handle_resonate(body: &str, state: &SharedState, format: ResponseFormat) -> V
     let query = Fingerprint::from_content(&content);
     let db = state.read().unwrap();
 
-    let mut scored: Vec<(usize, f32)> = db.fingerprints.iter().enumerate()
+    let mut scored: Vec<(usize, f32)> = db
+        .fingerprints
+        .iter()
+        .enumerate()
         .filter_map(|(i, (_, fp, _))| {
             let sim = 1.0 - (hamming_distance(&query, fp) as f32 / FINGERPRINT_BITS as f32);
-            if sim >= threshold { Some((i, sim)) } else { None }
+            if sim >= threshold {
+                Some((i, sim))
+            } else {
+                None
+            }
         })
         .collect();
 
@@ -1079,30 +1220,51 @@ fn handle_resonate(body: &str, state: &SharedState, format: ResponseFormat) -> V
             let batch = RecordBatch::try_new(
                 schema,
                 vec![
-                    Arc::new(UInt32Array::from(scored.iter().map(|(i, _)| *i as u32).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(StringArray::from(scored.iter().map(|(i, _)| db.fingerprints[*i].0.as_str()).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(UInt32Array::from(
+                        scored.iter().map(|(i, _)| *i as u32).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(StringArray::from(
+                        scored
+                            .iter()
+                            .map(|(i, _)| db.fingerprints[*i].0.as_str())
+                            .collect::<Vec<_>>(),
+                    )) as ArrayRef,
                     Arc::new(UInt32Array::from(vec![0u32; scored.len()])) as ArrayRef, // Distance not computed
-                    Arc::new(Float32Array::from(scored.iter().map(|(_, s)| *s).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(Float32Array::from(
+                        scored.iter().map(|(_, s)| *s).collect::<Vec<_>>(),
+                    )) as ArrayRef,
                     Arc::new(StringArray::from(vec![None::<&str>; scored.len()])) as ArrayRef,
                 ],
-            ).unwrap();
+            )
+            .unwrap();
             http_arrow(200, &batch)
         }
         ResponseFormat::Json => {
-            let results: Vec<String> = scored.iter().map(|&(idx, sim)| {
-                let (id, _, _) = &db.fingerprints[idx];
-                format!(r#"{{"index":{},"id":"{}","similarity":{:.6}}}"#, idx, id, sim)
-            }).collect();
+            let results: Vec<String> = scored
+                .iter()
+                .map(|&(idx, sim)| {
+                    let (id, _, _) = &db.fingerprints[idx];
+                    format!(
+                        r#"{{"index":{},"id":"{}","similarity":{:.6}}}"#,
+                        idx, id, sim
+                    )
+                })
+                .collect();
 
-            let json = format!(r#"{{"results":[{}],"count":{},"content":"{}","threshold":{}}}"#,
-                results.join(","), results.len(), content, threshold);
+            let json = format!(
+                r#"{{"results":[{}],"count":{},"content":"{}","threshold":{}}}"#,
+                results.join(","),
+                results.len(),
+                content,
+                threshold
+            );
             http_json(200, &json)
         }
     }
 }
 
 fn handle_index(body: &str, state: &SharedState, format: ResponseFormat) -> Vec<u8> {
-    let id = extract_json_str(body, "id").unwrap_or_else(|| uuid_v4());
+    let id = extract_json_str(body, "id").unwrap_or_else(uuid_v4);
 
     let fp = if let Some(content) = extract_json_str(body, "content") {
         Fingerprint::from_content(&content)
@@ -1129,12 +1291,17 @@ fn handle_index(body: &str, state: &SharedState, format: ResponseFormat) -> Vec<
                     Arc::new(UInt32Array::from(vec![idx as u32])) as ArrayRef,
                     Arc::new(UInt32Array::from(vec![db.fingerprints.len() as u32])) as ArrayRef,
                 ],
-            ).unwrap();
+            )
+            .unwrap();
             http_arrow(200, &batch)
         }
         ResponseFormat::Json => {
-            let json = format!(r#"{{"success":true,"id":"{}","index":{},"total":{}}}"#,
-                id, idx, db.fingerprints.len());
+            let json = format!(
+                r#"{{"success":true,"id":"{}","index":{},"total":{}}}"#,
+                id,
+                idx,
+                db.fingerprints.len()
+            );
             http_json(200, &json)
         }
     }
@@ -1150,12 +1317,11 @@ fn handle_index_count(state: &SharedState, format: ResponseFormat) -> Vec<u8> {
             let batch = RecordBatch::try_new(
                 schema,
                 vec![Arc::new(UInt32Array::from(vec![count])) as ArrayRef],
-            ).unwrap();
+            )
+            .unwrap();
             http_arrow(200, &batch)
         }
-        ResponseFormat::Json => {
-            http_json(200, &format!(r#"{{"count":{}}}"#, count))
-        }
+        ResponseFormat::Json => http_json(200, &format!(r#"{{"count":{}}}"#, count)),
     }
 }
 
@@ -1176,12 +1342,11 @@ fn handle_index_clear(state: &SharedState, format: ResponseFormat) -> Vec<u8> {
                     Arc::new(BooleanArray::from(vec![true])) as ArrayRef,
                     Arc::new(UInt32Array::from(vec![was])) as ArrayRef,
                 ],
-            ).unwrap();
+            )
+            .unwrap();
             http_arrow(200, &batch)
         }
-        ResponseFormat::Json => {
-            http_json(200, &format!(r#"{{"cleared":true,"was":{}}}"#, was))
-        }
+        ResponseFormat::Json => http_json(200, &format!(r#"{{"cleared":true,"was":{}}}"#, was)),
     }
 }
 
@@ -1199,7 +1364,11 @@ fn handle_nars_revision(body: &str, format: ResponseFormat) -> Vec<u8> {
     nars_binary_op(body, |a, b| a.revision(&b), format)
 }
 
-fn nars_binary_op(body: &str, op: impl Fn(TruthValue, TruthValue) -> TruthValue, format: ResponseFormat) -> Vec<u8> {
+fn nars_binary_op(
+    body: &str,
+    op: impl Fn(TruthValue, TruthValue) -> TruthValue,
+    format: ResponseFormat,
+) -> Vec<u8> {
     let f1 = extract_json_f32(body, "f1").unwrap_or(0.9);
     let c1 = extract_json_f32(body, "c1").unwrap_or(0.9);
     let f2 = extract_json_f32(body, "f2").unwrap_or(0.9);
@@ -1219,13 +1388,16 @@ fn nars_binary_op(body: &str, op: impl Fn(TruthValue, TruthValue) -> TruthValue,
                     Arc::new(Float32Array::from(vec![result.confidence])) as ArrayRef,
                     Arc::new(Float32Array::from(vec![result.expectation()])) as ArrayRef,
                 ],
-            ).unwrap();
+            )
+            .unwrap();
             http_arrow(200, &batch)
         }
         ResponseFormat::Json => {
             let json = format!(
                 r#"{{"frequency":{:.6},"confidence":{:.6},"expectation":{:.6}}}"#,
-                result.frequency, result.confidence, result.expectation()
+                result.frequency,
+                result.confidence,
+                result.expectation()
             );
             http_json(200, &json)
         }
@@ -1250,15 +1422,22 @@ fn handle_sql(body: &str, _state: &SharedState, format: ResponseFormat) -> Vec<u
                 vec![
                     Arc::new(StringArray::from(vec!["acknowledged"])) as ArrayRef,
                     Arc::new(StringArray::from(vec![query.as_str()])) as ArrayRef,
-                    Arc::new(StringArray::from(vec!["Full DataFusion SQL execution available via Flight API"])) as ArrayRef,
+                    Arc::new(StringArray::from(vec![
+                        "Full DataFusion SQL execution available via Flight API",
+                    ])) as ArrayRef,
                 ],
-            ).unwrap();
+            )
+            .unwrap();
             http_arrow(200, &batch)
         }
         ResponseFormat::Json => {
             let json = format!(
                 r#"{{"status":"acknowledged","query":"{}","note":"Full DataFusion SQL execution available via Flight API"}}"#,
-                query.replace('"', "'").chars().take(200).collect::<String>()
+                query
+                    .replace('"', "'")
+                    .chars()
+                    .take(200)
+                    .collect::<String>()
             );
             http_json(200, &json)
         }
@@ -1284,17 +1463,19 @@ fn handle_cypher(body: &str, format: ResponseFormat) -> Vec<u8> {
                         Arc::new(StringArray::from(vec![sql.as_str()])) as ArrayRef,
                         Arc::new(StringArray::from(vec!["transpiled"])) as ArrayRef,
                     ],
-                ).unwrap();
+                )
+                .unwrap();
                 http_arrow(200, &batch)
             }
             ResponseFormat::Json => {
                 let json = format!(
                     r#"{{"cypher":"{}","transpiled_sql":"{}","status":"transpiled"}}"#,
-                    query.replace('"', "'"), sql.replace('"', "'")
+                    query.replace('"', "'"),
+                    sql.replace('"', "'")
                 );
                 http_json(200, &json)
             }
-        }
+        },
         Err(e) => http_error(400, "cypher_parse_error", &e.to_string(), format),
     }
 }
@@ -1356,17 +1537,22 @@ fn handle_lance_create_table(body: &str, format: ResponseFormat) -> Vec<u8> {
                     Arc::new(StringArray::from(vec![name.as_str()])) as ArrayRef,
                     Arc::new(StringArray::from(vec!["created"])) as ArrayRef,
                 ],
-            ).unwrap();
+            )
+            .unwrap();
             http_arrow(200, &batch)
         }
-        ResponseFormat::Json => {
-            http_json(200, &format!(r#"{{"table":"{}","status":"created","note":"In-memory table backed by indexed fingerprints"}}"#, name))
-        }
+        ResponseFormat::Json => http_json(
+            200,
+            &format!(
+                r#"{{"table":"{}","status":"created","note":"In-memory table backed by indexed fingerprints"}}"#,
+                name
+            ),
+        ),
     }
 }
 
 fn handle_lance_add(body: &str, state: &SharedState, format: ResponseFormat) -> Vec<u8> {
-    let id = extract_json_str(body, "id").unwrap_or_else(|| uuid_v4());
+    let id = extract_json_str(body, "id").unwrap_or_else(uuid_v4);
     let text = extract_json_str(body, "text").unwrap_or_default();
 
     let fp = Fingerprint::from_content(&text);
@@ -1388,12 +1574,11 @@ fn handle_lance_add(body: &str, state: &SharedState, format: ResponseFormat) -> 
                     Arc::new(UInt32Array::from(vec![idx as u32])) as ArrayRef,
                     Arc::new(UInt32Array::from(vec![db.fingerprints.len() as u32])) as ArrayRef,
                 ],
-            ).unwrap();
+            )
+            .unwrap();
             http_arrow(200, &batch)
         }
-        ResponseFormat::Json => {
-            http_json(200, &format!(r#"{{"id":"{}","index":{}}}"#, id, idx))
-        }
+        ResponseFormat::Json => http_json(200, &format!(r#"{{"id":"{}","index":{}}}"#, id, idx)),
     }
 }
 
@@ -1404,7 +1589,10 @@ fn handle_lance_search(body: &str, state: &SharedState, format: ResponseFormat) 
     let query = Fingerprint::from_content(&query_text);
     let db = state.read().unwrap();
 
-    let mut scored: Vec<(usize, u32, f32)> = db.fingerprints.iter().enumerate()
+    let mut scored: Vec<(usize, u32, f32)> = db
+        .fingerprints
+        .iter()
+        .enumerate()
         .map(|(i, (_, fp, _))| {
             let dist = hamming_distance(&query, fp);
             let sim = 1.0 - (dist as f32 / FINGERPRINT_BITS as f32);
@@ -1421,24 +1609,47 @@ fn handle_lance_search(body: &str, state: &SharedState, format: ResponseFormat) 
             let batch = RecordBatch::try_new(
                 schema,
                 vec![
-                    Arc::new(UInt32Array::from(scored.iter().map(|(i, _, _)| *i as u32).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(StringArray::from(scored.iter().map(|(i, _, _)| db.fingerprints[*i].0.as_str()).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(UInt32Array::from(scored.iter().map(|(_, d, _)| *d).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(Float32Array::from(scored.iter().map(|(_, _, s)| *s).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(StringArray::from(scored.iter().map(|(i, _, _)| {
-                        db.fingerprints[*i].2.get("text").map(|s| s.as_str())
-                    }).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(UInt32Array::from(
+                        scored.iter().map(|(i, _, _)| *i as u32).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(StringArray::from(
+                        scored
+                            .iter()
+                            .map(|(i, _, _)| db.fingerprints[*i].0.as_str())
+                            .collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(UInt32Array::from(
+                        scored.iter().map(|(_, d, _)| *d).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(Float32Array::from(
+                        scored.iter().map(|(_, _, s)| *s).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(StringArray::from(
+                        scored
+                            .iter()
+                            .map(|(i, _, _)| db.fingerprints[*i].2.get("text").map(|s| s.as_str()))
+                            .collect::<Vec<_>>(),
+                    )) as ArrayRef,
                 ],
-            ).unwrap();
+            )
+            .unwrap();
             http_arrow(200, &batch)
         }
         ResponseFormat::Json => {
-            let results: Vec<String> = scored.iter().map(|&(idx, dist, sim)| {
-                let (id, _, meta) = &db.fingerprints[idx];
-                let text = meta.get("text").cloned().unwrap_or_default();
-                format!(r#"{{"id":"{}","_distance":{},"_similarity":{:.6},"text":"{}"}}"#,
-                    id, dist, sim, text.replace('"', "'"))
-            }).collect();
+            let results: Vec<String> = scored
+                .iter()
+                .map(|&(idx, dist, sim)| {
+                    let (id, _, meta) = &db.fingerprints[idx];
+                    let text = meta.get("text").cloned().unwrap_or_default();
+                    format!(
+                        r#"{{"id":"{}","_distance":{},"_similarity":{:.6},"text":"{}"}}"#,
+                        id,
+                        dist,
+                        sim,
+                        text.replace('"', "'")
+                    )
+                })
+                .collect();
             http_json(200, &format!(r#"[{}]"#, results.join(",")))
         }
     }
@@ -1484,16 +1695,23 @@ fn handle_graph_traverse(body: &str, state: &SharedState, format: ResponseFormat
         for &addr in &frontier {
             let edges: Vec<_> = bs.edges_out(addr).collect();
             for edge in edges {
-                if visited.contains(&edge.to.0) { continue; }
+                if visited.contains(&edge.to.0) {
+                    continue;
+                }
                 visited.insert(edge.to.0);
 
                 // If verb filter set, skip non-matching edges
-                if let Some(vf) = verb_raw {
-                    if edge.verb.0 != vf { continue; }
+                if let Some(vf) = verb_raw
+                    && edge.verb.0 != vf
+                {
+                    continue;
                 }
 
                 let label = addr_label(bs, edge.to);
-                let pc = bs.read(edge.to).map(|n| fp_popcount(&n.fingerprint)).unwrap_or(0);
+                let pc = bs
+                    .read(edge.to)
+                    .map(|n| fp_popcount(&n.fingerprint))
+                    .unwrap_or(0);
 
                 // Distance from source (Hamming) if source has fingerprint
                 let dist = source_fp.and_then(|sfp| {
@@ -1509,12 +1727,18 @@ fn handle_graph_traverse(body: &str, state: &SharedState, format: ResponseFormat
                 results.push(((hop + 1) as u32, edge.to.0, label, pc, dist));
                 next_frontier.push(edge.to);
 
-                if results.len() >= limit { break; }
+                if results.len() >= limit {
+                    break;
+                }
             }
-            if results.len() >= limit { break; }
+            if results.len() >= limit {
+                break;
+            }
         }
         frontier = next_frontier;
-        if frontier.is_empty() || results.len() >= limit { break; }
+        if frontier.is_empty() || results.len() >= limit {
+            break;
+        }
     }
 
     match format {
@@ -1523,13 +1747,24 @@ fn handle_graph_traverse(body: &str, state: &SharedState, format: ResponseFormat
             let batch = RecordBatch::try_new(
                 schema,
                 vec![
-                    Arc::new(UInt32Array::from(results.iter().map(|r| r.0).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(UInt32Array::from(results.iter().map(|r| r.1 as u32).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(StringArray::from(results.iter().map(|r| r.2.as_deref()).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(UInt32Array::from(results.iter().map(|r| r.3).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(UInt32Array::from(results.iter().map(|r| r.4.unwrap_or(0)).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(UInt32Array::from(
+                        results.iter().map(|r| r.0).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(UInt32Array::from(
+                        results.iter().map(|r| r.1 as u32).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(StringArray::from(
+                        results.iter().map(|r| r.2.as_deref()).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(UInt32Array::from(
+                        results.iter().map(|r| r.3).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(UInt32Array::from(
+                        results.iter().map(|r| r.4.unwrap_or(0)).collect::<Vec<_>>(),
+                    )) as ArrayRef,
                 ],
-            ).unwrap();
+            )
+            .unwrap();
             http_arrow(200, &batch)
         }
         ResponseFormat::Json => {
@@ -1542,10 +1777,16 @@ fn handle_graph_traverse(body: &str, state: &SharedState, format: ResponseFormat
                     dist.map(|d| d.to_string()).unwrap_or("null".to_string()),
                 )
             }).collect();
-            http_json(200, &format!(
-                r#"{{"source":"0x{:04X}","max_hops":{},"count":{},"results":[{}]}}"#,
-                source_raw, max_hops, results.len(), items.join(",")
-            ))
+            http_json(
+                200,
+                &format!(
+                    r#"{{"source":"0x{:04X}","max_hops":{},"count":{},"results":[{}]}}"#,
+                    source_raw,
+                    max_hops,
+                    results.len(),
+                    items.join(",")
+                ),
+            )
         }
     }
 }
@@ -1562,22 +1803,36 @@ fn handle_graph_edges(body: &str, state: &SharedState, format: ResponseFormat) -
     let bs = db.cog_redis.bind_space();
 
     // Collect edges
-    let mut edges: Vec<(u16, u16, u16, Option<String>, Option<String>, Option<String>, f32)> = Vec::new();
+    let mut edges: Vec<(
+        u16,
+        u16,
+        u16,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        f32,
+    )> = Vec::new();
 
     if let Some(src) = source_raw {
         // Edges from specific source
         for edge in bs.edges_out(Addr(src)) {
-            if let Some(vf) = verb_raw {
-                if edge.verb.0 != vf { continue; }
+            if let Some(vf) = verb_raw
+                && edge.verb.0 != vf
+            {
+                continue;
             }
             edges.push((
-                edge.from.0, edge.to.0, edge.verb.0,
+                edge.from.0,
+                edge.to.0,
+                edge.verb.0,
                 addr_label(bs, edge.from),
                 addr_label(bs, edge.to),
                 addr_label(bs, edge.verb),
                 edge.weight,
             ));
-            if edges.len() >= limit { break; }
+            if edges.len() >= limit {
+                break;
+            }
         }
     } else {
         // Scan all node addresses (0x80..0xFF prefixes)
@@ -1585,21 +1840,31 @@ fn handle_graph_edges(body: &str, state: &SharedState, format: ResponseFormat) -
             for slot in 0..=255u8 {
                 let addr = Addr::new(prefix, slot);
                 for edge in bs.edges_out(addr) {
-                    if let Some(vf) = verb_raw {
-                        if edge.verb.0 != vf { continue; }
+                    if let Some(vf) = verb_raw
+                        && edge.verb.0 != vf
+                    {
+                        continue;
                     }
                     edges.push((
-                        edge.from.0, edge.to.0, edge.verb.0,
+                        edge.from.0,
+                        edge.to.0,
+                        edge.verb.0,
                         addr_label(bs, edge.from),
                         addr_label(bs, edge.to),
                         addr_label(bs, edge.verb),
                         edge.weight,
                     ));
-                    if edges.len() >= limit { break; }
+                    if edges.len() >= limit {
+                        break;
+                    }
                 }
-                if edges.len() >= limit { break; }
+                if edges.len() >= limit {
+                    break;
+                }
             }
-            if edges.len() >= limit { break; }
+            if edges.len() >= limit {
+                break;
+            }
         }
     }
 
@@ -1609,15 +1874,30 @@ fn handle_graph_edges(body: &str, state: &SharedState, format: ResponseFormat) -
             let batch = RecordBatch::try_new(
                 schema,
                 vec![
-                    Arc::new(UInt32Array::from(edges.iter().map(|e| e.0 as u32).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(UInt32Array::from(edges.iter().map(|e| e.1 as u32).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(UInt32Array::from(edges.iter().map(|e| e.2 as u32).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(StringArray::from(edges.iter().map(|e| e.3.as_deref()).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(StringArray::from(edges.iter().map(|e| e.4.as_deref()).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(StringArray::from(edges.iter().map(|e| e.5.as_deref()).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(Float32Array::from(edges.iter().map(|e| e.6).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(UInt32Array::from(
+                        edges.iter().map(|e| e.0 as u32).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(UInt32Array::from(
+                        edges.iter().map(|e| e.1 as u32).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(UInt32Array::from(
+                        edges.iter().map(|e| e.2 as u32).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(StringArray::from(
+                        edges.iter().map(|e| e.3.as_deref()).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(StringArray::from(
+                        edges.iter().map(|e| e.4.as_deref()).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(StringArray::from(
+                        edges.iter().map(|e| e.5.as_deref()).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(Float32Array::from(
+                        edges.iter().map(|e| e.6).collect::<Vec<_>>(),
+                    )) as ArrayRef,
                 ],
-            ).unwrap();
+            )
+            .unwrap();
             http_arrow(200, &batch)
         }
         ResponseFormat::Json => {
@@ -1631,7 +1911,14 @@ fn handle_graph_edges(body: &str, state: &SharedState, format: ResponseFormat) -
                     w,
                 )
             }).collect();
-            http_json(200, &format!(r#"{{"count":{},"edges":[{}]}}"#, edges.len(), items.join(",")))
+            http_json(
+                200,
+                &format!(
+                    r#"{{"count":{},"edges":[{}]}}"#,
+                    edges.len(),
+                    items.join(",")
+                ),
+            )
         }
     }
 }
@@ -1654,16 +1941,34 @@ fn handle_graph_neighbors(body: &str, state: &SharedState, format: ResponseForma
     if direction == "out" || direction == "both" {
         for edge in bs.edges_out(addr) {
             if seen.insert(edge.to.0) {
-                let pc = bs.read(edge.to).map(|n| fp_popcount(&n.fingerprint)).unwrap_or(0);
-                neighbors.push((edge.to.0, addr_label(bs, edge.to), pc, edge.verb.0, edge.weight));
+                let pc = bs
+                    .read(edge.to)
+                    .map(|n| fp_popcount(&n.fingerprint))
+                    .unwrap_or(0);
+                neighbors.push((
+                    edge.to.0,
+                    addr_label(bs, edge.to),
+                    pc,
+                    edge.verb.0,
+                    edge.weight,
+                ));
             }
         }
     }
     if direction == "in" || direction == "both" {
         for edge in bs.edges_in(addr) {
             if seen.insert(edge.from.0) {
-                let pc = bs.read(edge.from).map(|n| fp_popcount(&n.fingerprint)).unwrap_or(0);
-                neighbors.push((edge.from.0, addr_label(bs, edge.from), pc, edge.verb.0, edge.weight));
+                let pc = bs
+                    .read(edge.from)
+                    .map(|n| fp_popcount(&n.fingerprint))
+                    .unwrap_or(0);
+                neighbors.push((
+                    edge.from.0,
+                    addr_label(bs, edge.from),
+                    pc,
+                    edge.verb.0,
+                    edge.weight,
+                ));
             }
         }
     }
@@ -1680,13 +1985,24 @@ fn handle_graph_neighbors(body: &str, state: &SharedState, format: ResponseForma
             let batch = RecordBatch::try_new(
                 schema,
                 vec![
-                    Arc::new(UInt32Array::from(neighbors.iter().map(|n| n.0 as u32).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(StringArray::from(neighbors.iter().map(|n| n.1.as_deref()).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(UInt32Array::from(neighbors.iter().map(|n| n.2).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(UInt32Array::from(neighbors.iter().map(|n| n.3 as u32).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(Float32Array::from(neighbors.iter().map(|n| n.4).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(UInt32Array::from(
+                        neighbors.iter().map(|n| n.0 as u32).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(StringArray::from(
+                        neighbors.iter().map(|n| n.1.as_deref()).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(UInt32Array::from(
+                        neighbors.iter().map(|n| n.2).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(UInt32Array::from(
+                        neighbors.iter().map(|n| n.3 as u32).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(Float32Array::from(
+                        neighbors.iter().map(|n| n.4).collect::<Vec<_>>(),
+                    )) as ArrayRef,
                 ],
-            ).unwrap();
+            )
+            .unwrap();
             http_arrow(200, &batch)
         }
         ResponseFormat::Json => {
@@ -1698,10 +2014,16 @@ fn handle_graph_neighbors(body: &str, state: &SharedState, format: ResponseForma
                     pc, v, w,
                 )
             }).collect();
-            http_json(200, &format!(
-                r#"{{"address":"0x{:04X}","direction":"{}","count":{},"neighbors":[{}]}}"#,
-                addr_raw, direction, neighbors.len(), items.join(",")
-            ))
+            http_json(
+                200,
+                &format!(
+                    r#"{{"address":"0x{:04X}","direction":"{}","count":{},"neighbors":[{}]}}"#,
+                    addr_raw,
+                    direction,
+                    neighbors.len(),
+                    items.join(",")
+                ),
+            )
         }
     }
 }
@@ -1719,7 +2041,9 @@ fn handle_graph_hydrate(body: &str, state: &SharedState, format: ResponseFormat)
     } else {
         extract_json_str_array(body, "addresses")
             .iter()
-            .filter_map(|s| u16::from_str_radix(s.trim_start_matches("0x").trim_start_matches("0X"), 16).ok())
+            .filter_map(|s| {
+                u16::from_str_radix(s.trim_start_matches("0x").trim_start_matches("0X"), 16).ok()
+            })
             .collect()
     };
 
@@ -1754,25 +2078,47 @@ fn handle_graph_hydrate(body: &str, state: &SharedState, format: ResponseFormat)
             let batch = RecordBatch::try_new(
                 schema,
                 vec![
-                    Arc::new(UInt32Array::from(results.iter().map(|r| r.0 as u32).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(StringArray::from(results.iter().map(|r| r.1.as_deref()).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(FixedSizeBinaryArray::try_from_iter(fp_refs.into_iter()).unwrap()) as ArrayRef,
-                    Arc::new(UInt32Array::from(results.iter().map(|r| r.3).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(UInt32Array::from(
+                        results.iter().map(|r| r.0 as u32).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(StringArray::from(
+                        results.iter().map(|r| r.1.as_deref()).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(FixedSizeBinaryArray::try_from_iter(fp_refs.into_iter()).unwrap())
+                        as ArrayRef,
+                    Arc::new(UInt32Array::from(
+                        results.iter().map(|r| r.3).collect::<Vec<_>>(),
+                    )) as ArrayRef,
                 ],
-            ).unwrap();
+            )
+            .unwrap();
             http_arrow(200, &batch)
         }
         ResponseFormat::Json => {
-            let items: Vec<String> = results.iter().map(|(addr, label, fp_bytes, pc)| {
-                let b64 = base64_encode(fp_bytes);
-                format!(
-                    r#"{{"address":"0x{:04X}","label":{},"fingerprint":"{}","popcount":{}}}"#,
-                    addr,
-                    label.as_ref().map(|l| format!(r#""{}""#, l)).unwrap_or("null".to_string()),
-                    b64, pc,
-                )
-            }).collect();
-            http_json(200, &format!(r#"{{"count":{},"results":[{}]}}"#, results.len(), items.join(",")))
+            let items: Vec<String> = results
+                .iter()
+                .map(|(addr, label, fp_bytes, pc)| {
+                    let b64 = base64_encode(fp_bytes);
+                    format!(
+                        r#"{{"address":"0x{:04X}","label":{},"fingerprint":"{}","popcount":{}}}"#,
+                        addr,
+                        label
+                            .as_ref()
+                            .map(|l| format!(r#""{}""#, l))
+                            .unwrap_or("null".to_string()),
+                        b64,
+                        pc,
+                    )
+                })
+                .collect();
+            http_json(
+                200,
+                &format!(
+                    r#"{{"count":{},"results":[{}]}}"#,
+                    results.len(),
+                    items.join(",")
+                ),
+            )
         }
     }
 }
@@ -1793,8 +2139,14 @@ fn handle_graph_search(body: &str, state: &SharedState, format: ResponseFormat) 
             let offset = i * 8;
             if offset + 8 <= bytes.len() {
                 w[i] = u64::from_le_bytes([
-                    bytes[offset], bytes[offset+1], bytes[offset+2], bytes[offset+3],
-                    bytes[offset+4], bytes[offset+5], bytes[offset+6], bytes[offset+7],
+                    bytes[offset],
+                    bytes[offset + 1],
+                    bytes[offset + 2],
+                    bytes[offset + 3],
+                    bytes[offset + 4],
+                    bytes[offset + 5],
+                    bytes[offset + 6],
+                    bytes[offset + 7],
                 ]);
             }
         }
@@ -1818,7 +2170,9 @@ fn handle_graph_search(body: &str, state: &SharedState, format: ResponseFormat) 
 
                 // Stage 1: popcount triangle inequality pre-filter
                 let pc_diff = (query_pc as i64 - node_pc as i64).unsigned_abs() as u32;
-                if pc_diff > pc_tolerance { continue; }
+                if pc_diff > pc_tolerance {
+                    continue;
+                }
 
                 // Stage 2: full Hamming distance
                 let mut dist = 0u32;
@@ -1826,8 +2180,10 @@ fn handle_graph_search(body: &str, state: &SharedState, format: ResponseFormat) 
                     dist += (query_words[i] ^ node.fingerprint[i]).count_ones();
                 }
 
-                if let Some(max_d) = max_distance {
-                    if dist > max_d { continue; }
+                if let Some(max_d) = max_distance
+                    && dist > max_d
+                {
+                    continue;
                 }
 
                 scored.push((addr.0, dist, node.label.clone()));
@@ -1850,27 +2206,52 @@ fn handle_graph_search(body: &str, state: &SharedState, format: ResponseFormat) 
             let batch = RecordBatch::try_new(
                 schema,
                 vec![
-                    Arc::new(UInt32Array::from(scored.iter().map(|r| r.0 as u32).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(UInt32Array::from(scored.iter().map(|r| r.1).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(Float32Array::from(scored.iter().map(|r| 1.0 - (r.1 as f32 / FINGERPRINT_BITS as f32)).collect::<Vec<_>>())) as ArrayRef,
-                    Arc::new(StringArray::from(scored.iter().map(|r| r.2.as_deref()).collect::<Vec<_>>())) as ArrayRef,
+                    Arc::new(UInt32Array::from(
+                        scored.iter().map(|r| r.0 as u32).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(UInt32Array::from(
+                        scored.iter().map(|r| r.1).collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(Float32Array::from(
+                        scored
+                            .iter()
+                            .map(|r| 1.0 - (r.1 as f32 / FINGERPRINT_BITS as f32))
+                            .collect::<Vec<_>>(),
+                    )) as ArrayRef,
+                    Arc::new(StringArray::from(
+                        scored.iter().map(|r| r.2.as_deref()).collect::<Vec<_>>(),
+                    )) as ArrayRef,
                 ],
-            ).unwrap();
+            )
+            .unwrap();
             http_arrow(200, &batch)
         }
         ResponseFormat::Json => {
-            let items: Vec<String> = scored.iter().map(|(addr, dist, label)| {
-                let sim = 1.0 - (*dist as f32 / FINGERPRINT_BITS as f32);
-                format!(
-                    r#"{{"address":"0x{:04X}","distance":{},"similarity":{:.6},"label":{}}}"#,
-                    addr, dist, sim,
-                    label.as_ref().map(|l| format!(r#""{}""#, l)).unwrap_or("null".to_string()),
-                )
-            }).collect();
-            http_json(200, &format!(
-                r#"{{"query_popcount":{},"count":{},"results":[{}]}}"#,
-                query_pc, scored.len(), items.join(",")
-            ))
+            let items: Vec<String> = scored
+                .iter()
+                .map(|(addr, dist, label)| {
+                    let sim = 1.0 - (*dist as f32 / FINGERPRINT_BITS as f32);
+                    format!(
+                        r#"{{"address":"0x{:04X}","distance":{},"similarity":{:.6},"label":{}}}"#,
+                        addr,
+                        dist,
+                        sim,
+                        label
+                            .as_ref()
+                            .map(|l| format!(r#""{}""#, l))
+                            .unwrap_or("null".to_string()),
+                    )
+                })
+                .collect();
+            http_json(
+                200,
+                &format!(
+                    r#"{{"query_popcount":{},"count":{},"results":[{}]}}"#,
+                    query_pc,
+                    scored.len(),
+                    items.join(",")
+                ),
+            )
         }
     }
 }
@@ -1881,7 +2262,9 @@ fn handle_graph_search(body: &str, state: &SharedState, format: ResponseFormat) 
 
 /// Handle a single UDP datagram. Returns response bytes to send back.
 fn handle_udp_packet(buf: &[u8], len: usize, state: &SharedState) -> Option<Vec<u8>> {
-    if len < UDP_HEADER_SIZE { return None; }
+    if len < UDP_HEADER_SIZE {
+        return None;
+    }
 
     let header = UdpHeader::parse(buf)?;
 
@@ -1893,10 +2276,18 @@ fn handle_udp_packet(buf: &[u8], len: usize, state: &SharedState) -> Option<Vec<
                 op: UdpOp::Pong,
                 sequence: header.sequence,
                 ..UdpHeader {
-                    op: UdpOp::Pong, flags: 0, sequence: header.sequence,
-                    source_addr: 0, query_addr: 0, max_hops: 0,
-                    verb_filter: 0, top_k: 0, max_distance: 0,
-                    popcount_hint: 0, result_count: 0, payload_len: 0,
+                    op: UdpOp::Pong,
+                    flags: 0,
+                    sequence: header.sequence,
+                    source_addr: 0,
+                    query_addr: 0,
+                    max_hops: 0,
+                    verb_filter: 0,
+                    top_k: 0,
+                    max_distance: 0,
+                    popcount_hint: 0,
+                    result_count: 0,
+                    payload_len: 0,
                     result_addrs: Vec::new(),
                 }
             };
@@ -1906,21 +2297,37 @@ fn handle_udp_packet(buf: &[u8], len: usize, state: &SharedState) -> Option<Vec<
 
         UdpOp::Search => {
             // Extract fingerprint from payload (after header)
-            if len < UDP_HEADER_SIZE + UDP_FP_RAW { return None; }
+            if len < UDP_HEADER_SIZE + UDP_FP_RAW {
+                return None;
+            }
 
             let fp_payload = &buf[UDP_HEADER_SIZE..UDP_HEADER_SIZE + UDP_FP_RAW];
             let mut query_words = [0u64; FINGERPRINT_WORDS];
             for i in 0..FINGERPRINT_WORDS {
                 let off = i * 8;
                 query_words[i] = u64::from_le_bytes([
-                    fp_payload[off], fp_payload[off+1], fp_payload[off+2], fp_payload[off+3],
-                    fp_payload[off+4], fp_payload[off+5], fp_payload[off+6], fp_payload[off+7],
+                    fp_payload[off],
+                    fp_payload[off + 1],
+                    fp_payload[off + 2],
+                    fp_payload[off + 3],
+                    fp_payload[off + 4],
+                    fp_payload[off + 5],
+                    fp_payload[off + 6],
+                    fp_payload[off + 7],
                 ]);
             }
 
             let query_pc = fp_popcount(&query_words);
-            let max_dist = if header.max_distance > 0 { header.max_distance } else { 2000 };
-            let top_k = if header.top_k > 0 { header.top_k as usize } else { 10 };
+            let max_dist = if header.max_distance > 0 {
+                header.max_distance
+            } else {
+                2000
+            };
+            let top_k = if header.top_k > 0 {
+                header.top_k as usize
+            } else {
+                10
+            };
 
             let db = state.read().unwrap();
             let bs = db.cog_redis.bind_space();
@@ -1933,7 +2340,9 @@ fn handle_udp_packet(buf: &[u8], len: usize, state: &SharedState) -> Option<Vec<
                     if let Some(node) = bs.read(addr) {
                         let node_pc = fp_popcount(&node.fingerprint);
                         let pc_diff = (query_pc as i64 - node_pc as i64).unsigned_abs() as u32;
-                        if pc_diff > max_dist { continue; }
+                        if pc_diff > max_dist {
+                            continue;
+                        }
 
                         let mut dist = 0u32;
                         for i in 0..FINGERPRINT_WORDS {
@@ -1972,12 +2381,20 @@ fn handle_udp_packet(buf: &[u8], len: usize, state: &SharedState) -> Option<Vec<
 
         UdpOp::Traverse => {
             let source = Addr(header.source_addr);
-            let max_hops = if header.max_hops > 0 { header.max_hops as usize } else { 3 };
+            let max_hops = if header.max_hops > 0 {
+                header.max_hops as usize
+            } else {
+                3
+            };
 
             let db = state.read().unwrap();
             let bs = db.cog_redis.bind_space();
 
-            let verb_filter = if header.verb_filter != 0 { Some(header.verb_filter) } else { None };
+            let verb_filter = if header.verb_filter != 0 {
+                Some(header.verb_filter)
+            } else {
+                None
+            };
 
             // BFS
             let mut found: Vec<u16> = Vec::new();
@@ -1989,19 +2406,29 @@ fn handle_udp_packet(buf: &[u8], len: usize, state: &SharedState) -> Option<Vec<
                 let mut next = Vec::new();
                 for &addr in &frontier {
                     for edge in bs.edges_out(addr) {
-                        if visited.contains(&edge.to.0) { continue; }
+                        if visited.contains(&edge.to.0) {
+                            continue;
+                        }
                         visited.insert(edge.to.0);
-                        if let Some(vf) = verb_filter {
-                            if edge.verb.0 != vf { continue; }
+                        if let Some(vf) = verb_filter
+                            && edge.verb.0 != vf
+                        {
+                            continue;
                         }
                         found.push(edge.to.0);
                         next.push(edge.to);
-                        if found.len() >= UDP_MAX_RESULT_ADDRS { break; }
+                        if found.len() >= UDP_MAX_RESULT_ADDRS {
+                            break;
+                        }
                     }
-                    if found.len() >= UDP_MAX_RESULT_ADDRS { break; }
+                    if found.len() >= UDP_MAX_RESULT_ADDRS {
+                        break;
+                    }
                 }
                 frontier = next;
-                if frontier.is_empty() || found.len() >= UDP_MAX_RESULT_ADDRS { break; }
+                if frontier.is_empty() || found.len() >= UDP_MAX_RESULT_ADDRS {
+                    break;
+                }
             }
 
             let mut resp = vec![0u8; UDP_HEADER_SIZE];
@@ -2095,7 +2522,9 @@ fn handle_udp_packet(buf: &[u8], len: usize, state: &SharedState) -> Option<Vec<
                     continue;
                 }
                 targets.push(edge.to.0);
-                if targets.len() >= UDP_MAX_RESULT_ADDRS { break; }
+                if targets.len() >= UDP_MAX_RESULT_ADDRS {
+                    break;
+                }
             }
 
             let mut resp = vec![0u8; UDP_HEADER_SIZE];
@@ -2138,8 +2567,10 @@ fn spawn_udp_listener(host: &str, port: u16, state: SharedState) {
         };
 
         println!("UDP bitpacked Hamming listener on udp://{}", addr);
-        println!("  Header: {} bytes | Payload: {} bytes (SIMD-padded) | Max datagram: {} bytes",
-            UDP_HEADER_SIZE, UDP_FP_PADDED, UDP_MAX_DATAGRAM);
+        println!(
+            "  Header: {} bytes | Payload: {} bytes (SIMD-padded) | Max datagram: {} bytes",
+            UDP_HEADER_SIZE, UDP_FP_PADDED, UDP_MAX_DATAGRAM
+        );
 
         let mut buf = vec![0u8; UDP_MAX_DATAGRAM];
         loop {
@@ -2194,7 +2625,8 @@ fn http_arrow_error(status: u16, message: &str) -> Vec<u8> {
             Arc::new(BooleanArray::from(vec![true])) as ArrayRef,
             Arc::new(StringArray::from(vec![message])) as ArrayRef,
         ],
-    ).unwrap();
+    )
+    .unwrap();
     http_arrow(status, &batch)
 }
 
@@ -2218,9 +2650,10 @@ fn http_json(status: u16, body: &str) -> Vec<u8> {
 fn http_error(status: u16, error_type: &str, message: &str, format: ResponseFormat) -> Vec<u8> {
     match format {
         ResponseFormat::Arrow => http_arrow_error(status, message),
-        ResponseFormat::Json => {
-            http_json(status, &format!(r#"{{"error":"{}","message":"{}"}}"#, error_type, message))
-        }
+        ResponseFormat::Json => http_json(
+            status,
+            &format!(r#"{{"error":"{}","message":"{}"}}"#, error_type, message),
+        ),
     }
 }
 
@@ -2229,10 +2662,10 @@ fn http_error(status: u16, error_type: &str, message: &str, format: ResponseForm
 // =============================================================================
 
 fn resolve_fingerprint(s: &str) -> Fingerprint {
-    if let Ok(bytes) = base64_decode(s) {
-        if let Ok(fp) = Fingerprint::from_bytes(&bytes) {
-            return fp;
-        }
+    if let Ok(bytes) = base64_decode(s)
+        && let Ok(fp) = Fingerprint::from_bytes(&bytes)
+    {
+        return fp;
     }
     Fingerprint::from_content(s)
 }
@@ -2242,8 +2675,7 @@ fn extract_json_str(json: &str, key: &str) -> Option<String> {
     let start = json.find(&pattern)?;
     let rest = &json[start + pattern.len()..];
 
-    if rest.starts_with('"') {
-        let inner = &rest[1..];
+    if let Some(inner) = rest.strip_prefix('"') {
         let end = inner.find('"')?;
         Some(inner[..end].to_string())
     } else {
@@ -2255,7 +2687,9 @@ fn extract_json_usize(json: &str, key: &str) -> Option<usize> {
     let pattern = format!(r#""{}":"#, key);
     let start = json.find(&pattern)?;
     let rest = &json[start + pattern.len()..];
-    let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+    let end = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
     rest[..end].parse().ok()
 }
 
@@ -2263,7 +2697,8 @@ fn extract_json_f32(json: &str, key: &str) -> Option<f32> {
     let pattern = format!(r#""{}":"#, key);
     let start = json.find(&pattern)?;
     let rest = &json[start + pattern.len()..];
-    let end = rest.find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-')
+    let end = rest
+        .find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-')
         .unwrap_or(rest.len());
     rest[..end].parse().ok()
 }
@@ -2281,10 +2716,15 @@ fn extract_json_str_array(json: &str, key: &str) -> Vec<String> {
     };
     let inner = &rest[..end];
 
-    inner.split(',')
+    inner
+        .split(',')
         .filter_map(|s| {
             let s = s.trim().trim_matches('"');
-            if s.is_empty() { None } else { Some(s.to_string()) }
+            if s.is_empty() {
+                None
+            } else {
+                Some(s.to_string())
+            }
         })
         .collect()
 }
@@ -2293,16 +2733,16 @@ fn extract_json_object(json: &str, key: &str) -> HashMap<String, String> {
     let mut map = HashMap::new();
     if let Some(start) = json.find(&format!(r#""{}":"#, key)) {
         let rest = &json[start..];
-        if let Some(obj_start) = rest.find('{') {
-            if let Some(obj_end) = rest[obj_start..].find('}') {
-                let inner = &rest[obj_start+1..obj_start+obj_end];
-                for part in inner.split(',') {
-                    if let Some((k, v)) = part.split_once(':') {
-                        let k = k.trim().trim_matches('"');
-                        let v = v.trim().trim_matches('"');
-                        if !k.is_empty() {
-                            map.insert(k.to_string(), v.to_string());
-                        }
+        if let Some(obj_start) = rest.find('{')
+            && let Some(obj_end) = rest[obj_start..].find('}')
+        {
+            let inner = &rest[obj_start + 1..obj_start + obj_end];
+            for part in inner.split(',') {
+                if let Some((k, v)) = part.split_once(':') {
+                    let k = k.trim().trim_matches('"');
+                    let v = v.trim().trim_matches('"');
+                    if !k.is_empty() {
+                        map.insert(k.to_string(), v.to_string());
                     }
                 }
             }
@@ -2320,7 +2760,8 @@ fn extract_json_hex_u16(json: &str, key: &str) -> Option<u16> {
 fn uuid_v4() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-    format!("{:08x}-{:04x}-4{:03x}-{:04x}-{:012x}",
+    format!(
+        "{:08x}-{:04x}-4{:03x}-{:04x}-{:012x}",
         t.as_secs() as u32,
         (t.subsec_nanos() >> 16) & 0xFFFF,
         t.subsec_nanos() & 0xFFF,
@@ -2356,9 +2797,18 @@ fn main() {
     println!("╔═══════════════════════════════════════════════════════════════╗");
     println!("║              LadybugDB v{:<38}║", VERSION);
     println!("╠═══════════════════════════════════════════════════════════════╣");
-    println!("║  Environment: {:>45}  ║", format!("{:?}", config.environment));
-    println!("║  HTTP:        {:>45}  ║", format!("{}:{}", config.host, config.port));
-    println!("║  UDP:         {:>45}  ║", format!("{}:{}", config.host, udp_port));
+    println!(
+        "║  Environment: {:>45}  ║",
+        format!("{:?}", config.environment)
+    );
+    println!(
+        "║  HTTP:        {:>45}  ║",
+        format!("{}:{}", config.host, config.port)
+    );
+    println!(
+        "║  UDP:         {:>45}  ║",
+        format!("{}:{}", config.host, udp_port)
+    );
     println!("║  Data dir:    {:>45}  ║", config.data_dir);
     println!("║  SIMD:        {:>45}  ║", simd::simd_level());
     println!("║  Workers:     {:>45}  ║", config.workers);
@@ -2367,8 +2817,10 @@ fn main() {
     println!("║  Protocols:                                                     ║");
     println!("║    HTTP  → Arrow IPC (default) + JSON (Accept header)          ║");
     println!("║    gRPC  → Flight Arrow (port 50051 via flight_server binary)  ║");
-    println!("║    UDP   → Bitpacked Hamming ({}B hdr + {}B fp = {}B)     ║",
-        UDP_HEADER_SIZE, UDP_FP_PADDED, UDP_MAX_DATAGRAM);
+    println!(
+        "║    UDP   → Bitpacked Hamming ({}B hdr + {}B fp = {}B)     ║",
+        UDP_HEADER_SIZE, UDP_FP_PADDED, UDP_MAX_DATAGRAM
+    );
     println!("╚═══════════════════════════════════════════════════════════════╝");
 
     let addr: SocketAddr = format!("{}:{}", config.host, config.port)
@@ -2380,11 +2832,10 @@ fn main() {
     // Spawn UDP bitpacked Hamming listener
     spawn_udp_listener(&config.host, udp_port, Arc::clone(&state));
 
-    let listener = TcpListener::bind(addr)
-        .unwrap_or_else(|e| {
-            eprintln!("Failed to bind {}: {}", addr, e);
-            std::process::exit(1);
-        });
+    let listener = TcpListener::bind(addr).unwrap_or_else(|e| {
+        eprintln!("Failed to bind {}: {}", addr, e);
+        std::process::exit(1);
+    });
 
     println!("Listening on http://{}", addr);
     println!("UDP Hamming on udp://{}:{}", config.host, udp_port);

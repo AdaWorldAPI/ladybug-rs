@@ -12,28 +12,28 @@
 //! └───────────────────────────────────────────────────────────────┘
 //! ```
 
-pub mod geometry;
-pub mod meta;
-pub mod record;
+pub mod adjacency;
 pub mod cache;
+pub mod delta;
+pub mod dn_redis;
+pub mod geometry;
+pub mod graph;
+pub mod insert;
+pub mod meta;
+pub mod migrate;
+pub mod record;
 pub mod search;
 pub mod semiring;
-pub mod delta;
 pub mod spine;
-pub mod insert;
-pub mod adjacency;
-pub mod graph;
-pub mod dn_redis;
-pub mod traversal;
-pub mod migrate;
 #[cfg(test)]
 pub mod tests;
+pub mod traversal;
 
 // Re-export primary types
-pub use geometry::ContainerGeometry;
-pub use record::CogRecord;
-pub use meta::{MetaView, MetaViewMut};
 pub use cache::ContainerCache;
+pub use geometry::ContainerGeometry;
+pub use meta::{MetaView, MetaViewMut};
+pub use record::CogRecord;
 
 // ============================================================================
 // CONTAINER CONSTANTS
@@ -78,13 +78,17 @@ impl Container {
     /// All-zero container.
     #[inline]
     pub fn zero() -> Self {
-        Self { words: [0u64; CONTAINER_WORDS] }
+        Self {
+            words: [0u64; CONTAINER_WORDS],
+        }
     }
 
     /// All-ones container.
     #[inline]
     pub fn ones() -> Self {
-        Self { words: [u64::MAX; CONTAINER_WORDS] }
+        Self {
+            words: [u64::MAX; CONTAINER_WORDS],
+        }
     }
 
     /// Deterministic pseudo-random container from seed (xorshift64).
@@ -164,12 +168,12 @@ impl Container {
             let mut out = 0u64;
             for bit in 0..64 {
                 let mask = 1u64 << bit;
-                let count = items.iter()
+                let count = items
+                    .iter()
                     .filter(|item| item.words[word] & mask != 0)
                     .count();
                 if count > threshold
-                    || (even && count == threshold
-                        && items[0].words[word] & mask != 0)
+                    || (even && count == threshold && items[0].words[word] & mask != 0)
                 {
                     out |= mask;
                 }
@@ -193,7 +197,8 @@ impl Container {
             let mut out = 0u64;
             for bit in 0..64 {
                 let mask = 1u64 << bit;
-                let weighted_count: f32 = items.iter()
+                let weighted_count: f32 = items
+                    .iter()
                     .filter(|(c, _)| c.words[word] & mask != 0)
                     .map(|(_, w)| w)
                     .sum();
@@ -233,8 +238,8 @@ impl Container {
             for i in 0..CONTAINER_WORDS {
                 let lo_src = (i + CONTAINER_WORDS - word_shift) % CONTAINER_WORDS;
                 let hi_src = (lo_src + CONTAINER_WORDS - 1) % CONTAINER_WORDS;
-                result.words[i] = (self.words[lo_src] << bit_shift)
-                    | (self.words[hi_src] >> complement);
+                result.words[i] =
+                    (self.words[lo_src] << bit_shift) | (self.words[hi_src] >> complement);
             }
         }
         result
@@ -316,7 +321,11 @@ impl Container {
 impl std::fmt::Debug for Container {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let pc = self.popcount();
-        write!(f, "Container(popcount={}, words[0]={:#018x})", pc, self.words[0])
+        write!(
+            f,
+            "Container(popcount={}, words[0]={:#018x})",
+            pc, self.words[0]
+        )
     }
 }
 

@@ -5,13 +5,12 @@
 //!
 //! Run: `cargo test --test reasoning_ladder`
 
+use ladybug::cognitive::{
+    GateState, LayerId, SevenLayerNode, calculate_sd, get_gate_state, process_all_layers_parallel,
+    process_layer,
+};
 use ladybug::core::Fingerprint;
 use ladybug::nars::TruthValue;
-use ladybug::cognitive::{
-    SevenLayerNode, LayerId,
-    process_all_layers_parallel, process_layer,
-    GateState, calculate_sd, get_gate_state,
-};
 
 // =============================================================================
 // RL-1: Parallel Layers Isolate Errors
@@ -53,11 +52,16 @@ fn reasoning_ladder_rl1_parallel_error_isolation() {
     }
     let l1_corrupt = process_layer(&corrupt_node, LayerId::L1, &input, cycle);
 
-    assert!((l1_clean.output_activation - l1_corrupt.output_activation).abs() < 0.001,
+    assert!(
+        (l1_clean.output_activation - l1_corrupt.output_activation).abs() < 0.001,
         "L1 should be independent of ALL marker corruption: clean={:.3} vs corrupt={:.3}",
-        l1_clean.output_activation, l1_corrupt.output_activation);
-    assert!((l1_clean.input_resonance - l1_corrupt.input_resonance).abs() < 0.001,
-        "L1 input resonance should be identical regardless of markers");
+        l1_clean.output_activation,
+        l1_corrupt.output_activation
+    );
+    assert!(
+        (l1_clean.input_resonance - l1_corrupt.input_resonance).abs() < 0.001,
+        "L1 input resonance should be identical regardless of markers"
+    );
 
     // PROOF PART B: Within process_all_layers_parallel, results are
     // computed from initial state, not from each other's outputs.
@@ -70,9 +74,13 @@ fn reasoning_ladder_rl1_parallel_error_isolation() {
 
     // Every layer's result should be identical (deterministic from same initial state)
     for (ra, rb) in results_a.iter().zip(results_b.iter()) {
-        assert!((ra.output_activation - rb.output_activation).abs() < 0.001,
+        assert!(
+            (ra.output_activation - rb.output_activation).abs() < 0.001,
             "Layer {:?}: activations should match from identical initial state: {:.3} vs {:.3}",
-            ra.layer, ra.output_activation, rb.output_activation);
+            ra.layer,
+            ra.output_activation,
+            rb.output_activation
+        );
     }
 
     // PROOF PART C: Error does NOT compound multiplicatively across cycles.
@@ -92,8 +100,11 @@ fn reasoning_ladder_rl1_parallel_error_isolation() {
 
     // Error at L3 propagates to L7 but is BOUNDED (averaged, not multiplied)
     let deviation = (l7_clean_c2 - l7_err_c2).abs();
-    assert!(deviation < 0.1,
-        "L3 error of 0.1 should produce bounded deviation at L7: {:.4}", deviation);
+    assert!(
+        deviation < 0.1,
+        "L3 error of 0.1 should produce bounded deviation at L7: {:.4}",
+        deviation
+    );
 }
 
 // =============================================================================
@@ -122,39 +133,54 @@ fn reasoning_ladder_rl2_nars_detects_inconsistency() {
     let revised = step3_true.revision(&step5_false);
 
     // PROOF PART A: Conflicting evidence → expectation near 0.5 (maximal uncertainty)
-    assert!((revised.expectation() - 0.5).abs() < 0.15,
+    assert!(
+        (revised.expectation() - 0.5).abs() < 0.15,
         "Conflicting evidence should produce near-uncertain expectation: {:.3}",
-        revised.expectation());
+        revised.expectation()
+    );
 
     // PROOF PART B: Conflicting evidence → frequency near 0.5
     // f = w_pos/(w_pos+w_neg): for equal confidence with f1=0.9 and f2=0.1,
     // the positive and negative evidence nearly cancel out.
-    assert!((revised.frequency - 0.5).abs() < 0.05,
+    assert!(
+        (revised.frequency - 0.5).abs() < 0.05,
         "Conflicting evidence should produce near-0.5 frequency: {:.3}",
-        revised.frequency);
+        revised.frequency
+    );
 
     // PROOF PART C: Agreeing evidence produces DECISIVE expectation
     let step5_agree = TruthValue::new(0.85, 0.8);
     let revised_agree = step3_true.revision(&step5_agree);
 
     // Agreeing expectation should be far from 0.5 (confident + high frequency)
-    assert!((revised_agree.expectation() - 0.5).abs() > (revised.expectation() - 0.5).abs(),
+    assert!(
+        (revised_agree.expectation() - 0.5).abs() > (revised.expectation() - 0.5).abs(),
         "Agreeing expectation ({:.3}) should be more decisive than conflicting ({:.3})",
-        revised_agree.expectation(), revised.expectation());
+        revised_agree.expectation(),
+        revised.expectation()
+    );
 
     // PROOF PART D: Agreeing frequency stays high (both sources agree X is true)
-    assert!(revised_agree.frequency > 0.8,
+    assert!(
+        revised_agree.frequency > 0.8,
         "Agreeing evidence should maintain high frequency: {:.3}",
-        revised_agree.frequency);
+        revised_agree.frequency
+    );
 
     // PROOF PART E: Both revisions increase confidence vs either premise alone
     // This proves revision is evidence-monotone (more evidence = more confidence)
-    assert!(revised.confidence > step3_true.confidence,
+    assert!(
+        revised.confidence > step3_true.confidence,
         "Even conflicting revision should increase confidence over single source: {:.3} > {:.3}",
-        revised.confidence, step3_true.confidence);
-    assert!(revised_agree.confidence > step3_true.confidence,
+        revised.confidence,
+        step3_true.confidence
+    );
+    assert!(
+        revised_agree.confidence > step3_true.confidence,
         "Agreeing revision should increase confidence over single source: {:.3} > {:.3}",
-        revised_agree.confidence, step3_true.confidence);
+        revised_agree.confidence,
+        step3_true.confidence
+    );
 }
 
 // =============================================================================
@@ -179,8 +205,12 @@ fn reasoning_ladder_rl3_collapse_gate_hold() {
     let consensus_scores = vec![0.91, 0.89, 0.92, 0.90];
     let sd_c = calculate_sd(&consensus_scores);
     let state_c = get_gate_state(sd_c);
-    assert!(matches!(state_c, GateState::Flow),
-        "Tight consensus should FLOW, got {:?} (SD={:.3})", state_c, sd_c);
+    assert!(
+        matches!(state_c, GateState::Flow),
+        "Tight consensus should FLOW, got {:?} (SD={:.3})",
+        state_c,
+        sd_c
+    );
     assert!(sd_c < 0.15, "Consensus SD should be < 0.15: {:.3}", sd_c);
 
     // PROOF PART B: Moderate disagreement → HOLD (maintain superposition)
@@ -189,18 +219,29 @@ fn reasoning_ladder_rl3_collapse_gate_hold() {
     let moderate_scores = vec![0.8, 0.4, 0.6, 0.3];
     let sd_m = calculate_sd(&moderate_scores);
     let state_m = get_gate_state(sd_m);
-    assert!(matches!(state_m, GateState::Hold),
-        "Moderate disagreement should HOLD, got {:?} (SD={:.3})", state_m, sd_m);
-    assert!(sd_m >= 0.15 && sd_m <= 0.35,
-        "Moderate SD should be in [0.15, 0.35]: {:.3}", sd_m);
+    assert!(
+        matches!(state_m, GateState::Hold),
+        "Moderate disagreement should HOLD, got {:?} (SD={:.3})",
+        state_m,
+        sd_m
+    );
+    assert!(
+        (0.15..=0.35).contains(&sd_m),
+        "Moderate SD should be in [0.15, 0.35]: {:.3}",
+        sd_m
+    );
 
     // PROOF PART C: Wildly divergent → BLOCK (need clarification)
     // SD([0.1, 0.9, 0.2, 0.8]) ≈ 0.37 > 0.35
     let divergent_scores = vec![0.1, 0.9, 0.2, 0.8];
     let sd_d = calculate_sd(&divergent_scores);
     let state_d = get_gate_state(sd_d);
-    assert!(matches!(state_d, GateState::Block),
-        "Divergent scores should BLOCK, got {:?} (SD={:.3})", state_d, sd_d);
+    assert!(
+        matches!(state_d, GateState::Block),
+        "Divergent scores should BLOCK, got {:?} (SD={:.3})",
+        state_d,
+        sd_d
+    );
     assert!(sd_d > 0.35, "Divergent SD should be > 0.35: {:.3}", sd_d);
 
     // PROOF PART D: Gate states are exhaustive and ordered
@@ -222,7 +263,7 @@ fn reasoning_ladder_rl3_collapse_gate_hold() {
 /// Ref: Guilford (1967) divergent production
 #[test]
 fn reasoning_ladder_rl5_thinking_styles_diverge() {
-    use ladybug::cognitive::{ThinkingStyle, FieldModulation};
+    use ladybug::cognitive::{FieldModulation, ThinkingStyle};
 
     let styles = &ThinkingStyle::ALL;
     assert_eq!(styles.len(), 12, "Should have exactly 12 thinking styles");
@@ -233,7 +274,7 @@ fn reasoning_ladder_rl5_thinking_styles_diverge() {
     // Measure pairwise parameter distance
     let mut distances = Vec::new();
     for i in 0..mods.len() {
-        for j in (i+1)..mods.len() {
+        for j in (i + 1)..mods.len() {
             let d = param_distance(&mods[i], &mods[j]);
             distances.push(d);
         }
@@ -242,17 +283,26 @@ fn reasoning_ladder_rl5_thinking_styles_diverge() {
     let mean_dist = distances.iter().sum::<f32>() / distances.len() as f32;
 
     // Mean pairwise distance should be meaningful (not converging)
-    assert!(mean_dist > 0.1,
-        "Styles too similar: mean parameter distance = {:.3}", mean_dist);
+    assert!(
+        mean_dist > 0.1,
+        "Styles too similar: mean parameter distance = {:.3}",
+        mean_dist
+    );
 
     // No two styles should be identical
     for (idx, &d) in distances.iter().enumerate() {
-        assert!(d > 0.0, "Two styles have identical parameters at pair {}", idx);
+        assert!(
+            d > 0.0,
+            "Two styles have identical parameters at pair {}",
+            idx
+        );
     }
 }
 
-fn param_distance(a: &ladybug::cognitive::FieldModulation,
-                  b: &ladybug::cognitive::FieldModulation) -> f32 {
+fn param_distance(
+    a: &ladybug::cognitive::FieldModulation,
+    b: &ladybug::cognitive::FieldModulation,
+) -> f32 {
     let diffs = [
         a.resonance_threshold - b.resonance_threshold,
         (a.fan_out as f32 - b.fan_out as f32) / 20.0,
@@ -287,21 +337,31 @@ fn reasoning_ladder_rl6_abduction_generates_insight() {
     let abduced = observation.abduction(&hypothesis);
 
     // Abduced truth should be distinct from both premises
-    assert_ne!(abduced.frequency, hypothesis.frequency,
-        "Abduction should produce different frequency from hypothesis");
+    assert_ne!(
+        abduced.frequency, hypothesis.frequency,
+        "Abduction should produce different frequency from hypothesis"
+    );
 
     // Confidence above noise floor
-    assert!(abduced.confidence > 0.01,
-        "Abduced confidence too low: {:.3}", abduced.confidence);
+    assert!(
+        abduced.confidence > 0.01,
+        "Abduced confidence too low: {:.3}",
+        abduced.confidence
+    );
 
     // Abduction preserves observation frequency
-    assert_eq!(abduced.frequency, observation.frequency,
-        "Abduction should preserve observation frequency");
+    assert_eq!(
+        abduced.frequency, observation.frequency,
+        "Abduction should preserve observation frequency"
+    );
 
     // Confidence is lower than observation's (less certain inference)
-    assert!(abduced.confidence < observation.confidence,
+    assert!(
+        abduced.confidence < observation.confidence,
         "Abduction confidence ({:.3}) should be lower than observation's ({:.3})",
-        abduced.confidence, observation.confidence);
+        abduced.confidence,
+        observation.confidence
+    );
 }
 
 // =============================================================================
@@ -332,13 +392,19 @@ fn reasoning_ladder_rl7_counterfactual_divergence() {
     let cf_world = intervene(&world, &intervention);
 
     // Counterfactual world should differ from original
-    assert!(cf_world.divergence > 0.3,
-        "Counterfactual should diverge >30% from baseline: {:.3}", cf_world.divergence);
+    assert!(
+        cf_world.divergence > 0.3,
+        "Counterfactual should diverge >30% from baseline: {:.3}",
+        cf_world.divergence
+    );
 
     // The intervened variable should be recoverable from new world
     let recovered = cf_world.state.bind(&intervention.counterfactual);
-    assert_eq!(recovered.as_raw(), base.as_raw(),
-        "Should recover base world after unbinding counterfactual");
+    assert_eq!(
+        recovered.as_raw(),
+        base.as_raw(),
+        "Should recover base world after unbinding counterfactual"
+    );
 }
 
 /// PROOF RL-7b: Different interventions produce different counterfactual worlds
@@ -351,11 +417,13 @@ fn reasoning_ladder_rl7b_interventions_differ() {
     let world = world.bind(&var);
 
     let i1 = Intervention {
-        target: var.clone(), original: var.clone(),
+        target: var.clone(),
+        original: var.clone(),
         counterfactual: Fingerprint::from_content("outcome_A"),
     };
     let i2 = Intervention {
-        target: var.clone(), original: var.clone(),
+        target: var.clone(),
+        original: var.clone(),
         counterfactual: Fingerprint::from_content("outcome_B"),
     };
 
@@ -363,8 +431,11 @@ fn reasoning_ladder_rl7b_interventions_differ() {
     let w2 = intervene(&world, &i2);
 
     let diff = worlds_differ(&w1, &w2);
-    assert!(diff > 0.3,
-        "Different interventions should produce different worlds: {:.3}", diff);
+    assert!(
+        diff > 0.3,
+        "Different interventions should produce different worlds: {:.3}",
+        diff
+    );
 }
 
 // =============================================================================
@@ -392,26 +463,38 @@ fn reasoning_ladder_rl8_parallel_vs_sequential_probability() {
     // Parallel with majority voting: at least ceil(n/2) must succeed
     let p_parallel = parallel_majority_probability(p, n);
 
-    assert!(p_parallel > p_sequential,
+    assert!(
+        p_parallel > p_sequential,
         "Parallel ({:.6}) should exceed sequential ({:.6})",
-        p_parallel, p_sequential);
+        p_parallel,
+        p_sequential
+    );
 
-    assert!(p_parallel > 0.99,
-        "Parallel with 7 lanes at 90% should exceed 99%: {:.6}", p_parallel);
+    assert!(
+        p_parallel > 0.99,
+        "Parallel with 7 lanes at 90% should exceed 99%: {:.6}",
+        p_parallel
+    );
 
-    assert!(p_sequential < 0.50,
-        "Sequential with 7 steps at 90% should be below 50%: {:.6}", p_sequential);
+    assert!(
+        p_sequential < 0.50,
+        "Sequential with 7 steps at 90% should be below 50%: {:.6}",
+        p_sequential
+    );
 
     // The gap should be dramatic at n=7
     let gap = p_parallel - p_sequential;
-    assert!(gap > 0.5,
-        "Gap between parallel and sequential should be >50%: {:.3}", gap);
+    assert!(
+        gap > 0.5,
+        "Gap between parallel and sequential should be >50%: {:.3}",
+        gap
+    );
 }
 
 /// Probability that majority of n independent p-success trials succeed.
 /// Uses binomial CDF: P(X ≥ ceil(n/2)) where X ~ Binomial(n, p)
 fn parallel_majority_probability(p: f64, n: usize) -> f64 {
-    let threshold = (n + 1) / 2; // Majority
+    let threshold = n.div_ceil(2); // Majority
     let mut prob = 0.0;
     for k in threshold..=n {
         prob += binomial_pmf(n, k, p);
@@ -425,7 +508,9 @@ fn binomial_pmf(n: usize, k: usize, p: f64) -> f64 {
 }
 
 fn binomial_coefficient(n: usize, k: usize) -> u64 {
-    if k > n { return 0; }
+    if k > n {
+        return 0;
+    }
     let k = k.min(n - k);
     let mut result = 1u64;
     for i in 0..k {

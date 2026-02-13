@@ -35,8 +35,8 @@
 //! ```
 
 use std::any::Any;
-use std::sync::Arc;
 use std::fmt;
+use std::sync::Arc;
 
 use arrow::array::*;
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
@@ -44,11 +44,13 @@ use arrow::record_batch::RecordBatch;
 use datafusion::common::ScalarValue;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::TaskContext;
-use datafusion::logical_expr::{ColumnarValue, ScalarFunctionArgs, ScalarUDF, ScalarUDFImpl, Signature, Volatility};
+use datafusion::logical_expr::{
+    ColumnarValue, ScalarFunctionArgs, ScalarUDF, ScalarUDFImpl, Signature, Volatility,
+};
 use datafusion::physical_expr::EquivalenceProperties;
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties,
-    RecordBatchStream, SendableRecordBatchStream, Partitioning,
+    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties, RecordBatchStream,
+    SendableRecordBatchStream,
     execution_plan::{Boundedness, EmissionType},
 };
 use datafusion::prelude::*;
@@ -57,8 +59,8 @@ use parking_lot::RwLock;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::search::hdr_cascade::{hamming_distance, HdrIndex};
-use crate::storage::bind_space::{Addr, BindSpace, BindNode, FINGERPRINT_WORDS};
+use crate::search::hdr_cascade::{HdrIndex, hamming_distance};
+use crate::storage::bind_space::{Addr, BindNode, BindSpace, FINGERPRINT_WORDS};
 
 // =============================================================================
 // CONSTANTS
@@ -93,13 +95,10 @@ pub enum ScentPredicate {
     /// similarity(fingerprint, query) > threshold (converted to Hamming)
     SimilarityGreaterThan {
         query: [u64; HDR_WORDS],
-        threshold: f32,  // 0.0-1.0
+        threshold: f32, // 0.0-1.0
     },
     /// Top-K nearest neighbors
-    TopK {
-        query: [u64; HDR_WORDS],
-        k: usize,
-    },
+    TopK { query: [u64; HDR_WORDS], k: usize },
 }
 
 impl ScentPredicate {
@@ -173,7 +172,10 @@ impl ScentScanExec {
         let schema = scent_schema();
         let projected_schema = match &projection {
             Some(indices) => Arc::new(Schema::new(
-                indices.iter().map(|i| schema.field(*i).clone()).collect::<Vec<_>>()
+                indices
+                    .iter()
+                    .map(|i| schema.field(*i).clone())
+                    .collect::<Vec<_>>(),
             )),
             None => schema.clone(),
         };
@@ -208,13 +210,17 @@ impl ScentScanExec {
 fn scent_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
         Field::new("address", DataType::UInt16, false),
-        Field::new("fingerprint", DataType::FixedSizeBinary(FP_BYTES as i32), false),
+        Field::new(
+            "fingerprint",
+            DataType::FixedSizeBinary(FP_BYTES as i32),
+            false,
+        ),
         Field::new("label", DataType::Utf8, true),
         Field::new("qidx", DataType::UInt8, false),
         Field::new("access_count", DataType::UInt32, false),
         Field::new("zone", DataType::Utf8, false),
-        Field::new("distance", DataType::UInt32, false),      // Hamming distance
-        Field::new("similarity", DataType::Float32, false),   // 1.0 - distance/MAX_BITS
+        Field::new("distance", DataType::UInt32, false), // Hamming distance
+        Field::new("similarity", DataType::Float32, false), // 1.0 - distance/MAX_BITS
     ]))
 }
 
@@ -292,9 +298,30 @@ impl ExecutionPlan for ScentScanExec {
             }
         } else {
             // Full scan with Hamming distance computation
-            scan_zone(&bind_space, query, &self.predicate, 0x00, 0x0F, &mut results);
-            scan_zone(&bind_space, query, &self.predicate, 0x10, 0x7F, &mut results);
-            scan_zone(&bind_space, query, &self.predicate, 0x80, 0xFF, &mut results);
+            scan_zone(
+                &bind_space,
+                query,
+                &self.predicate,
+                0x00,
+                0x0F,
+                &mut results,
+            );
+            scan_zone(
+                &bind_space,
+                query,
+                &self.predicate,
+                0x10,
+                0x7F,
+                &mut results,
+            );
+            scan_zone(
+                &bind_space,
+                query,
+                &self.predicate,
+                0x80,
+                0xFF,
+                &mut results,
+            );
         }
 
         // Sort by distance for top-k
@@ -353,7 +380,10 @@ fn results_to_batch(
     if results.is_empty() {
         let projected_schema = match projection {
             Some(indices) => Arc::new(Schema::new(
-                indices.iter().map(|i| schema.field(*i).clone()).collect::<Vec<_>>()
+                indices
+                    .iter()
+                    .map(|i| schema.field(*i).clone())
+                    .collect::<Vec<_>>(),
             )),
             None => schema.clone(),
         };
@@ -374,7 +404,8 @@ fn results_to_batch(
         addresses.push(addr.0);
 
         // Convert fingerprint to bytes
-        let fp_bytes: Vec<u8> = node.fingerprint
+        let fp_bytes: Vec<u8> = node
+            .fingerprint
             .iter()
             .flat_map(|w: &u64| w.to_le_bytes())
             .collect();
@@ -427,7 +458,10 @@ fn results_to_batch(
     let (projected_schema, projected_arrays) = match projection {
         Some(indices) => {
             let schema = Arc::new(Schema::new(
-                indices.iter().map(|i| schema.field(*i).clone()).collect::<Vec<_>>()
+                indices
+                    .iter()
+                    .map(|i| schema.field(*i).clone())
+                    .collect::<Vec<_>>(),
             ));
             let arrays = indices.iter().map(|i| arrays[*i].clone()).collect();
             (schema, arrays)
@@ -452,7 +486,11 @@ struct MemoryStream {
 
 impl MemoryStream {
     fn new(batches: Vec<RecordBatch>, schema: SchemaRef) -> Self {
-        Self { batches, schema, index: 0 }
+        Self {
+            batches,
+            schema,
+            index: 0,
+        }
     }
 }
 
@@ -525,21 +563,27 @@ impl ScalarUDFImpl for HammingDistanceUdf {
         let args = &args.args;
         if args.len() != 2 {
             return Err(DataFusionError::Plan(
-                "hamming_distance requires exactly 2 arguments".to_string()
+                "hamming_distance requires exactly 2 arguments".to_string(),
             ));
         }
 
         // Handle scalar vs array for each argument
         let (fp1_array, fp2_array) = match (&args[0], &args[1]) {
             (ColumnarValue::Array(a1), ColumnarValue::Array(a2)) => {
-                let fp1 = a1.as_any().downcast_ref::<FixedSizeBinaryArray>()
+                let fp1 = a1
+                    .as_any()
+                    .downcast_ref::<FixedSizeBinaryArray>()
                     .ok_or_else(|| DataFusionError::Plan("Expected FixedSizeBinary".to_string()))?;
-                let fp2 = a2.as_any().downcast_ref::<FixedSizeBinaryArray>()
+                let fp2 = a2
+                    .as_any()
+                    .downcast_ref::<FixedSizeBinaryArray>()
                     .ok_or_else(|| DataFusionError::Plan("Expected FixedSizeBinary".to_string()))?;
                 (fp1.clone(), fp2.clone())
             }
             (ColumnarValue::Array(a1), ColumnarValue::Scalar(s2)) => {
-                let fp1 = a1.as_any().downcast_ref::<FixedSizeBinaryArray>()
+                let fp1 = a1
+                    .as_any()
+                    .downcast_ref::<FixedSizeBinaryArray>()
                     .ok_or_else(|| DataFusionError::Plan("Expected FixedSizeBinary".to_string()))?;
                 // Broadcast scalar to array
                 let query_bytes = match s2 {
@@ -554,7 +598,7 @@ impl ScalarUDFImpl for HammingDistanceUdf {
             }
             _ => {
                 return Err(DataFusionError::Plan(
-                    "hamming_distance: first argument must be array".to_string()
+                    "hamming_distance: first argument must be array".to_string(),
                 ));
             }
         };
@@ -632,21 +676,27 @@ impl ScalarUDFImpl for SimilarityUdf {
         let args = &args.args;
         if args.len() != 2 {
             return Err(DataFusionError::Plan(
-                "similarity requires exactly 2 arguments".to_string()
+                "similarity requires exactly 2 arguments".to_string(),
             ));
         }
 
         // Handle scalar vs array for each argument
         let (fp1_array, fp2_array) = match (&args[0], &args[1]) {
             (ColumnarValue::Array(a1), ColumnarValue::Array(a2)) => {
-                let fp1 = a1.as_any().downcast_ref::<FixedSizeBinaryArray>()
+                let fp1 = a1
+                    .as_any()
+                    .downcast_ref::<FixedSizeBinaryArray>()
                     .ok_or_else(|| DataFusionError::Plan("Expected FixedSizeBinary".to_string()))?;
-                let fp2 = a2.as_any().downcast_ref::<FixedSizeBinaryArray>()
+                let fp2 = a2
+                    .as_any()
+                    .downcast_ref::<FixedSizeBinaryArray>()
                     .ok_or_else(|| DataFusionError::Plan("Expected FixedSizeBinary".to_string()))?;
                 (fp1.clone(), fp2.clone())
             }
             (ColumnarValue::Array(a1), ColumnarValue::Scalar(s2)) => {
-                let fp1 = a1.as_any().downcast_ref::<FixedSizeBinaryArray>()
+                let fp1 = a1
+                    .as_any()
+                    .downcast_ref::<FixedSizeBinaryArray>()
                     .ok_or_else(|| DataFusionError::Plan("Expected FixedSizeBinary".to_string()))?;
                 let query_bytes = match s2 {
                     ScalarValue::FixedSizeBinary(_, Some(b)) => b.clone(),
@@ -660,7 +710,7 @@ impl ScalarUDFImpl for SimilarityUdf {
             }
             _ => {
                 return Err(DataFusionError::Plan(
-                    "similarity: first argument must be array".to_string()
+                    "similarity: first argument must be array".to_string(),
                 ));
             }
         };
@@ -689,7 +739,9 @@ impl ScalarUDFImpl for SimilarityUdf {
             similarities.push(1.0 - (dist as f32 / MAX_BITS as f32));
         }
 
-        Ok(ColumnarValue::Array(Arc::new(Float32Array::from(similarities))))
+        Ok(ColumnarValue::Array(Arc::new(Float32Array::from(
+            similarities,
+        ))))
     }
 }
 
@@ -768,7 +820,10 @@ mod tests {
         let bind_space = Arc::new(RwLock::new(BindSpace::new()));
         let query = [0u64; HDR_WORDS];
 
-        let pred = ScentPredicate::HammingLessThan { query, threshold: 100 };
+        let pred = ScentPredicate::HammingLessThan {
+            query,
+            threshold: 100,
+        };
         let scan = ScentScanExec::new(bind_space, pred, None);
 
         let ctx = Arc::new(TaskContext::default());
@@ -799,7 +854,10 @@ mod tests {
         let mut query = [0u64; HDR_WORDS];
         query[0] = 0xFFFF; // Same pattern
 
-        let pred = ScentPredicate::HammingLessThan { query, threshold: 100 };
+        let pred = ScentPredicate::HammingLessThan {
+            query,
+            threshold: 100,
+        };
         let scan = ScentScanExec::new(bind_space, pred, None);
 
         let ctx = Arc::new(TaskContext::default());
@@ -810,11 +868,17 @@ mod tests {
 
         // Should find the node we inserted (distance = 0)
         let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
-        assert!(total_rows >= 1, "Expected at least 1 match, got {}", total_rows);
+        assert!(
+            total_rows >= 1,
+            "Expected at least 1 match, got {}",
+            total_rows
+        );
 
         // Check that distance column has 0 for exact match
         if let Some(batch) = batches.first() {
-            let distances = batch.column(6).as_any()
+            let distances = batch
+                .column(6)
+                .as_any()
                 .downcast_ref::<UInt32Array>()
                 .unwrap();
             // At least one result should have distance 0
@@ -856,13 +920,17 @@ mod tests {
 
         // May have more than 2 due to surface nodes, but sorted by distance
         if let Some(batch) = batches.first() {
-            let distances = batch.column(6).as_any()
+            let distances = batch
+                .column(6)
+                .as_any()
                 .downcast_ref::<UInt32Array>()
                 .unwrap();
             // First results should be closest
             if distances.len() >= 2 {
-                assert!(distances.value(0) <= distances.value(1),
-                    "Results should be sorted by distance");
+                assert!(
+                    distances.value(0) <= distances.value(1),
+                    "Results should be sorted by distance"
+                );
             }
         }
     }

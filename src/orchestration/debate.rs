@@ -11,7 +11,7 @@
 //! - Tetlock (2005): Foxes (multiple perspectives) outperform hedgehogs (single theory)
 
 use crate::nars::TruthValue;
-use crate::search::hdr_cascade::{hamming_distance, WORDS};
+use crate::search::hdr_cascade::{WORDS, hamming_distance};
 
 const TOTAL_BITS: f32 = 16384.0;
 
@@ -177,7 +177,8 @@ fn bundle_fingerprints(args: &[Argument]) -> [u64; WORDS] {
     for word_idx in 0..WORDS {
         let mut word = 0u64;
         for bit in 0..64 {
-            let count = args.iter()
+            let count = args
+                .iter()
                 .filter(|a| (a.fingerprint[word_idx] >> bit) & 1 == 1)
                 .count();
             if count > threshold {
@@ -237,12 +238,22 @@ mod tests {
     fn test_debate_pro_wins() {
         let initial = TruthValue::new(0.5, 0.1); // Uncertain
         let pro_args = vec![
-            Argument { fingerprint: make_fp(1), truth: TruthValue::new(0.9, 0.8), is_pro: true },
-            Argument { fingerprint: make_fp(2), truth: TruthValue::new(0.85, 0.7), is_pro: true },
+            Argument {
+                fingerprint: make_fp(1),
+                truth: TruthValue::new(0.9, 0.8),
+                is_pro: true,
+            },
+            Argument {
+                fingerprint: make_fp(2),
+                truth: TruthValue::new(0.85, 0.7),
+                is_pro: true,
+            },
         ];
-        let con_args = vec![
-            Argument { fingerprint: make_fp(3), truth: TruthValue::new(0.6, 0.3), is_pro: false },
-        ];
+        let con_args = vec![Argument {
+            fingerprint: make_fp(3),
+            truth: TruthValue::new(0.6, 0.3),
+            is_pro: false,
+        }];
 
         let outcome = debate(&initial, &pro_args, &con_args, &DebateConfig::default());
         assert!(outcome.final_truth.expectation() > 0.5);
@@ -252,12 +263,22 @@ mod tests {
     #[test]
     fn test_debate_con_wins() {
         let initial = TruthValue::new(0.5, 0.1);
-        let pro_args = vec![
-            Argument { fingerprint: make_fp(1), truth: TruthValue::new(0.6, 0.3), is_pro: true },
-        ];
+        let pro_args = vec![Argument {
+            fingerprint: make_fp(1),
+            truth: TruthValue::new(0.6, 0.3),
+            is_pro: true,
+        }];
         let con_args = vec![
-            Argument { fingerprint: make_fp(2), truth: TruthValue::new(0.95, 0.9), is_pro: false },
-            Argument { fingerprint: make_fp(3), truth: TruthValue::new(0.9, 0.8), is_pro: false },
+            Argument {
+                fingerprint: make_fp(2),
+                truth: TruthValue::new(0.95, 0.9),
+                is_pro: false,
+            },
+            Argument {
+                fingerprint: make_fp(3),
+                truth: TruthValue::new(0.9, 0.8),
+                is_pro: false,
+            },
         ];
 
         let outcome = debate(&initial, &pro_args, &con_args, &DebateConfig::default());
@@ -267,12 +288,16 @@ mod tests {
     #[test]
     fn test_debate_converges() {
         let initial = TruthValue::new(0.5, 0.5);
-        let pro_args = vec![
-            Argument { fingerprint: make_fp(1), truth: TruthValue::new(0.7, 0.5), is_pro: true },
-        ];
-        let con_args = vec![
-            Argument { fingerprint: make_fp(2), truth: TruthValue::new(0.7, 0.5), is_pro: false },
-        ];
+        let pro_args = vec![Argument {
+            fingerprint: make_fp(1),
+            truth: TruthValue::new(0.7, 0.5),
+            is_pro: true,
+        }];
+        let con_args = vec![Argument {
+            fingerprint: make_fp(2),
+            truth: TruthValue::new(0.7, 0.5),
+            is_pro: false,
+        }];
 
         let outcome = debate(&initial, &pro_args, &con_args, &DebateConfig::default());
         assert!(outcome.converged);
@@ -294,14 +319,23 @@ mod tests {
         fp2[0] ^= 0xFF;
         fp2[1] ^= 0xFF;
 
-        let pro_args = vec![
-            Argument { fingerprint: fp1, truth: TruthValue::new(0.8, 0.7), is_pro: true },
-        ];
-        let con_args = vec![
-            Argument { fingerprint: fp2, truth: TruthValue::new(0.8, 0.7), is_pro: false },
-        ];
+        let pro_args = vec![Argument {
+            fingerprint: fp1,
+            truth: TruthValue::new(0.8, 0.7),
+            is_pro: true,
+        }];
+        let con_args = vec![Argument {
+            fingerprint: fp2,
+            truth: TruthValue::new(0.8, 0.7),
+            is_pro: false,
+        }];
 
-        let outcome = debate(&TruthValue::new(0.5, 0.1), &pro_args, &con_args, &DebateConfig::default());
+        let outcome = debate(
+            &TruthValue::new(0.5, 0.1),
+            &pro_args,
+            &con_args,
+            &DebateConfig::default(),
+        );
         // Similar fingerprints should have high structural overlap
         assert!(outcome.structural_overlap > 0.9);
     }

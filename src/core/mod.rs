@@ -1,16 +1,16 @@
 //! Core primitives: Fingerprints, SIMD operations, VSA algebra.
 
+mod buffer;
 mod fingerprint;
+mod scent;
 pub mod simd;
 pub mod vsa;
-mod buffer;
-mod scent;
 
-pub use fingerprint::Fingerprint;
-pub use simd::{hamming_distance, batch_hamming, HammingEngine};
-pub use vsa::VsaOps;
 pub use buffer::BufferPool;
+pub use fingerprint::Fingerprint;
 pub use scent::*;
+pub use simd::{HammingEngine, batch_hamming, hamming_distance};
+pub use vsa::VsaOps;
 
 /// Dense embedding vector
 pub type Embedding = Vec<f32>;

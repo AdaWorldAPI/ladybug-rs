@@ -26,11 +26,11 @@
 //! ```
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
-use std::sync::{RwLock, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Mutex, RwLock};
 use std::time::{Duration, Instant};
 
-use super::bind_space::{BindSpace, BindNode, Addr, FINGERPRINT_WORDS, hamming_distance};
+use super::bind_space::{Addr, BindNode, BindSpace, FINGERPRINT_WORDS, hamming_distance};
 use super::cog_redis::CogAddr;
 use crate::search::RubiconSearch;
 
@@ -256,7 +256,11 @@ pub enum WriteOp {
     /// Insert/update an edge
     UpsertEdge(SubstrateEdge),
     /// Delete an edge
-    DeleteEdge { from: CogAddr, verb: CogAddr, to: CogAddr },
+    DeleteEdge {
+        from: CogAddr,
+        verb: CogAddr,
+        to: CogAddr,
+    },
 }
 
 /// Write buffer for batching Lance operations
@@ -578,8 +582,7 @@ impl Substrate {
             addrs.push(cog_addr);
         }
 
-        let node = SubstrateNode::new(cog_addr, fingerprint)
-            .with_label(label);
+        let node = SubstrateNode::new(cog_addr, fingerprint).with_label(label);
 
         // Queue for Lance
         let mut buffer = self.write_buffer.lock().unwrap();
@@ -679,7 +682,8 @@ impl Substrate {
         let bind_space = self.bind_space.read().unwrap();
         let from_addr = Addr::from(from.0);
 
-        bind_space.edges_out(from_addr)
+        bind_space
+            .edges_out(from_addr)
             .map(|e| SubstrateEdge {
                 from: CogAddr::from(e.from.0),
                 to: CogAddr::from(e.to.0),
@@ -698,7 +702,8 @@ impl Substrate {
         let bind_space = self.bind_space.read().unwrap();
         let to_addr = Addr::from(to.0);
 
-        bind_space.edges_in(to_addr)
+        bind_space
+            .edges_in(to_addr)
             .map(|e| SubstrateEdge {
                 from: CogAddr::from(e.from.0),
                 to: CogAddr::from(e.to.0),
@@ -715,16 +720,23 @@ impl Substrate {
     /// Traverse via verb
     pub fn traverse(&self, from: CogAddr, verb: CogAddr) -> Vec<CogAddr> {
         let bind_space = self.bind_space.read().unwrap();
-        bind_space.traverse(Addr::from(from.0), Addr::from(verb.0))
+        bind_space
+            .traverse(Addr::from(from.0), Addr::from(verb.0))
             .into_iter()
             .map(|a| CogAddr::from(a.0))
             .collect()
     }
 
     /// N-hop traversal
-    pub fn traverse_n_hops(&self, start: CogAddr, verb: CogAddr, max_hops: usize) -> Vec<(usize, CogAddr)> {
+    pub fn traverse_n_hops(
+        &self,
+        start: CogAddr,
+        verb: CogAddr,
+        max_hops: usize,
+    ) -> Vec<(usize, CogAddr)> {
         let bind_space = self.bind_space.read().unwrap();
-        bind_space.traverse_n_hops(Addr::from(start.0), Addr::from(verb.0), max_hops)
+        bind_space
+            .traverse_n_hops(Addr::from(start.0), Addr::from(verb.0), max_hops)
             .into_iter()
             .map(|(hop, a)| (hop, CogAddr::from(a.0)))
             .collect()
@@ -744,7 +756,12 @@ impl Substrate {
     /// - Infers SD trajectory for pre-adjustment
     ///
     /// Falls back to full scan if Rubicon returns insufficient results.
-    pub fn search(&self, query_fp: &[u64; FINGERPRINT_WORDS], k: usize, threshold: f32) -> Vec<(CogAddr, u32, f32)> {
+    pub fn search(
+        &self,
+        query_fp: &[u64; FINGERPRINT_WORDS],
+        k: usize,
+        threshold: f32,
+    ) -> Vec<(CogAddr, u32, f32)> {
         let max_distance = ((1.0 - threshold) * crate::FINGERPRINT_BITS as f32) as u32;
 
         // First try Rubicon search with adaptive thresholds
@@ -942,7 +959,9 @@ impl Substrate {
 
         // In production, this would batch write to Lance
         // For now, just update stats
-        self.stats.lance_writes.fetch_add(ops.len() as u64, Ordering::Relaxed);
+        self.stats
+            .lance_writes
+            .fetch_add(ops.len() as u64, Ordering::Relaxed);
         self.stats.pending_writes.store(0, Ordering::Relaxed);
     }
 
@@ -965,7 +984,9 @@ impl Substrate {
     /// Get a surface operation by compartment and name
     pub fn surface_op(&self, compartment: u8, name: &str) -> Option<CogAddr> {
         let bind_space = self.bind_space.read().unwrap();
-        bind_space.surface_op(compartment, name).map(|a| CogAddr::from(a.0))
+        bind_space
+            .surface_op(compartment, name)
+            .map(|a| CogAddr::from(a.0))
     }
 
     // =========================================================================

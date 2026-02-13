@@ -24,9 +24,9 @@
 //! Distance = popcount(XOR(a[0..224], b[0..224])). Metadata excluded.
 //! No self_addr / parent_addr fields — the DN address path encodes both.
 
+pub mod compat;
 pub mod schema;
 pub mod search;
-pub mod compat;
 pub mod xor_bubble;
 
 // ============================================================================
@@ -184,7 +184,7 @@ mod tests {
     #[test]
     fn test_fingerprint_covers_resonance() {
         // Fingerprint (256 words) covers full resonance (224 words) + metadata (32 words)
-        assert!(crate::FINGERPRINT_U64 >= VECTOR_WORDS);
+        const { assert!(crate::FINGERPRINT_U64 >= VECTOR_WORDS) };
         assert_eq!(VECTOR_WORDS, RESONANCE_WORDS + METADATA_WORDS);
     }
 

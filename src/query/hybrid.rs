@@ -17,10 +17,8 @@
 
 use std::time::{Duration, Instant};
 
-use crate::storage::{
-    BindSpace, Addr, Substrate, SubstrateConfig, FINGERPRINT_WORDS,
-};
 use crate::query::cypher::{CypherParser, CypherQuery, PatternElement};
+use crate::storage::{Addr, BindSpace, FINGERPRINT_WORDS, Substrate, SubstrateConfig};
 
 // =============================================================================
 // HYBRID QUERY TYPES
@@ -198,7 +196,12 @@ impl HybridQuery {
     }
 
     /// Add vector similarity constraint
-    pub fn with_vector(mut self, query: [u64; FINGERPRINT_WORDS], threshold: f32, k: usize) -> Self {
+    pub fn with_vector(
+        mut self,
+        query: [u64; FINGERPRINT_WORDS],
+        threshold: f32,
+        k: usize,
+    ) -> Self {
         self.vector = Some(VectorConstraint::new(query, threshold, k));
         self
     }
@@ -408,16 +411,18 @@ impl HybridEngine {
     }
 
     /// Stage 2: Graph pattern matching
-    fn execute_graph(&self, query: &HybridQuery, candidates: Vec<(Addr, f32)>) -> Result<Vec<(Addr, f32)>, String> {
+    fn execute_graph(
+        &self,
+        query: &HybridQuery,
+        candidates: Vec<(Addr, f32)>,
+    ) -> Result<Vec<(Addr, f32)>, String> {
         match &query.graph {
             Some(gc) => {
                 if let Some(ref parsed) = gc.parsed {
                     // Apply pattern constraints (simplified - check labels)
                     Ok(candidates
                         .into_iter()
-                        .filter(|(addr, _)| {
-                            self.matches_pattern(*addr, parsed)
-                        })
+                        .filter(|(addr, _)| self.matches_pattern(*addr, parsed))
                         .collect())
                 } else {
                     Ok(candidates)
@@ -456,7 +461,11 @@ impl HybridEngine {
     }
 
     /// Stage 3: Causal reasoning filter
-    fn execute_causal(&self, query: &HybridQuery, candidates: Vec<(Addr, f32)>) -> Result<Vec<(Addr, f32)>, String> {
+    fn execute_causal(
+        &self,
+        query: &HybridQuery,
+        candidates: Vec<(Addr, f32)>,
+    ) -> Result<Vec<(Addr, f32)>, String> {
         match &query.causal {
             Some(_cc) => {
                 // Placeholder - would check causal graph
@@ -468,7 +477,11 @@ impl HybridEngine {
     }
 
     /// Stage 4: Temporal resolution and final filtering
-    fn execute_temporal(&self, query: &HybridQuery, candidates: Vec<(Addr, f32)>) -> Result<Vec<HybridResult>, String> {
+    fn execute_temporal(
+        &self,
+        query: &HybridQuery,
+        candidates: Vec<(Addr, f32)>,
+    ) -> Result<Vec<HybridResult>, String> {
         let version = match &query.temporal {
             TemporalConstraint::AtVersion(v) => *v,
             TemporalConstraint::Latest => self.current_version,
@@ -602,7 +615,9 @@ pub fn parse_hybrid(input: &str) -> Result<HybridQuery, String> {
                 }
             }
         } else if line.starts_with("OFFSET") || line.starts_with("SKIP") {
-            let l = line.strip_prefix("OFFSET ").or_else(|| line.strip_prefix("SKIP "));
+            let l = line
+                .strip_prefix("OFFSET ")
+                .or_else(|| line.strip_prefix("SKIP "));
             if let Some(l) = l {
                 if let Ok(offset) = l.trim().parse::<usize>() {
                     query.offset = offset;
@@ -619,10 +634,7 @@ pub fn parse_hybrid(input: &str) -> Result<HybridQuery, String> {
 // =============================================================================
 
 /// Execute hybrid query from Redis-like command
-pub fn execute_hybrid_command(
-    engine: &HybridEngine,
-    args: &[&str],
-) -> Result<String, String> {
+pub fn execute_hybrid_command(engine: &HybridEngine, args: &[&str]) -> Result<String, String> {
     if args.is_empty() {
         return Err("HYBRID requires query string".to_string());
     }
@@ -633,7 +645,11 @@ pub fn execute_hybrid_command(
 
     // Format response
     let mut response = String::new();
-    response.push_str(&format!("Results: {} ({})\n", results.len(), format_duration(stats.total_time)));
+    response.push_str(&format!(
+        "Results: {} ({})\n",
+        results.len(),
+        format_duration(stats.total_time)
+    ));
     response.push_str(&format!(
         "Pipeline: vector({}ms, {}) -> graph({}ms, {}) -> causal({}ms, {})\n",
         stats.vector_time.as_millis(),
@@ -678,8 +694,8 @@ mod tests {
     use super::*;
 
     fn random_fingerprint(seed: u64) -> [u64; FINGERPRINT_WORDS] {
-        use std::hash::{Hash, Hasher};
         use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
 
         let mut fp = [0u64; FINGERPRINT_WORDS];
         for i in 0..FINGERPRINT_WORDS {
@@ -723,7 +739,7 @@ mod tests {
         // Query with vector constraint
         let query_fp = random_fingerprint(42);
         let query = HybridQuery::new()
-            .with_vector(query_fp, 0.0, 10)  // Low threshold to get results
+            .with_vector(query_fp, 0.0, 10) // Low threshold to get results
             .limit(5);
 
         let (results, stats) = engine.execute(&query).unwrap();

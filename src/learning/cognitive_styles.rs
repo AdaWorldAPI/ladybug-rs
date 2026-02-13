@@ -35,8 +35,8 @@
 //! 5. **Evolve**: Periodically discover new styles via mutation
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 // ============================================================================
 // Core Types
@@ -68,8 +68,15 @@ pub enum Operator {
 
 impl Operator {
     pub const ALL: [Operator; 9] = [
-        Self::Attend, Self::Match, Self::Infer, Self::Commit,
-        Self::Project, Self::Decompose, Self::Gate, Self::Prune, Self::Integrate,
+        Self::Attend,
+        Self::Match,
+        Self::Infer,
+        Self::Commit,
+        Self::Project,
+        Self::Decompose,
+        Self::Gate,
+        Self::Prune,
+        Self::Integrate,
     ];
 
     pub fn from_index(i: usize) -> Option<Self> {
@@ -103,8 +110,14 @@ pub enum Atom {
 
 impl Atom {
     pub const ALL: [Atom; 9] = [
-        Self::Deduction, Self::Induction, Self::Abduction, Self::Entailment,
-        Self::Association, Self::Analogy, Self::Recognition, Self::Evaluation,
+        Self::Deduction,
+        Self::Induction,
+        Self::Abduction,
+        Self::Entailment,
+        Self::Association,
+        Self::Analogy,
+        Self::Recognition,
+        Self::Evaluation,
         Self::Counterfactual,
     ];
 
@@ -179,7 +192,12 @@ impl CognitiveStyle {
     }
 
     /// Create from fingerprint
-    pub fn from_fingerprint(id: u16, name: String, fp: &StyleFingerprint, origin: StyleOrigin) -> Self {
+    pub fn from_fingerprint(
+        id: u16,
+        name: String,
+        fp: &StyleFingerprint,
+        origin: StyleOrigin,
+    ) -> Self {
         let mut operator_bias = [0.0f32; 9];
         let mut atom_bias = [0.0f32; 9];
 
@@ -233,7 +251,8 @@ impl CognitiveStyle {
         }
 
         if rng() < mutation_rate {
-            child.confidence_threshold = (child.confidence_threshold + (rng() - 0.5) * 0.1).clamp(0.5, 0.99);
+            child.confidence_threshold =
+                (child.confidence_threshold + (rng() - 0.5) * 0.1).clamp(0.5, 0.99);
         }
 
         if rng() < mutation_rate {
@@ -249,8 +268,11 @@ impl CognitiveStyle {
         child.origin = StyleOrigin::Discovered;
         child.generation = self.generation.max(other.generation) + 1;
         child.parents = vec![self.id, other.id];
-        child.name = format!("{}+{}", self.name.split_whitespace().next().unwrap_or("X"),
-                             other.name.split_whitespace().next().unwrap_or("Y"));
+        child.name = format!(
+            "{}+{}",
+            self.name.split_whitespace().next().unwrap_or("X"),
+            other.name.split_whitespace().next().unwrap_or("Y")
+        );
 
         // Uniform crossover
         for i in 0..9 {
@@ -284,7 +306,11 @@ pub fn create_base_styles() -> Vec<CognitiveStyle> {
         CognitiveStyle {
             id: 1,
             name: "First Principles Decomposition".into(),
-            use_when: vec!["debugging".into(), "questioning assumptions".into(), "novel domains".into()],
+            use_when: vec![
+                "debugging".into(),
+                "questioning assumptions".into(),
+                "novel domains".into(),
+            ],
             operator_bias: [0.15, 0.0, 0.25, 0.15, 0.0, 0.25, 0.0, 0.0, 0.0],
             atom_bias: [0.2, 0.0, 0.15, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0],
             confidence_threshold: 0.8,
@@ -296,7 +322,11 @@ pub fn create_base_styles() -> Vec<CognitiveStyle> {
         CognitiveStyle {
             id: 2,
             name: "Constraint Propagation".into(),
-            use_when: vec!["planning".into(), "satisfiability".into(), "configuration".into()],
+            use_when: vec![
+                "planning".into(),
+                "satisfiability".into(),
+                "configuration".into(),
+            ],
             operator_bias: [0.1, 0.0, 0.2, 0.15, 0.0, 0.0, 0.15, 0.2, 0.0],
             atom_bias: [0.15, 0.0, 0.0, 0.15, 0.0, 0.0, 0.0, 0.1, 0.0],
             confidence_threshold: 0.85,
@@ -308,7 +338,11 @@ pub fn create_base_styles() -> Vec<CognitiveStyle> {
         CognitiveStyle {
             id: 3,
             name: "Causal Inference".into(),
-            use_when: vec!["root cause".into(), "intervention effects".into(), "mechanisms".into()],
+            use_when: vec![
+                "root cause".into(),
+                "intervention effects".into(),
+                "mechanisms".into(),
+            ],
             operator_bias: [0.1, 0.0, 0.25, 0.0, 0.2, 0.1, 0.0, 0.0, 0.0],
             atom_bias: [0.0, 0.0, 0.2, 0.1, 0.0, 0.0, 0.0, 0.0, 0.2],
             confidence_threshold: 0.85,
@@ -320,7 +354,11 @@ pub fn create_base_styles() -> Vec<CognitiveStyle> {
         CognitiveStyle {
             id: 4,
             name: "Counterfactual Simulation".into(),
-            use_when: vec!["what-if".into(), "risk assessment".into(), "regret minimization".into()],
+            use_when: vec![
+                "what-if".into(),
+                "risk assessment".into(),
+                "regret minimization".into(),
+            ],
             operator_bias: [0.1, 0.0, 0.15, 0.0, 0.35, 0.0, 0.1, 0.0, 0.0],
             atom_bias: [0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.1, 0.25],
             confidence_threshold: 0.9,
@@ -329,12 +367,15 @@ pub fn create_base_styles() -> Vec<CognitiveStyle> {
             generation: 0,
             parents: vec![],
         },
-
         // === TRANSFER MODES ===
         CognitiveStyle {
             id: 5,
             name: "Analogical Transfer".into(),
-            use_when: vec!["novel domains".into(), "teaching".into(), "cross-domain".into()],
+            use_when: vec![
+                "novel domains".into(),
+                "teaching".into(),
+                "cross-domain".into(),
+            ],
             operator_bias: [0.1, 0.25, 0.2, 0.0, 0.15, 0.0, 0.0, 0.0, 0.0],
             atom_bias: [0.0, 0.0, 0.1, 0.0, 0.1, 0.3, 0.0, 0.0, 0.0],
             confidence_threshold: 0.85,
@@ -346,7 +387,11 @@ pub fn create_base_styles() -> Vec<CognitiveStyle> {
         CognitiveStyle {
             id: 6,
             name: "Cross-Domain Synthesis".into(),
-            use_when: vec!["creative problem solving".into(), "innovation".into(), "non-obvious connections".into()],
+            use_when: vec![
+                "creative problem solving".into(),
+                "innovation".into(),
+                "non-obvious connections".into(),
+            ],
             operator_bias: [0.0, 0.15, 0.2, 0.0, 0.2, 0.0, 0.0, 0.0, 0.15],
             atom_bias: [0.0, 0.0, 0.15, 0.0, 0.15, 0.15, 0.0, 0.0, 0.0],
             confidence_threshold: 0.9,
@@ -355,12 +400,15 @@ pub fn create_base_styles() -> Vec<CognitiveStyle> {
             generation: 0,
             parents: vec![],
         },
-
         // === UNCERTAINTY MODES ===
         CognitiveStyle {
             id: 7,
             name: "Bayesian Calibration".into(),
-            use_when: vec!["high stakes".into(), "limited data".into(), "uncertainty communication".into()],
+            use_when: vec![
+                "high stakes".into(),
+                "limited data".into(),
+                "uncertainty communication".into(),
+            ],
             operator_bias: [0.15, 0.0, 0.2, 0.0, 0.0, 0.0, 0.15, 0.1, 0.0],
             atom_bias: [0.0, 0.1, 0.0, 0.0, 0.0, 0.0, -0.1, 0.15, 0.0],
             confidence_threshold: 0.95,
@@ -372,7 +420,11 @@ pub fn create_base_styles() -> Vec<CognitiveStyle> {
         CognitiveStyle {
             id: 8,
             name: "Anomaly-Driven Exploration".into(),
-            use_when: vec!["model gaps".into(), "unexpected observations".into(), "active learning".into()],
+            use_when: vec![
+                "model gaps".into(),
+                "unexpected observations".into(),
+                "active learning".into(),
+            ],
             operator_bias: [0.15, 0.1, 0.0, 0.0, 0.25, 0.15, 0.0, 0.0, 0.0],
             atom_bias: [0.0, 0.1, 0.15, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0],
             confidence_threshold: 0.95,
@@ -381,12 +433,15 @@ pub fn create_base_styles() -> Vec<CognitiveStyle> {
             generation: 0,
             parents: vec![],
         },
-
         // === STRUCTURE MODES ===
         CognitiveStyle {
             id: 9,
             name: "Hierarchical Abstraction".into(),
-            use_when: vec!["complex systems".into(), "right level of detail".into(), "API design".into()],
+            use_when: vec![
+                "complex systems".into(),
+                "right level of detail".into(),
+                "API design".into(),
+            ],
             operator_bias: [0.15, 0.0, 0.2, 0.0, 0.0, 0.15, 0.0, 0.0, 0.15],
             atom_bias: [0.1, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.1, 0.0],
             confidence_threshold: 0.85,
@@ -398,7 +453,11 @@ pub fn create_base_styles() -> Vec<CognitiveStyle> {
         CognitiveStyle {
             id: 10,
             name: "Graph Structure Detection".into(),
-            use_when: vec!["dependency analysis".into(), "network analysis".into(), "knowledge graphs".into()],
+            use_when: vec![
+                "dependency analysis".into(),
+                "network analysis".into(),
+                "knowledge graphs".into(),
+            ],
             operator_bias: [0.15, 0.15, 0.25, 0.15, 0.0, 0.0, 0.0, 0.0, 0.0],
             atom_bias: [0.15, 0.0, 0.0, 0.15, 0.1, 0.0, 0.0, 0.0, 0.0],
             confidence_threshold: 0.8,
@@ -410,7 +469,11 @@ pub fn create_base_styles() -> Vec<CognitiveStyle> {
         CognitiveStyle {
             id: 11,
             name: "Temporal Sequence Modeling".into(),
-            use_when: vec!["time series".into(), "narrative".into(), "process modeling".into()],
+            use_when: vec![
+                "time series".into(),
+                "narrative".into(),
+                "process modeling".into(),
+            ],
             operator_bias: [0.1, 0.15, 0.2, 0.0, 0.2, 0.0, 0.0, 0.0, 0.0],
             atom_bias: [0.0, 0.15, 0.0, 0.1, 0.0, 0.0, 0.1, 0.0, 0.0],
             confidence_threshold: 0.85,
@@ -419,12 +482,15 @@ pub fn create_base_styles() -> Vec<CognitiveStyle> {
             generation: 0,
             parents: vec![],
         },
-
         // === DECISION MODES ===
         CognitiveStyle {
             id: 12,
             name: "Utility Maximization".into(),
-            use_when: vec!["resource allocation".into(), "trade-offs".into(), "optimization".into()],
+            use_when: vec![
+                "resource allocation".into(),
+                "trade-offs".into(),
+                "optimization".into(),
+            ],
             operator_bias: [0.1, 0.0, 0.15, 0.25, 0.2, 0.0, 0.0, 0.0, 0.0],
             atom_bias: [0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.1],
             confidence_threshold: 0.8,
@@ -436,7 +502,11 @@ pub fn create_base_styles() -> Vec<CognitiveStyle> {
         CognitiveStyle {
             id: 13,
             name: "Constraint Relaxation".into(),
-            use_when: vec!["over-constrained".into(), "negotiation".into(), "MVP definition".into()],
+            use_when: vec![
+                "over-constrained".into(),
+                "negotiation".into(),
+                "MVP definition".into(),
+            ],
             operator_bias: [0.1, 0.0, 0.0, 0.1, 0.0, 0.2, 0.15, 0.15, 0.0],
             atom_bias: [0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.2, 0.1],
             confidence_threshold: 0.85,
@@ -445,12 +515,15 @@ pub fn create_base_styles() -> Vec<CognitiveStyle> {
             generation: 0,
             parents: vec![],
         },
-
         // === SOCIAL/COLLABORATIVE MODES ===
         CognitiveStyle {
             id: 14,
             name: "Perspective Simulation".into(),
-            use_when: vec!["collaboration".into(), "explaining".into(), "anticipating objections".into()],
+            use_when: vec![
+                "collaboration".into(),
+                "explaining".into(),
+                "anticipating objections".into(),
+            ],
             operator_bias: [0.15, 0.2, 0.1, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0],
             atom_bias: [0.0, 0.0, 0.0, 0.0, 0.0, 0.15, 0.0, 0.1, 0.1],
             confidence_threshold: 0.85,
@@ -462,7 +535,11 @@ pub fn create_base_styles() -> Vec<CognitiveStyle> {
         CognitiveStyle {
             id: 15,
             name: "Adversarial Stress Testing".into(),
-            use_when: vec!["code review".into(), "argument verification".into(), "security analysis".into()],
+            use_when: vec![
+                "code review".into(),
+                "argument verification".into(),
+                "security analysis".into(),
+            ],
             operator_bias: [0.1, 0.0, 0.2, 0.0, 0.2, 0.15, 0.0, 0.0, 0.0],
             atom_bias: [0.0, 0.0, 0.15, 0.0, 0.0, 0.0, 0.0, 0.1, 0.15],
             confidence_threshold: 0.9,
@@ -525,7 +602,12 @@ impl TaskContext {
     }
 
     /// Discretize continuous values into buckets
-    pub fn discretize(uncertainty: f32, time_pressure: f32, novelty: f32, collaboration: f32) -> Self {
+    pub fn discretize(
+        uncertainty: f32,
+        time_pressure: f32,
+        novelty: f32,
+        collaboration: f32,
+    ) -> Self {
         Self {
             task_type: 0,
             uncertainty: (uncertainty.clamp(0.0, 1.0) * 3.0) as u8, // 4 buckets
@@ -553,9 +635,7 @@ impl TaskOutcome {
     /// Compute reward signal
     pub fn reward(&self) -> f32 {
         // Weighted combination
-        0.5 * self.success
-            + 0.2 * self.novelty
-            + 0.2 * self.efficiency
+        0.5 * self.success + 0.2 * self.novelty + 0.2 * self.efficiency
             - 0.1 * (self.errors as f32).min(1.0)
     }
 }
@@ -593,8 +673,8 @@ impl Default for RLConfig {
             epsilon: 0.3,
             epsilon_decay: 0.999,
             epsilon_min: 0.05,
-            fixed_weight: 0.5,      // γ in triangle
-            discovery_weight: 0.2,  // α in triangle
+            fixed_weight: 0.5,     // γ in triangle
+            discovery_weight: 0.2, // α in triangle
             // β (learned) = 1.0 - γ - α = 0.3
             mutation_rate: 0.15,
             discovery_interval: 50,
@@ -648,7 +728,9 @@ impl StyleSelector {
     /// Simple RNG
     fn rand(&self) -> f32 {
         let state = self.rng_state.fetch_add(1, Ordering::Relaxed);
-        let x = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        let x = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         self.rng_state.store(x, Ordering::Relaxed);
         (x >> 33) as f32 / (1u64 << 31) as f32
     }
@@ -779,13 +861,11 @@ impl StyleSelector {
         if discovered.len() >= self.config.max_discovered {
             let perf = self.discovered_performance.read().unwrap();
             // Remove worst performer
-            if let Some((worst_idx, _)) = discovered.iter().enumerate()
-                .min_by(|(_, a), (_, b)| {
-                    let pa = perf.get(&a.id).copied().unwrap_or(0.0);
-                    let pb = perf.get(&b.id).copied().unwrap_or(0.0);
-                    pa.partial_cmp(&pb).unwrap_or(std::cmp::Ordering::Equal)
-                })
-            {
+            if let Some((worst_idx, _)) = discovered.iter().enumerate().min_by(|(_, a), (_, b)| {
+                let pa = perf.get(&a.id).copied().unwrap_or(0.0);
+                let pb = perf.get(&b.id).copied().unwrap_or(0.0);
+                pa.partial_cmp(&pb).unwrap_or(std::cmp::Ordering::Equal)
+            }) {
                 discovered.remove(worst_idx);
             }
         }
@@ -795,9 +875,7 @@ impl StyleSelector {
 
         let new_style = if self.rand() < 0.5 && discovered.len() >= 2 {
             // Crossover two discovered or fixed styles
-            let all_styles: Vec<_> = self.fixed_styles.iter()
-                .chain(discovered.iter())
-                .collect();
+            let all_styles: Vec<_> = self.fixed_styles.iter().chain(discovered.iter()).collect();
 
             let idx1 = (self.rand() * all_styles.len() as f32) as usize % all_styles.len();
             let idx2 = (self.rand() * all_styles.len() as f32) as usize % all_styles.len();
@@ -808,7 +886,8 @@ impl StyleSelector {
             child
         } else {
             // Mutate a random style
-            let base_idx = (self.rand() * self.fixed_styles.len() as f32) as usize % self.fixed_styles.len();
+            let base_idx =
+                (self.rand() * self.fixed_styles.len() as f32) as usize % self.fixed_styles.len();
             let mut rng = || self.rand();
             let mut child = self.fixed_styles[base_idx].mutate(self.config.mutation_rate, &mut rng);
             child.id = new_id;
@@ -822,7 +901,8 @@ impl StyleSelector {
     /// Get all styles (fixed + discovered)
     pub fn all_styles(&self) -> Vec<CognitiveStyle> {
         let discovered = self.discovered_styles.read().unwrap();
-        self.fixed_styles.iter()
+        self.fixed_styles
+            .iter()
             .chain(discovered.iter())
             .cloned()
             .collect()
@@ -833,7 +913,9 @@ impl StyleSelector {
         if id < 1000 {
             self.fixed_styles.iter().find(|s| s.id == id).cloned()
         } else {
-            self.discovered_styles.read().unwrap()
+            self.discovered_styles
+                .read()
+                .unwrap()
                 .iter()
                 .find(|s| s.id == id)
                 .cloned()
@@ -859,7 +941,8 @@ impl StyleSelector {
     /// Export learned Q-values
     pub fn export_q_table(&self) -> HashMap<u64, HashMap<u16, f32>> {
         let q_table = self.q_table.read().unwrap();
-        q_table.iter()
+        q_table
+            .iter()
             .map(|(k, v)| (*k, v.iter().map(|(id, e)| (*id, e.value)).collect()))
             .collect()
     }

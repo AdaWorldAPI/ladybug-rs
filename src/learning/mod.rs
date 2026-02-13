@@ -25,72 +25,103 @@
 //! - rl_ops: Causal Q-learning with intervention/counterfactual reasoning
 //! - causal_ops: Full do-calculus as fingerprint operations
 
-pub mod moment;
-pub mod session;
 pub mod blackboard;
-pub mod resonance;
-pub mod concept;
 pub mod cam_ops;
-pub mod cognitive_frameworks;
-pub mod quantum_ops;
-pub mod rl_ops;
 pub mod causal_ops;
+pub mod cognitive_frameworks;
 pub mod cognitive_styles;
+pub mod concept;
+pub mod moment;
+pub mod quantum_ops;
+pub mod resonance;
+pub mod rl_ops;
+pub mod session;
 
-pub use moment::{Moment, MomentType, Qualia, MomentBuilder};
-pub use session::{LearningSession, SessionState, SessionPhase};
 pub use blackboard::{Blackboard, Decision, IceCakedLayer};
-pub use resonance::{ResonanceCapture, SimilarMoment, ResonanceStats, find_sweet_spot, mexican_hat_resonance};
-pub use concept::{ConceptExtractor, ExtractedConcept, RelationType, ConceptRelation};
 pub use cam_ops::{
-    OpDictionary, OpResult, OpContext, OpCategory, OpSignature, OpType, OpMeta, OpParam,
-    LanceOp, SqlOp, CypherOp, HammingOp, LearnOp,
-    bundle_fingerprints, fold_to_48,
+    CypherOp, HammingOp, LanceOp, LearnOp, OpCategory, OpContext, OpDictionary, OpMeta, OpParam,
+    OpResult, OpSignature, OpType, SqlOp, bundle_fingerprints, fold_to_48,
 };
 pub use cognitive_frameworks::{
-    // NARS
-    TruthValue, NarsCopula, NarsInference, NarsStatement,
     // ACT-R
-    ActrBuffer, ActrChunk, ActrProduction,
-    // RL (basic)
-    StateAction, QValue, RlAgent,
+    ActrBuffer,
+    ActrChunk,
+    ActrProduction,
+    CausalEdge,
+    CausalNode,
     // Causality (basic)
-    CausalRelation, CausalNode, CausalEdge, DoOperator, Counterfactual,
+    CausalRelation,
+    Counterfactual,
+    DoOperator,
+    NarsCopula,
+    NarsInference,
+    NarsStatement,
+    QValue,
     // Qualia
-    QualiaChannel, QualiaState,
+    QualiaChannel,
+    QualiaState,
+    RlAgent,
     // Rung
-    Rung, RungClassifier,
+    Rung,
+    RungClassifier,
+    // RL (basic)
+    StateAction,
+    // NARS
+    TruthValue,
 };
+pub use concept::{ConceptExtractor, ConceptRelation, ExtractedConcept, RelationType};
+pub use moment::{Moment, MomentBuilder, MomentType, Qualia};
 pub use quantum_ops::{
-    // Tree addressing
-    TreeAddr, tree_branches,
+    ActrRetrievalOp,
+    BindOp,
+    CausalDoOp,
+    // Operator algebra
+    ComposedOp,
+    HadamardOp,
+    // Core operators
+    IdentityOp,
+    MeasureOp,
+    // Cognitive operators
+    NarsInferenceOp,
+    NotOp,
+    PermuteOp,
+    ProjectOp,
+    QualiaShiftOp,
     // Quantum operator trait
     QuantumOp,
-    // Core operators
-    IdentityOp, NotOp, BindOp, PermuteOp, ProjectOp, HadamardOp, MeasureOp, TimeEvolutionOp,
-    // Cognitive operators
-    NarsInferenceOp, ActrRetrievalOp, RlValueOp, CausalDoOp, QualiaShiftOp, RungLadderOp,
-    // Operator algebra
-    ComposedOp, SumOp, TensorOp,
+    RlValueOp,
+    RungLadderOp,
+    SumOp,
+    TensorOp,
+    TimeEvolutionOp,
+    // Tree addressing
+    TreeAddr,
+    tree_branches,
 };
+pub use resonance::{
+    ResonanceCapture, ResonanceStats, SimilarMoment, find_sweet_spot, mexican_hat_resonance,
+};
+pub use session::{LearningSession, SessionPhase, SessionState};
 
 // NEW: Causal RL integration (wired to search module)
-pub use rl_ops::{
-    RlOp, CausalRlAgent,
-    ActionExplanation, AlternativeAction, CausalChainLink,
-};
-pub use causal_ops::{
-    CausalOp, CausalEngine, GraphEdge, CausalEdgeType,
-};
+pub use causal_ops::{CausalEdgeType, CausalEngine, CausalOp, GraphEdge};
+pub use rl_ops::{ActionExplanation, AlternativeAction, CausalChainLink, CausalRlAgent, RlOp};
 
 // Cognitive styles with RL-based adaptation
 pub use cognitive_styles::{
-    // Core types
-    Operator, Atom, StyleFingerprint, StyleOrigin,
+    Atom,
     // Style definition
-    CognitiveStyle, create_base_styles,
-    // RL components
-    TaskContext, TaskOutcome, RLConfig,
+    CognitiveStyle,
+    // Core types
+    Operator,
+    RLConfig,
+    StyleFingerprint,
+    StyleOrigin,
     // Selector (main interface)
-    StyleSelector, StyleSelectorStats,
+    StyleSelector,
+    StyleSelectorStats,
+    // RL components
+    TaskContext,
+    TaskOutcome,
+    create_base_styles,
 };

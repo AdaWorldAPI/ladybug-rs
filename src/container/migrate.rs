@@ -14,7 +14,9 @@ pub fn migrate_16k(old: &[u64; 256]) -> CogRecord {
     let mut record = CogRecord::new(ContainerGeometry::Cam);
 
     // Content: first 128 words = primary fingerprint signal
-    record.content[0].words.copy_from_slice(&old[..CONTAINER_WORDS]);
+    record.content[0]
+        .words
+        .copy_from_slice(&old[..CONTAINER_WORDS]);
 
     // Check if words 224-255 contain schema sidecar metadata (non-zero)
     let has_sidecar = old[224..256].iter().any(|&w| w != 0);
@@ -43,8 +45,12 @@ pub fn migrate_16k(old: &[u64; 256]) -> CogRecord {
 pub fn migrate_16k_extended(old: &[u64; 256]) -> CogRecord {
     let mut record = CogRecord::new(ContainerGeometry::Extended);
 
-    record.content[0].words.copy_from_slice(&old[..CONTAINER_WORDS]);
-    record.content[1].words.copy_from_slice(&old[CONTAINER_WORDS..2 * CONTAINER_WORDS]);
+    record.content[0]
+        .words
+        .copy_from_slice(&old[..CONTAINER_WORDS]);
+    record.content[1]
+        .words
+        .copy_from_slice(&old[CONTAINER_WORDS..2 * CONTAINER_WORDS]);
 
     {
         let mut meta = MetaViewMut::new(&mut record.meta.words);
@@ -74,8 +80,7 @@ pub fn to_16k(record: &CogRecord) -> [u64; 256] {
                 out[..CONTAINER_WORDS].copy_from_slice(&record.content[0].words);
             }
             if record.content.len() > 1 {
-                out[CONTAINER_WORDS..2 * CONTAINER_WORDS]
-                    .copy_from_slice(&record.content[1].words);
+                out[CONTAINER_WORDS..2 * CONTAINER_WORDS].copy_from_slice(&record.content[1].words);
             }
         }
         ContainerGeometry::Xyz => {
@@ -85,8 +90,7 @@ pub fn to_16k(record: &CogRecord) -> [u64; 256] {
                 out[..CONTAINER_WORDS].copy_from_slice(&record.content[0].words);
             }
             if record.content.len() > 1 {
-                out[CONTAINER_WORDS..2 * CONTAINER_WORDS]
-                    .copy_from_slice(&record.content[1].words);
+                out[CONTAINER_WORDS..2 * CONTAINER_WORDS].copy_from_slice(&record.content[1].words);
             }
         }
         ContainerGeometry::Chunked | ContainerGeometry::Tree => {

@@ -8,9 +8,9 @@
 //! - Brier (1950): Brier score for calibration
 //! - Yeung & Summerfield (2012): Metacognition in human decision-making
 
-use std::collections::VecDeque;
-use crate::nars::TruthValue;
 use super::GateState;
+use crate::nars::TruthValue;
+use std::collections::VecDeque;
 
 /// Maximum history window for calibration tracking.
 const MAX_HISTORY: usize = 100;
@@ -67,10 +67,12 @@ impl MetaCognition {
 
         let n = self.confidence_history.len() as f32;
         let mean_conf: f32 = self.confidence_history.iter().sum::<f32>() / n;
-        let variance: f32 = self.confidence_history
+        let variance: f32 = self
+            .confidence_history
             .iter()
             .map(|c| (c - mean_conf).powi(2))
-            .sum::<f32>() / n;
+            .sum::<f32>()
+            / n;
 
         // Meta-confidence: low variance in recent estimates → we know what we know
         let meta_confidence = 1.0 - variance.sqrt();
@@ -118,7 +120,8 @@ impl MetaCognition {
         self.confidence_history
             .iter()
             .map(|c| (c - mean).powi(2))
-            .sum::<f32>() / n
+            .sum::<f32>()
+            / n
     }
 
     /// Is reasoning well-calibrated? (Brier score < 0.15)
@@ -193,7 +196,10 @@ mod tests {
             mc.assess(GateState::Flow, &TruthValue::new(0.8, 0.8));
         }
         let assessment = mc.assess(GateState::Flow, &TruthValue::new(0.8, 0.8));
-        assert!(assessment.meta_confidence > 0.9, "Stable confidence should yield high meta-confidence");
+        assert!(
+            assessment.meta_confidence > 0.9,
+            "Stable confidence should yield high meta-confidence"
+        );
     }
 
     #[test]
@@ -205,6 +211,9 @@ mod tests {
             mc.assess(GateState::Hold, &TruthValue::new(0.5, c));
         }
         let assessment = mc.assess(GateState::Hold, &TruthValue::new(0.5, 0.5));
-        assert!(assessment.meta_confidence < 0.8, "Volatile confidence should yield low meta-confidence");
+        assert!(
+            assessment.meta_confidence < 0.8,
+            "Volatile confidence should yield low meta-confidence"
+        );
     }
 }

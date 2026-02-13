@@ -40,12 +40,12 @@
 //! - **Compaction**: Background merge of small files
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicU64, AtomicUsize, AtomicBool, Ordering};
-use std::sync::{Arc, RwLock, Mutex};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use std::path::{Path, PathBuf};
 use std::fs::{self};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 // ============================================================================
 // CPU Feature Detection
@@ -74,8 +74,8 @@ impl CpuFeatures {
                 has_avx512vpopcntdq: is_x86_feature_detected!("avx512vpopcntdq"),
                 has_avx2: is_x86_feature_detected!("avx2"),
                 has_sse42: is_x86_feature_detected!("sse4.2"),
-                cache_line_size: 64, // Standard for modern x86
-                l1_cache_size: 32 * 1024, // 32KB typical
+                cache_line_size: 64,       // Standard for modern x86
+                l1_cache_size: 32 * 1024,  // 32KB typical
                 l2_cache_size: 256 * 1024, // 256KB typical
                 physical_cores: num_cpus(),
             }
@@ -147,7 +147,7 @@ impl Default for BufferPoolConfig {
     fn default() -> Self {
         Self {
             max_memory: 256 * 1024 * 1024, // 256 MB
-            page_size: 4096, // 4KB pages
+            page_size: 4096,               // 4KB pages
             eviction_threshold: 0.9,
             prefetch_depth: 16,
             adaptive_prefetch: true,
@@ -270,7 +270,11 @@ impl BufferPool {
     }
 
     /// Insert a new page
-    pub fn insert_page(&self, page_id: u64, data: Vec<u8>) -> Result<Arc<BufferPage>, ServiceError> {
+    pub fn insert_page(
+        &self,
+        page_id: u64,
+        data: Vec<u8>,
+    ) -> Result<Arc<BufferPage>, ServiceError> {
         // Check if we need to evict
         let needed = data.len();
         self.ensure_space(needed)?;
@@ -343,7 +347,8 @@ impl BufferPool {
                 let refs = page.ref_count.load(Ordering::Relaxed);
                 if refs > 0 {
                     // Give second chance
-                    page.ref_count.store(refs.saturating_sub(1), Ordering::Relaxed);
+                    page.ref_count
+                        .store(refs.saturating_sub(1), Ordering::Relaxed);
                     continue;
                 }
 
@@ -468,9 +473,7 @@ fn is_sequential(ids: &[u64]) -> bool {
         return false;
     }
 
-    let diffs: Vec<i64> = ids.windows(2)
-        .map(|w| w[0] as i64 - w[1] as i64)
-        .collect();
+    let diffs: Vec<i64> = ids.windows(2).map(|w| w[0] as i64 - w[1] as i64).collect();
 
     // Check if all diffs are -1 (ascending) or 1 (descending)
     diffs.iter().all(|&d| d == -1) || diffs.iter().all(|&d| d == 1)
@@ -515,10 +518,22 @@ pub struct ZoneDescriptor {
 impl Default for AddressSchema {
     fn default() -> Self {
         let surface_names = [
-            "lance", "sql", "cypher", "graphql",
-            "nars", "causal", "meta", "verbs",
-            "concepts", "qualia", "memory", "learning",
-            "reserved_0c", "reserved_0d", "reserved_0e", "reserved_0f",
+            "lance",
+            "sql",
+            "cypher",
+            "graphql",
+            "nars",
+            "causal",
+            "meta",
+            "verbs",
+            "concepts",
+            "qualia",
+            "memory",
+            "learning",
+            "reserved_0c",
+            "reserved_0d",
+            "reserved_0e",
+            "reserved_0f",
         ];
 
         let surface: [ZoneDescriptor; 16] = std::array::from_fn(|i| ZoneDescriptor {
@@ -529,16 +544,20 @@ impl Default for AddressSchema {
 
         Self {
             surface,
-            fluid: (0x10..=0x7F).map(|prefix| ZoneDescriptor {
-                prefix,
-                name: format!("fluid_{:02x}", prefix),
-                ..Default::default()
-            }).collect(),
-            node: (0x80..=0xFF).map(|prefix| ZoneDescriptor {
-                prefix,
-                name: format!("node_{:02x}", prefix),
-                ..Default::default()
-            }).collect(),
+            fluid: (0x10..=0x7F)
+                .map(|prefix| ZoneDescriptor {
+                    prefix,
+                    name: format!("fluid_{:02x}", prefix),
+                    ..Default::default()
+                })
+                .collect(),
+            node: (0x80..=0xFF)
+                .map(|prefix| ZoneDescriptor {
+                    prefix,
+                    name: format!("node_{:02x}", prefix),
+                    ..Default::default()
+                })
+                .collect(),
             version: 1,
             last_modified: now_secs(),
         }
@@ -596,9 +615,9 @@ impl AddressSchema {
         let mut pos = 0;
 
         // Header
-        let version = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
+        let version = u64::from_le_bytes(bytes[pos..pos + 8].try_into().unwrap());
         pos += 8;
-        let last_modified = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
+        let last_modified = u64::from_le_bytes(bytes[pos..pos + 8].try_into().unwrap());
         pos += 8;
 
         // Surface zones
@@ -611,22 +630,22 @@ impl AddressSchema {
             let prefix = bytes[pos];
             pos += 1;
 
-            let name_len = u16::from_le_bytes(bytes[pos..pos+2].try_into().unwrap()) as usize;
+            let name_len = u16::from_le_bytes(bytes[pos..pos + 2].try_into().unwrap()) as usize;
             pos += 2;
 
-            let name = String::from_utf8_lossy(&bytes[pos..pos+name_len]).to_string();
+            let name = String::from_utf8_lossy(&bytes[pos..pos + name_len]).to_string();
             pos += name_len;
 
-            let active_slots = u32::from_le_bytes(bytes[pos..pos+4].try_into().unwrap());
+            let active_slots = u32::from_le_bytes(bytes[pos..pos + 4].try_into().unwrap());
             pos += 4;
 
-            let data_size = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
+            let data_size = u64::from_le_bytes(bytes[pos..pos + 8].try_into().unwrap());
             pos += 8;
 
-            let last_access = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
+            let last_access = u64::from_le_bytes(bytes[pos..pos + 8].try_into().unwrap());
             pos += 8;
 
-            let checksum = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
+            let checksum = u64::from_le_bytes(bytes[pos..pos + 8].try_into().unwrap());
             pos += 8;
 
             surface[i] = ZoneDescriptor {
@@ -640,7 +659,7 @@ impl AddressSchema {
         }
 
         // Fluid zones
-        let fluid_count = u16::from_le_bytes(bytes[pos..pos+2].try_into().unwrap()) as usize;
+        let fluid_count = u16::from_le_bytes(bytes[pos..pos + 2].try_into().unwrap()) as usize;
         pos += 2;
 
         let mut fluid = Vec::with_capacity(fluid_count);
@@ -648,13 +667,13 @@ impl AddressSchema {
             let prefix = bytes[pos];
             pos += 1;
 
-            let active_slots = u32::from_le_bytes(bytes[pos..pos+4].try_into().unwrap());
+            let active_slots = u32::from_le_bytes(bytes[pos..pos + 4].try_into().unwrap());
             pos += 4;
 
-            let data_size = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
+            let data_size = u64::from_le_bytes(bytes[pos..pos + 8].try_into().unwrap());
             pos += 8;
 
-            let checksum = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
+            let checksum = u64::from_le_bytes(bytes[pos..pos + 8].try_into().unwrap());
             pos += 8;
 
             fluid.push(ZoneDescriptor {
@@ -668,7 +687,7 @@ impl AddressSchema {
         }
 
         // Node zones
-        let node_count = u16::from_le_bytes(bytes[pos..pos+2].try_into().unwrap()) as usize;
+        let node_count = u16::from_le_bytes(bytes[pos..pos + 2].try_into().unwrap()) as usize;
         pos += 2;
 
         let mut node = Vec::with_capacity(node_count);
@@ -680,13 +699,13 @@ impl AddressSchema {
             let prefix = bytes[pos];
             pos += 1;
 
-            let active_slots = u32::from_le_bytes(bytes[pos..pos+4].try_into().unwrap());
+            let active_slots = u32::from_le_bytes(bytes[pos..pos + 4].try_into().unwrap());
             pos += 4;
 
-            let data_size = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
+            let data_size = u64::from_le_bytes(bytes[pos..pos + 8].try_into().unwrap());
             pos += 8;
 
-            let checksum = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
+            let checksum = u64::from_le_bytes(bytes[pos..pos + 8].try_into().unwrap());
             pos += 8;
 
             node.push(ZoneDescriptor {
@@ -976,8 +995,7 @@ impl CognitiveService {
         let cpu = CpuFeatures::detect();
 
         // Create data directory
-        fs::create_dir_all(&config.data_dir)
-            .map_err(|e| ServiceError::Io(e.to_string()))?;
+        fs::create_dir_all(&config.data_dir).map_err(|e| ServiceError::Io(e.to_string()))?;
 
         // Create buffer pool
         let buffer_pool = Arc::new(BufferPool::new(config.buffer_pool.clone()));
@@ -1004,8 +1022,7 @@ impl CognitiveService {
         let schema_path = data_dir.join("schema.bin");
 
         if schema_path.exists() {
-            let bytes = fs::read(&schema_path)
-                .map_err(|e| ServiceError::Io(e.to_string()))?;
+            let bytes = fs::read(&schema_path).map_err(|e| ServiceError::Io(e.to_string()))?;
             AddressSchema::from_bytes(&bytes)
         } else {
             Ok(AddressSchema::default())
@@ -1036,8 +1053,7 @@ impl CognitiveService {
         let manifest_path = self.config.data_dir.join("manifest.json");
 
         if manifest_path.exists() {
-            let bytes = fs::read(&manifest_path)
-                .map_err(|e| ServiceError::Io(e.to_string()))?;
+            let bytes = fs::read(&manifest_path).map_err(|e| ServiceError::Io(e.to_string()))?;
 
             let manifest = RecoveryManifest::from_bytes(&bytes)?;
 
@@ -1046,7 +1062,8 @@ impl CognitiveService {
                 self.replay_wal(manifest.wal_position)?;
             }
 
-            self.checkpoint_version.store(manifest.checkpoint_version, Ordering::SeqCst);
+            self.checkpoint_version
+                .store(manifest.checkpoint_version, Ordering::SeqCst);
         }
 
         Ok(())
@@ -1124,8 +1141,7 @@ impl CognitiveService {
             let schema = self.schema.read().unwrap();
             let bytes = schema.to_bytes();
             let schema_path = self.config.data_dir.join("schema.bin");
-            fs::write(&schema_path, &bytes)
-                .map_err(|e| ServiceError::Io(e.to_string()))?;
+            fs::write(&schema_path, &bytes).map_err(|e| ServiceError::Io(e.to_string()))?;
         }
 
         // Write recovery manifest
@@ -1220,9 +1236,7 @@ impl CognitiveService {
             checkpoint_version: self.checkpoint_version.load(Ordering::SeqCst),
             cpu_features: format!(
                 "AVX512: {}, AVX2: {}, cores: {}",
-                self.cpu.has_avx512f,
-                self.cpu.has_avx2,
-                self.cpu.physical_cores
+                self.cpu.has_avx512f, self.cpu.has_avx2, self.cpu.physical_cores
             ),
         }
     }
@@ -1289,8 +1303,8 @@ pub enum ColumnType {
     Int8,
     Int16,
     Float32,
-    Binary48,  // 384-bit fingerprint
-    Binary,    // Variable length
+    Binary48, // 384-bit fingerprint
+    Binary,   // Variable length
 }
 
 impl ColumnBatch {
@@ -1395,7 +1409,8 @@ fn now_secs() -> u64 {
 /// - AVX-512VL: Vector length extensions
 /// - AVX-512VPOPCNTDQ: Fast popcount for Hamming distance
 /// - AVX-512BW: Byte/word operations
-pub const AVX512_RUSTFLAGS: &str = "-C target-cpu=skylake-avx512 -C target-feature=+avx512f,+avx512vl,+avx512vpopcntdq,+avx512bw";
+pub const AVX512_RUSTFLAGS: &str =
+    "-C target-cpu=skylake-avx512 -C target-feature=+avx512f,+avx512vl,+avx512vpopcntdq,+avx512bw";
 
 /// Docker build command for optimal binaries
 pub const DOCKER_BUILD_CMD: &str = r#"
@@ -1470,8 +1485,9 @@ mod tests {
         }
 
         // Should have evicted some pages
-        assert!(pool.stats().evictions.load(Ordering::Relaxed) > 0
-            || pool.used_memory() <= 10 * 1024);
+        assert!(
+            pool.stats().evictions.load(Ordering::Relaxed) > 0 || pool.used_memory() <= 10 * 1024
+        );
     }
 
     #[test]

@@ -50,10 +50,7 @@
 
 use std::collections::HashMap;
 
-use super::hdr_cascade::{
-    HdrIndex, MexicanHat, RollingWindow,
-    hamming_distance,
-};
+use super::hdr_cascade::{HdrIndex, MexicanHat, RollingWindow, hamming_distance};
 
 // =============================================================================
 // CONSTANTS - THE VERBS
@@ -91,12 +88,12 @@ impl CausalVerbs {
             confounds: Self::seed_to_fingerprint("CAUSAL::CONFOUNDS::DETECT"),
         }
     }
-    
+
     /// Convert seed string to deterministic fingerprint
     fn seed_to_fingerprint(seed: &str) -> [u64; WORDS] {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut fp = [0u64; WORDS];
         for i in 0..WORDS {
             let mut hasher = DefaultHasher::new();
@@ -220,7 +217,7 @@ impl CorrelationStore {
             verbs: CausalVerbs::new(),
         }
     }
-    
+
     /// Store correlation: X co-occurs with Y
     pub fn store(&mut self, x: &[u64; WORDS], y: &[u64; WORDS], weight: f32) {
         // Edge = X ⊗ SEE ⊗ Y
@@ -228,7 +225,7 @@ impl CorrelationStore {
         for i in 0..WORDS {
             edge_fp[i] = x[i] ^ self.verbs.see[i] ^ y[i];
         }
-        
+
         let edge = CausalEdge {
             fingerprint: edge_fp,
             edge_type: EdgeType::See,
@@ -238,11 +235,11 @@ impl CorrelationStore {
             weight,
             timestamp: 0,
         };
-        
+
         self.index.add(&edge_fp);
         self.edges.push(edge);
     }
-    
+
     /// Query: what correlates with X?
     /// Uses ABBA unbinding - not similarity search
     pub fn query(&self, x: &[u64; WORDS], k: usize) -> Vec<(&CausalEdge, u32)> {
@@ -262,11 +259,12 @@ impl CorrelationStore {
         results.sort_by_key(|(_, d)| *d);
         results.truncate(k);
 
-        results.into_iter()
+        results
+            .into_iter()
             .map(|(idx, dist)| (&self.edges[idx], dist))
             .collect()
     }
-    
+
     /// Extract Y from edge given X (ABBA)
     pub fn unbind_outcome(&self, edge: &CausalEdge, x: &[u64; WORDS]) -> [u64; WORDS] {
         let mut result = [0u64; WORDS];
@@ -310,7 +308,7 @@ impl InterventionStore {
             verbs: CausalVerbs::new(),
         }
     }
-    
+
     /// Store intervention: in state, doing action causes outcome
     pub fn store(
         &mut self,
@@ -322,15 +320,12 @@ impl InterventionStore {
         // Edge = state ⊗ DO ⊗ action ⊗ CAUSES ⊗ outcome
         let mut edge_fp = [0u64; WORDS];
         for i in 0..WORDS {
-            edge_fp[i] = state[i] 
-                ^ self.verbs.do_verb[i] 
-                ^ action[i] 
-                ^ self.verbs.causes[i] 
-                ^ outcome[i];
+            edge_fp[i] =
+                state[i] ^ self.verbs.do_verb[i] ^ action[i] ^ self.verbs.causes[i] ^ outcome[i];
         }
-        
+
         let idx = self.edges.len();
-        
+
         let edge = CausalEdge {
             fingerprint: edge_fp,
             edge_type: EdgeType::Do,
@@ -340,15 +335,15 @@ impl InterventionStore {
             weight,
             timestamp: 0,
         };
-        
+
         // Index by prefixes (first u64 as key)
         self.state_index.entry(state[0]).or_default().push(idx);
         self.action_index.entry(action[0]).or_default().push(idx);
         self.outcome_index.entry(outcome[0]).or_default().push(idx);
-        
+
         self.edges.push(edge);
     }
-    
+
     /// Query: what outcome if I do action in state?
     /// This is O(1) with ABBA when edge exists!
     pub fn query_outcome(
@@ -358,16 +353,16 @@ impl InterventionStore {
         threshold: u32,
     ) -> Vec<(&CausalEdge, [u64; WORDS], u32)> {
         let mut results = Vec::new();
-        
+
         // Construct query pattern
         // edge = state ⊗ DO ⊗ action ⊗ CAUSES ⊗ outcome
         // edge ⊗ state ⊗ DO ⊗ action ⊗ CAUSES = outcome
-        
+
         // Check edges indexed by state prefix
         if let Some(indices) = self.state_index.get(&state[0]) {
             for &idx in indices {
                 let edge = &self.edges[idx];
-                
+
                 // ABBA: unbind to get outcome
                 let mut candidate_outcome = [0u64; WORDS];
                 for i in 0..WORDS {
@@ -377,7 +372,7 @@ impl InterventionStore {
                         ^ action[i]
                         ^ self.verbs.causes[i];
                 }
-                
+
                 // Verify by checking distance to stored outcome
                 let dist = hamming_distance(&candidate_outcome, &edge.outcome);
                 if dist < threshold {
@@ -385,10 +380,10 @@ impl InterventionStore {
                 }
             }
         }
-        
+
         results
     }
-    
+
     /// Query: what action caused this outcome in state?
     pub fn query_action(
         &self,
@@ -397,14 +392,14 @@ impl InterventionStore {
         threshold: u32,
     ) -> Vec<(&CausalEdge, [u64; WORDS], u32)> {
         let mut results = Vec::new();
-        
+
         // edge = state ⊗ DO ⊗ action ⊗ CAUSES ⊗ outcome
         // edge ⊗ state ⊗ DO ⊗ CAUSES ⊗ outcome = action
-        
+
         if let Some(indices) = self.outcome_index.get(&outcome[0]) {
             for &idx in indices {
                 let edge = &self.edges[idx];
-                
+
                 // ABBA: unbind to get action
                 let mut candidate_action = [0u64; WORDS];
                 for i in 0..WORDS {
@@ -414,7 +409,7 @@ impl InterventionStore {
                         ^ self.verbs.causes[i]
                         ^ outcome[i];
                 }
-                
+
                 // Verify
                 if let Some(stored_action) = &edge.action {
                     let dist = hamming_distance(&candidate_action, stored_action);
@@ -424,10 +419,10 @@ impl InterventionStore {
                 }
             }
         }
-        
+
         results
     }
-    
+
     /// Query: what state would lead to this outcome with this action?
     pub fn query_state(
         &self,
@@ -436,14 +431,14 @@ impl InterventionStore {
         threshold: u32,
     ) -> Vec<(&CausalEdge, [u64; WORDS], u32)> {
         let mut results = Vec::new();
-        
+
         // edge = state ⊗ DO ⊗ action ⊗ CAUSES ⊗ outcome
         // edge ⊗ DO ⊗ action ⊗ CAUSES ⊗ outcome = state
-        
+
         if let Some(indices) = self.action_index.get(&action[0]) {
             for &idx in indices {
                 let edge = &self.edges[idx];
-                
+
                 // ABBA: unbind to get state
                 let mut candidate_state = [0u64; WORDS];
                 for i in 0..WORDS {
@@ -453,7 +448,7 @@ impl InterventionStore {
                         ^ self.verbs.causes[i]
                         ^ outcome[i];
                 }
-                
+
                 // Verify
                 let dist = hamming_distance(&candidate_state, &edge.state);
                 if dist < threshold {
@@ -461,10 +456,10 @@ impl InterventionStore {
                 }
             }
         }
-        
+
         results
     }
-    
+
     /// Detect confounders: two outcomes with same cause
     pub fn detect_confounders(
         &self,
@@ -473,27 +468,21 @@ impl InterventionStore {
         threshold: u32,
     ) -> Vec<[u64; WORDS]> {
         let mut confounders = Vec::new();
-        
+
         // Find causes of outcome1
-        let causes1: Vec<_> = self.outcome_index
+        let causes1: Vec<_> = self
+            .outcome_index
             .get(&outcome1[0])
-            .map(|indices| {
-                indices.iter()
-                    .map(|&idx| self.edges[idx].state)
-                    .collect()
-            })
+            .map(|indices| indices.iter().map(|&idx| self.edges[idx].state).collect())
             .unwrap_or_default();
-        
+
         // Find causes of outcome2
-        let causes2: Vec<_> = self.outcome_index
+        let causes2: Vec<_> = self
+            .outcome_index
             .get(&outcome2[0])
-            .map(|indices| {
-                indices.iter()
-                    .map(|&idx| self.edges[idx].state)
-                    .collect()
-            })
+            .map(|indices| indices.iter().map(|&idx| self.edges[idx].state).collect())
             .unwrap_or_default();
-        
+
         // Find common causes (confounders)
         for c1 in &causes1 {
             for c2 in &causes2 {
@@ -503,7 +492,7 @@ impl InterventionStore {
                 }
             }
         }
-        
+
         confounders
     }
 }
@@ -533,7 +522,7 @@ impl CounterfactualStore {
             verbs: CausalVerbs::new(),
         }
     }
-    
+
     /// Store counterfactual: if in state, had I done action, outcome would have happened
     pub fn store(
         &mut self,
@@ -551,9 +540,9 @@ impl CounterfactualStore {
                 ^ self.verbs.would[i]
                 ^ alt_outcome[i];
         }
-        
+
         let idx = self.edges.len();
-        
+
         let edge = CausalEdge {
             fingerprint: edge_fp,
             edge_type: EdgeType::Imagine,
@@ -563,11 +552,14 @@ impl CounterfactualStore {
             weight,
             timestamp: 0,
         };
-        
-        self.state_index.entry(actual_state[0]).or_default().push(idx);
+
+        self.state_index
+            .entry(actual_state[0])
+            .or_default()
+            .push(idx);
         self.edges.push(edge);
     }
-    
+
     /// Query: what would have happened if I had done action in state?
     pub fn query_counterfactual(
         &self,
@@ -576,14 +568,14 @@ impl CounterfactualStore {
         threshold: u32,
     ) -> Vec<(&CausalEdge, [u64; WORDS], u32)> {
         let mut results = Vec::new();
-        
+
         // edge = state ⊗ IMAGINE ⊗ action ⊗ WOULD ⊗ outcome
         // edge ⊗ state ⊗ IMAGINE ⊗ action ⊗ WOULD = outcome
-        
+
         if let Some(indices) = self.state_index.get(&state[0]) {
             for &idx in indices {
                 let edge = &self.edges[idx];
-                
+
                 // ABBA: unbind to get counterfactual outcome
                 let mut cf_outcome = [0u64; WORDS];
                 for i in 0..WORDS {
@@ -593,7 +585,7 @@ impl CounterfactualStore {
                         ^ alt_action[i]
                         ^ self.verbs.would[i];
                 }
-                
+
                 // Verify
                 let dist = hamming_distance(&cf_outcome, &edge.outcome);
                 if dist < threshold {
@@ -601,10 +593,10 @@ impl CounterfactualStore {
                 }
             }
         }
-        
+
         results
     }
-    
+
     /// Compute regret: actual outcome vs counterfactual outcome
     pub fn compute_regret(
         &self,
@@ -615,13 +607,13 @@ impl CounterfactualStore {
     ) -> Option<f32> {
         // Get counterfactual outcome
         let cf_results = self.query_counterfactual(state, alt_action, threshold);
-        
+
         if let Some((_edge, cf_outcome, _)) = cf_results.first() {
             // Regret = distance between actual and counterfactual
             // (positive = counterfactual was better)
             let actual_dist = hamming_distance(actual_outcome, state);
             let cf_dist = hamming_distance(&cf_outcome, state);
-            
+
             // Normalize to -1.0 to 1.0
             let regret = (actual_dist as f32 - cf_dist as f32) / (WORDS * 64) as f32;
             Some(regret)
@@ -668,7 +660,7 @@ pub struct CausalResult {
 }
 
 /// Unified Causal Search Engine
-/// 
+///
 /// One surface, three modes. Clean separation underneath.
 pub struct CausalSearch {
     /// Rung 1: Correlation store (HDR cascade)
@@ -697,26 +689,26 @@ impl CausalSearch {
             threshold: 2000,
         }
     }
-    
+
     /// Set query threshold
     pub fn set_threshold(&mut self, threshold: u32) {
         self.threshold = threshold;
     }
-    
+
     /// Set Mexican hat parameters
     pub fn set_mexican_hat(&mut self, excite: u32, inhibit: u32) {
         self.hat = MexicanHat::new(excite, inhibit);
     }
-    
+
     // -------------------------------------------------------------------------
     // STORE OPERATIONS
     // -------------------------------------------------------------------------
-    
+
     /// Store correlation (Rung 1): X co-occurs with Y
     pub fn store_correlation(&mut self, x: &[u64; WORDS], y: &[u64; WORDS], weight: f32) {
         self.correlations.store(x, y, weight);
     }
-    
+
     /// Store intervention (Rung 2): doing action in state causes outcome
     pub fn store_intervention(
         &mut self,
@@ -727,7 +719,7 @@ impl CausalSearch {
     ) {
         self.interventions.store(state, action, outcome, weight);
     }
-    
+
     /// Store counterfactual (Rung 3): had I done action, outcome would have happened
     pub fn store_counterfactual(
         &mut self,
@@ -736,16 +728,18 @@ impl CausalSearch {
         alt_outcome: &[u64; WORDS],
         weight: f32,
     ) {
-        self.counterfactuals.store(state, alt_action, alt_outcome, weight);
+        self.counterfactuals
+            .store(state, alt_action, alt_outcome, weight);
     }
-    
+
     // -------------------------------------------------------------------------
     // QUERY OPERATIONS
     // -------------------------------------------------------------------------
-    
+
     /// Query correlations (Rung 1): what co-occurs with X?
     pub fn query_correlates(&self, x: &[u64; WORDS], k: usize) -> Vec<CausalResult> {
-        self.correlations.query(x, k)
+        self.correlations
+            .query(x, k)
             .into_iter()
             .map(|(edge, dist)| CausalResult {
                 mode: QueryMode::Correlate,
@@ -756,14 +750,11 @@ impl CausalSearch {
             })
             .collect()
     }
-    
+
     /// Query intervention (Rung 2): what happens if I do action in state?
-    pub fn query_outcome(
-        &self,
-        state: &[u64; WORDS],
-        action: &[u64; WORDS],
-    ) -> Vec<CausalResult> {
-        self.interventions.query_outcome(state, action, self.threshold)
+    pub fn query_outcome(&self, state: &[u64; WORDS], action: &[u64; WORDS]) -> Vec<CausalResult> {
+        self.interventions
+            .query_outcome(state, action, self.threshold)
             .into_iter()
             .map(|(edge, outcome, dist)| CausalResult {
                 mode: QueryMode::Intervene,
@@ -774,14 +765,11 @@ impl CausalSearch {
             })
             .collect()
     }
-    
+
     /// Query intervention (Rung 2): what action caused this outcome?
-    pub fn query_action(
-        &self,
-        state: &[u64; WORDS],
-        outcome: &[u64; WORDS],
-    ) -> Vec<CausalResult> {
-        self.interventions.query_action(state, outcome, self.threshold)
+    pub fn query_action(&self, state: &[u64; WORDS], outcome: &[u64; WORDS]) -> Vec<CausalResult> {
+        self.interventions
+            .query_action(state, outcome, self.threshold)
             .into_iter()
             .map(|(edge, action, dist)| CausalResult {
                 mode: QueryMode::Intervene,
@@ -792,14 +780,15 @@ impl CausalSearch {
             })
             .collect()
     }
-    
+
     /// Query counterfactual (Rung 3): what would have happened?
     pub fn query_counterfactual(
         &self,
         state: &[u64; WORDS],
         alt_action: &[u64; WORDS],
     ) -> Vec<CausalResult> {
-        self.counterfactuals.query_counterfactual(state, alt_action, self.threshold)
+        self.counterfactuals
+            .query_counterfactual(state, alt_action, self.threshold)
             .into_iter()
             .map(|(edge, outcome, dist)| CausalResult {
                 mode: QueryMode::Counterfact,
@@ -810,11 +799,11 @@ impl CausalSearch {
             })
             .collect()
     }
-    
+
     // -------------------------------------------------------------------------
     // UNIFIED QUERY API
     // -------------------------------------------------------------------------
-    
+
     /// Unified query: automatically selects mode based on inputs
     pub fn query(
         &mut self,
@@ -825,18 +814,14 @@ impl CausalSearch {
         k: usize,
     ) -> Vec<CausalResult> {
         let results = match mode {
-            QueryMode::Correlate => {
-                self.query_correlates(state, k)
-            }
+            QueryMode::Correlate => self.query_correlates(state, k),
             QueryMode::Intervene => {
                 if let Some(action) = action {
                     if outcome.is_some() {
                         // Have both: query for state (unusual)
-                        self.interventions.query_state(
-                            action,
-                            outcome.unwrap(),
-                            self.threshold
-                        ).into_iter()
+                        self.interventions
+                            .query_state(action, outcome.unwrap(), self.threshold)
+                            .into_iter()
                             .map(|(e, s, d)| CausalResult {
                                 mode: QueryMode::Intervene,
                                 fingerprint: s,
@@ -864,15 +849,15 @@ impl CausalSearch {
                 }
             }
         };
-        
+
         // Update rolling window with distances
         for r in &results {
             self.window.push(r.distance);
         }
-        
+
         results
     }
-    
+
     // -------------------------------------------------------------------------
     // REVERSE CAUSAL TRACE
     // -------------------------------------------------------------------------
@@ -888,11 +873,7 @@ impl CausalSearch {
     /// # Science
     /// - Pearl (2009): "The Book of Why" — tracing causal chains backward
     /// - Halpern & Pearl (2005): Actual causality definition
-    pub fn reverse_trace(
-        &self,
-        outcome: &[u64; WORDS],
-        max_depth: usize,
-    ) -> CausalTrace {
+    pub fn reverse_trace(&self, outcome: &[u64; WORDS], max_depth: usize) -> CausalTrace {
         let mut steps = Vec::new();
         let mut current = *outcome;
 
@@ -941,9 +922,10 @@ impl CausalSearch {
         outcome1: &[u64; WORDS],
         outcome2: &[u64; WORDS],
     ) -> Vec<[u64; WORDS]> {
-        self.interventions.detect_confounders(outcome1, outcome2, self.threshold)
+        self.interventions
+            .detect_confounders(outcome1, outcome2, self.threshold)
     }
-    
+
     /// Compute regret for a counterfactual
     pub fn compute_regret(
         &self,
@@ -951,19 +933,20 @@ impl CausalSearch {
         actual_outcome: &[u64; WORDS],
         alt_action: &[u64; WORDS],
     ) -> Option<f32> {
-        self.counterfactuals.compute_regret(state, actual_outcome, alt_action, self.threshold)
+        self.counterfactuals
+            .compute_regret(state, actual_outcome, alt_action, self.threshold)
     }
-    
+
     /// Get coherence stats
     pub fn coherence(&self) -> (f32, f32) {
         self.window.stats()
     }
-    
+
     /// Is the search pattern coherent?
     pub fn is_coherent(&self) -> bool {
         self.window.is_coherent(0.3)
     }
-    
+
     /// Get Mexican hat response for a distance
     pub fn response(&self, distance: u32) -> f32 {
         self.hat.response(distance)
@@ -983,7 +966,7 @@ impl Default for CausalSearch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     use crate::core::Fingerprint;
 
     /// Convert Fingerprint to 256-word array for HDR cascade
@@ -1008,98 +991,92 @@ mod tests {
 
         let x = random_fp();
         let y = random_fp();
-        
+
         store.store(&x, &y, 1.0);
-        
+
         let results = store.query(&x, 5);
         assert!(!results.is_empty());
     }
-    
+
     #[test]
     fn test_intervention_abba() {
         let mut store = InterventionStore::new();
-        
+
         let state = random_fp();
         let action = random_fp();
         let outcome = random_fp();
-        
+
         store.store(&state, &action, &outcome, 1.0);
-        
+
         // Query for outcome
         let results = store.query_outcome(&state, &action, 100);
         assert!(!results.is_empty());
-        
+
         // ABBA should recover exact outcome
         let (_, recovered, dist) = &results[0];
         assert_eq!(*dist, 0);
         assert_eq!(recovered, &outcome);
     }
-    
+
     #[test]
     fn test_intervention_reverse_query() {
         let mut store = InterventionStore::new();
-        
+
         let state = random_fp();
         let action = random_fp();
         let outcome = random_fp();
-        
+
         store.store(&state, &action, &outcome, 1.0);
-        
+
         // Query for action given outcome
         let results = store.query_action(&state, &outcome, 100);
         assert!(!results.is_empty());
-        
+
         // ABBA should recover exact action
         let (_, recovered, dist) = &results[0];
         assert_eq!(*dist, 0);
         assert_eq!(recovered, &action);
     }
-    
+
     #[test]
     fn test_counterfactual() {
         let mut store = CounterfactualStore::new();
-        
+
         let state = random_fp();
         let alt_action = random_fp();
         let alt_outcome = random_fp();
-        
+
         store.store(&state, &alt_action, &alt_outcome, 1.0);
-        
+
         // Query counterfactual
         let results = store.query_counterfactual(&state, &alt_action, 100);
         assert!(!results.is_empty());
-        
+
         // Should recover counterfactual outcome
         let (_, recovered, dist) = &results[0];
         assert_eq!(*dist, 0);
         assert_eq!(recovered, &alt_outcome);
     }
-    
+
     #[test]
     fn test_unified_causal_search() {
         let mut search = CausalSearch::new();
-        
+
         let state = random_fp();
         let action = random_fp();
         let outcome = random_fp();
-        
+
         // Store intervention
         search.store_intervention(&state, &action, &outcome, 1.0);
-        
+
         // Query via unified API
-        let results = search.query(
-            QueryMode::Intervene,
-            &state,
-            Some(&action),
-            None,
-            5,
-        );
-        
+        let results = search.query(QueryMode::Intervene, &state, Some(&action), None, 5);
+
         assert!(!results.is_empty());
         assert_eq!(results[0].mode, QueryMode::Intervene);
         assert_eq!(results[0].fingerprint, outcome);
     }
-    
+
     #[test]
     fn test_reverse_causal_trace() {
         let mut search = CausalSearch::new();
@@ -1119,7 +1096,10 @@ mod tests {
         let trace = search.reverse_trace(&outcome, 5);
 
         // Should find at least 1 step (outcome → state2)
-        assert!(!trace.steps.is_empty(), "Trace should find at least one cause");
+        assert!(
+            !trace.steps.is_empty(),
+            "Trace should find at least one cause"
+        );
         assert_eq!(trace.steps[0].outcome, outcome);
         assert_eq!(trace.steps[0].state, state2);
 
@@ -1148,22 +1128,22 @@ mod tests {
     #[test]
     fn test_confounder_detection() {
         let mut search = CausalSearch::new();
-        
+
         // Sun causes both ice cream and drowning
         let sun = random_fp();
         let ice_cream = random_fp();
         let drowning = random_fp();
         let eat = random_fp();
         let swim = random_fp();
-        
+
         // sun -> ice_cream
         search.store_intervention(&sun, &eat, &ice_cream, 1.0);
         // sun -> drowning
         search.store_intervention(&sun, &swim, &drowning, 1.0);
-        
+
         // Detect: ice_cream and drowning share a cause
         let confounders = search.detect_confounders(&ice_cream, &drowning);
-        
+
         // Sun should be detected as confounder
         assert!(!confounders.is_empty());
         let dist = hamming_distance(&confounders[0], &sun);

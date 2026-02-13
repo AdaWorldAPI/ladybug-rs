@@ -15,10 +15,10 @@
 //! Quorum dynamics ARE the gates. Projections ARE the measurements.
 //! No simulation of qubits — direct operation on the native substrate.
 
-use crate::core::Fingerprint;
-use crate::FINGERPRINT_BITS;
-use super::field::{QuorumField, FIELD_SIZE};
 use super::crystal4k::Crystal4K;
+use super::field::{FIELD_SIZE, QuorumField};
+use crate::FINGERPRINT_BITS;
+use crate::core::Fingerprint;
 
 // =============================================================================
 // 1. SPATIAL ENTANGLEMENT (CNOT on lattice)
@@ -211,11 +211,7 @@ pub fn inverse_qft_axis(field: &mut QuorumField, axis: Axis) -> Fingerprint {
 ///
 /// # Returns
 /// (eigenvalue_estimate, kicked_field) where eigenvalue is normalized 0.0-1.0.
-pub fn phase_kickback<F>(
-    field: &mut QuorumField,
-    operator: F,
-    axis: Axis,
-) -> (f32, Fingerprint)
+pub fn phase_kickback<F>(field: &mut QuorumField, operator: F, axis: Axis) -> (f32, Fingerprint)
 where
     F: Fn(&Fingerprint) -> Fingerprint,
 {
@@ -523,12 +519,24 @@ fn compute_syndrome_yz(field: &QuorumField, x: usize, y: usize, z: usize) -> u32
 fn correct_cell_from_neighbors(field: &mut QuorumField, x: usize, y: usize, z: usize) {
     let mut neighbors = Vec::new();
 
-    if x > 0 { neighbors.push(field.get(x - 1, y, z)); }
-    if x < FIELD_SIZE - 1 { neighbors.push(field.get(x + 1, y, z)); }
-    if y > 0 { neighbors.push(field.get(x, y - 1, z)); }
-    if y < FIELD_SIZE - 1 { neighbors.push(field.get(x, y + 1, z)); }
-    if z > 0 { neighbors.push(field.get(x, y, z - 1)); }
-    if z < FIELD_SIZE - 1 { neighbors.push(field.get(x, y, z + 1)); }
+    if x > 0 {
+        neighbors.push(field.get(x - 1, y, z));
+    }
+    if x < FIELD_SIZE - 1 {
+        neighbors.push(field.get(x + 1, y, z));
+    }
+    if y > 0 {
+        neighbors.push(field.get(x, y - 1, z));
+    }
+    if y < FIELD_SIZE - 1 {
+        neighbors.push(field.get(x, y + 1, z));
+    }
+    if z > 0 {
+        neighbors.push(field.get(x, y, z - 1));
+    }
+    if z < FIELD_SIZE - 1 {
+        neighbors.push(field.get(x, y, z + 1));
+    }
 
     if neighbors.is_empty() {
         return;
@@ -578,12 +586,24 @@ pub fn quantum_walk_step(field: &mut QuorumField) -> usize {
 
                 // Collect neighbors
                 let mut neighbors = Vec::new();
-                if x > 0 { neighbors.push(field.get(x - 1, y, z)); }
-                if x < FIELD_SIZE - 1 { neighbors.push(field.get(x + 1, y, z)); }
-                if y > 0 { neighbors.push(field.get(x, y - 1, z)); }
-                if y < FIELD_SIZE - 1 { neighbors.push(field.get(x, y + 1, z)); }
-                if z > 0 { neighbors.push(field.get(x, y, z - 1)); }
-                if z < FIELD_SIZE - 1 { neighbors.push(field.get(x, y, z + 1)); }
+                if x > 0 {
+                    neighbors.push(field.get(x - 1, y, z));
+                }
+                if x < FIELD_SIZE - 1 {
+                    neighbors.push(field.get(x + 1, y, z));
+                }
+                if y > 0 {
+                    neighbors.push(field.get(x, y - 1, z));
+                }
+                if y < FIELD_SIZE - 1 {
+                    neighbors.push(field.get(x, y + 1, z));
+                }
+                if z > 0 {
+                    neighbors.push(field.get(x, y, z - 1));
+                }
+                if z < FIELD_SIZE - 1 {
+                    neighbors.push(field.get(x, y, z + 1));
+                }
 
                 if neighbors.is_empty() {
                     next_cells.push((x, y, z, current));
@@ -591,7 +611,8 @@ pub fn quantum_walk_step(field: &mut QuorumField) -> usize {
                 }
 
                 // Compute weights for each neighbor
-                let weights: Vec<f32> = neighbors.iter()
+                let weights: Vec<f32> = neighbors
+                    .iter()
                     .map(|n| n.popcount() as f32 / FINGERPRINT_BITS as f32)
                     .collect();
 
@@ -740,7 +761,10 @@ impl MixedCell {
         }
 
         // Fallback to last state
-        self.states.last().map(|(s, _)| s.clone()).unwrap_or_else(Fingerprint::zero)
+        self.states
+            .last()
+            .map(|(s, _)| s.clone())
+            .unwrap_or_else(Fingerprint::zero)
     }
 
     /// Shannon entropy of the mixture.
@@ -859,12 +883,24 @@ impl MixedField {
                 for z in 0..FIELD_SIZE {
                     let mut neighbor_expected = Vec::new();
 
-                    if x > 0 { neighbor_expected.push(self.cells[x-1][y][z].expected()); }
-                    if x < FIELD_SIZE-1 { neighbor_expected.push(self.cells[x+1][y][z].expected()); }
-                    if y > 0 { neighbor_expected.push(self.cells[x][y-1][z].expected()); }
-                    if y < FIELD_SIZE-1 { neighbor_expected.push(self.cells[x][y+1][z].expected()); }
-                    if z > 0 { neighbor_expected.push(self.cells[x][y][z-1].expected()); }
-                    if z < FIELD_SIZE-1 { neighbor_expected.push(self.cells[x][y][z+1].expected()); }
+                    if x > 0 {
+                        neighbor_expected.push(self.cells[x - 1][y][z].expected());
+                    }
+                    if x < FIELD_SIZE - 1 {
+                        neighbor_expected.push(self.cells[x + 1][y][z].expected());
+                    }
+                    if y > 0 {
+                        neighbor_expected.push(self.cells[x][y - 1][z].expected());
+                    }
+                    if y < FIELD_SIZE - 1 {
+                        neighbor_expected.push(self.cells[x][y + 1][z].expected());
+                    }
+                    if z > 0 {
+                        neighbor_expected.push(self.cells[x][y][z - 1].expected());
+                    }
+                    if z < FIELD_SIZE - 1 {
+                        neighbor_expected.push(self.cells[x][y][z + 1].expected());
+                    }
 
                     if neighbor_expected.is_empty() {
                         continue;
@@ -928,20 +964,14 @@ impl TeleportPacket {
 }
 
 /// Prepare teleportation: Alice computes corrections.
-pub fn teleport_prepare(
-    source_cell: &Fingerprint,
-    shared_half_a: &Fingerprint,
-) -> TeleportPacket {
+pub fn teleport_prepare(source_cell: &Fingerprint, shared_half_a: &Fingerprint) -> TeleportPacket {
     // Corrections = source XOR shared_half_a
     let corrections = source_cell.bind(shared_half_a);
     TeleportPacket { corrections }
 }
 
 /// Receive teleportation: Bob applies corrections.
-pub fn teleport_receive(
-    packet: &TeleportPacket,
-    shared_half_b: &Fingerprint,
-) -> Fingerprint {
+pub fn teleport_receive(packet: &TeleportPacket, shared_half_b: &Fingerprint) -> Fingerprint {
     // Result = corrections XOR shared_half_b
     // If shared_a XOR shared_b = key, then:
     // result = (source XOR shared_a) XOR shared_b
@@ -976,10 +1006,7 @@ pub fn create_teleport_pair(key: &Fingerprint) -> (Crystal4K, Crystal4K) {
     let (ay, by) = create_entangled_pair(key);
     let (az, bz) = create_entangled_pair(key);
 
-    (
-        Crystal4K::new(ax, ay, az),
-        Crystal4K::new(bx, by, bz),
-    )
+    (Crystal4K::new(ax, ay, az), Crystal4K::new(bx, by, bz))
 }
 
 // =============================================================================
@@ -1094,7 +1121,11 @@ mod tests {
         let (eigenvalue, _delta) = phase_kickback(&mut field, identity, Axis::X);
 
         // Identity should give eigenvalue ≈ 0
-        assert!(eigenvalue < 0.01, "Identity eigenvalue should be near 0, got {}", eigenvalue);
+        assert!(
+            eigenvalue < 0.01,
+            "Identity eigenvalue should be near 0, got {}",
+            eigenvalue
+        );
     }
 
     #[test]
@@ -1106,7 +1137,11 @@ mod tests {
         let (eigenvalue, _delta) = phase_kickback(&mut field, not_op, Axis::X);
 
         // NOT should give eigenvalue ≈ 1.0 (maximum change)
-        assert!(eigenvalue > 0.9, "NOT eigenvalue should be near 1.0, got {}", eigenvalue);
+        assert!(
+            eigenvalue > 0.9,
+            "NOT eigenvalue should be near 1.0, got {}",
+            eigenvalue
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -1184,7 +1219,10 @@ mod tests {
 
         // After correction, cell should be closer to uniform
         let after_sim = field.get(2, 2, 0).similarity(&uniform);
-        assert!(after_sim > before_sim, "Correction should improve similarity");
+        assert!(
+            after_sim > before_sim,
+            "Correction should improve similarity"
+        );
     }
 
     #[test]
@@ -1349,10 +1387,7 @@ mod tests {
                 for z in 0..FIELD_SIZE {
                     let current = field.get(x, y, z);
                     let alt = Fingerprint::from_content(&format!("alt_{}_{}_{}", x, y, z));
-                    mixed_field.set(x, y, z, MixedCell::mixed(vec![
-                        (current, 0.5),
-                        (alt, 0.5),
-                    ]));
+                    mixed_field.set(x, y, z, MixedCell::mixed(vec![(current, 0.5), (alt, 0.5)]));
                 }
             }
         }
@@ -1360,8 +1395,11 @@ mod tests {
         let initial_entropy = mixed_field.total_entropy();
 
         // Each cell has entropy = 1.0 (50/50 split), total = 125
-        assert!((initial_entropy - 125.0).abs() < 1.0,
-            "Initial entropy should be ~125, got {}", initial_entropy);
+        assert!(
+            (initial_entropy - 125.0).abs() < 1.0,
+            "Initial entropy should be ~125, got {}",
+            initial_entropy
+        );
 
         // Evolve many times to ensure convergence
         for _ in 0..20 {
@@ -1372,8 +1410,12 @@ mod tests {
 
         // Entropy should decrease as states converge
         // (neighbor influence causes probabilities to shift)
-        assert!(final_entropy <= initial_entropy,
-            "Entropy should not increase: {} -> {}", initial_entropy, final_entropy);
+        assert!(
+            final_entropy <= initial_entropy,
+            "Entropy should not increase: {} -> {}",
+            initial_entropy,
+            final_entropy
+        );
     }
 
     // -------------------------------------------------------------------------

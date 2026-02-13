@@ -9,32 +9,31 @@
 //! - Integrated Cognitive Fabric
 //! - Sigma-10 Membrane (tau/sigma/qualia -> 10K bits)
 
-mod thought;
-mod style;
-mod quad_triangle;
 mod collapse_gate;
-mod seven_layer;
-mod rung;
 mod fabric;
 mod grammar_engine;
-mod substrate;
 pub mod membrane;
 pub mod metacog;
+mod quad_triangle;
 pub mod recursive;
+mod rung;
+mod seven_layer;
+mod style;
+mod substrate;
+mod thought;
 
-pub use thought::{Thought, Concept, Belief};
-pub use style::*;
-pub use quad_triangle::*;
 pub use collapse_gate::*;
-pub use seven_layer::*;
-pub use rung::*;
 pub use grammar_engine::{
-    GrammarRole, GrammarTriangle, GrammarCognitiveEngine,
-    IngestResult, process_batch, serialize_state, deserialize_state,
+    GrammarCognitiveEngine, GrammarRole, GrammarTriangle, IngestResult, deserialize_state,
+    process_batch, serialize_state,
 };
-pub use substrate::*;
 pub use membrane::{
-    Membrane, ConsciousnessParams,
-    encode_consciousness, decode_consciousness, consciousness_fingerprint,
-    TAU_START, TAU_END, SIGMA_START, SIGMA_END, QUALIA_START, QUALIA_END,
+    ConsciousnessParams, Membrane, QUALIA_END, QUALIA_START, SIGMA_END, SIGMA_START, TAU_END,
+    TAU_START, consciousness_fingerprint, decode_consciousness, encode_consciousness,
 };
+pub use quad_triangle::*;
+pub use rung::*;
+pub use seven_layer::*;
+pub use style::*;
+pub use substrate::*;
+pub use thought::{Belief, Concept, Thought};

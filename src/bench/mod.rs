@@ -8,14 +8,14 @@
 //! Run: cargo bench --features bench
 //! Or:  cargo run --release --features bench --bin ladybug-bench
 
+pub mod comparison;
 pub mod memory;
 pub mod recall;
 pub mod throughput;
-pub mod comparison;
 
-use std::time::{Duration, Instant};
 use crate::core::Fingerprint;
-use crate::storage::{BindSpace, Substrate, SubstrateConfig, FINGERPRINT_WORDS};
+use crate::storage::{BindSpace, FINGERPRINT_WORDS, Substrate, SubstrateConfig};
+use std::time::{Duration, Instant};
 
 // =============================================================================
 // BENCHMARK CONFIGURATION
@@ -132,36 +132,77 @@ impl BenchResult {
         println!("\n╔════════════════════════════════════════════════════════════════╗");
         println!("║                    LADYBUG-RS BENCHMARK                        ║");
         println!("╠════════════════════════════════════════════════════════════════╣");
-        println!("║ Vectors: {:>12} | Queries: {:>8} | K: {:>4}            ║",
+        println!(
+            "║ Vectors: {:>12} | Queries: {:>8} | K: {:>4}            ║",
             format_num(self.config.num_vectors),
             format_num(self.config.num_queries),
             self.config.k
         );
         println!("╠════════════════════════════════════════════════════════════════╣");
         println!("║ MEMORY                                                         ║");
-        println!("║   Total:      {:>12}                                     ║", format_bytes(self.memory_bytes));
-        println!("║   Per vector: {:>12}                                     ║", format_bytes(self.bytes_per_vector as usize));
+        println!(
+            "║   Total:      {:>12}                                     ║",
+            format_bytes(self.memory_bytes)
+        );
+        println!(
+            "║   Per vector: {:>12}                                     ║",
+            format_bytes(self.bytes_per_vector as usize)
+        );
         println!("╠════════════════════════════════════════════════════════════════╣");
         println!("║ LATENCY                                                        ║");
-        println!("║   Average: {:>10}                                         ║", format_duration(self.avg_latency));
-        println!("║   P50:     {:>10}                                         ║", format_duration(self.p50_latency));
-        println!("║   P95:     {:>10}                                         ║", format_duration(self.p95_latency));
-        println!("║   P99:     {:>10}                                         ║", format_duration(self.p99_latency));
+        println!(
+            "║   Average: {:>10}                                         ║",
+            format_duration(self.avg_latency)
+        );
+        println!(
+            "║   P50:     {:>10}                                         ║",
+            format_duration(self.p50_latency)
+        );
+        println!(
+            "║   P95:     {:>10}                                         ║",
+            format_duration(self.p95_latency)
+        );
+        println!(
+            "║   P99:     {:>10}                                         ║",
+            format_duration(self.p99_latency)
+        );
         println!("╠════════════════════════════════════════════════════════════════╣");
         println!("║ THROUGHPUT                                                     ║");
-        println!("║   QPS:     {:>12.0}                                       ║", self.qps);
-        println!("║   Build:   {:>10}                                         ║", format_duration(self.build_time));
+        println!(
+            "║   QPS:     {:>12.0}                                       ║",
+            self.qps
+        );
+        println!(
+            "║   Build:   {:>10}                                         ║",
+            format_duration(self.build_time)
+        );
         println!("╠════════════════════════════════════════════════════════════════╣");
         println!("║ RECALL                                                         ║");
-        println!("║   Recall@{}: {:>6.2}%                                          ║", self.config.k, self.recall_at_k * 100.0);
+        println!(
+            "║   Recall@{}: {:>6.2}%                                          ║",
+            self.config.k,
+            self.recall_at_k * 100.0
+        );
 
         if let Some(ref cmp) = self.comparison {
             println!("╠════════════════════════════════════════════════════════════════╣");
             println!("║ VS FLOAT32 COSINE BASELINE                                    ║");
-            println!("║   RAM savings:   {:>6.1}x less memory                         ║", cmp.ram_savings_factor);
-            println!("║   Speed factor:  {:>6.1}x faster                              ║", cmp.speed_factor);
-            println!("║   Baseline RAM:  {:>12} per vector                     ║", format_bytes(cmp.baseline_bytes_per_vector as usize));
-            println!("║   Baseline lat:  {:>10}                                   ║", format_duration(cmp.baseline_latency));
+            println!(
+                "║   RAM savings:   {:>6.1}x less memory                         ║",
+                cmp.ram_savings_factor
+            );
+            println!(
+                "║   Speed factor:  {:>6.1}x faster                              ║",
+                cmp.speed_factor
+            );
+            println!(
+                "║   Baseline RAM:  {:>12} per vector                     ║",
+                format_bytes(cmp.baseline_bytes_per_vector as usize)
+            );
+            println!(
+                "║   Baseline lat:  {:>10}                                   ║",
+                format_duration(cmp.baseline_latency)
+            );
         }
 
         println!("╚════════════════════════════════════════════════════════════════╝");
@@ -198,7 +239,8 @@ impl BenchResult {
                     "speed_factor": c.speed_factor
                 })
             })
-        }).to_string()
+        })
+        .to_string()
     }
 }
 
@@ -208,8 +250,8 @@ impl BenchResult {
 
 /// Generate random fingerprints for benchmarking
 pub fn generate_random_fingerprints(count: usize, seed: u64) -> Vec<[u64; FINGERPRINT_WORDS]> {
-    use std::hash::{Hash, Hasher};
     use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
 
     let mut fingerprints = Vec::with_capacity(count);
 
@@ -232,10 +274,10 @@ pub fn generate_random_fingerprints(count: usize, seed: u64) -> Vec<[u64; FINGER
 pub fn generate_clustered_fingerprints(
     count: usize,
     num_clusters: usize,
-    seed: u64
+    seed: u64,
 ) -> Vec<[u64; FINGERPRINT_WORDS]> {
-    use std::hash::{Hash, Hasher};
     use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
 
     // Generate cluster centers
     let centers: Vec<[u64; FINGERPRINT_WORDS]> = (0..num_clusters)
@@ -290,28 +332,30 @@ pub fn compute_ground_truth(
     database: &[[u64; FINGERPRINT_WORDS]],
     k: usize,
 ) -> Vec<Vec<usize>> {
-    queries.iter().map(|query| {
-        let mut distances: Vec<(usize, u32)> = database.iter()
-            .enumerate()
-            .map(|(idx, vec)| {
-                let dist: u32 = query.iter()
-                    .zip(vec.iter())
-                    .map(|(a, b)| (a ^ b).count_ones())
-                    .sum();
-                (idx, dist)
-            })
-            .collect();
+    queries
+        .iter()
+        .map(|query| {
+            let mut distances: Vec<(usize, u32)> = database
+                .iter()
+                .enumerate()
+                .map(|(idx, vec)| {
+                    let dist: u32 = query
+                        .iter()
+                        .zip(vec.iter())
+                        .map(|(a, b)| (a ^ b).count_ones())
+                        .sum();
+                    (idx, dist)
+                })
+                .collect();
 
-        distances.sort_by_key(|(_, d)| *d);
-        distances.into_iter().take(k).map(|(idx, _)| idx).collect()
-    }).collect()
+            distances.sort_by_key(|(_, d)| *d);
+            distances.into_iter().take(k).map(|(idx, _)| idx).collect()
+        })
+        .collect()
 }
 
 /// Compute recall given predictions and ground truth
-pub fn compute_recall(
-    predictions: &[Vec<usize>],
-    ground_truth: &[Vec<usize>],
-) -> f64 {
+pub fn compute_recall(predictions: &[Vec<usize>], ground_truth: &[Vec<usize>]) -> f64 {
     let mut total_correct = 0;
     let mut total_expected = 0;
 
@@ -338,7 +382,7 @@ pub fn run_benchmark(config: BenchConfig) -> BenchResult {
     let database = generate_clustered_fingerprints(
         config.num_vectors,
         100, // 100 clusters
-        config.seed
+        config.seed,
     );
     let gen_time = start.elapsed();
     println!("  Generated in {:?}", gen_time);
@@ -396,9 +440,11 @@ pub fn run_benchmark(config: BenchConfig) -> BenchResult {
     let query_sample: Vec<_> = queries.iter().take(recall_sample_size).cloned().collect();
 
     // Get predictions from substrate
-    let predictions: Vec<Vec<usize>> = query_sample.iter()
+    let predictions: Vec<Vec<usize>> = query_sample
+        .iter()
         .map(|q| {
-            substrate.resonate(q, config.k)
+            substrate
+                .resonate(q, config.k)
                 .into_iter()
                 .map(|(addr, _)| addr.0 as usize)
                 .collect()
@@ -410,10 +456,7 @@ pub fn run_benchmark(config: BenchConfig) -> BenchResult {
     let recall_at_k = compute_recall(&predictions, &ground_truth);
 
     // Compute comparison metrics
-    let comparison = compute_comparison_metrics(
-        bytes_per_vector,
-        avg_latency,
-    );
+    let comparison = compute_comparison_metrics(bytes_per_vector, avg_latency);
 
     BenchResult {
         config,
@@ -431,10 +474,7 @@ pub fn run_benchmark(config: BenchConfig) -> BenchResult {
 }
 
 /// Compute comparison against float32 baseline
-fn compute_comparison_metrics(
-    bytes_per_vector: f64,
-    avg_latency: Duration,
-) -> ComparisonMetrics {
+fn compute_comparison_metrics(bytes_per_vector: f64, avg_latency: Duration) -> ComparisonMetrics {
     // Float32 baseline assumptions:
     // - 768-dim embedding (typical for sentence transformers)
     // - 4 bytes per float32
@@ -548,7 +588,8 @@ mod tests {
         assert_eq!(fps.len(), 100);
 
         // Check they're not all zeros
-        let total_bits: u32 = fps.iter()
+        let total_bits: u32 = fps
+            .iter()
             .flat_map(|fp| fp.iter())
             .map(|w| w.count_ones())
             .sum();

@@ -20,12 +20,13 @@ pub enum CacheError {
 impl std::fmt::Display for CacheError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CacheError::ZeroContainer { idx } =>
-                write!(f, "zero container at index {}", idx),
-            CacheError::OutOfBounds { idx, len } =>
-                write!(f, "index {} out of bounds (len={})", idx, len),
-            CacheError::ZeroSpine { spine_idx } =>
-                write!(f, "spine at index {} recomputed to zero", spine_idx),
+            CacheError::ZeroContainer { idx } => write!(f, "zero container at index {}", idx),
+            CacheError::OutOfBounds { idx, len } => {
+                write!(f, "index {} out of bounds (len={})", idx, len)
+            }
+            CacheError::ZeroSpine { spine_idx } => {
+                write!(f, "spine at index {} recomputed to zero", spine_idx)
+            }
         }
     }
 }
@@ -74,7 +75,10 @@ impl ContainerCache {
     /// Write a container to a slot. Rejects zero containers.
     pub fn write(&mut self, idx: usize, data: &Container) -> Result<(), CacheError> {
         if idx >= self.slots.len() {
-            return Err(CacheError::OutOfBounds { idx, len: self.slots.len() });
+            return Err(CacheError::OutOfBounds {
+                idx,
+                len: self.slots.len(),
+            });
         }
 
         let pc = data.popcount();
@@ -114,7 +118,10 @@ impl ContainerCache {
         spine_idx: usize,
     ) -> Result<(), CacheError> {
         if spine_idx >= self.slots.len() {
-            return Err(CacheError::OutOfBounds { idx: spine_idx, len: self.slots.len() });
+            return Err(CacheError::OutOfBounds {
+                idx: spine_idx,
+                len: self.slots.len(),
+            });
         }
 
         let mut spine = Container::zero();
@@ -210,7 +217,9 @@ impl ContainerCache {
     pub fn push(&mut self, data: &Container) -> Result<usize, CacheError> {
         let pc = data.popcount();
         if pc == 0 {
-            return Err(CacheError::ZeroContainer { idx: self.slots.len() });
+            return Err(CacheError::ZeroContainer {
+                idx: self.slots.len(),
+            });
         }
 
         let idx = self.slots.len();

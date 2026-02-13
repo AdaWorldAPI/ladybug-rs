@@ -33,12 +33,12 @@
 //! ```
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{RwLock, Mutex};
-use std::time::{Duration, Instant};
+use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use std::fs::{self, File};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, RwLock};
+use std::time::{Duration, Instant};
 
 // ============================================================================
 // XOR Delta Types
@@ -164,7 +164,12 @@ impl Snapshot {
     pub fn size_bytes(&self) -> usize {
         match self {
             Snapshot::Full { size_bytes, .. } => *size_bytes,
-            Snapshot::Delta { deltas, created, deleted, .. } => {
+            Snapshot::Delta {
+                deltas,
+                created,
+                deleted,
+                ..
+            } => {
                 let delta_size: usize = deltas.iter().map(|d| d.compressed_size()).sum();
                 let created_size: usize = created.values().map(|v| v.len() + 2).sum();
                 let deleted_size = deleted.len() * 2;
@@ -306,13 +311,18 @@ impl SnapshotChain {
     }
 
     /// Reconstruct state at a given snapshot
-    pub fn reconstruct(&self, snapshot_id: SnapshotId) -> Result<HashMap<u16, Vec<u8>>, SnapshotError> {
+    pub fn reconstruct(
+        &self,
+        snapshot_id: SnapshotId,
+    ) -> Result<HashMap<u16, Vec<u8>>, SnapshotError> {
         // Build chain from snapshot back to full snapshot
         let mut chain = Vec::new();
         let mut current_id = snapshot_id;
 
         loop {
-            let snapshot = self.snapshots.get(&current_id)
+            let snapshot = self
+                .snapshots
+                .get(&current_id)
                 .ok_or(SnapshotError::NotFound(current_id))?;
 
             match snapshot {
@@ -336,8 +346,18 @@ impl SnapshotChain {
     }
 
     /// Apply a delta snapshot to state
-    fn apply_delta(&self, state: &mut HashMap<u16, Vec<u8>>, delta: Snapshot) -> Result<(), SnapshotError> {
-        if let Snapshot::Delta { deltas, deleted, created, .. } = delta {
+    fn apply_delta(
+        &self,
+        state: &mut HashMap<u16, Vec<u8>>,
+        delta: Snapshot,
+    ) -> Result<(), SnapshotError> {
+        if let Snapshot::Delta {
+            deltas,
+            deleted,
+            created,
+            ..
+        } = delta
+        {
             // Apply XOR deltas
             for delta_block in deltas {
                 if let Some(data) = state.get_mut(&delta_block.addr) {
@@ -372,18 +392,24 @@ impl SnapshotChain {
         let delta_snapshots = total_snapshots - full_snapshots;
 
         let total_size: usize = self.snapshots.values().map(|s| s.size_bytes()).sum();
-        let full_size: usize = self.snapshots.values()
+        let full_size: usize = self
+            .snapshots
+            .values()
             .filter(|s| s.is_full())
             .map(|s| s.size_bytes())
             .sum();
 
         let avg_compression = if delta_snapshots > 0 {
-            self.snapshots.values()
+            self.snapshots
+                .values()
                 .filter_map(|s| match s {
-                    Snapshot::Delta { compression_ratio, .. } => Some(*compression_ratio),
+                    Snapshot::Delta {
+                        compression_ratio, ..
+                    } => Some(*compression_ratio),
                     _ => None,
                 })
-                .sum::<f32>() / delta_snapshots as f32
+                .sum::<f32>()
+                / delta_snapshots as f32
         } else {
             1.0
         };
@@ -408,7 +434,9 @@ impl SnapshotChain {
 
     /// Delete old snapshots, keeping at least one full and its dependents
     pub fn prune(&mut self, keep_after: u64) -> usize {
-        let to_remove: Vec<SnapshotId> = self.snapshots.iter()
+        let to_remove: Vec<SnapshotId> = self
+            .snapshots
+            .iter()
             .filter(|(_, s)| s.created_at() < keep_after)
             .map(|(id, _)| *id)
             .collect();
@@ -417,9 +445,10 @@ impl SnapshotChain {
         let mut removed = 0;
         for id in to_remove {
             // Check if any delta depends on this
-            let has_dependents = self.snapshots.values().any(|s| {
-                matches!(s, Snapshot::Delta { parent_id, .. } if *parent_id == id)
-            });
+            let has_dependents = self
+                .snapshots
+                .values()
+                .any(|s| matches!(s, Snapshot::Delta { parent_id, .. } if *parent_id == id));
 
             if !has_dependents {
                 self.snapshots.remove(&id);
@@ -486,8 +515,8 @@ impl Default for ColdStorageConfig {
             cold_path: PathBuf::from("./data/cold"),
             hot_to_warm_age: Duration::from_secs(3600), // 1 hour
             warm_to_cold_age: Duration::from_secs(86400 * 7), // 1 week
-            max_hot_size: 1024 * 1024 * 1024, // 1 GB
-            max_warm_size: 10 * 1024 * 1024 * 1024, // 10 GB
+            max_hot_size: 1024 * 1024 * 1024,           // 1 GB
+            max_warm_size: 10 * 1024 * 1024 * 1024,     // 10 GB
             transparent_decompress: true,
         }
     }
@@ -591,7 +620,8 @@ impl TieredStorage {
         let mut hot = self.hot.write().unwrap();
         if let Some(old) = hot.insert(addr, entry) {
             // Subtract old size, add new
-            self.hot_size.fetch_sub(old.data.len() as u64, Ordering::SeqCst);
+            self.hot_size
+                .fetch_sub(old.data.len() as u64, Ordering::SeqCst);
         }
         self.hot_size.fetch_add(size, Ordering::SeqCst);
 
@@ -652,7 +682,8 @@ impl TieredStorage {
         {
             let mut hot = self.hot.write().unwrap();
             if let Some(entry) = hot.remove(&addr) {
-                self.hot_size.fetch_sub(entry.data.len() as u64, Ordering::SeqCst);
+                self.hot_size
+                    .fetch_sub(entry.data.len() as u64, Ordering::SeqCst);
             }
         }
 
@@ -703,7 +734,8 @@ impl TieredStorage {
             if self.migrate_to_warm(addr, &entry.data).is_ok() {
                 let mut hot = self.hot.write().unwrap();
                 if let Some(removed) = hot.remove(&addr) {
-                    self.hot_size.fetch_sub(removed.data.len() as u64, Ordering::SeqCst);
+                    self.hot_size
+                        .fetch_sub(removed.data.len() as u64, Ordering::SeqCst);
                     stats.hot_to_warm += 1;
                 }
             }
@@ -744,7 +776,8 @@ impl TieredStorage {
                 // Remove from hot if present
                 let mut hot = self.hot.write().unwrap();
                 if let Some(removed) = hot.remove(&addr) {
-                    self.hot_size.fetch_sub(removed.data.len() as u64, Ordering::SeqCst);
+                    self.hot_size
+                        .fetch_sub(removed.data.len() as u64, Ordering::SeqCst);
                 }
             }
             StorageTier::Cold => {
@@ -753,7 +786,8 @@ impl TieredStorage {
                 {
                     let mut hot = self.hot.write().unwrap();
                     if let Some(removed) = hot.remove(&addr) {
-                        self.hot_size.fetch_sub(removed.data.len() as u64, Ordering::SeqCst);
+                        self.hot_size
+                            .fetch_sub(removed.data.len() as u64, Ordering::SeqCst);
                     }
                 }
                 {
@@ -773,7 +807,8 @@ impl TieredStorage {
         // Sort by last access time, evict oldest first
         let candidates: Vec<(u16, Instant, usize)> = {
             let hot = self.hot.read().unwrap();
-            let mut v: Vec<_> = hot.iter()
+            let mut v: Vec<_> = hot
+                .iter()
                 .map(|(addr, e)| (*addr, e.last_access, e.data.len()))
                 .collect();
             v.sort_by_key(|(_, t, _)| *t);
@@ -795,7 +830,8 @@ impl TieredStorage {
                 if self.migrate_to_warm(addr, &data).is_ok() {
                     let mut hot = self.hot.write().unwrap();
                     if let Some(removed) = hot.remove(&addr) {
-                        self.hot_size.fetch_sub(removed.data.len() as u64, Ordering::SeqCst);
+                        self.hot_size
+                            .fetch_sub(removed.data.len() as u64, Ordering::SeqCst);
                         freed += size;
                     }
                 }
@@ -808,8 +844,8 @@ impl TieredStorage {
     /// Migrate data to warm tier
     fn migrate_to_warm(&self, addr: u16, data: &[u8]) -> Result<(), SnapshotError> {
         let file_path = self.config.warm_path.join(format!("{:04x}.warm", addr));
-        let mut file = File::create(&file_path)
-            .map_err(|e| SnapshotError::IoError(e.to_string()))?;
+        let mut file =
+            File::create(&file_path).map_err(|e| SnapshotError::IoError(e.to_string()))?;
         file.write_all(data)
             .map_err(|e| SnapshotError::IoError(e.to_string()))?;
 
@@ -821,7 +857,8 @@ impl TieredStorage {
         };
 
         self.warm_index.write().unwrap().insert(addr, meta);
-        self.warm_size.fetch_add(data.len() as u64, Ordering::SeqCst);
+        self.warm_size
+            .fetch_add(data.len() as u64, Ordering::SeqCst);
 
         Ok(())
     }
@@ -834,8 +871,8 @@ impl TieredStorage {
         let to_store = if is_compressed { &compressed } else { data };
 
         let file_path = self.config.cold_path.join(format!("{:04x}.cold", addr));
-        let mut file = File::create(&file_path)
-            .map_err(|e| SnapshotError::IoError(e.to_string()))?;
+        let mut file =
+            File::create(&file_path).map_err(|e| SnapshotError::IoError(e.to_string()))?;
         file.write_all(to_store)
             .map_err(|e| SnapshotError::IoError(e.to_string()))?;
 
@@ -858,9 +895,13 @@ impl TieredStorage {
     }
 
     /// Read from a file at a specific offset
-    fn read_from_file(&self, path: &Path, offset: u64, length: u64) -> Result<Vec<u8>, SnapshotError> {
-        let mut file = File::open(path)
-            .map_err(|e| SnapshotError::IoError(e.to_string()))?;
+    fn read_from_file(
+        &self,
+        path: &Path,
+        offset: u64,
+        length: u64,
+    ) -> Result<Vec<u8>, SnapshotError> {
+        let mut file = File::open(path).map_err(|e| SnapshotError::IoError(e.to_string()))?;
 
         use std::io::Seek;
         file.seek(std::io::SeekFrom::Start(offset))
@@ -1100,7 +1141,9 @@ mod tests {
         let snap2 = chain.create_delta(snap1, &HashMap::new(), &state).unwrap();
 
         state.insert(1u16, vec![0x02]);
-        let snap3 = chain.create_delta(snap2, &HashMap::from([(1u16, vec![0x01])]), &state).unwrap();
+        let snap3 = chain
+            .create_delta(snap2, &HashMap::from([(1u16, vec![0x01])]), &state)
+            .unwrap();
 
         // Consolidate into new full snapshot
         let consolidated = chain.consolidate(snap3).unwrap();
@@ -1117,10 +1160,7 @@ mod tests {
     fn test_snapshot_stats() {
         let mut chain = SnapshotChain::new(10);
 
-        let state = HashMap::from([
-            (1u16, vec![0u8; 100]),
-            (2u16, vec![0u8; 100]),
-        ]);
+        let state = HashMap::from([(1u16, vec![0u8; 100]), (2u16, vec![0u8; 100])]);
 
         chain.create_full(state.clone());
         chain.create_full(state.clone());

@@ -1,9 +1,9 @@
 //! 16,384-bit (2^14) VSA fingerprint — HDC-aligned, exact u64 alignment.
 
-use std::hash::{Hash, Hasher};
 use std::fmt;
+use std::hash::{Hash, Hasher};
 
-use crate::{FINGERPRINT_U64, FINGERPRINT_BITS, Error, Result};
+use crate::{Error, FINGERPRINT_BITS, FINGERPRINT_U64, Result};
 
 /// 16,384-bit binary fingerprint for VSA operations.
 ///
@@ -20,7 +20,7 @@ impl Fingerprint {
     pub fn from_raw(data: [u64; FINGERPRINT_U64]) -> Self {
         Self { data }
     }
-    
+
     /// Create from byte slice
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.len() != FINGERPRINT_U64 * 8 {
@@ -29,23 +29,23 @@ impl Fingerprint {
                 got: bytes.len(),
             });
         }
-        
+
         let mut data = [0u64; FINGERPRINT_U64];
         for (i, chunk) in bytes.chunks_exact(8).enumerate() {
             data[i] = u64::from_le_bytes(chunk.try_into().unwrap());
         }
         Ok(Self { data })
     }
-    
+
     /// Create from content string (SHA-256 + LFSR expansion)
     pub fn from_content(content: &str) -> Self {
         use std::collections::hash_map::DefaultHasher;
-        
+
         // Hash content to get seed
         let mut hasher = DefaultHasher::new();
         content.hash(&mut hasher);
         let mut state = hasher.finish();
-        
+
         // LFSR expansion to fill fingerprint words
         let mut data = [0u64; FINGERPRINT_U64];
         for word in &mut data {
@@ -58,10 +58,10 @@ impl Fingerprint {
             }
             *word = val;
         }
-        
+
         Self { data }
     }
-    
+
     /// Create random fingerprint
     pub fn random() -> Self {
         use std::time::{SystemTime, UNIX_EPOCH};
@@ -71,12 +71,14 @@ impl Fingerprint {
             .as_nanos() as u64;
         Self::from_content(&format!("random_{}", seed))
     }
-    
+
     /// Create zero fingerprint
     pub fn zero() -> Self {
-        Self { data: [0u64; FINGERPRINT_U64] }
+        Self {
+            data: [0u64; FINGERPRINT_U64],
+        }
     }
-    
+
     /// Create all-ones fingerprint (only FINGERPRINT_BITS set, no padding contamination)
     pub fn ones() -> Self {
         let mut data = [u64::MAX; FINGERPRINT_U64];
@@ -86,28 +88,23 @@ impl Fingerprint {
         }
         Self { data }
     }
-    
+
     /// Get raw data
     #[inline]
     pub fn as_raw(&self) -> &[u64; FINGERPRINT_U64] {
         &self.data
     }
-    
+
     /// Get as byte slice
     pub fn as_bytes(&self) -> &[u8] {
-        unsafe {
-            std::slice::from_raw_parts(
-                self.data.as_ptr() as *const u8,
-                FINGERPRINT_U64 * 8
-            )
-        }
+        unsafe { std::slice::from_raw_parts(self.data.as_ptr() as *const u8, FINGERPRINT_U64 * 8) }
     }
-    
+
     /// Count set bits (popcount)
     pub fn popcount(&self) -> u32 {
         self.data.iter().map(|x| x.count_ones()).sum()
     }
-    
+
     /// Get bit at position
     #[inline]
     pub fn get_bit(&self, pos: usize) -> bool {
@@ -116,7 +113,7 @@ impl Fingerprint {
         let bit = pos % 64;
         (self.data[word] >> bit) & 1 == 1
     }
-    
+
     /// Set bit at position
     #[inline]
     pub fn set_bit(&mut self, pos: usize, value: bool) {
@@ -129,21 +126,21 @@ impl Fingerprint {
             self.data[word] &= !(1 << bit);
         }
     }
-    
+
     /// Hamming distance to another fingerprint
     #[inline]
     pub fn hamming(&self, other: &Fingerprint) -> u32 {
         super::simd::hamming_distance(self, other)
     }
-    
+
     /// Similarity (0.0 - 1.0)
     #[inline]
     pub fn similarity(&self, other: &Fingerprint) -> f32 {
         1.0 - (self.hamming(other) as f32 / FINGERPRINT_BITS as f32)
     }
-    
+
     // === VSA Operations ===
-    
+
     /// XOR bind (creates compound representation)
     pub fn bind(&self, other: &Fingerprint) -> Fingerprint {
         let mut result = [0u64; FINGERPRINT_U64];
@@ -152,14 +149,14 @@ impl Fingerprint {
         }
         Fingerprint { data: result }
     }
-    
+
     /// XOR unbind (recovers component)
     /// Note: unbind(bind(a, b), a) ≈ b
     #[inline]
     pub fn unbind(&self, other: &Fingerprint) -> Fingerprint {
-        self.bind(other)  // XOR is its own inverse
+        self.bind(other) // XOR is its own inverse
     }
-    
+
     /// Permute (rotate bits for sequence encoding)
     pub fn permute(&self, positions: i32) -> Fingerprint {
         let mut result = Self::zero();
@@ -175,17 +172,18 @@ impl Fingerprint {
         }
 
         // Preserve bits beyond FINGERPRINT_BITS in last partial word (if any)
-        let full_words = FINGERPRINT_BITS / 64;  // 256 full words
-        let extra_bits = FINGERPRINT_BITS % 64;  // 0 extra bits (16384 is 64-aligned)
+        let full_words = FINGERPRINT_BITS / 64; // 256 full words
+        let extra_bits = FINGERPRINT_BITS % 64; // 0 extra bits (16384 is 64-aligned)
         if full_words < FINGERPRINT_U64 {
             // Clear the rotated bits in the last word, keep only overflow bits
-            let mask = !((1u64 << extra_bits) - 1);  // Mask for bits >= extra_bits
-            result.data[full_words] = (result.data[full_words] & !mask) | (self.data[full_words] & mask);
+            let mask = !((1u64 << extra_bits) - 1); // Mask for bits >= extra_bits
+            result.data[full_words] =
+                (result.data[full_words] & !mask) | (self.data[full_words] & mask);
         }
 
         result
     }
-    
+
     /// Inverse permute
     pub fn unpermute(&self, positions: i32) -> Fingerprint {
         self.permute(-positions)
@@ -267,44 +265,44 @@ impl Default for Fingerprint {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_from_content_deterministic() {
         let fp1 = Fingerprint::from_content("hello");
         let fp2 = Fingerprint::from_content("hello");
         assert_eq!(fp1, fp2);
     }
-    
+
     #[test]
     fn test_different_content_different_fp() {
         let fp1 = Fingerprint::from_content("hello");
         let fp2 = Fingerprint::from_content("world");
         assert_ne!(fp1, fp2);
     }
-    
+
     #[test]
     fn test_bind_unbind() {
         let a = Fingerprint::from_content("color_red");
         let b = Fingerprint::from_content("object_apple");
-        
+
         // Bind creates compound
         let bound = a.bind(&b);
-        
+
         // Unbind recovers approximately
         let recovered = bound.unbind(&a);
-        
+
         // Should be identical to b (XOR is exact inverse)
         assert_eq!(recovered, b);
     }
-    
+
     #[test]
     fn test_similarity_range() {
         let fp1 = Fingerprint::random();
         let fp2 = Fingerprint::random();
-        
+
         let sim = fp1.similarity(&fp2);
         assert!(sim >= 0.0 && sim <= 1.0);
-        
+
         // Self-similarity should be 1.0
         assert_eq!(fp1.similarity(&fp1), 1.0);
     }

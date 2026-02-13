@@ -1,11 +1,10 @@
 //! World state and counterfactual reasoning
 
-mod state;
 pub mod counterfactual;
+mod state;
 
-pub use state::World;
 pub use counterfactual::{
-    Counterfactual, Change,
-    CounterfactualWorld, Intervention,
-    intervene, worlds_differ, multi_intervene,
+    Change, Counterfactual, CounterfactualWorld, Intervention, intervene, multi_intervene,
+    worlds_differ,
 };
+pub use state::World;

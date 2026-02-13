@@ -392,57 +392,47 @@ impl<'a> MetaViewMut<'a> {
     }
 
     pub fn set_container_count(&mut self, count: u8) {
-        self.words[W_TYPE] = (self.words[W_TYPE] & !(0xFF << 8))
-            | ((count as u64) << 8);
+        self.words[W_TYPE] = (self.words[W_TYPE] & !(0xFF << 8)) | ((count as u64) << 8);
     }
 
     pub fn set_geometry(&mut self, g: ContainerGeometry) {
-        self.words[W_TYPE] = (self.words[W_TYPE] & !(0xFF << 16))
-            | ((g as u64) << 16);
+        self.words[W_TYPE] = (self.words[W_TYPE] & !(0xFF << 16)) | ((g as u64) << 16);
     }
 
     pub fn set_flags(&mut self, flags: u8) {
-        self.words[W_TYPE] = (self.words[W_TYPE] & !(0xFF << 24))
-            | ((flags as u64) << 24);
+        self.words[W_TYPE] = (self.words[W_TYPE] & !(0xFF << 24)) | ((flags as u64) << 24);
     }
 
     pub fn set_schema_version(&mut self, ver: u16) {
-        self.words[W_TYPE] = (self.words[W_TYPE] & !(0xFFFF << 32))
-            | ((ver as u64) << 32);
+        self.words[W_TYPE] = (self.words[W_TYPE] & !(0xFFFF << 32)) | ((ver as u64) << 32);
     }
 
     pub fn set_provenance_hash(&mut self, hash: u16) {
-        self.words[W_TYPE] = (self.words[W_TYPE] & !(0xFFFF << 48))
-            | ((hash as u64) << 48);
+        self.words[W_TYPE] = (self.words[W_TYPE] & !(0xFFFF << 48)) | ((hash as u64) << 48);
     }
 
     // -- W2: Timestamps --
 
     pub fn set_created_ms(&mut self, ms: u32) {
-        self.words[W_TIME] = (self.words[W_TIME] & !0xFFFF_FFFF)
-            | (ms as u64);
+        self.words[W_TIME] = (self.words[W_TIME] & !0xFFFF_FFFF) | (ms as u64);
     }
 
     pub fn set_modified_ms(&mut self, ms: u32) {
-        self.words[W_TIME] = (self.words[W_TIME] & !(0xFFFF_FFFF << 32))
-            | ((ms as u64) << 32);
+        self.words[W_TIME] = (self.words[W_TIME] & !(0xFFFF_FFFF << 32)) | ((ms as u64) << 32);
     }
 
     // -- W3: Label --
 
     pub fn set_label_hash(&mut self, hash: u32) {
-        self.words[W_LABEL] = (self.words[W_LABEL] & !0xFFFF_FFFF)
-            | (hash as u64);
+        self.words[W_LABEL] = (self.words[W_LABEL] & !0xFFFF_FFFF) | (hash as u64);
     }
 
     pub fn set_tree_depth(&mut self, depth: u8) {
-        self.words[W_LABEL] = (self.words[W_LABEL] & !(0xFF << 32))
-            | ((depth as u64) << 32);
+        self.words[W_LABEL] = (self.words[W_LABEL] & !(0xFF << 32)) | ((depth as u64) << 32);
     }
 
     pub fn set_branch(&mut self, branch: u8) {
-        self.words[W_LABEL] = (self.words[W_LABEL] & !(0xFF << 40))
-            | ((branch as u64) << 40);
+        self.words[W_LABEL] = (self.words[W_LABEL] & !(0xFF << 40)) | ((branch as u64) << 40);
     }
 
     // -- W4-7: NARS --
@@ -454,8 +444,7 @@ impl<'a> MetaViewMut<'a> {
 
     pub fn set_nars_confidence(&mut self, conf: f32) {
         let bits = conf.to_bits() as u64;
-        self.words[W_NARS_BASE] = (self.words[W_NARS_BASE] & !(0xFFFF_FFFF << 32))
-            | (bits << 32);
+        self.words[W_NARS_BASE] = (self.words[W_NARS_BASE] & !(0xFFFF_FFFF << 32)) | (bits << 32);
     }
 
     pub fn set_nars_positive_evidence(&mut self, ev: f32) {
@@ -465,25 +454,23 @@ impl<'a> MetaViewMut<'a> {
 
     pub fn set_nars_negative_evidence(&mut self, ev: f32) {
         let bits = ev.to_bits() as u64;
-        self.words[W_NARS_BASE + 1] = (self.words[W_NARS_BASE + 1] & !(0xFFFF_FFFF << 32))
-            | (bits << 32);
+        self.words[W_NARS_BASE + 1] =
+            (self.words[W_NARS_BASE + 1] & !(0xFFFF_FFFF << 32)) | (bits << 32);
     }
 
     // -- W8: DN Rung + Gate --
 
     pub fn set_rung_level(&mut self, rung: u8) {
-        self.words[W_DN_RUNG] = (self.words[W_DN_RUNG] & !0xFF)
-            | (rung as u64);
+        self.words[W_DN_RUNG] = (self.words[W_DN_RUNG] & !0xFF) | (rung as u64);
     }
 
     pub fn set_gate_state(&mut self, gate: u8) {
-        self.words[W_DN_RUNG] = (self.words[W_DN_RUNG] & !(0xFF << 8))
-            | ((gate as u64) << 8);
+        self.words[W_DN_RUNG] = (self.words[W_DN_RUNG] & !(0xFF << 8)) | ((gate as u64) << 8);
     }
 
     pub fn set_layer_bitmap(&mut self, bitmap: u8) {
-        self.words[W_DN_RUNG] = (self.words[W_DN_RUNG] & !(0x7F << 16))
-            | (((bitmap & 0x7F) as u64) << 16);
+        self.words[W_DN_RUNG] =
+            (self.words[W_DN_RUNG] & !(0x7F << 16)) | (((bitmap & 0x7F) as u64) << 16);
     }
 
     // -- W16-31: Inline edges --
@@ -494,8 +481,7 @@ impl<'a> MetaViewMut<'a> {
         let word_idx = W_EDGE_BASE + idx / 4;
         let shift = (idx % 4) * 16;
         let packed = ((verb as u64) << 8) | (target as u64);
-        self.words[word_idx] = (self.words[word_idx] & !(0xFFFF << shift))
-            | (packed << shift);
+        self.words[word_idx] = (self.words[word_idx] & !(0xFFFF << shift)) | (packed << shift);
     }
 
     // -- W32-39: RL --
@@ -505,8 +491,7 @@ impl<'a> MetaViewMut<'a> {
         let word_idx = W_RL_BASE + action / 2;
         let shift = (action % 2) * 32;
         let bits = val.to_bits() as u64;
-        self.words[word_idx] = (self.words[word_idx] & !(0xFFFF_FFFF << shift))
-            | (bits << shift);
+        self.words[word_idx] = (self.words[word_idx] & !(0xFFFF_FFFF << shift)) | (bits << shift);
     }
 
     // -- W40-47: Bloom --
@@ -526,33 +511,30 @@ impl<'a> MetaViewMut<'a> {
     // -- W48-55: Graph metrics --
 
     pub fn set_in_degree(&mut self, deg: u32) {
-        self.words[W_GRAPH_BASE] = (self.words[W_GRAPH_BASE] & !0xFFFF_FFFF)
-            | (deg as u64);
+        self.words[W_GRAPH_BASE] = (self.words[W_GRAPH_BASE] & !0xFFFF_FFFF) | (deg as u64);
     }
 
     pub fn set_out_degree(&mut self, deg: u32) {
-        self.words[W_GRAPH_BASE] = (self.words[W_GRAPH_BASE] & !(0xFFFF_FFFF << 32))
-            | ((deg as u64) << 32);
+        self.words[W_GRAPH_BASE] =
+            (self.words[W_GRAPH_BASE] & !(0xFFFF_FFFF << 32)) | ((deg as u64) << 32);
     }
 
     pub fn set_pagerank(&mut self, pr: f32) {
         let bits = pr.to_bits() as u64;
-        self.words[W_GRAPH_BASE + 1] = (self.words[W_GRAPH_BASE + 1] & !0xFFFF_FFFF)
-            | bits;
+        self.words[W_GRAPH_BASE + 1] = (self.words[W_GRAPH_BASE + 1] & !0xFFFF_FFFF) | bits;
     }
 
     pub fn set_clustering(&mut self, cc: f32) {
         let bits = cc.to_bits() as u64;
-        self.words[W_GRAPH_BASE + 1] = (self.words[W_GRAPH_BASE + 1] & !(0xFFFF_FFFF << 32))
-            | (bits << 32);
+        self.words[W_GRAPH_BASE + 1] =
+            (self.words[W_GRAPH_BASE + 1] & !(0xFFFF_FFFF << 32)) | (bits << 32);
     }
 
     // -- W80-95: Representation descriptor --
 
     /// Set the branching factor for Tree geometry (stored in W80).
     pub fn set_branching_factor(&mut self, k: u8) {
-        self.words[W_REPR_BASE] = (self.words[W_REPR_BASE] & !0xFF)
-            | (k as u64);
+        self.words[W_REPR_BASE] = (self.words[W_REPR_BASE] & !0xFF) | (k as u64);
     }
 
     // -- W126-127: Checksum --

@@ -35,14 +35,14 @@
 //! handovers and joint task completion). This creates the "teamwork
 //! as reward loop" — agents that resonate together get paired again.
 
-use serde::{Deserialize, Serialize};
+use crate::orchestration::a2a::{A2AMessage, A2AProtocol, DeliveryStatus, MessageKind};
+use crate::orchestration::blackboard_agent::BlackboardRegistry;
 use crate::orchestration::handover::{
     FlowState, FlowTransition, HandoverAction, HandoverDecision, HandoverPolicy,
 };
 use crate::orchestration::persona::PersonaRegistry;
-use crate::orchestration::blackboard_agent::BlackboardRegistry;
-use crate::orchestration::a2a::{A2AMessage, A2AProtocol, MessageKind, DeliveryStatus};
 use crate::storage::bind_space::BindSpace;
+use serde::{Deserialize, Serialize};
 
 // =============================================================================
 // AFFINITY EDGE
@@ -134,10 +134,7 @@ pub enum OrchestratorEvent {
         resonance_score: f32,
     },
     /// Escalation: no suitable handover target found
-    Escalation {
-        source_slot: u8,
-        reason: String,
-    },
+    Escalation { source_slot: u8, reason: String },
 }
 
 // =============================================================================
@@ -182,16 +179,17 @@ impl MetaOrchestrator {
 
     /// Get flow state for an agent
     pub fn flow_state(&self, slot: u8) -> Option<&FlowState> {
-        self.flow_states.iter().find(|(s, _)| *s == slot).map(|(_, f)| f)
+        self.flow_states
+            .iter()
+            .find(|(s, _)| *s == slot)
+            .map(|(_, f)| f)
     }
 
     /// Update flow state from a gate evaluation result
-    pub fn update_flow(
-        &mut self,
-        slot: u8,
-        gate: crate::cognitive::GateState,
-    ) {
-        let previous = self.flow_states.iter()
+    pub fn update_flow(&mut self, slot: u8, gate: crate::cognitive::GateState) {
+        let previous = self
+            .flow_states
+            .iter()
             .find(|(s, _)| *s == slot)
             .map(|(_, f)| f.clone())
             .unwrap_or_default();
@@ -208,7 +206,8 @@ impl MetaOrchestrator {
                 at_cycle: self.cycle,
                 triggered_by: None,
             };
-            self.events.push(OrchestratorEvent::FlowTransition(transition.clone()));
+            self.events
+                .push(OrchestratorEvent::FlowTransition(transition.clone()));
             self.transitions.push(transition);
         }
 
@@ -239,7 +238,8 @@ impl MetaOrchestrator {
                     edge.persona_resonance = resonance;
                     edge.recompute_affinity();
                 } else {
-                    self.affinities.push(AffinityEdge::new(*slot_a, *slot_b, resonance));
+                    self.affinities
+                        .push(AffinityEdge::new(*slot_a, *slot_b, resonance));
                 }
             }
         }
@@ -253,12 +253,15 @@ impl MetaOrchestrator {
         personas: &PersonaRegistry,
         task_description: Option<&str>,
     ) -> HandoverDecision {
-        let flow_state = self.flow_states.iter()
+        let flow_state = self
+            .flow_states
+            .iter()
             .find(|(s, _)| *s == source_slot)
             .map(|(_, f)| f.clone())
             .unwrap_or_default();
 
-        let coherence = blackboards.get(source_slot)
+        let coherence = blackboards
+            .get(source_slot)
             .map(|bb| bb.awareness.coherence)
             .unwrap_or(0.5);
 
@@ -271,11 +274,8 @@ impl MetaOrchestrator {
         let confidence = (flow_state.momentum() * 0.5 + coherence * 0.5).min(1.0);
 
         // Find best alternative: highest affinity agent that is NOT blocked
-        let best_alternative = self.find_best_handover_target(
-            source_slot,
-            personas,
-            task_description,
-        );
+        let best_alternative =
+            self.find_best_handover_target(source_slot, personas, task_description);
 
         let decision = self.policy.evaluate(
             source_slot,
@@ -318,7 +318,9 @@ impl MetaOrchestrator {
             let compatibility = source_persona.compatibility(persona);
 
             // Boost from affinity graph (collaboration history)
-            let affinity_boost = self.affinities.iter()
+            let affinity_boost = self
+                .affinities
+                .iter()
                 .find(|e| {
                     (e.agent_a == source_slot && e.agent_b == *slot)
                         || (e.agent_a == *slot && e.agent_b == source_slot)
@@ -355,9 +357,14 @@ impl MetaOrchestrator {
         space: &mut BindSpace,
     ) -> Option<DeliveryStatus> {
         match &decision.action {
-            HandoverAction::Delegate { target_slot, resonance } => {
+            HandoverAction::Delegate {
+                target_slot,
+                resonance,
+            } => {
                 // Transition source to Handover state
-                if let Some(entry) = self.flow_states.iter_mut()
+                if let Some(entry) = self
+                    .flow_states
+                    .iter_mut()
                     .find(|(s, _)| *s == decision.source_slot)
                 {
                     let previous = entry.1.clone();
@@ -377,14 +384,21 @@ impl MetaOrchestrator {
 
                 // Send A2A delegation message
                 let msg = A2AMessage {
-                    id: format!("handover-{}-{}-{}", decision.source_slot, target_slot, self.cycle),
+                    id: format!(
+                        "handover-{}-{}-{}",
+                        decision.source_slot, target_slot, self.cycle
+                    ),
                     sender_slot: decision.source_slot,
                     receiver_slot: *target_slot,
                     kind: MessageKind::Delegate,
                     payload: format!(
                         "{{\"handover\":true,\"resonance\":{:.3},\"reasons\":{:?}}}",
                         resonance,
-                        decision.reasons.iter().map(|r| format!("{:?}", r)).collect::<Vec<_>>()
+                        decision
+                            .reasons
+                            .iter()
+                            .map(|r| format!("{:?}", r))
+                            .collect::<Vec<_>>()
                     ),
                     fingerprint: None,
                     timestamp: std::time::SystemTime::now()
@@ -442,16 +456,26 @@ impl MetaOrchestrator {
             let availability = match self.flow_state(*slot) {
                 Some(FlowState::Flow { momentum }) => 0.5 + momentum * 0.3,
                 Some(FlowState::Hold { hold_cycles }) => {
-                    if *hold_cycles > 3 { 0.3 } else { 0.6 }
+                    if *hold_cycles > 3 {
+                        0.3
+                    } else {
+                        0.6
+                    }
                 }
                 Some(FlowState::Block { .. }) => 0.1,
                 Some(FlowState::Handover { .. }) => 0.0, // not available
-                None => 0.5, // unknown
+                None => 0.5,                             // unknown
             };
 
             // Feature match — check if agent has relevant capabilities
-            let feature_match: f32 = persona.features.iter()
-                .filter(|f| task_description.to_lowercase().contains(&f.name.to_lowercase()))
+            let feature_match: f32 = persona
+                .features
+                .iter()
+                .filter(|f| {
+                    task_description
+                        .to_lowercase()
+                        .contains(&f.name.to_lowercase())
+                })
                 .map(|f| f.proficiency)
                 .sum::<f32>()
                 .min(1.0);
@@ -497,11 +521,9 @@ impl MetaOrchestrator {
 
     /// Get affinity between two agents
     pub fn affinity(&self, a: u8, b: u8) -> Option<f32> {
-        self.affinities.iter()
-            .find(|e| {
-                (e.agent_a == a && e.agent_b == b)
-                    || (e.agent_a == b && e.agent_b == a)
-            })
+        self.affinities
+            .iter()
+            .find(|e| (e.agent_a == a && e.agent_b == b) || (e.agent_a == b && e.agent_b == a))
             .map(|e| e.effective_affinity)
     }
 
@@ -527,13 +549,15 @@ impl MetaOrchestrator {
 
     /// Status summary
     pub fn status(&self) -> OrchestratorStatus {
-        let agents_in_flow = self.flow_states.iter()
-            .filter(|(_, f)| f.is_flow())
-            .count();
-        let agents_blocked = self.flow_states.iter()
+        let agents_in_flow = self.flow_states.iter().filter(|(_, f)| f.is_flow()).count();
+        let agents_blocked = self
+            .flow_states
+            .iter()
             .filter(|(_, f)| f.is_blocked())
             .count();
-        let agents_in_handover = self.flow_states.iter()
+        let agents_in_handover = self
+            .flow_states
+            .iter()
             .filter(|(_, f)| f.is_handover())
             .count();
 
@@ -577,7 +601,7 @@ pub struct OrchestratorStatus {
 mod tests {
     use super::*;
     use crate::orchestration::persona::{
-        Persona, VolitionDTO, PersonalityTrait, CommunicationStyle, FeatureAd,
+        CommunicationStyle, FeatureAd, Persona, PersonalityTrait, VolitionDTO,
     };
 
     fn make_persona(drive: &str, curiosity: f32, affinities: Vec<&str>) -> Persona {
@@ -592,19 +616,19 @@ mod tests {
                 affinities: affinities.into_iter().map(|s| s.to_string()).collect(),
                 aversions: Vec::new(),
             },
-            traits: vec![
-                PersonalityTrait { name: "openness".to_string(), value: curiosity, frozen: false },
-            ],
+            traits: vec![PersonalityTrait {
+                name: "openness".to_string(),
+                value: curiosity,
+                frozen: false,
+            }],
             communication: CommunicationStyle::default(),
             preferred_styles: vec!["analytical".to_string()],
-            features: vec![
-                FeatureAd {
-                    name: drive.to_string(),
-                    proficiency: 0.9,
-                    preference: 0.8,
-                    cam_opcode: None,
-                },
-            ],
+            features: vec![FeatureAd {
+                name: drive.to_string(),
+                proficiency: 0.9,
+                preference: 0.8,
+                cam_opcode: None,
+            }],
         }
     }
 
@@ -641,8 +665,12 @@ mod tests {
         // Agents 0 and 1 should have higher affinity than 0 and 2
         let affinity_01 = orch.affinity(0, 1).unwrap();
         let affinity_02 = orch.affinity(0, 2).unwrap();
-        assert!(affinity_01 > affinity_02,
-            "Similar agents should have higher affinity: {} vs {}", affinity_01, affinity_02);
+        assert!(
+            affinity_01 > affinity_02,
+            "Similar agents should have higher affinity: {} vs {}",
+            affinity_01,
+            affinity_02
+        );
     }
 
     #[test]
@@ -674,8 +702,12 @@ mod tests {
         let after = orch.affinity(0, 1).unwrap();
 
         // Affinity should increase after successful handover
-        assert!(after > initial,
-            "Affinity should increase after handover: {} -> {}", initial, after);
+        assert!(
+            after > initial,
+            "Affinity should increase after handover: {} -> {}",
+            initial,
+            after
+        );
     }
 
     #[test]

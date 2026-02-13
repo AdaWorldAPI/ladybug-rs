@@ -51,8 +51,8 @@ use datafusion::execution::context::TaskContext;
 use datafusion::logical_expr::TableType;
 use datafusion::physical_expr::EquivalenceProperties;
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties,
-    RecordBatchStream, SendableRecordBatchStream, Partitioning,
+    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties, RecordBatchStream,
+    SendableRecordBatchStream,
     execution_plan::{Boundedness, EmissionType},
 };
 use datafusion::prelude::*;
@@ -94,7 +94,11 @@ fn traversal_schema() -> SchemaRef {
         Field::new("hop", DataType::UInt32, false),
         Field::new("target", DataType::UInt16, false),
         Field::new("target_label", DataType::Utf8, true),
-        Field::new("target_fingerprint", DataType::FixedSizeBinary(FP_BYTES as i32), false),
+        Field::new(
+            "target_fingerprint",
+            DataType::FixedSizeBinary(FP_BYTES as i32),
+            false,
+        ),
         Field::new("via_verb", DataType::UInt16, false),
         Field::new("via_verb_label", DataType::Utf8, true),
         Field::new("path_length", DataType::UInt32, false),
@@ -186,7 +190,10 @@ impl EdgeScanExec {
     ) -> Self {
         let projected_schema = match &projection {
             Some(indices) => Arc::new(Schema::new(
-                indices.iter().map(|&i| schema.field(i).clone()).collect::<Vec<_>>(),
+                indices
+                    .iter()
+                    .map(|&i| schema.field(i).clone())
+                    .collect::<Vec<_>>(),
             )),
             None => schema.clone(),
         };
@@ -297,7 +304,10 @@ fn edges_to_batch(
 
     let projected_schema = match projection {
         Some(indices) => Arc::new(Schema::new(
-            indices.iter().map(|&i| schema.field(i).clone()).collect::<Vec<_>>(),
+            indices
+                .iter()
+                .map(|&i| schema.field(i).clone())
+                .collect::<Vec<_>>(),
         )),
         None => schema.clone(),
     };
@@ -325,9 +335,12 @@ fn edges_to_batch(
             let tmp = RecordBatch::try_new(
                 Arc::new(Schema::new(vec![schema.field(0).clone()])),
                 vec![all_columns[0].clone()],
-            ).map_err(|e| DataFusionError::ArrowError(Box::new(e), None))?;
+            )
+            .map_err(|e| DataFusionError::ArrowError(Box::new(e), None))?;
             // Return zero-column batch preserving row count
-            return tmp.project(&[]).map_err(|e| DataFusionError::ArrowError(Box::new(e), None));
+            return tmp
+                .project(&[])
+                .map_err(|e| DataFusionError::ArrowError(Box::new(e), None));
         }
         Some(indices) => indices.iter().map(|&i| all_columns[i].clone()).collect(),
         None => all_columns,
@@ -395,7 +408,10 @@ impl GraphTraversalExec {
         let schema = traversal_schema();
         let projected_schema = match &projection {
             Some(indices) => Arc::new(Schema::new(
-                indices.iter().map(|&i| schema.field(i).clone()).collect::<Vec<_>>(),
+                indices
+                    .iter()
+                    .map(|&i| schema.field(i).clone())
+                    .collect::<Vec<_>>(),
             )),
             None => schema.clone(),
         };
@@ -481,12 +497,8 @@ impl ExecutionPlan for GraphTraversalExec {
         _context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
         let bind_space = self.bind_space.read();
-        let batch = execute_bfs_traversal(
-            &bind_space,
-            &self.config,
-            &self.schema,
-            &self.projection,
-        )?;
+        let batch =
+            execute_bfs_traversal(&bind_space, &self.config, &self.schema, &self.projection)?;
 
         Ok(Box::pin(MemoryStream::new(
             vec![batch],
@@ -532,9 +544,7 @@ fn execute_bfs_traversal(
                     TraversalDirection::Outgoing | TraversalDirection::Both => {
                         bind_space.edges_out(node).collect()
                     }
-                    TraversalDirection::Incoming => {
-                        bind_space.edges_in(node).collect()
-                    }
+                    TraversalDirection::Incoming => bind_space.edges_in(node).collect(),
                 };
 
                 for edge in &edges {
@@ -556,9 +566,7 @@ fn execute_bfs_traversal(
                         targets_col.push(target.0);
 
                         let target_node = bind_space.read(target);
-                        target_labels_col.push(
-                            target_node.and_then(|n| n.label.clone()),
-                        );
+                        target_labels_col.push(target_node.and_then(|n| n.label.clone()));
 
                         let fp_bytes: Vec<u8> = target_node
                             .map(|n| n.fingerprint.iter().flat_map(|w| w.to_le_bytes()).collect())
@@ -566,9 +574,8 @@ fn execute_bfs_traversal(
                         target_fps.push(fp_bytes);
 
                         via_verbs_col.push(edge.verb.0);
-                        via_verb_labels_col.push(
-                            bind_space.read(edge.verb).and_then(|n| n.label.clone()),
-                        );
+                        via_verb_labels_col
+                            .push(bind_space.read(edge.verb).and_then(|n| n.label.clone()));
                         path_lengths_col.push(hop);
 
                         next_frontier.push(target);
@@ -600,19 +607,18 @@ fn execute_bfs_traversal(
                             targets_col.push(target.0);
 
                             let target_node = bind_space.read(target);
-                            target_labels_col.push(
-                                target_node.and_then(|n| n.label.clone()),
-                            );
+                            target_labels_col.push(target_node.and_then(|n| n.label.clone()));
 
                             let fp_bytes: Vec<u8> = target_node
-                                .map(|n| n.fingerprint.iter().flat_map(|w| w.to_le_bytes()).collect())
+                                .map(|n| {
+                                    n.fingerprint.iter().flat_map(|w| w.to_le_bytes()).collect()
+                                })
                                 .unwrap_or_else(|| vec![0u8; FP_BYTES]);
                             target_fps.push(fp_bytes);
 
                             via_verbs_col.push(edge.verb.0);
-                            via_verb_labels_col.push(
-                                bind_space.read(edge.verb).and_then(|n| n.label.clone()),
-                            );
+                            via_verb_labels_col
+                                .push(bind_space.read(edge.verb).and_then(|n| n.label.clone()));
                             path_lengths_col.push(hop);
 
                             next_frontier.push(target);
@@ -634,7 +640,10 @@ fn execute_bfs_traversal(
 
     let projected_schema = match projection {
         Some(indices) => Arc::new(Schema::new(
-            indices.iter().map(|&i| schema.field(i).clone()).collect::<Vec<_>>(),
+            indices
+                .iter()
+                .map(|&i| schema.field(i).clone())
+                .collect::<Vec<_>>(),
         )),
         None => schema.clone(),
     };
@@ -649,7 +658,8 @@ fn execute_bfs_traversal(
         let mut padded = vec![0u8; FP_BYTES];
         let copy_len = fp.len().min(FP_BYTES);
         padded[..copy_len].copy_from_slice(&fp[..copy_len]);
-        fp_builder.append_value(&padded)
+        fp_builder
+            .append_value(&padded)
             .map_err(|e| DataFusionError::ArrowError(Box::new(e), None))?;
     }
 
@@ -669,8 +679,11 @@ fn execute_bfs_traversal(
             let tmp = RecordBatch::try_new(
                 Arc::new(Schema::new(vec![traversal_schema().field(0).clone()])),
                 vec![all_columns[0].clone()],
-            ).map_err(|e| DataFusionError::ArrowError(Box::new(e), None))?;
-            return tmp.project(&[]).map_err(|e| DataFusionError::ArrowError(Box::new(e), None));
+            )
+            .map_err(|e| DataFusionError::ArrowError(Box::new(e), None))?;
+            return tmp
+                .project(&[])
+                .map_err(|e| DataFusionError::ArrowError(Box::new(e), None));
         }
         Some(indices) => indices.iter().map(|&i| all_columns[i].clone()).collect(),
         None => all_columns,
@@ -687,17 +700,11 @@ fn execute_bfs_traversal(
 /// Extension trait to register graph tables with DataFusion SessionContext
 pub trait GraphExt {
     /// Register edges table and graph traversal functions
-    fn register_graph_tables(
-        &self,
-        bind_space: Arc<RwLock<BindSpace>>,
-    ) -> Result<()>;
+    fn register_graph_tables(&self, bind_space: Arc<RwLock<BindSpace>>) -> Result<()>;
 }
 
 impl GraphExt for SessionContext {
-    fn register_graph_tables(
-        &self,
-        bind_space: Arc<RwLock<BindSpace>>,
-    ) -> Result<()> {
+    fn register_graph_tables(&self, bind_space: Arc<RwLock<BindSpace>>) -> Result<()> {
         // Register edges table
         let edge_provider = EdgeTableProvider::new(bind_space.clone());
         self.register_table("edges", Arc::new(edge_provider))?;
@@ -790,7 +797,9 @@ mod tests {
         let df = ctx.sql("SELECT COUNT(*) as cnt FROM edges").await.unwrap();
         let batches = df.collect().await.unwrap();
 
-        let cnt = batches[0].column(0).as_any()
+        let cnt = batches[0]
+            .column(0)
+            .as_any()
             .downcast_ref::<Int64Array>()
             .unwrap();
         assert_eq!(cnt.value(0), 3, "Expected 3 edges");
@@ -824,11 +833,14 @@ mod tests {
         ctx.register_table("edges", Arc::new(provider)).unwrap();
 
         // 2-hop traversal via SQL JOIN: Alice -> ? -> ?
-        let df = ctx.sql(
-            "SELECT e1.source_label, e1.target_label as hop1, e2.target_label as hop2 \
+        let df = ctx
+            .sql(
+                "SELECT e1.source_label, e1.target_label as hop1, e2.target_label as hop2 \
              FROM edges e1 JOIN edges e2 ON e1.target = e2.source \
-             WHERE e1.source_label = 'Alice' AND e1.verb_label = 'CAUSES'"
-        ).await.unwrap();
+             WHERE e1.source_label = 'Alice' AND e1.verb_label = 'CAUSES'",
+            )
+            .await
+            .unwrap();
         let batches = df.collect().await.unwrap();
 
         let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
@@ -854,7 +866,9 @@ mod tests {
                         }
                     }
                 }
-                if addr.is_some() { break; }
+                if addr.is_some() {
+                    break;
+                }
             }
             addr.unwrap()
         };
@@ -877,7 +891,11 @@ mod tests {
 
         let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
         // Alice -> Bob (hop 1), Alice -> Diana (hop 1), Bob -> Charlie (hop 2)
-        assert_eq!(total_rows, 3, "Expected 3 reachable nodes, got {}", total_rows);
+        assert_eq!(
+            total_rows, 3,
+            "Expected 3 reachable nodes, got {}",
+            total_rows
+        );
     }
 
     #[tokio::test]
@@ -897,7 +915,9 @@ mod tests {
                         }
                     }
                 }
-                if addr.is_some() { break; }
+                if addr.is_some() {
+                    break;
+                }
             }
             addr.unwrap()
         };
@@ -925,7 +945,11 @@ mod tests {
 
         let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
         // Only CAUSES edges: Alice -> Bob (hop 1), Bob -> Charlie (hop 2)
-        assert_eq!(total_rows, 2, "Expected 2 CAUSES-reachable nodes, got {}", total_rows);
+        assert_eq!(
+            total_rows, 2,
+            "Expected 2 CAUSES-reachable nodes, got {}",
+            total_rows
+        );
     }
 
     #[tokio::test]

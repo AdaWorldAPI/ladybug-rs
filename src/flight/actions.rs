@@ -3,18 +3,18 @@
 //! Implements the MCP tool interface via Flight DoAction using Arrow IPC.
 //! All serialization uses Arrow RecordBatch - JSON is NOT used.
 
-use std::sync::Arc;
 use parking_lot::RwLock;
+use std::sync::Arc;
 
 use arrow_array::{
-    Array, ArrayRef, BinaryArray, FixedSizeBinaryArray, Float32Array, RecordBatch,
-    StringArray, UInt16Array, UInt32Array, UInt8Array, BooleanArray,
+    Array, ArrayRef, BinaryArray, BooleanArray, FixedSizeBinaryArray, Float32Array, RecordBatch,
+    StringArray, UInt8Array, UInt16Array, UInt32Array,
 };
 use arrow_ipc::{reader::StreamReader, writer::StreamWriter};
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
 
-use crate::storage::BindSpace;
 use crate::search::HdrIndex;
+use crate::storage::BindSpace;
 use crate::storage::bind_space::{Addr, FINGERPRINT_WORDS};
 
 // =============================================================================
@@ -24,7 +24,11 @@ use crate::storage::bind_space::{Addr, FINGERPRINT_WORDS};
 /// Schema for fingerprint encoding result
 fn fingerprint_result_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
-        Field::new("fingerprint", DataType::FixedSizeBinary((FINGERPRINT_WORDS * 8) as i32), false),
+        Field::new(
+            "fingerprint",
+            DataType::FixedSizeBinary((FINGERPRINT_WORDS * 8) as i32),
+            false,
+        ),
         Field::new("bits_set", DataType::UInt32, false),
         Field::new("encoding_style", DataType::Utf8, false),
     ]))
@@ -42,7 +46,11 @@ fn bind_result_schema() -> SchemaRef {
 fn node_result_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
         Field::new("address", DataType::UInt16, false),
-        Field::new("fingerprint", DataType::FixedSizeBinary((FINGERPRINT_WORDS * 8) as i32), false),
+        Field::new(
+            "fingerprint",
+            DataType::FixedSizeBinary((FINGERPRINT_WORDS * 8) as i32),
+            false,
+        ),
         Field::new("label", DataType::Utf8, true),
         Field::new("zone", DataType::Utf8, false),
     ]))
@@ -52,7 +60,11 @@ fn node_result_schema() -> SchemaRef {
 fn search_result_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
         Field::new("address", DataType::UInt16, false),
-        Field::new("fingerprint", DataType::FixedSizeBinary((FINGERPRINT_WORDS * 8) as i32), false),
+        Field::new(
+            "fingerprint",
+            DataType::FixedSizeBinary((FINGERPRINT_WORDS * 8) as i32),
+            false,
+        ),
         Field::new("label", DataType::Utf8, true),
         Field::new("distance", DataType::UInt32, false),
         Field::new("similarity", DataType::Float32, false),
@@ -77,7 +89,11 @@ fn distance_result_schema() -> SchemaRef {
 /// Schema for XOR bind result
 fn xor_result_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
-        Field::new("fingerprint", DataType::FixedSizeBinary((FINGERPRINT_WORDS * 8) as i32), false),
+        Field::new(
+            "fingerprint",
+            DataType::FixedSizeBinary((FINGERPRINT_WORDS * 8) as i32),
+            false,
+        ),
         Field::new("bits_set", DataType::UInt32, false),
     ]))
 }
@@ -141,11 +157,13 @@ fn decode_ipc_params(data: &[u8]) -> Result<std::collections::HashMap<String, Ve
         let batch = batch_result.map_err(|e| e.to_string())?;
 
         // Get param_name and param_value columns
-        let names = batch.column(0)
+        let names = batch
+            .column(0)
             .as_any()
             .downcast_ref::<StringArray>()
             .ok_or("Expected StringArray for param_name")?;
-        let values = batch.column(1)
+        let values = batch
+            .column(1)
             .as_any()
             .downcast_ref::<BinaryArray>()
             .ok_or("Expected BinaryArray for param_value")?;
@@ -161,8 +179,13 @@ fn decode_ipc_params(data: &[u8]) -> Result<std::collections::HashMap<String, Ve
 }
 
 /// Extract string parameter from decoded params
-fn get_string_param(params: &std::collections::HashMap<String, Vec<u8>>, key: &str) -> Option<String> {
-    params.get(key).and_then(|v| String::from_utf8(v.clone()).ok())
+fn get_string_param(
+    params: &std::collections::HashMap<String, Vec<u8>>,
+    key: &str,
+) -> Option<String> {
+    params
+        .get(key)
+        .and_then(|v| String::from_utf8(v.clone()).ok())
 }
 
 /// Extract u16 parameter from decoded params
@@ -177,7 +200,10 @@ fn get_u16_param(params: &std::collections::HashMap<String, Vec<u8>>, key: &str)
 }
 
 /// Extract usize parameter from decoded params
-fn get_usize_param(params: &std::collections::HashMap<String, Vec<u8>>, key: &str) -> Option<usize> {
+fn get_usize_param(
+    params: &std::collections::HashMap<String, Vec<u8>>,
+    key: &str,
+) -> Option<usize> {
     params.get(key).and_then(|v| {
         if v.len() >= 8 {
             Some(u64::from_le_bytes(v[..8].try_into().unwrap()) as usize)
@@ -201,7 +227,10 @@ fn get_u32_param(params: &std::collections::HashMap<String, Vec<u8>>, key: &str)
 }
 
 /// Extract bytes parameter from decoded params
-fn get_bytes_param(params: &std::collections::HashMap<String, Vec<u8>>, key: &str) -> Option<Vec<u8>> {
+fn get_bytes_param(
+    params: &std::collections::HashMap<String, Vec<u8>>,
+    key: &str,
+) -> Option<Vec<u8>> {
     params.get(key).cloned()
 }
 
@@ -233,9 +262,13 @@ pub async fn execute_action(
                 schema.clone(),
                 vec![
                     Arc::new(BooleanArray::from(vec![true])) as ArrayRef,
-                    Arc::new(StringArray::from(vec![format!("Unknown action: {}", action_type)])) as ArrayRef,
+                    Arc::new(StringArray::from(vec![format!(
+                        "Unknown action: {}",
+                        action_type
+                    )])) as ArrayRef,
                 ],
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
             encode_to_ipc(&batch)
         }
     }
@@ -256,7 +289,7 @@ fn execute_encode(params: &std::collections::HashMap<String, Vec<u8>>) -> Result
     };
 
     // Sigma-10 membrane encoding (simplified: SHA256-based expansion)
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(&input);
     let hash = hasher.finalize();
@@ -270,23 +303,19 @@ fn execute_encode(params: &std::collections::HashMap<String, Vec<u8>>) -> Result
         chunk.copy_from_slice(&h.finalize()[..chunk.len().min(32)]);
     }
 
-    let bits_set: u32 = fingerprint.iter()
-        .map(|b| b.count_ones())
-        .sum();
+    let bits_set: u32 = fingerprint.iter().map(|b| b.count_ones()).sum();
 
     // Build Arrow result
     let schema = fingerprint_result_schema();
     let fp_array: ArrayRef = Arc::new(
         FixedSizeBinaryArray::try_from_iter(std::iter::once(fingerprint.as_slice()))
-            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?,
     );
     let bits_array: ArrayRef = Arc::new(UInt32Array::from(vec![bits_set]));
     let style_array: ArrayRef = Arc::new(StringArray::from(vec![style]));
 
-    let batch = RecordBatch::try_new(
-        schema,
-        vec![fp_array, bits_array, style_array],
-    ).map_err(|e| e.to_string())?;
+    let batch = RecordBatch::try_new(schema, vec![fp_array, bits_array, style_array])
+        .map_err(|e| e.to_string())?;
 
     encode_to_ipc(&batch)
 }
@@ -296,10 +325,8 @@ fn execute_bind(
     params: &std::collections::HashMap<String, Vec<u8>>,
     bind_space: Arc<RwLock<BindSpace>>,
 ) -> Result<Vec<u8>, String> {
-    let address = get_u16_param(params, "address")
-        .ok_or("missing address")?;
-    let fingerprint = get_bytes_param(params, "fingerprint")
-        .ok_or("missing fingerprint")?;
+    let address = get_u16_param(params, "address").ok_or("missing address")?;
+    let fingerprint = get_bytes_param(params, "fingerprint").ok_or("missing fingerprint")?;
     let label = get_string_param(params, "label");
 
     let addr = Addr(address);
@@ -338,7 +365,8 @@ fn execute_bind(
             Arc::new(UInt16Array::from(vec![address])) as ArrayRef,
             Arc::new(BooleanArray::from(vec![success])) as ArrayRef,
         ],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
 
     encode_to_ipc(&batch)
 }
@@ -348,14 +376,14 @@ fn execute_read(
     params: &std::collections::HashMap<String, Vec<u8>>,
     bind_space: Arc<RwLock<BindSpace>>,
 ) -> Result<Vec<u8>, String> {
-    let address = get_u16_param(params, "address")
-        .ok_or("missing address")?;
+    let address = get_u16_param(params, "address").ok_or("missing address")?;
 
     let addr = Addr(address);
     let space = bind_space.read();
 
     if let Some(node) = space.read(addr) {
-        let fingerprint: Vec<u8> = node.fingerprint
+        let fingerprint: Vec<u8> = node
+            .fingerprint
             .iter()
             .flat_map(|w| w.to_le_bytes())
             .collect();
@@ -369,7 +397,7 @@ fn execute_read(
         let schema = node_result_schema();
         let fp_array: ArrayRef = Arc::new(
             FixedSizeBinaryArray::try_from_iter(std::iter::once(fingerprint.as_slice()))
-                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())?,
         );
         let batch = RecordBatch::try_new(
             schema,
@@ -379,7 +407,8 @@ fn execute_read(
                 Arc::new(StringArray::from(vec![node.label.as_deref()])) as ArrayRef,
                 Arc::new(StringArray::from(vec![zone])) as ArrayRef,
             ],
-        ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
 
         encode_to_ipc(&batch)
     } else {
@@ -389,9 +418,13 @@ fn execute_read(
             schema,
             vec![
                 Arc::new(BooleanArray::from(vec![true])) as ArrayRef,
-                Arc::new(StringArray::from(vec![format!("No node at address {:#06x}", address)])) as ArrayRef,
+                Arc::new(StringArray::from(vec![format!(
+                    "No node at address {:#06x}",
+                    address
+                )])) as ArrayRef,
             ],
-        ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
         encode_to_ipc(&batch)
     }
 }
@@ -402,8 +435,7 @@ fn execute_resonate(
     _bind_space: Arc<RwLock<BindSpace>>,
     _hdr_cascade: Arc<RwLock<HdrIndex>>,
 ) -> Result<Vec<u8>, String> {
-    let _query = get_bytes_param(params, "query")
-        .ok_or("missing query")?;
+    let _query = get_bytes_param(params, "query").ok_or("missing query")?;
     let _k = get_usize_param(params, "k").unwrap_or(10);
     let _threshold = get_u32_param(params, "threshold");
 
@@ -424,13 +456,16 @@ fn execute_resonate(
             Arc::new(UInt32Array::from(Vec::<u32>::new())) as ArrayRef,
             Arc::new(Float32Array::from(Vec::<f32>::new())) as ArrayRef,
             Arc::new(UInt8Array::from(Vec::<u8>::new())) as ArrayRef,
-            Arc::new(arrow_array::UInt64Array::from(vec![start.elapsed().as_nanos() as u64])) as ArrayRef,
+            Arc::new(arrow_array::UInt64Array::from(vec![
+                start.elapsed().as_nanos() as u64,
+            ])) as ArrayRef,
             Arc::new(UInt32Array::from(vec![0u32])) as ArrayRef,
             Arc::new(UInt32Array::from(vec![0u32])) as ArrayRef,
             Arc::new(UInt32Array::from(vec![0u32])) as ArrayRef,
             Arc::new(UInt32Array::from(vec![0u32])) as ArrayRef,
         ],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
 
     encode_to_ipc(&batch)
 }
@@ -441,7 +476,9 @@ fn execute_hamming(params: &std::collections::HashMap<String, Vec<u8>>) -> Resul
     let b = get_bytes_param(params, "b").ok_or("missing b")?;
 
     let max_len = a.len().min(b.len());
-    let distance: u32 = a.iter().zip(b.iter())
+    let distance: u32 = a
+        .iter()
+        .zip(b.iter())
         .map(|(x, y)| (x ^ y).count_ones())
         .sum();
 
@@ -460,23 +497,22 @@ fn execute_hamming(params: &std::collections::HashMap<String, Vec<u8>>) -> Resul
             Arc::new(Float32Array::from(vec![similarity])) as ArrayRef,
             Arc::new(UInt32Array::from(vec![max_bits])) as ArrayRef,
         ],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
 
     encode_to_ipc(&batch)
 }
 
 /// XOR bind two fingerprints
-fn execute_xor_bind(params: &std::collections::HashMap<String, Vec<u8>>) -> Result<Vec<u8>, String> {
+fn execute_xor_bind(
+    params: &std::collections::HashMap<String, Vec<u8>>,
+) -> Result<Vec<u8>, String> {
     let a = get_bytes_param(params, "a").ok_or("missing a")?;
     let b = get_bytes_param(params, "b").ok_or("missing b")?;
 
-    let fingerprint: Vec<u8> = a.iter().zip(b.iter())
-        .map(|(x, y)| x ^ y)
-        .collect();
+    let fingerprint: Vec<u8> = a.iter().zip(b.iter()).map(|(x, y)| x ^ y).collect();
 
-    let bits_set: u32 = fingerprint.iter()
-        .map(|b| b.count_ones())
-        .sum();
+    let bits_set: u32 = fingerprint.iter().map(|b| b.count_ones()).sum();
 
     // Pad to full fingerprint size if needed
     let mut full_fp = vec![0u8; FINGERPRINT_WORDS * 8];
@@ -486,7 +522,7 @@ fn execute_xor_bind(params: &std::collections::HashMap<String, Vec<u8>>) -> Resu
     let schema = xor_result_schema();
     let fp_array: ArrayRef = Arc::new(
         FixedSizeBinaryArray::try_from_iter(std::iter::once(full_fp.as_slice()))
-            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?,
     );
     let batch = RecordBatch::try_new(
         schema,
@@ -494,7 +530,8 @@ fn execute_xor_bind(params: &std::collections::HashMap<String, Vec<u8>>) -> Resu
             fp_array,
             Arc::new(UInt32Array::from(vec![bits_set])) as ArrayRef,
         ],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
 
     encode_to_ipc(&batch)
 }
@@ -508,12 +545,15 @@ fn execute_stats(bind_space: Arc<RwLock<BindSpace>>) -> Result<Vec<u8>, String> 
     let batch = RecordBatch::try_new(
         schema,
         vec![
-            Arc::new(UInt32Array::from(vec![(stats.surface_count + stats.fluid_count + stats.node_count) as u32])) as ArrayRef,
+            Arc::new(UInt32Array::from(vec![
+                (stats.surface_count + stats.fluid_count + stats.node_count) as u32,
+            ])) as ArrayRef,
             Arc::new(UInt32Array::from(vec![stats.surface_count as u32])) as ArrayRef,
             Arc::new(UInt32Array::from(vec![stats.fluid_count as u32])) as ArrayRef,
             Arc::new(UInt32Array::from(vec![stats.node_count as u32])) as ArrayRef,
         ],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
 
     encode_to_ipc(&batch)
 }
@@ -530,12 +570,32 @@ mod json_fallback {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(tag = "action", rename_all = "snake_case")]
     pub enum McpAction {
-        Encode { text: Option<String>, data: Option<Vec<u8>>, style: Option<String> },
-        Bind { address: u16, fingerprint: Vec<u8>, label: Option<String> },
-        Read { address: u16 },
-        Resonate { query: Vec<u8>, k: usize, threshold: Option<u32> },
-        Hamming { a: Vec<u8>, b: Vec<u8> },
-        XorBind { a: Vec<u8>, b: Vec<u8> },
+        Encode {
+            text: Option<String>,
+            data: Option<Vec<u8>>,
+            style: Option<String>,
+        },
+        Bind {
+            address: u16,
+            fingerprint: Vec<u8>,
+            label: Option<String>,
+        },
+        Read {
+            address: u16,
+        },
+        Resonate {
+            query: Vec<u8>,
+            k: usize,
+            threshold: Option<u32>,
+        },
+        Hamming {
+            a: Vec<u8>,
+            b: Vec<u8>,
+        },
+        XorBind {
+            a: Vec<u8>,
+            b: Vec<u8>,
+        },
         Stats,
     }
 
@@ -543,14 +603,44 @@ mod json_fallback {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(tag = "type", rename_all = "snake_case")]
     pub enum McpResult {
-        Fingerprint { fingerprint: Vec<u8>, bits_set: u32, encoding_style: String },
-        Bound { address: u16, success: bool },
-        Node { address: u16, fingerprint: Vec<u8>, label: Option<String>, zone: String },
-        Matches { results: Vec<MatchResult>, query_time_ns: u64, cascade_stats: CascadeStats },
-        Distance { distance: u32, similarity: f32, max_bits: u32 },
-        Combined { fingerprint: Vec<u8>, bits_set: u32 },
-        Stats { total_nodes: usize, surface_nodes: usize, fluid_nodes: usize, node_space_nodes: usize },
-        Error { message: String },
+        Fingerprint {
+            fingerprint: Vec<u8>,
+            bits_set: u32,
+            encoding_style: String,
+        },
+        Bound {
+            address: u16,
+            success: bool,
+        },
+        Node {
+            address: u16,
+            fingerprint: Vec<u8>,
+            label: Option<String>,
+            zone: String,
+        },
+        Matches {
+            results: Vec<MatchResult>,
+            query_time_ns: u64,
+            cascade_stats: CascadeStats,
+        },
+        Distance {
+            distance: u32,
+            similarity: f32,
+            max_bits: u32,
+        },
+        Combined {
+            fingerprint: Vec<u8>,
+            bits_set: u32,
+        },
+        Stats {
+            total_nodes: usize,
+            surface_nodes: usize,
+            fluid_nodes: usize,
+            node_space_nodes: usize,
+        },
+        Error {
+            message: String,
+        },
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]

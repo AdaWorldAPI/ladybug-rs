@@ -1,8 +1,8 @@
 //! Thought and related cognitive types
 
+use crate::cognitive::ThinkingStyle;
 use crate::core::Fingerprint;
 use crate::nars::TruthValue;
-use crate::cognitive::ThinkingStyle;
 
 /// A thought - the atomic unit of cognition
 #[derive(Clone, Debug)]
@@ -26,12 +26,12 @@ impl Thought {
             qidx: 128,
         }
     }
-    
+
     pub fn with_truth(mut self, truth: TruthValue) -> Self {
         self.truth = truth;
         self
     }
-    
+
     pub fn with_style(mut self, style: ThinkingStyle) -> Self {
         self.style = style;
         self

@@ -2,8 +2,8 @@
 //!
 //! Demonstrates Content-Addressable Memory operations using 8+8 addressing.
 
-use ladybug::storage::{CogRedis, Addr, BindSpace};
-use ladybug::storage::bind_space::{PREFIX_LANCE, PREFIX_SQL, PREFIX_VERBS, FINGERPRINT_WORDS};
+use ladybug::storage::bind_space::{FINGERPRINT_WORDS, PREFIX_LANCE, PREFIX_SQL, PREFIX_VERBS};
+use ladybug::storage::{Addr, BindSpace, CogRedis};
 
 fn main() {
     println!("CAM Query: 8-bit prefix : 8-bit slot addressing\n");
@@ -28,22 +28,22 @@ fn main() {
     println!("  VERBS:CAUSES        = 0x{:04X}", verb_causes.0);
 
     // Read from bind space
-    if let Some(node) = bind_space.read(lance_vector_search) {
-        if let Some(label) = &node.label {
-            println!("\n  LANCE:0x00 = '{}'", label);
-        }
+    if let Some(node) = bind_space.read(lance_vector_search)
+        && let Some(label) = &node.label
+    {
+        println!("\n  LANCE:0x00 = '{}'", label);
     }
 
-    if let Some(node) = bind_space.read(sql_select) {
-        if let Some(label) = &node.label {
-            println!("  SQL:0x00   = '{}'", label);
-        }
+    if let Some(node) = bind_space.read(sql_select)
+        && let Some(label) = &node.label
+    {
+        println!("  SQL:0x00   = '{}'", label);
     }
 
-    if let Some(node) = bind_space.read(verb_causes) {
-        if let Some(label) = &node.label {
-            println!("  VERBS:0x00 = '{}'", label);
-        }
+    if let Some(node) = bind_space.read(verb_causes)
+        && let Some(label) = &node.label
+    {
+        println!("  VERBS:0x00 = '{}'", label);
     }
 
     // Stats

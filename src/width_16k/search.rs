@@ -4,8 +4,8 @@
 //! Metadata predicates (ANI level, NARS truth, node kind, bloom) are checked
 //! BEFORE computing full distance — a few cycles vs full popcount.
 
-use super::{RESONANCE_WORDS, VECTOR_WORDS};
 use super::schema::SchemaSidecar;
+use super::{RESONANCE_WORDS, VECTOR_WORDS};
 
 /// Block mask: which of the 14 resonance blocks participate in distance.
 /// Default = all 14 blocks. Can exclude blocks for partial/multi-resolution search.
@@ -23,11 +23,15 @@ impl Default for BlockMask {
 
 impl BlockMask {
     /// All resonance blocks
-    pub fn all() -> Self { Self::default() }
+    pub fn all() -> Self {
+        Self::default()
+    }
 
     /// Single block
     pub fn single(block: usize) -> Self {
-        Self { mask: 1u16 << block }
+        Self {
+            mask: 1u16 << block,
+        }
     }
 
     /// Check if a block is included
@@ -98,18 +102,34 @@ impl SchemaQuery {
         if let Some(min) = self.min_ani_level {
             let levels = schema.ani_levels;
             let max_level = [
-                levels.reactive, levels.memory, levels.analogy, levels.planning,
-                levels.meta, levels.social, levels.creative, levels.r#abstract,
-            ].iter().copied().max().unwrap_or(0);
-            if max_level < min { return false; }
+                levels.reactive,
+                levels.memory,
+                levels.analogy,
+                levels.planning,
+                levels.meta,
+                levels.social,
+                levels.creative,
+                levels.r#abstract,
+            ]
+            .iter()
+            .copied()
+            .max()
+            .unwrap_or(0);
+            if max_level < min {
+                return false;
+            }
         }
 
         if let Some(kind) = self.node_kind {
-            if schema.identity.node_type.kind != kind { return false; }
+            if schema.identity.node_type.kind != kind {
+                return false;
+            }
         }
 
         if let Some(id) = self.bloom_contains {
-            if !schema.neighbors.might_contain(id) { return false; }
+            if !schema.neighbors.might_contain(id) {
+                return false;
+            }
         }
 
         true

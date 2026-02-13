@@ -29,24 +29,23 @@
 //! | Flight   | ~3 GB/s (zero-copy) | Streaming    |
 
 #[cfg(feature = "flight")]
-mod server;
-#[cfg(feature = "flight")]
 mod actions;
 mod capabilities;
+#[cfg(feature = "flight")]
+mod server;
 
 #[cfg(feature = "crewai")]
 pub mod crew_actions;
 
 #[cfg(feature = "flight")]
-pub use server::LadybugFlightService;
-#[cfg(feature = "flight")]
 pub use actions::execute_action;
+#[cfg(feature = "flight")]
+pub use server::LadybugFlightService;
 
 // Capabilities and transport selection (always available)
 pub use capabilities::{
-    Transport, Capabilities, CapabilitiesChecker,
-    TransportAdapter, TransportError,
-    PythonClientConfig,
+    Capabilities, CapabilitiesChecker, PythonClientConfig, Transport, TransportAdapter,
+    TransportError,
 };
 
 // crewAI orchestration actions
