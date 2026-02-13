@@ -482,6 +482,149 @@ address hashes). Remove the violations, and the Holy Grail emerges.
 
 ---
 
+## 3c. The `bindspace://` URI Scheme: One Address To Rule Them All
+
+### The Problem: Three Addressing Formats
+
+The codebase currently has three incompatible ways to name a node:
+
+| Format | Where | Example | How it resolves |
+|--------|-------|---------|-----------------|
+| Bare colon path | `cog_redis.rs key_to_addr()` | `"Ada:A:soul"` | `DefaultHasher` on full string → Addr |
+| PackedDn hex key | `dn_redis.rs dn_key()` | `"ada:dn:0102040000000000"` | PackedDn → hex → Redis GET |
+| PackedDn numeric | `adjacency.rs PackedDn::new()` | `PackedDn(&[0, 1, 3])` | Direct bit packing, numeric-only |
+
+These are all pointing at the same node. But they use different hashes,
+different encodings, and different resolution paths. The bare colon path
+even relies on a fragile heuristic (`key.contains(':')`) to distinguish
+DN paths from flat keys.
+
+### The Fix: `bindspace://` as Canonical URI
+
+```
+bindspace://domain:tree:branch:twig:leaf
+└────┬────┘ └─────────┬─────────────┘
+  scheme         colon-separated path
+               (each segment = one DN level)
+```
+
+One URI format. One resolution path. Used everywhere:
+
+```
+CogRedis:    DN.SET bindspace://ada:soul:memory <data>
+             DN.GET bindspace://ada:soul:memory
+             DN.CHILDREN bindspace://ada:soul
+
+SQL:         SELECT * FROM dn_tree WHERE dn = 'bindspace://ada:soul:memory'
+
+Flight:      DoAction("resolve", "bindspace://ada:soul:memory")
+
+HTTP:        GET /node/bindspace://ada:soul:memory
+
+Redis key:   bindspace://ada:soul:memory  (the URI IS the key — no separate format)
+```
+
+### Resolution: URI → PackedDn → DnIndex → Addr → Data
+
+```
+"bindspace://ada:soul:memory"
+    │
+    ▼ strip scheme, split on ':'
+["ada", "soul", "memory"]
+    │
+    ▼ hash each segment to u8 (deterministic)
+PackedDn([0x7A, 0xC3, 0x4F, 0, 0, 0, 0])
+    │
+    ▼ DnIndex.addr_for(packed_dn)
+Addr(0x8A42)
+    │
+    ▼ BindSpace.read(addr)
+BindNode { fingerprint: [u64; 256], label: Some("bindspace://ada:soul:memory"), ... }
+    │
+    ├── meta_container()   → Container view of [0..128]   (NARS, edges, rung)
+    └── content_container() → Container view of [128..256] (search fingerprint)
+```
+
+### Why This Belongs in Layer 1 (Address)
+
+The URI is pure Layer 1 — it describes WHERE data lives, not WHAT it
+contains. The colon-separated path encodes tree structure for free:
+
+```rust
+// Parent of "bindspace://ada:soul:memory" is "bindspace://ada:soul"
+fn parent_uri(uri: &str) -> Option<&str> {
+    uri.rsplit_once(':').map(|(parent, _)| parent)
+}
+
+// Depth = number of colons after scheme
+fn depth(uri: &str) -> usize {
+    let bare = uri.strip_prefix("bindspace://").unwrap_or(uri);
+    bare.matches(':').count()
+}
+```
+
+No data storage. No edge slots. Just string manipulation — same as
+`PackedDn::parent()` is bit manipulation. The URI is the human-readable
+form of what PackedDn encodes in binary.
+
+### What This Replaces
+
+| Old | New | Change |
+|-----|-----|--------|
+| `key_to_addr()` heuristic (`contains(':')`) | `starts_with("bindspace://")` | Explicit scheme, no guessing |
+| `dn_path_to_addr()` (hash full string) | `PackedDn::from_path()` → DnIndex | Structured per-segment hash |
+| `dn_redis.rs dn_key()` (`"ada:dn:" + hex`) | URI IS the key | No separate key format |
+| `dn_redis.rs children_pattern()` (glob) | `DnIndex.children(addr)` | O(1) lookup, no KEYS scan |
+| `key.contains(':')` detection | `key.starts_with("bindspace://")` | Unambiguous |
+
+### CogRedis Integration
+
+```rust
+// In cog_redis.rs — updated key_to_addr():
+pub fn key_to_addr(&self, key: &str) -> Addr {
+    if key.starts_with("bindspace://") {
+        // DN tree address: resolve through DnIndex
+        let packed = PackedDn::from_path(key);
+        self.bind_space.dn_index.addr_for(packed)
+            .unwrap_or_else(|| dn_path_to_addr(key)) // fallback for unregistered
+    } else {
+        // Flat address: standard hash
+        flat_key_to_addr(key)
+    }
+}
+```
+
+The `bindspace://` prefix is unambiguous — no more guessing whether
+colons mean DN path or just a regular key with colons in it.
+
+### Backward Compatibility
+
+Old bare-colon paths (`"Ada:A:soul"`) continue to work through the
+existing `dn_path_to_addr()` fallback. New code should use the full
+URI scheme. Migration is gradual: as nodes are created through
+`write_dn_path()`, their labels are stored as full URIs, and DnIndex
+entries are created for structured resolution.
+
+### The Label IS the URI
+
+Currently `BindNode.label` stores the bare path (`"Ada:A:soul"`).
+After unification, it stores the full URI (`"bindspace://ada:soul"`).
+This means:
+
+- Labels are globally unique resource identifiers
+- Labels encode tree structure (parent = chop last segment)
+- Labels are valid Redis keys (no separate key generation)
+- Labels are valid SQL filter values
+- Labels are valid Flight ticket identifiers
+- External clients can construct parent/child URIs without any server call
+
+The label is not metadata about the node. The label IS the node's
+address in human-readable form. PackedDn is the same address in
+machine-compact form. Addr is the same address in O(1)-lookup form.
+Three representations of one identity.
+
+---
+
 ## 4. Recommended Approach: Option A (BindSpace Lens)
 
 Option A is the only approach that achieves:
@@ -492,6 +635,7 @@ Option A is the only approach that achieves:
 5. XorDag protection maintained
 6. Meta/content separation (edges, NARS never corrupt search)
 7. DN tree structure free from address (no edges wasted, no separate store)
+8. One canonical URI scheme (`bindspace://`) across all surfaces
 
 The key additions to BindSpace are small:
 - `BindNode.is_spine: bool` (1 byte per node)
@@ -596,8 +740,88 @@ impl BindNode {
             <&mut [u64; 128]>::try_from(&mut self.fingerprint[128..]).unwrap()
         )
     }
+
+    /// NARS truth values from meta W4-7 (zero-copy through MetaView).
+    pub fn nars(&self) -> (f32, f32) {
+        let meta = MetaView::new(&self.meta_container().words);
+        (meta.nars_frequency(), meta.nars_confidence())
+    }
 }
 ```
+
+Add BindSpace-level methods that make the substrate self-contained:
+
+```rust
+impl BindSpace {
+    /// Iterate all occupied node addresses.
+    /// This is the canonical way to enumerate all live data.
+    pub fn nodes(&self) -> impl Iterator<Item = (Addr, &BindNode)> + '_ {
+        (0..TOTAL_ADDRESSES as u16)
+            .map(|i| Addr(i))
+            .filter_map(move |addr| self.read(addr).map(|node| (addr, node)))
+    }
+
+    /// XOR-fold all occupied fingerprints into a single 256-word digest.
+    /// Use for integrity checks, snapshot comparison, or XorDag parity seed.
+    pub fn hash_all(&self) -> [u64; FINGERPRINT_WORDS] {
+        let mut acc = [0u64; FINGERPRINT_WORDS];
+        for (_, node) in self.nodes() {
+            for (i, word) in node.fingerprint.iter().enumerate() {
+                acc[i] ^= word;
+            }
+        }
+        acc
+    }
+
+    /// Resolve a `bindspace://` URI to an address.
+    pub fn resolve(&self, uri: &str) -> Option<Addr> {
+        let packed = PackedDn::from_path(uri);
+        self.dn_index.addr_for(packed)
+    }
+
+    /// NARS revision: update truth value at address with new evidence.
+    /// Reads meta W4-7, applies revision formula, writes back.
+    /// All through Container::view — no copies.
+    pub fn nars_revise(&mut self, addr: Addr, evidence_freq: f32, evidence_conf: f32) {
+        if let Some(node) = self.read_mut(addr) {
+            let meta = MetaViewMut::new(&mut node.meta_container_mut().words);
+            let old_freq = meta.nars_frequency();
+            let old_conf = meta.nars_confidence();
+
+            // NARS revision: weighted average by confidence
+            let w1 = old_conf / (old_conf + evidence_conf);
+            let w2 = evidence_conf / (old_conf + evidence_conf);
+            let new_freq = w1 * old_freq + w2 * evidence_freq;
+            let new_conf = (old_conf + evidence_conf).min(0.99);
+
+            meta.set_nars_frequency(new_freq);
+            meta.set_nars_confidence(new_conf);
+            self.mark_dirty(addr);
+        }
+    }
+}
+```
+
+**Why these methods matter**: BindSpace is the substrate — the ONE place
+where data lives. Operations on that data (iteration, integrity, NARS,
+resolution) should be methods on the substrate, not external functions
+that reach in and manipulate raw arrays. This makes the API surface
+discoverable and keeps all write paths through `mark_dirty()` → XorDag.
+
+**`nodes()`** replaces ad-hoc scanning loops everywhere. One iterator,
+always correct, always zero-copy (yields `&BindNode` references).
+
+**`hash_all()`** gives you a 256-word XOR digest of the entire space —
+compare two snapshots to detect drift, or use as the XorDag parity seed.
+
+**`resolve()`** is the `bindspace://` URI resolution from Section 3c —
+one method, one path, all surfaces use it.
+
+**`nars_revise()`** shows the pattern: read meta through Container::view,
+apply the NARS formula, write back through Container::view_mut, mark dirty.
+Same pattern applies for `nars_deduction()`, `nars_abduction()`,
+`nars_induction()` — all operating on W4-7 without touching the
+content fingerprint in [128..256].
 
 **Import**: Add `use crate::container::Container;` to bind_space.rs.
 
@@ -684,21 +908,24 @@ Wire `write_dn_path()` to automatically register in DnIndex:
 
 ```rust
 // Inside write_dn_path(), after creating a node:
-let packed = /* convert string path to PackedDn */;
+let packed = PackedDn::from_path(path);
 self.dn_index.register(packed, addr);
 ```
 
-**Address resolution**: Use BindSpace's existing `dn_path_to_addr()` (DefaultHasher).
-Remove the SplitMix64 variant from addr_bridge.rs — ONE hash function, period.
+**Address resolution**: See Section 3c below — the `bindspace://` URI scheme
+replaces ALL current string-to-address paths with one canonical resolution.
 
 To convert string path → PackedDn, add a helper:
 
 ```rust
 impl PackedDn {
-    /// Create from colon-separated path string.
-    /// "Ada:A:soul" → PackedDn::new(&[hash("Ada"), hash("A"), hash("soul")])
+    /// Create from colon-separated path string (with or without scheme).
+    ///
+    /// "ada:soul:memory"                 → PackedDn(&[hash("ada"), hash("soul"), hash("memory")])
+    /// "bindspace://ada:soul:memory"     → same (scheme stripped)
     pub fn from_path(path: &str) -> Self {
-        let components: Vec<u8> = path.split(':')
+        let bare = path.strip_prefix("bindspace://").unwrap_or(path);
+        let components: Vec<u8> = bare.split(':')
             .take(Self::MAX_DEPTH)
             .map(|seg| {
                 // Deterministic 8-bit hash of segment
