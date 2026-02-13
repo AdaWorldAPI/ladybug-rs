@@ -1,0 +1,125 @@
+name: "CI: Master (Build, Test, Lint)"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "benches/**"
+      - "examples/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ci-master.yml"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  # Mirror proof.yml: allow noise lints in evolving 115K-line codebase
+  RUSTFLAGS: "-D warnings -A unused -A dead-code -A private-interfaces -A mismatched-lifetime-syntaxes -A unsafe-op-in-unsafe-fn -A unexpected-cfgs -A ambiguous-glob-reexports -A overlapping-range-endpoints -A confusable-idents"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Build — debug + release
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.0"
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Cargo build (debug, default features)
+        run: cargo build --lib --bins --tests --benches
+
+      - name: Cargo build (release)
+        run: cargo build --release --lib --bins
+
+  # ---------------------------------------------------------------------------
+  # Test — unit + integration + doc tests
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.0"
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Unit tests (all modules)
+        run: cargo test --lib -- --test-threads=4
+
+      - name: Integration tests
+        run: cargo test --tests -- --test-threads=1
+
+      - name: Doc tests
+        run: cargo test --doc
+
+      - name: Examples compile
+        run: cargo build --examples
+
+  # ---------------------------------------------------------------------------
+  # Lint — clippy + fmt
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.0"
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Clippy (all targets)
+        run: cargo clippy --all-targets -- -D warnings -A unused -A dead-code -A private-interfaces -A mismatched-lifetime-syntaxes -A unsafe-op-in-unsafe-fn -A unexpected-cfgs -A ambiguous-glob-reexports -A overlapping-range-endpoints -A confusable-idents
+
+      - name: Rustfmt
+        run: cargo fmt --all -- --check
+
+  # ---------------------------------------------------------------------------
+  # Summary
+  # ---------------------------------------------------------------------------
+  ci-summary:
+    name: CI Summary
+    needs: [build, test, lint]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Results
+        run: |
+          echo "============================================"
+          echo "  LADYBUG-RS CI MASTER RESULTS"
+          echo "============================================"
+          echo ""
+          echo "  Build: ${{ needs.build.result }}"
+          echo "  Test:  ${{ needs.test.result }}"
+          echo "  Lint:  ${{ needs.lint.result }}"
+          echo ""
+          PASS=true
+          for r in "${{ needs.build.result }}" "${{ needs.test.result }}" "${{ needs.lint.result }}"; do
+            [ "$r" != "success" ] && PASS=false
+          done
+          if [ "$PASS" = true ]; then
+            echo "  ✅ ALL CI CHECKS PASSED"
+          else
+            echo "  ❌ SOME CI CHECKS FAILED"
+            exit 1
+          fi
+          echo "============================================"
