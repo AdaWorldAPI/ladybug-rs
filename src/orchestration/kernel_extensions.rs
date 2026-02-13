@@ -50,9 +50,9 @@
 //! └───────────────────────────────────────────────────────────────────────┘
 //! ```
 
-use serde::{Deserialize, Serialize};
+use super::semantic_kernel::{CausalRung, KernelTruth, KernelZone};
 use crate::storage::bind_space::{Addr, BindSpace, FINGERPRINT_WORDS};
-use super::semantic_kernel::{KernelZone, KernelTruth, CausalRung};
+use serde::{Deserialize, Serialize};
 
 // =============================================================================
 // 1. FILTER PIPELINE (Microsoft Semantic Kernel Pattern)
@@ -179,7 +179,9 @@ pub struct FilterPipeline {
 
 impl FilterPipeline {
     pub fn new() -> Self {
-        Self { filters: Vec::new() }
+        Self {
+            filters: Vec::new(),
+        }
     }
 
     pub fn add(&mut self, filter: KernelFilter) {
@@ -224,7 +226,11 @@ impl FilterPipeline {
             // Zone restriction filter: block operations outside allowed zones
             if filter.config.get("type").map(|t| t.as_str()) == Some("zone_restrict") {
                 if let Some(zone) = &ctx.zone {
-                    let allowed = filter.config.get("allowed_zones").cloned().unwrap_or_default();
+                    let allowed = filter
+                        .config
+                        .get("allowed_zones")
+                        .cloned()
+                        .unwrap_or_default();
                     let zone_name = match zone {
                         KernelZone::Surface { .. } => "Surface",
                         KernelZone::Fluid { .. } => "Fluid",
@@ -269,7 +275,9 @@ impl FilterPipeline {
 }
 
 impl Default for FilterPipeline {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // =============================================================================
@@ -401,7 +409,11 @@ impl KernelGuardrail {
     }
 
     /// Add a content filter threshold
-    pub fn add_content_filter(&mut self, category: ContentCategory, max_severity: GuardrailSeverity) {
+    pub fn add_content_filter(
+        &mut self,
+        category: ContentCategory,
+        max_severity: GuardrailSeverity,
+    ) {
         self.content_thresholds.push((category, max_severity));
     }
 
@@ -457,7 +469,8 @@ impl KernelGuardrail {
                 for &source_addr in sources {
                     if let Some(source_node) = space.read(source_addr) {
                         let sim = super::semantic_kernel::SemanticKernel::hamming_similarity(
-                            content_fp, &source_node.fingerprint,
+                            content_fp,
+                            &source_node.fingerprint,
                         );
                         total_sim += sim;
                         claim_scores.push(ClaimGrounding {
@@ -492,12 +505,14 @@ impl KernelGuardrail {
         if !result.passed {
             if !result.denied_topics_matched.is_empty() {
                 result.action = GuardrailAction::Block {
-                    reason: format!(
-                        "Denied topics: {}",
-                        result.denied_topics_matched.join(", ")
-                    ),
+                    reason: format!("Denied topics: {}", result.denied_topics_matched.join(", ")),
                 };
-            } else if result.grounding.as_ref().map(|g| !g.is_grounded).unwrap_or(false) {
+            } else if result
+                .grounding
+                .as_ref()
+                .map(|g| !g.is_grounded)
+                .unwrap_or(false)
+            {
                 result.action = GuardrailAction::Block {
                     reason: "Content not grounded in source material".to_string(),
                 };
@@ -509,7 +524,9 @@ impl KernelGuardrail {
 }
 
 impl Default for KernelGuardrail {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // =============================================================================
@@ -685,7 +702,13 @@ fn execute_node(
             }
         }
 
-        WorkflowNode::Loop { id, body, exit_condition_addr, exit_threshold, max_iterations } => {
+        WorkflowNode::Loop {
+            id,
+            body,
+            exit_condition_addr,
+            exit_threshold,
+            max_iterations,
+        } => {
             result.workflow_id = id.clone();
             for i in 0..*max_iterations {
                 execute_node(body, space, kernel, result);
@@ -696,14 +719,21 @@ fn execute_node(
                     let popcount: u32 = node.fingerprint.iter().map(|w| w.count_ones()).sum();
                     let density = popcount as f32 / (FINGERPRINT_WORDS * 64) as f32;
                     if density >= *exit_threshold {
-                        result.branches_taken.push(format!("loop:{} exited at iteration {}", id, i));
+                        result
+                            .branches_taken
+                            .push(format!("loop:{} exited at iteration {}", id, i));
                         break;
                     }
                 }
             }
         }
 
-        WorkflowNode::Conditional { id, condition_addr, branches, default } => {
+        WorkflowNode::Conditional {
+            id,
+            condition_addr,
+            branches,
+            default,
+        } => {
             if let Some(node) = space.read(*condition_addr) {
                 let density: f32 = {
                     let popcount: u32 = node.fingerprint.iter().map(|w| w.count_ones()).sum();
@@ -713,7 +743,9 @@ fn execute_node(
                 let mut matched = false;
                 for (threshold, branch) in branches {
                     if density >= *threshold {
-                        result.branches_taken.push(format!("cond:{} took branch@{:.2}", id, threshold));
+                        result
+                            .branches_taken
+                            .push(format!("cond:{} took branch@{:.2}", id, threshold));
                         execute_node(branch, space, kernel, result);
                         matched = true;
                         break;
@@ -722,7 +754,9 @@ fn execute_node(
 
                 if !matched {
                     if let Some(default_branch) = default {
-                        result.branches_taken.push(format!("cond:{} took default", id));
+                        result
+                            .branches_taken
+                            .push(format!("cond:{} took default", id));
                         execute_node(default_branch, space, kernel, result);
                     }
                 }
@@ -746,7 +780,13 @@ fn execute_step(
         }
         WorkflowOp::XorCompose => {
             if step.input_addrs.len() >= 2 {
-                kernel.xor_bind(space, step.input_addrs[0], step.input_addrs[1], step.output_addr, Some(&step.name));
+                kernel.xor_bind(
+                    space,
+                    step.input_addrs[0],
+                    step.input_addrs[1],
+                    step.output_addr,
+                    Some(&step.name),
+                );
             }
         }
         WorkflowOp::Bundle => {
@@ -777,8 +817,11 @@ fn execute_step(
                 }
             }
         }
-        WorkflowOp::Deduce | WorkflowOp::Escalate | WorkflowOp::Crystallize
-        | WorkflowOp::DelegateToAgent { .. } | WorkflowOp::GuardrailCheck => {
+        WorkflowOp::Deduce
+        | WorkflowOp::Escalate
+        | WorkflowOp::Crystallize
+        | WorkflowOp::DelegateToAgent { .. }
+        | WorkflowOp::GuardrailCheck => {
             // These are higher-level operations that require additional context.
             // Handled by the orchestrator layer, not the workflow engine directly.
         }
@@ -919,13 +962,16 @@ impl MemoryBank {
         limit: usize,
         cycle: u64,
     ) -> Vec<&KernelMemory> {
-        let mut scored: Vec<(usize, f32)> = self.memories.iter()
+        let mut scored: Vec<(usize, f32)> = self
+            .memories
+            .iter()
             .enumerate()
             .filter(|(_, m)| kind.as_ref().map(|k| k == &m.kind).unwrap_or(true))
             .filter_map(|(i, m)| {
                 space.read(m.addr).map(|node| {
                     let sim = super::semantic_kernel::SemanticKernel::hamming_similarity(
-                        query, &node.fingerprint,
+                        query,
+                        &node.fingerprint,
                     );
                     (i, sim)
                 })
@@ -949,12 +995,10 @@ impl MemoryBank {
     /// Extract semantic memories from episodic memories.
     /// This is the "GenerateMemories" pattern from Google's Memory Bank —
     /// bundling multiple episodic fingerprints into a generalized semantic memory.
-    pub fn extract_semantic(
-        &mut self,
-        space: &mut BindSpace,
-        cycle: u64,
-    ) -> Vec<Addr> {
-        let episodic_addrs: Vec<Addr> = self.memories.iter()
+    pub fn extract_semantic(&mut self, space: &mut BindSpace, cycle: u64) -> Vec<Addr> {
+        let episodic_addrs: Vec<Addr> = self
+            .memories
+            .iter()
             .filter(|m| m.kind == MemoryKind::Episodic)
             .map(|m| m.addr)
             .collect();
@@ -964,7 +1008,8 @@ impl MemoryBank {
         }
 
         // Bundle episodic memories into a semantic generalization
-        let sources: Vec<[u64; FINGERPRINT_WORDS]> = episodic_addrs.iter()
+        let sources: Vec<[u64; FINGERPRINT_WORDS]> = episodic_addrs
+            .iter()
             .filter_map(|&addr| space.read(addr).map(|n| n.fingerprint))
             .collect();
 
@@ -1002,14 +1047,16 @@ impl MemoryBank {
 
     /// List all memories of a given kind
     pub fn list(&self, kind: Option<MemoryKind>) -> Vec<&KernelMemory> {
-        self.memories.iter()
+        self.memories
+            .iter()
             .filter(|m| kind.as_ref().map(|k| k == &m.kind).unwrap_or(true))
             .collect()
     }
 
     /// Count memories by kind
     pub fn count(&self, kind: Option<MemoryKind>) -> usize {
-        self.memories.iter()
+        self.memories
+            .iter()
             .filter(|m| kind.as_ref().map(|k| k == &m.kind).unwrap_or(true))
             .count()
     }
@@ -1120,7 +1167,10 @@ impl ObservabilityManager {
 
     /// Start a trace within the active session
     pub fn start_trace(&mut self, operation: &str, cycle: u64) -> String {
-        let session_id = self.active_session.clone().unwrap_or_else(|| "no-session".into());
+        let session_id = self
+            .active_session
+            .clone()
+            .unwrap_or_else(|| "no-session".into());
         let id = format!("trace-{}-{}", operation, cycle);
         let trace = KernelTrace {
             id: id.clone(),
@@ -1178,7 +1228,9 @@ impl ObservabilityManager {
             total_traces: self.traces.len(),
             total_spans: self.traces.iter().map(|t| t.spans.len()).sum(),
             active_session: self.active_session.clone(),
-            grounded_traces: self.traces.iter()
+            grounded_traces: self
+                .traces
+                .iter()
                 .filter(|t| t.grounding.as_ref().map(|g| g.is_grounded).unwrap_or(false))
                 .count(),
         }
@@ -1186,7 +1238,9 @@ impl ObservabilityManager {
 }
 
 impl Default for ObservabilityManager {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Summary of observability state
@@ -1276,7 +1330,9 @@ impl VerificationEngine {
                 VerificationKind::MinimumDensity => {
                     let popcount: u32 = fingerprint.iter().map(|w| w.count_ones()).sum();
                     let density = popcount as f32 / (FINGERPRINT_WORDS * 64) as f32;
-                    let min = rule.params.get("min_density")
+                    let min = rule
+                        .params
+                        .get("min_density")
                         .and_then(|v| v.parse::<f32>().ok())
                         .unwrap_or(0.1);
 
@@ -1286,7 +1342,10 @@ impl VerificationEngine {
                         explanation: format!("Density {:.4} vs minimum {:.4}", density, min),
                         checked_components: vec!["popcount".into(), "density".into()],
                         suggestions: if density < min {
-                            vec!["Fingerprint is too sparse — consider bundling with more sources".into()]
+                            vec![
+                                "Fingerprint is too sparse — consider bundling with more sources"
+                                    .into(),
+                            ]
                         } else {
                             vec![]
                         },
@@ -1309,7 +1368,10 @@ impl VerificationEngine {
                         explanation: format!("Zone {} vs allowed {}", zone_name, allowed),
                         checked_components: vec!["zone".into(), "prefix".into()],
                         suggestions: if !passed {
-                            vec![format!("Operation targets {} zone, but only {} is allowed", zone_name, allowed)]
+                            vec![format!(
+                                "Operation targets {} zone, but only {} is allowed",
+                                zone_name, allowed
+                            )]
                         } else {
                             vec![]
                         },
@@ -1348,7 +1410,9 @@ impl VerificationEngine {
 }
 
 impl Default for VerificationEngine {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // =============================================================================
@@ -1395,11 +1459,17 @@ mod tests {
             config,
         });
 
-        let ctx = FilterContext::new(FilterPhase::PreBind)
-            .with_label("user@email.com");
+        let ctx = FilterContext::new(FilterPhase::PreBind).with_label("user@email.com");
         let result = pipeline.apply(ctx);
         assert_eq!(result.context.label.as_deref(), Some("[REDACTED]"));
-        assert_eq!(result.context.metadata.get("pii_redacted").map(|s| s.as_str()), Some("true"));
+        assert_eq!(
+            result
+                .context
+                .metadata
+                .get("pii_redacted")
+                .map(|s| s.as_str()),
+            Some("true")
+        );
     }
 
     #[test]
@@ -1417,22 +1487,20 @@ mod tests {
         });
 
         // Surface zone should be blocked
-        let ctx = FilterContext::new(FilterPhase::PreBind)
-            .with_addr(Addr::new(0x01, 0x00));
+        let ctx = FilterContext::new(FilterPhase::PreBind).with_addr(Addr::new(0x01, 0x00));
         let result = pipeline.apply(ctx);
         assert!(result.context.short_circuit);
         assert_eq!(result.short_circuited_by, Some("zone_guard".into()));
 
         // Node zone should pass
-        let ctx = FilterContext::new(FilterPhase::PreBind)
-            .with_addr(Addr::new(0x80, 0x00));
+        let ctx = FilterContext::new(FilterPhase::PreBind).with_addr(Addr::new(0x80, 0x00));
         let result = pipeline.apply(ctx);
         assert!(!result.context.short_circuit);
     }
 
     #[test]
     fn test_guardrail_denied_topic() {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
 
         let mut guardrail = KernelGuardrail::new();
 
@@ -1462,7 +1530,11 @@ mod tests {
         // Same content should be blocked
         let result = guardrail.apply(&topic_fp, &space, None);
         assert!(!result.passed);
-        assert!(result.denied_topics_matched.contains(&"financial_advice".to_string()));
+        assert!(
+            result
+                .denied_topics_matched
+                .contains(&"financial_advice".to_string())
+        );
 
         // Different content should pass
         let other_fp = [0xDEADBEEFu64; FINGERPRINT_WORDS];
@@ -1584,8 +1656,22 @@ mod tests {
         let fp1 = [0xFF00FF00u64; FINGERPRINT_WORDS];
         let fp2 = [0x00FF00FFu64; FINGERPRINT_WORDS];
 
-        bank.store(MemoryKind::Episodic, "user likes cats", fp1, &mut space, 1, Some(0));
-        bank.store(MemoryKind::Episodic, "user likes dogs", fp2, &mut space, 2, Some(0));
+        bank.store(
+            MemoryKind::Episodic,
+            "user likes cats",
+            fp1,
+            &mut space,
+            1,
+            Some(0),
+        );
+        bank.store(
+            MemoryKind::Episodic,
+            "user likes dogs",
+            fp2,
+            &mut space,
+            2,
+            Some(0),
+        );
 
         assert_eq!(bank.count(Some(MemoryKind::Episodic)), 2);
         assert_eq!(bank.count(Some(MemoryKind::Semantic)), 0);
@@ -1619,19 +1705,26 @@ mod tests {
         let session_id = obs.start_session(Some(0), 1);
         let trace_id = obs.start_trace("resonate", 2);
 
-        obs.add_span(&trace_id, KernelSpan {
-            id: "span-1".into(),
-            operation: "hamming_search".into(),
-            parent_id: None,
-            duration_ns: 1000,
-            metadata: std::collections::HashMap::new(),
-        });
+        obs.add_span(
+            &trace_id,
+            KernelSpan {
+                id: "span-1".into(),
+                operation: "hamming_search".into(),
+                parent_id: None,
+                duration_ns: 1000,
+                metadata: std::collections::HashMap::new(),
+            },
+        );
 
-        obs.complete_trace(&trace_id, 3, Some(GroundingMetadata {
-            confidence: 0.85,
-            sources: vec![],
-            is_grounded: true,
-        }));
+        obs.complete_trace(
+            &trace_id,
+            3,
+            Some(GroundingMetadata {
+                confidence: 0.85,
+                sources: vec![],
+                is_grounded: true,
+            }),
+        );
 
         let summary = obs.summary();
         assert_eq!(summary.total_sessions, 1);

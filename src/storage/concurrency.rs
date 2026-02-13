@@ -24,8 +24,8 @@
 //! ```
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicU64, AtomicUsize, AtomicBool, Ordering};
-use std::sync::{Arc, RwLock, Mutex, Condvar};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -78,7 +78,7 @@ impl MemoryPoolConfig {
     /// Server config (more headroom)
     pub fn server() -> Self {
         Self {
-            max_bytes: 4 * 1024 * 1024 * 1024,   // 4 GB
+            max_bytes: 4 * 1024 * 1024 * 1024, // 4 GB
             soft_limit_bytes: 3 * 1024 * 1024 * 1024,
             max_allocation: 256 * 1024 * 1024,
             backpressure: true,
@@ -147,16 +147,19 @@ impl MemoryPool {
             }
 
             // CAS to reserve
-            if self.used.compare_exchange(
-                current, new_used,
-                Ordering::SeqCst, Ordering::SeqCst
-            ).is_ok() {
+            if self
+                .used
+                .compare_exchange(current, new_used, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
                 // Update peak
                 let mut peak = self.peak.load(Ordering::Relaxed);
                 while new_used > peak {
                     match self.peak.compare_exchange_weak(
-                        peak, new_used,
-                        Ordering::Relaxed, Ordering::Relaxed
+                        peak,
+                        new_used,
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
                     ) {
                         Ok(_) => break,
                         Err(p) => peak = p,
@@ -169,19 +172,20 @@ impl MemoryPool {
                 let ratio = new_used as f64 / self.config.max_bytes as f64;
                 self.backpressure_active.store(
                     ratio >= self.config.backpressure_threshold,
-                    Ordering::Relaxed
+                    Ordering::Relaxed,
                 );
 
-                return Ok(MemoryGuard {
-                    pool: self,
-                    bytes,
-                });
+                return Ok(MemoryGuard { pool: self, bytes });
             }
         }
     }
 
     /// Allocate with backpressure (blocks if over threshold)
-    pub fn allocate(&self, bytes: usize, timeout: Duration) -> Result<MemoryGuard<'_>, MemoryError> {
+    pub fn allocate(
+        &self,
+        bytes: usize,
+        timeout: Duration,
+    ) -> Result<MemoryGuard<'_>, MemoryError> {
         // Fast path: try immediate allocation
         match self.try_allocate(bytes) {
             Ok(guard) => return Ok(guard),
@@ -237,7 +241,7 @@ impl MemoryPool {
         let ratio = current as f64 / self.config.max_bytes as f64;
         let was_active = self.backpressure_active.swap(
             ratio >= self.config.backpressure_threshold,
-            Ordering::Relaxed
+            Ordering::Relaxed,
         );
 
         // Wake waiters if backpressure lifted
@@ -335,15 +339,26 @@ pub enum MemoryError {
 impl std::fmt::Display for MemoryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::OutOfMemory { requested, available, total } => {
-                write!(f, "OOM: requested {} bytes, {} available of {} total",
-                    requested, available, total)
+            Self::OutOfMemory {
+                requested,
+                available,
+                total,
+            } => {
+                write!(
+                    f,
+                    "OOM: requested {} bytes, {} available of {} total",
+                    requested, available, total
+                )
             }
             Self::AllocationTooLarge { requested, max } => {
                 write!(f, "Allocation {} bytes exceeds max {}", requested, max)
             }
             Self::Timeout { requested, waited } => {
-                write!(f, "Timeout after {:?} waiting for {} bytes", waited, requested)
+                write!(
+                    f,
+                    "Timeout after {:?} waiting for {} bytes",
+                    waited, requested
+                )
             }
         }
     }
@@ -506,11 +521,13 @@ impl MvccStore {
         // Acquire write lock
         let mut slot = match self.slots[idx].write() {
             Ok(s) => s,
-            Err(_) => return WriteResult::Conflict {
-                expected: intent.expected_version,
-                actual: 0,
-                conflicting_writer: 0,
-            },
+            Err(_) => {
+                return WriteResult::Conflict {
+                    expected: intent.expected_version,
+                    actual: 0,
+                    conflicting_writer: 0,
+                };
+            }
         };
 
         self.active_writers.fetch_add(1, Ordering::SeqCst);
@@ -587,11 +604,13 @@ impl MvccStore {
 
         let mut slot = match self.slots[idx].write() {
             Ok(s) => s,
-            Err(_) => return WriteResult::Conflict {
-                expected: expected_version,
-                actual: 0,
-                conflicting_writer: 0,
-            },
+            Err(_) => {
+                return WriteResult::Conflict {
+                    expected: expected_version,
+                    actual: 0,
+                    conflicting_writer: 0,
+                };
+            }
         };
 
         let current_version = slot.as_ref().map(|s| s.version).unwrap_or(0);
@@ -716,7 +735,8 @@ impl ParallelExecutor {
     where
         F: FnOnce() + Send + 'static,
     {
-        self.sender.send(Box::new(work))
+        self.sender
+            .send(Box::new(work))
             .map_err(|_| ParallelError::QueueFull)
     }
 
@@ -748,7 +768,8 @@ impl ParallelExecutor {
         // Use channels instead of shared vec to avoid Clone requirement
         let (tx, rx) = crossbeam::channel::bounded::<(usize, U)>(count);
 
-        let handles: Vec<_> = items.into_iter()
+        let handles: Vec<_> = items
+            .into_iter()
             .enumerate()
             .map(|(i, item)| {
                 let f = f.clone();
@@ -814,7 +835,8 @@ impl<T> ResultHandle<T> {
 
     /// Wait with timeout
     pub fn wait_timeout(self, timeout: Duration) -> Result<T, ParallelError> {
-        self.receiver.recv_timeout(timeout)
+        self.receiver
+            .recv_timeout(timeout)
             .map_err(|_| ParallelError::Timeout)
     }
 
@@ -921,8 +943,11 @@ pub struct ConflictError {
 
 impl std::fmt::Display for ConflictError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Conflict at {:04x}: expected v{}, actual v{}",
-            self.addr, self.expected, self.actual)
+        write!(
+            f,
+            "Conflict at {:04x}: expected v{}, actual v{}",
+            self.addr, self.expected, self.actual
+        )
     }
 }
 
@@ -955,7 +980,7 @@ impl ConcurrentStore {
             mvcc: MvccStore::new(slot_count, Arc::clone(&pool)),
             pool,
             executor: ParallelExecutor::new(parallel_config),
-        query_counter: AtomicU64::new(0),
+            query_counter: AtomicU64::new(0),
         }
     }
 
@@ -985,7 +1010,8 @@ impl ConcurrentStore {
             .map_err(|e| WriteConflict::StaleRead(e))?;
 
         // Get expected version from context
-        let expected = ctx.get_reads()
+        let expected = ctx
+            .get_reads()
             .iter()
             .find(|r| r.addr == addr)
             .map(|r| r.version)
@@ -1002,14 +1028,16 @@ impl ConcurrentStore {
 
         match self.mvcc.write(intent) {
             WriteResult::Success { new_version } => Ok(new_version),
-            WriteResult::Conflict { expected, actual, conflicting_writer } => {
-                Err(WriteConflict::VersionMismatch {
-                    addr,
-                    expected,
-                    actual,
-                    conflicting_writer,
-                })
-            }
+            WriteResult::Conflict {
+                expected,
+                actual,
+                conflicting_writer,
+            } => Err(WriteConflict::VersionMismatch {
+                addr,
+                expected,
+                actual,
+                conflicting_writer,
+            }),
             WriteResult::NotFound => Err(WriteConflict::NotFound(addr)),
         }
     }
@@ -1017,7 +1045,10 @@ impl ConcurrentStore {
     /// Parallel read (sequential for now - parallel version requires Arc<MvccStore>)
     pub fn parallel_read(&self, addrs: &[u16]) -> Vec<Option<MvccSlot>> {
         // Sequential implementation - parallel would require refactoring MvccStore to be Arc-wrapped
-        addrs.iter().map(|&addr| self.mvcc.read_only(addr)).collect()
+        addrs
+            .iter()
+            .map(|&addr| self.mvcc.read_only(addr))
+            .collect()
     }
 
     /// Memory pool reference
@@ -1069,9 +1100,17 @@ impl std::fmt::Display for WriteConflict {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::StaleRead(e) => write!(f, "Stale read: {}", e),
-            Self::VersionMismatch { addr, expected, actual, conflicting_writer } => {
-                write!(f, "Version mismatch at {:04x}: expected v{}, actual v{} (writer {})",
-                    addr, expected, actual, conflicting_writer)
+            Self::VersionMismatch {
+                addr,
+                expected,
+                actual,
+                conflicting_writer,
+            } => {
+                write!(
+                    f,
+                    "Version mismatch at {:04x}: expected v{}, actual v{} (writer {})",
+                    addr, expected, actual, conflicting_writer
+                )
             }
             Self::NotFound(addr) => write!(f, "Address {:04x} not found", addr),
         }
@@ -1202,7 +1241,9 @@ mod tests {
         };
 
         match store.write(intent_b) {
-            WriteResult::Conflict { expected, actual, .. } => {
+            WriteResult::Conflict {
+                expected, actual, ..
+            } => {
                 assert_eq!(expected, 0);
                 assert_eq!(actual, v1);
             }
@@ -1229,16 +1270,15 @@ mod tests {
 
     #[test]
     fn test_concurrent_store_conflict() {
-        let store = ConcurrentStore::new(
-            1000,
-            MemoryPoolConfig::default(),
-            ParallelConfig::default(),
-        );
+        let store =
+            ConcurrentStore::new(1000, MemoryPoolConfig::default(), ParallelConfig::default());
 
         let fp = [99u64; FINGERPRINT_WORDS];
 
         // Initial write
-        store.mvcc.write_unconditional(5, fp, Some("initial".into()), 0);
+        store
+            .mvcc
+            .write_unconditional(5, fp, Some("initial".into()), 0);
 
         // Query A reads
         let ctx_a = store.query();

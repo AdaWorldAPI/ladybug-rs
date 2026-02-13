@@ -156,7 +156,8 @@ impl FingerprintBuffer {
     #[inline]
     pub unsafe fn get_unchecked(&self, index: usize) -> &[u64; FINGERPRINT_WORDS] {
         unsafe {
-            let ptr = self.as_ptr().add(index * FINGERPRINT_WORDS) as *const [u64; FINGERPRINT_WORDS];
+            let ptr =
+                self.as_ptr().add(index * FINGERPRINT_WORDS) as *const [u64; FINGERPRINT_WORDS];
             &*ptr
         }
     }
@@ -440,11 +441,13 @@ impl AdjacencyIndex {
         let query_bucket = Self::locality_hash(query);
 
         // Binary search for first index with this bucket
-        let start = self.sorted_order
+        let start = self
+            .sorted_order
             .partition_point(|&i| self.buckets[i as usize] < query_bucket);
 
         // Binary search for first index past this bucket
-        let end = self.sorted_order
+        let end = self
+            .sorted_order
             .partition_point(|&i| self.buckets[i as usize] <= query_bucket);
 
         start..end
@@ -470,9 +473,9 @@ impl AdjacencyIndex {
 // SAFETY: WAL + CONCURRENCY + ACID
 // =============================================================================
 
+use parking_lot::{Mutex, RwLock};
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
-use parking_lot::{RwLock, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// Write-Ahead Log entry for crash recovery
 #[derive(Debug, Clone)]
@@ -491,13 +494,27 @@ pub struct WalEntry {
 #[derive(Debug, Clone)]
 pub enum WalOp {
     /// Insert fingerprint at index
-    Insert { index: u32, fingerprint: Box<[u64; FINGERPRINT_WORDS]> },
+    Insert {
+        index: u32,
+        fingerprint: Box<[u64; FINGERPRINT_WORDS]>,
+    },
     /// Update fingerprint at index
-    Update { index: u32, old: Box<[u64; FINGERPRINT_WORDS]>, new: Box<[u64; FINGERPRINT_WORDS]> },
+    Update {
+        index: u32,
+        old: Box<[u64; FINGERPRINT_WORDS]>,
+        new: Box<[u64; FINGERPRINT_WORDS]>,
+    },
     /// Delete fingerprint at index
-    Delete { index: u32, fingerprint: Box<[u64; FINGERPRINT_WORDS]> },
+    Delete {
+        index: u32,
+        fingerprint: Box<[u64; FINGERPRINT_WORDS]>,
+    },
     /// Temperature change (for scent tracking)
-    TempChange { index: u32, from: Temperature, to: Temperature },
+    TempChange {
+        index: u32,
+        from: Temperature,
+        to: Temperature,
+    },
     /// Checkpoint marker (safe recovery point)
     Checkpoint { version: u64 },
     /// Transaction begin
@@ -684,8 +701,7 @@ pub struct VersionedFingerprint {
 impl VersionedFingerprint {
     /// Check if visible at given version
     pub fn visible_at(&self, version: Version) -> bool {
-        version >= self.write_version
-            && self.delete_version.map(|dv| version < dv).unwrap_or(true)
+        version >= self.write_version && self.delete_version.map(|dv| version < dv).unwrap_or(true)
     }
 }
 
@@ -766,12 +782,18 @@ impl<T> ConcurrentAccess<T> {
     }
 
     /// Try read with timeout
-    pub fn try_read(&self, timeout: std::time::Duration) -> Option<parking_lot::RwLockReadGuard<'_, T>> {
+    pub fn try_read(
+        &self,
+        timeout: std::time::Duration,
+    ) -> Option<parking_lot::RwLockReadGuard<'_, T>> {
         self.data.try_read_for(timeout)
     }
 
     /// Try write with timeout
-    pub fn try_write(&self, timeout: std::time::Duration) -> Option<parking_lot::RwLockWriteGuard<'_, T>> {
+    pub fn try_write(
+        &self,
+        timeout: std::time::Duration,
+    ) -> Option<parking_lot::RwLockWriteGuard<'_, T>> {
         self.data.try_write_for(timeout)
     }
 
@@ -848,7 +870,12 @@ impl SafeArrowZeroCopy {
     }
 
     /// Load fingerprints with transaction
-    pub fn load_with_txn(&self, txn_id: u64, data: Vec<u64>, num_fingerprints: usize) -> Option<usize> {
+    pub fn load_with_txn(
+        &self,
+        txn_id: u64,
+        data: Vec<u64>,
+        num_fingerprints: usize,
+    ) -> Option<usize> {
         let mut guard = self.inner.write();
         let buffer_id = guard.load_from_vec(data, num_fingerprints);
 
@@ -1169,7 +1196,6 @@ impl StorageBackend for LanceWriteThrough {
 pub struct UnifiedStorage {
     /// Lance storage for prefix 0x00
     lance: Arc<LanceWriteThrough>,
-
     // Note: Additional backends can be registered here in the future
     // backends: HashMap<u8, Arc<dyn StorageBackend>>,
 }
@@ -1269,7 +1295,10 @@ impl LanceView {
     #[cfg(feature = "lance")]
     #[inline]
     pub unsafe fn fingerprint_unchecked(&self, index: usize) -> &[u64; FINGERPRINT_WORDS] {
-        unsafe { &*(self.fingerprint_ptr.add(index * FINGERPRINT_WORDS) as *const [u64; FINGERPRINT_WORDS]) }
+        unsafe {
+            &*(self.fingerprint_ptr.add(index * FINGERPRINT_WORDS)
+                as *const [u64; FINGERPRINT_WORDS])
+        }
     }
 
     /// Safe access to fingerprint
@@ -1404,7 +1433,8 @@ impl ScentAwareness {
 
     /// Get indices that should bubble up (high access count, currently cold)
     pub fn candidates_for_promotion(&self, limit: usize) -> Vec<u32> {
-        let mut candidates: Vec<(u32, u8)> = self.access_counts
+        let mut candidates: Vec<(u32, u8)> = self
+            .access_counts
             .iter()
             .enumerate()
             .filter(|(idx, count)| {
@@ -1414,25 +1444,30 @@ impl ScentAwareness {
             .collect();
 
         candidates.sort_by(|a, b| b.1.cmp(&a.1)); // Sort by access count desc
-        candidates.into_iter().take(limit).map(|(idx, _)| idx).collect()
+        candidates
+            .into_iter()
+            .take(limit)
+            .map(|(idx, _)| idx)
+            .collect()
     }
 
     /// Get indices that should bubble down (low access count, currently hot)
     pub fn candidates_for_demotion(&self, limit: usize) -> Vec<u32> {
-        let mut candidates: Vec<(u32, u8)> = self.hot_indices
+        let mut candidates: Vec<(u32, u8)> = self
+            .hot_indices
             .iter()
             .filter_map(|&idx| {
                 let count = self.access_counts.get(idx as usize).copied().unwrap_or(0);
-                if count < 2 {
-                    Some((idx, count))
-                } else {
-                    None
-                }
+                if count < 2 { Some((idx, count)) } else { None }
             })
             .collect();
 
         candidates.sort_by(|a, b| a.1.cmp(&b.1)); // Sort by access count asc
-        candidates.into_iter().take(limit).map(|(idx, _)| idx).collect()
+        candidates
+            .into_iter()
+            .take(limit)
+            .map(|(idx, _)| idx)
+            .collect()
     }
 
     /// Decay access counts (call periodically)
@@ -1927,9 +1962,7 @@ impl SerializationHeader {
         if bytes.len() < Self::SIZE {
             return None;
         }
-        let header: Self = unsafe {
-            std::ptr::read(bytes.as_ptr() as *const Self)
-        };
+        let header: Self = unsafe { std::ptr::read(bytes.as_ptr() as *const Self) };
         Some(header)
     }
 }
@@ -1960,12 +1993,8 @@ impl FingerprintSerializer {
         let mut header = SerializationHeader::new(count);
 
         // Compute checksum
-        let data_bytes = unsafe {
-            std::slice::from_raw_parts(
-                fingerprints.as_ptr() as *const u8,
-                data_size
-            )
-        };
+        let data_bytes =
+            unsafe { std::slice::from_raw_parts(fingerprints.as_ptr() as *const u8, data_size) };
         header.checksum = Self::crc32(data_bytes);
 
         // Build output
@@ -1978,8 +2007,7 @@ impl FingerprintSerializer {
 
     /// Deserialize fingerprints from bytes
     pub fn deserialize(bytes: &[u8]) -> Result<FingerprintBuffer, &'static str> {
-        let header = SerializationHeader::from_bytes(bytes)
-            .ok_or("Truncated header")?;
+        let header = SerializationHeader::from_bytes(bytes).ok_or("Truncated header")?;
         header.validate()?;
 
         let data_start = SerializationHeader::SIZE;
@@ -2003,7 +2031,7 @@ impl FingerprintSerializer {
             std::ptr::copy_nonoverlapping(
                 data_bytes.as_ptr(),
                 data.as_mut_ptr() as *mut u8,
-                data_size
+                data_size,
             );
         }
 
@@ -2359,17 +2387,17 @@ pub mod resolution {
 
     /// 64K bits (qualia resolution)
     pub fn qualia() -> SparseFingerprint {
-        SparseFingerprint::new(1000)  // 64K bits
+        SparseFingerprint::new(1000) // 64K bits
     }
 
     /// 640K bits (high resolution)
     pub fn high() -> SparseFingerprint {
-        SparseFingerprint::new(10_000)  // 640K bits
+        SparseFingerprint::new(10_000) // 640K bits
     }
 
     /// 64M bits (reality resolution)
     pub fn reality() -> SparseFingerprint {
-        SparseFingerprint::new(SPARSE_MAX_WORDS)  // 64M bits
+        SparseFingerprint::new(SPARSE_MAX_WORDS) // 64M bits
     }
 }
 
@@ -2517,9 +2545,8 @@ impl CsrEdges {
 
     /// Iterate over all edges
     pub fn iter_edges(&self) -> impl Iterator<Item = (u32, u32)> + '_ {
-        (0..self.num_nodes as u32).flat_map(move |src| {
-            self.neighbors(src).iter().map(move |&dst| (src, dst))
-        })
+        (0..self.num_nodes as u32)
+            .flat_map(move |src| self.neighbors(src).iter().map(move |&dst| (src, dst)))
     }
 
     /// Memory usage in bytes
@@ -2574,7 +2601,10 @@ impl CsrBuilder {
         }
 
         let num_nodes = self.adj_list.len();
-        let has_weights = self.adj_list.iter().any(|n| n.iter().any(|&(_, w)| w != 1.0));
+        let has_weights = self
+            .adj_list
+            .iter()
+            .any(|n| n.iter().any(|&(_, w)| w != 1.0));
 
         // Build offsets
         let mut offsets = Vec::with_capacity(num_nodes + 1);
@@ -2669,12 +2699,16 @@ impl MorselDispatcher {
             let end = (start + MORSEL_SIZE).min(self.total);
 
             // Try to claim this morsel
-            if self.next_start.compare_exchange(
-                start as u64,
-                end as u64,
-                Ordering::AcqRel,
-                Ordering::Relaxed,
-            ).is_ok() {
+            if self
+                .next_start
+                .compare_exchange(
+                    start as u64,
+                    end as u64,
+                    Ordering::AcqRel,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+            {
                 return Some(Morsel::new(start, end));
             }
             // Another thread claimed it, retry
@@ -2707,9 +2741,8 @@ mod tests {
     #[test]
     fn test_fingerprint_buffer_from_vec() {
         // Create test fingerprints
-        let fps: Vec<[u64; FINGERPRINT_WORDS]> = (0..10)
-            .map(|i| make_fingerprint(i as u64 * 1000))
-            .collect();
+        let fps: Vec<[u64; FINGERPRINT_WORDS]> =
+            (0..10).map(|i| make_fingerprint(i as u64 * 1000)).collect();
 
         // Flatten to Vec<u64>
         let mut data = Vec::with_capacity(fps.len() * FINGERPRINT_WORDS);
@@ -2730,9 +2763,8 @@ mod tests {
 
     #[test]
     fn test_fingerprint_buffer_iter() {
-        let fps: Vec<[u64; FINGERPRINT_WORDS]> = (0..5)
-            .map(|i| make_fingerprint(i as u64 * 100))
-            .collect();
+        let fps: Vec<[u64; FINGERPRINT_WORDS]> =
+            (0..5).map(|i| make_fingerprint(i as u64 * 100)).collect();
 
         let mut data = Vec::new();
         for fp in &fps {
@@ -2751,9 +2783,8 @@ mod tests {
 
     #[test]
     fn test_fingerprint_buffer_to_arrow() {
-        let fps: Vec<[u64; FINGERPRINT_WORDS]> = (0..3)
-            .map(|i| make_fingerprint(i as u64 * 50))
-            .collect();
+        let fps: Vec<[u64; FINGERPRINT_WORDS]> =
+            (0..3).map(|i| make_fingerprint(i as u64 * 50)).collect();
 
         let mut data = Vec::new();
         for fp in &fps {
@@ -2775,9 +2806,8 @@ mod tests {
         let mut manager = ArrowZeroCopy::new();
 
         // Create and load fingerprints
-        let fps: Vec<[u64; FINGERPRINT_WORDS]> = (0..5)
-            .map(|i| make_fingerprint(i as u64))
-            .collect();
+        let fps: Vec<[u64; FINGERPRINT_WORDS]> =
+            (0..5).map(|i| make_fingerprint(i as u64)).collect();
 
         let mut data = Vec::new();
         for fp in &fps {
@@ -2802,9 +2832,8 @@ mod tests {
     #[test]
     fn test_adjacency_index() {
         // Create fingerprints with varying patterns
-        let fps: Vec<[u64; FINGERPRINT_WORDS]> = (0..20)
-            .map(|i| make_fingerprint(i as u64 * 1000))
-            .collect();
+        let fps: Vec<[u64; FINGERPRINT_WORDS]> =
+            (0..20).map(|i| make_fingerprint(i as u64 * 1000)).collect();
 
         let mut data = Vec::new();
         for fp in &fps {
@@ -2956,10 +2985,13 @@ mod tests {
 
     #[test]
     fn test_wal_entry_integrity() {
-        let entry = WalEntry::new(42, WalOp::Delete {
-            index: 10,
-            fingerprint: Box::new([0u64; FINGERPRINT_WORDS]),
-        });
+        let entry = WalEntry::new(
+            42,
+            WalOp::Delete {
+                index: 10,
+                fingerprint: Box::new([0u64; FINGERPRINT_WORDS]),
+            },
+        );
 
         // Verify integrity
         assert!(entry.verify());
@@ -2980,9 +3012,8 @@ mod tests {
         assert!(txn_id > 0);
 
         // Load data
-        let fps: Vec<[u64; FINGERPRINT_WORDS]> = (0..3)
-            .map(|i| make_fingerprint(i as u64))
-            .collect();
+        let fps: Vec<[u64; FINGERPRINT_WORDS]> =
+            (0..3).map(|i| make_fingerprint(i as u64)).collect();
 
         let mut data = Vec::new();
         for fp in &fps {
@@ -3210,9 +3241,8 @@ mod tests {
 
     #[test]
     fn test_fingerprint_serialization_roundtrip() {
-        let fps: Vec<[u64; FINGERPRINT_WORDS]> = (0..10)
-            .map(|i| make_fingerprint(i as u64 * 1000))
-            .collect();
+        let fps: Vec<[u64; FINGERPRINT_WORDS]> =
+            (0..10).map(|i| make_fingerprint(i as u64 * 1000)).collect();
 
         let mut data = Vec::new();
         for fp in &fps {
@@ -3238,9 +3268,8 @@ mod tests {
 
     #[test]
     fn test_serialization_checksum() {
-        let fps: Vec<[u64; FINGERPRINT_WORDS]> = (0..3)
-            .map(|i| make_fingerprint(i as u64))
-            .collect();
+        let fps: Vec<[u64; FINGERPRINT_WORDS]> =
+            (0..3).map(|i| make_fingerprint(i as u64)).collect();
 
         let mut data = Vec::new();
         for fp in &fps {
@@ -3425,7 +3454,7 @@ mod tests {
         let wal = Arc::new(WriteAheadLog::default());
         let config = WriteThroughConfig {
             max_hot_entries: 100,
-            sync_interval: 5,  // Sync after 5 writes
+            sync_interval: 5, // Sync after 5 writes
             write_behind: false,
         };
         let wt = LanceWriteThrough::new(wal, config);
@@ -3521,8 +3550,8 @@ mod tests {
         let wal = Arc::new(WriteAheadLog::default());
         let config = WriteThroughConfig {
             max_hot_entries: 5,
-            sync_interval: 1000,  // Don't auto-sync
-            write_behind: true,   // Write-behind mode
+            sync_interval: 1000, // Don't auto-sync
+            write_behind: true,  // Write-behind mode
         };
         let wt = LanceWriteThrough::new(wal, config);
 
@@ -3554,7 +3583,7 @@ mod tests {
         assert_eq!(sparse.get(0), 0xFF);
         assert_eq!(sparse.get(100), 0x1234);
         assert_eq!(sparse.get(999), 0xDEAD);
-        assert_eq!(sparse.get(500), 0);  // Not present
+        assert_eq!(sparse.get(500), 0); // Not present
 
         // Compression ratio should be significant
         assert!(sparse.compression_ratio() > 10.0);
@@ -3580,8 +3609,8 @@ mod tests {
         a_dense[20] = 0x00FF;
 
         let mut b_dense = vec![0u64; 100];
-        b_dense[10] = 0x0F0F;  // Overlaps with a
-        b_dense[30] = 0x1234;  // Only in b
+        b_dense[10] = 0x0F0F; // Overlaps with a
+        b_dense[30] = 0x1234; // Only in b
 
         let a = SparseFingerprint::from_dense(&a_dense);
         let b = SparseFingerprint::from_dense(&b_dense);
@@ -3590,9 +3619,7 @@ mod tests {
         let c_sparse = a.xor(&b);
 
         // Dense XOR for comparison
-        let c_dense: Vec<u64> = a_dense.iter().zip(&b_dense)
-            .map(|(x, y)| x ^ y)
-            .collect();
+        let c_dense: Vec<u64> = a_dense.iter().zip(&b_dense).map(|(x, y)| x ^ y).collect();
 
         assert_eq!(c_sparse.to_dense(), c_dense);
     }
@@ -3615,10 +3642,10 @@ mod tests {
     #[test]
     fn test_sparse_hamming_transparent() {
         let mut a_dense = vec![0u64; 100];
-        a_dense[0] = 0b1111_0000;  // 4 bits set
+        a_dense[0] = 0b1111_0000; // 4 bits set
 
         let mut b_dense = vec![0u64; 100];
-        b_dense[0] = 0b1100_1100;  // 4 bits set, 2 overlap
+        b_dense[0] = 0b1100_1100; // 4 bits set, 2 overlap
 
         let a = SparseFingerprint::from_dense(&a_dense);
         let b = SparseFingerprint::from_dense(&b_dense);
@@ -3667,7 +3694,7 @@ mod tests {
 
         // Memory usage: presence bitmap (~125KB) + sparse data
         // Still much smaller than 8MB dense
-        assert!(sparse.memory_usage() < 150_000);  // Less than 150KB
+        assert!(sparse.memory_usage() < 150_000); // Less than 150KB
 
         // Compression ratio: 8MB / ~125KB ≈ 64x (presence bitmap dominates)
         // For truly sparse data with tiny presence, would be much higher
@@ -3700,7 +3727,7 @@ mod tests {
     #[test]
     fn test_sparse_qualia_resolution() {
         let qualia = resolution::qualia();
-        assert_eq!(qualia.resolution(), 64_000);  // 64K bits
+        assert_eq!(qualia.resolution(), 64_000); // 64K bits
     }
 
     #[test]

@@ -68,26 +68,19 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use super::bind_space::{
-    Addr, BindNode, BindSpace,
-    FINGERPRINT_WORDS, dn_path_to_addr,
-    PREFIX_NODE_START,
-};
-use super::xor_dag::{
-    XorDag, XorDagConfig, DagError,
-    EpochGuard, EpochTicket, WorkItem, ConflictStrategy,
+    Addr, BindNode, BindSpace, FINGERPRINT_WORDS, PREFIX_NODE_START, dn_path_to_addr,
 };
 use super::concurrency::{
-    MemoryPool, MemoryPoolConfig, MvccStore, MvccSlot,
+    MemoryPool, MemoryPoolConfig, MvccSlot, MvccStore, ParallelConfig, ParallelExecutor,
     ReadHandle, WriteIntent, WriteResult,
-    ParallelExecutor, ParallelConfig,
 };
-use super::resilient::{
-    ResilienceConfig, WriteBuffer,
-    DependencyGraph, VirtualVersion,
-};
-use super::lance_zero_copy::ArrowZeroCopy;
-use super::temporal::Version;
 use super::fingerprint_dict::FingerprintDict;
+use super::lance_zero_copy::ArrowZeroCopy;
+use super::resilient::{DependencyGraph, ResilienceConfig, VirtualVersion, WriteBuffer};
+use super::temporal::Version;
+use super::xor_dag::{
+    ConflictStrategy, DagError, EpochGuard, EpochTicket, WorkItem, XorDag, XorDagConfig,
+};
 
 // =============================================================================
 // CONFIGURATION
@@ -312,7 +305,9 @@ impl UnifiedEngine {
         fingerprint: [u64; FINGERPRINT_WORDS],
         rung: u8,
     ) -> Result<Addr, UnifiedError> {
-        let mut bind_space = self.bind_space.write()
+        let mut bind_space = self
+            .bind_space
+            .write()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         let addr = bind_space.write_dn_path(path, fingerprint, rung);
@@ -323,7 +318,9 @@ impl UnifiedEngine {
 
     /// Get DN path node
     pub fn dn_get(&self, path: &str) -> Result<Option<BindNode>, UnifiedError> {
-        let bind_space = self.bind_space.read()
+        let bind_space = self
+            .bind_space
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         let addr = dn_path_to_addr(path);
@@ -335,7 +332,9 @@ impl UnifiedEngine {
 
     /// Lookup DN path to address (returns None if not exists)
     pub fn dn_lookup(&self, path: &str) -> Result<Option<Addr>, UnifiedError> {
-        let bind_space = self.bind_space.read()
+        let bind_space = self
+            .bind_space
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         Ok(bind_space.dn_lookup(path))
@@ -348,7 +347,9 @@ impl UnifiedEngine {
 
     /// Get parent node address (O(1) via BindNode.parent field)
     pub fn dn_parent(&self, addr: Addr) -> Result<Option<Addr>, UnifiedError> {
-        let bind_space = self.bind_space.read()
+        let bind_space = self
+            .bind_space
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         Ok(bind_space.parent(addr))
@@ -356,7 +357,9 @@ impl UnifiedEngine {
 
     /// Get all ancestors (iterator, no allocation)
     pub fn dn_ancestors(&self, addr: Addr) -> Result<Vec<Addr>, UnifiedError> {
-        let bind_space = self.bind_space.read()
+        let bind_space = self
+            .bind_space
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         Ok(bind_space.ancestors(addr).collect())
@@ -364,7 +367,9 @@ impl UnifiedEngine {
 
     /// Get depth of node in DN tree (O(1) via BindNode.depth field)
     pub fn dn_depth(&self, addr: Addr) -> Result<u8, UnifiedError> {
-        let bind_space = self.bind_space.read()
+        let bind_space = self
+            .bind_space
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         Ok(bind_space.depth(addr))
@@ -372,7 +377,9 @@ impl UnifiedEngine {
 
     /// Get access rung (O(1) via BindNode.rung field)
     pub fn dn_rung(&self, addr: Addr) -> Result<u8, UnifiedError> {
-        let bind_space = self.bind_space.read()
+        let bind_space = self
+            .bind_space
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         Ok(bind_space.rung(addr))
@@ -384,7 +391,9 @@ impl UnifiedEngine {
 
     /// Begin ACID transaction
     pub fn begin_txn(&self) -> Result<u64, UnifiedError> {
-        let dag = self.xor_dag.as_ref()
+        let dag = self
+            .xor_dag
+            .as_ref()
             .ok_or(UnifiedError::FeatureDisabled("ACID"))?;
 
         dag.begin().map_err(UnifiedError::Dag)
@@ -392,7 +401,9 @@ impl UnifiedEngine {
 
     /// Read within transaction (records for conflict detection)
     pub fn read_in_txn(&self, txn_id: u64, addr: Addr) -> Result<Option<BindNode>, UnifiedError> {
-        let dag = self.xor_dag.as_ref()
+        let dag = self
+            .xor_dag
+            .as_ref()
             .ok_or(UnifiedError::FeatureDisabled("ACID"))?;
 
         dag.read(txn_id, addr).map_err(UnifiedError::Dag)
@@ -406,7 +417,9 @@ impl UnifiedEngine {
         fingerprint: [u64; FINGERPRINT_WORDS],
         label: Option<String>,
     ) -> Result<(), UnifiedError> {
-        let dag = self.xor_dag.as_ref()
+        let dag = self
+            .xor_dag
+            .as_ref()
             .ok_or(UnifiedError::FeatureDisabled("ACID"))?;
 
         dag.write(txn_id, addr, fingerprint, label)
@@ -415,7 +428,9 @@ impl UnifiedEngine {
 
     /// Commit transaction
     pub fn commit_txn(&self, txn_id: u64) -> Result<Version, UnifiedError> {
-        let dag = self.xor_dag.as_ref()
+        let dag = self
+            .xor_dag
+            .as_ref()
             .ok_or(UnifiedError::FeatureDisabled("ACID"))?;
 
         let version = dag.commit(txn_id).map_err(UnifiedError::Dag)?;
@@ -426,7 +441,9 @@ impl UnifiedEngine {
 
     /// Abort transaction
     pub fn abort_txn(&self, txn_id: u64) -> Result<(), UnifiedError> {
-        let dag = self.xor_dag.as_ref()
+        let dag = self
+            .xor_dag
+            .as_ref()
             .ok_or(UnifiedError::FeatureDisabled("ACID"))?;
 
         dag.abort(txn_id).map_err(UnifiedError::Dag)?;
@@ -441,10 +458,13 @@ impl UnifiedEngine {
         addr: Addr,
         version: Version,
     ) -> Result<Option<[u64; FINGERPRINT_WORDS]>, UnifiedError> {
-        let dag = self.xor_dag.as_ref()
+        let dag = self
+            .xor_dag
+            .as_ref()
             .ok_or(UnifiedError::FeatureDisabled("ACID"))?;
 
-        dag.read_at_version(addr, version).map_err(UnifiedError::Dag)
+        dag.read_at_version(addr, version)
+            .map_err(UnifiedError::Dag)
     }
 
     // =========================================================================
@@ -453,7 +473,9 @@ impl UnifiedEngine {
 
     /// Link two nodes with verb
     pub fn link(&self, from: Addr, verb: Addr, to: Addr) -> Result<usize, UnifiedError> {
-        let mut bind_space = self.bind_space.write()
+        let mut bind_space = self
+            .bind_space
+            .write()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         let edge_idx = bind_space.link(from, verb, to);
@@ -470,7 +492,9 @@ impl UnifiedEngine {
 
     /// Get children (zero-copy via CSR)
     pub fn children(&self, addr: Addr) -> Result<Vec<Addr>, UnifiedError> {
-        let bind_space = self.bind_space.read()
+        let bind_space = self
+            .bind_space
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         let raw = bind_space.children_raw(addr);
@@ -479,7 +503,9 @@ impl UnifiedEngine {
 
     /// Get children via specific verb
     pub fn children_via(&self, addr: Addr, verb: Addr) -> Result<Vec<Addr>, UnifiedError> {
-        let mut bind_space = self.bind_space.write()
+        let mut bind_space = self
+            .bind_space
+            .write()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         // Ensure CSR is built
@@ -497,7 +523,9 @@ impl UnifiedEngine {
         verb: Addr,
         max_hops: usize,
     ) -> Result<Vec<(usize, Addr)>, UnifiedError> {
-        let bind_space = self.bind_space.read()
+        let bind_space = self
+            .bind_space
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         Ok(bind_space.traverse_n_hops(start, verb, max_hops))
@@ -505,7 +533,9 @@ impl UnifiedEngine {
 
     /// Rebuild CSR index (call after batch edge insertions)
     pub fn rebuild_csr(&self) -> Result<(), UnifiedError> {
-        let mut bind_space = self.bind_space.write()
+        let mut bind_space = self
+            .bind_space
+            .write()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         bind_space.rebuild_csr();
@@ -520,7 +550,9 @@ impl UnifiedEngine {
 
     /// Read with MVCC version tracking
     pub fn mvcc_read(&self, addr: u16) -> Result<Option<(MvccSlot, ReadHandle)>, UnifiedError> {
-        let mvcc = self.mvcc.as_ref()
+        let mvcc = self
+            .mvcc
+            .as_ref()
             .ok_or(UnifiedError::FeatureDisabled("MVCC"))?;
 
         Ok(mvcc.read(addr))
@@ -528,7 +560,9 @@ impl UnifiedEngine {
 
     /// Write with MVCC optimistic locking
     pub fn mvcc_write(&self, intent: WriteIntent) -> Result<WriteResult, UnifiedError> {
-        let mvcc = self.mvcc.as_ref()
+        let mvcc = self
+            .mvcc
+            .as_ref()
             .ok_or(UnifiedError::FeatureDisabled("MVCC"))?;
 
         let result = mvcc.write(intent);
@@ -572,7 +606,9 @@ impl UnifiedEngine {
         if self.config.enable_work_stealing {
             let result = self.epoch_guard.try_steal();
             if let Some(ref items) = result {
-                self.stats.work_stolen.fetch_add(items.len() as u64, Ordering::Relaxed);
+                self.stats
+                    .work_stolen
+                    .fetch_add(items.len() as u64, Ordering::Relaxed);
             }
             result
         } else {
@@ -600,28 +636,35 @@ impl UnifiedEngine {
         fingerprint: [u64; FINGERPRINT_WORDS],
         label: Option<String>,
     ) -> Result<(u64, VirtualVersion), UnifiedError> {
-        let buffer = self.write_buffer.as_ref()
+        let buffer = self
+            .write_buffer
+            .as_ref()
             .ok_or(UnifiedError::FeatureDisabled("Resilience"))?;
 
         // Get automatic dependencies
-        let deps = self.deps.as_ref()
+        let deps = self
+            .deps
+            .as_ref()
             .map(|d| d.auto_depends(addr))
             .unwrap_or_default();
 
-        buffer.buffer_write(addr, fingerprint, label, deps)
+        buffer
+            .buffer_write(addr, fingerprint, label, deps)
             .map_err(|e| UnifiedError::Buffer(format!("{:?}", e)))
     }
 
     /// Get buffered write for read-your-writes consistency
     pub fn get_buffered(&self, addr: u16) -> Option<[u64; FINGERPRINT_WORDS]> {
-        self.write_buffer.as_ref()
+        self.write_buffer
+            .as_ref()
             .and_then(|b| b.get_buffered(addr))
             .map(|w| w.fingerprint)
     }
 
     /// Pending write count
     pub fn pending_writes(&self) -> usize {
-        self.write_buffer.as_ref()
+        self.write_buffer
+            .as_ref()
             .map(|b| b.pending_count())
             .unwrap_or(0)
     }
@@ -631,34 +674,45 @@ impl UnifiedEngine {
     // =========================================================================
 
     /// Load fingerprints from Arrow buffer (zero-copy)
-    pub fn load_arrow(&self, data: Vec<u64>, num_fingerprints: usize) -> Result<usize, UnifiedError> {
-        let arrow = self.arrow.as_ref()
+    pub fn load_arrow(
+        &self,
+        data: Vec<u64>,
+        num_fingerprints: usize,
+    ) -> Result<usize, UnifiedError> {
+        let arrow = self
+            .arrow
+            .as_ref()
             .ok_or(UnifiedError::FeatureDisabled("Arrow"))?;
 
-        let mut manager = arrow.write()
-            .map_err(|_| UnifiedError::LockPoisoned)?;
+        let mut manager = arrow.write().map_err(|_| UnifiedError::LockPoisoned)?;
 
         Ok(manager.load_from_vec(data, num_fingerprints))
     }
 
     /// Get fingerprint from Arrow buffer (zero-copy)
-    pub fn get_arrow(&self, buffer_id: usize, index: usize) -> Result<Option<[u64; FINGERPRINT_WORDS]>, UnifiedError> {
-        let arrow = self.arrow.as_ref()
+    pub fn get_arrow(
+        &self,
+        buffer_id: usize,
+        index: usize,
+    ) -> Result<Option<[u64; FINGERPRINT_WORDS]>, UnifiedError> {
+        let arrow = self
+            .arrow
+            .as_ref()
             .ok_or(UnifiedError::FeatureDisabled("Arrow"))?;
 
-        let manager = arrow.read()
-            .map_err(|_| UnifiedError::LockPoisoned)?;
+        let manager = arrow.read().map_err(|_| UnifiedError::LockPoisoned)?;
 
         Ok(manager.get(buffer_id, index).copied())
     }
 
     /// Touch for temperature tracking (scent awareness)
     pub fn touch_arrow(&self, buffer_id: usize, index: usize) -> Result<(), UnifiedError> {
-        let arrow = self.arrow.as_ref()
+        let arrow = self
+            .arrow
+            .as_ref()
             .ok_or(UnifiedError::FeatureDisabled("Arrow"))?;
 
-        let mut manager = arrow.write()
-            .map_err(|_| UnifiedError::LockPoisoned)?;
+        let mut manager = arrow.write().map_err(|_| UnifiedError::LockPoisoned)?;
 
         manager.touch(buffer_id, index);
         Ok(())
@@ -670,7 +724,9 @@ impl UnifiedEngine {
 
     /// Initialize parity blocks for all tiers
     pub fn init_parity(&self) -> Result<(), UnifiedError> {
-        let dag = self.xor_dag.as_ref()
+        let dag = self
+            .xor_dag
+            .as_ref()
             .ok_or(UnifiedError::FeatureDisabled("ACID"))?;
 
         dag.init_parity().map_err(UnifiedError::Dag)
@@ -678,7 +734,9 @@ impl UnifiedEngine {
 
     /// Verify all parity blocks
     pub fn verify_parity(&self) -> Result<Vec<u64>, UnifiedError> {
-        let dag = self.xor_dag.as_ref()
+        let dag = self
+            .xor_dag
+            .as_ref()
             .ok_or(UnifiedError::FeatureDisabled("ACID"))?;
 
         dag.verify_parity().map_err(UnifiedError::Dag)
@@ -686,7 +744,9 @@ impl UnifiedEngine {
 
     /// Recover address using parity
     pub fn recover_addr(&self, addr: Addr) -> Result<[u64; FINGERPRINT_WORDS], UnifiedError> {
-        let dag = self.xor_dag.as_ref()
+        let dag = self
+            .xor_dag
+            .as_ref()
             .ok_or(UnifiedError::FeatureDisabled("ACID"))?;
 
         dag.recover_addr(addr).map_err(UnifiedError::Dag)
@@ -703,7 +763,9 @@ impl UnifiedEngine {
 
     /// Read from bind space
     pub fn read(&self, addr: Addr) -> Result<Option<BindNode>, UnifiedError> {
-        let bind_space = self.bind_space.read()
+        let bind_space = self
+            .bind_space
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         Ok(bind_space.read(addr).cloned())
@@ -711,7 +773,9 @@ impl UnifiedEngine {
 
     /// Write to bind space
     pub fn write(&self, fingerprint: [u64; FINGERPRINT_WORDS]) -> Result<Addr, UnifiedError> {
-        let mut bind_space = self.bind_space.write()
+        let mut bind_space = self
+            .bind_space
+            .write()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         Ok(bind_space.write(fingerprint))
@@ -723,7 +787,9 @@ impl UnifiedEngine {
         fingerprint: [u64; FINGERPRINT_WORDS],
         label: &str,
     ) -> Result<Addr, UnifiedError> {
-        let mut bind_space = self.bind_space.write()
+        let mut bind_space = self
+            .bind_space
+            .write()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         Ok(bind_space.write_labeled(fingerprint, label))
@@ -731,7 +797,9 @@ impl UnifiedEngine {
 
     /// Delete from bind space
     pub fn delete(&self, addr: Addr) -> Result<Option<BindNode>, UnifiedError> {
-        let mut bind_space = self.bind_space.write()
+        let mut bind_space = self
+            .bind_space
+            .write()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         Ok(bind_space.delete(addr))
@@ -739,7 +807,9 @@ impl UnifiedEngine {
 
     /// Get verb address by name
     pub fn verb(&self, name: &str) -> Result<Option<Addr>, UnifiedError> {
-        let bind_space = self.bind_space.read()
+        let bind_space = self
+            .bind_space
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         Ok(bind_space.verb(name))
@@ -752,9 +822,7 @@ impl UnifiedEngine {
     /// Get engine statistics
     pub fn stats(&self) -> UnifiedStatsSnapshot {
         let dag_stats = self.xor_dag.as_ref().map(|d| d.stats());
-        let mvcc_conflicts = self.mvcc.as_ref()
-            .map(|m| m.conflicts())
-            .unwrap_or(0);
+        let mvcc_conflicts = self.mvcc.as_ref().map(|m| m.conflicts()).unwrap_or(0);
 
         UnifiedStatsSnapshot {
             dn_reads: self.stats.dn_reads.load(Ordering::Relaxed),
@@ -788,11 +856,15 @@ impl UnifiedEngine {
 
     /// Rebuild the fingerprint dictionary from current BindSpace state
     pub fn rebuild_dict(&self) -> Result<(), UnifiedError> {
-        let bind_space = self.bind_space.read()
+        let bind_space = self
+            .bind_space
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         let new_dict = FingerprintDict::from_bind_space(&bind_space);
-        let mut dict = self.fingerprint_dict.write()
+        let mut dict = self
+            .fingerprint_dict
+            .write()
             .map_err(|_| UnifiedError::LockPoisoned)?;
         *dict = new_dict;
 
@@ -801,10 +873,14 @@ impl UnifiedEngine {
 
     /// Update dictionary entry for a single address (after write/delete)
     pub fn update_dict(&self, addr: Addr) -> Result<(), UnifiedError> {
-        let bind_space = self.bind_space.read()
+        let bind_space = self
+            .bind_space
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
-        let mut dict = self.fingerprint_dict.write()
+        let mut dict = self
+            .fingerprint_dict
+            .write()
             .map_err(|_| UnifiedError::LockPoisoned)?;
         dict.update(addr.0, &bind_space);
 
@@ -815,11 +891,18 @@ impl UnifiedEngine {
     ///
     /// Core "dictionary lookup": sparse addrs → dense fingerprints.
     /// Uses the pre-computed dictionary for O(1) per lookup.
-    pub fn hydrate(&self, addrs: &[u16]) -> Result<Vec<(u16, [u64; FINGERPRINT_WORDS])>, UnifiedError> {
-        let bind_space = self.bind_space.read()
+    pub fn hydrate(
+        &self,
+        addrs: &[u16],
+    ) -> Result<Vec<(u16, [u64; FINGERPRINT_WORDS])>, UnifiedError> {
+        let bind_space = self
+            .bind_space
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
-        let dict = self.fingerprint_dict.read()
+        let dict = self
+            .fingerprint_dict
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         Ok(dict.hydrate_batch(addrs, &bind_space))
@@ -836,24 +919,29 @@ impl UnifiedEngine {
         query: &[u64; FINGERPRINT_WORDS],
         max_hamming: u32,
     ) -> Result<Vec<(u16, u32)>, UnifiedError> {
-        let bind_space = self.bind_space.read()
+        let bind_space = self
+            .bind_space
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
-        let dict = self.fingerprint_dict.read()
+        let dict = self
+            .fingerprint_dict
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         Ok(dict.search(query, max_hamming, &bind_space))
     }
 
     /// Convert sparse addresses to Arrow RecordBatch via dictionary
-    pub fn dict_to_arrow(
-        &self,
-        addrs: &[u16],
-    ) -> Result<arrow_array::RecordBatch, UnifiedError> {
-        let bind_space = self.bind_space.read()
+    pub fn dict_to_arrow(&self, addrs: &[u16]) -> Result<arrow_array::RecordBatch, UnifiedError> {
+        let bind_space = self
+            .bind_space
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
-        let dict = self.fingerprint_dict.read()
+        let dict = self
+            .fingerprint_dict
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         dict.to_record_batch(addrs, &bind_space)
@@ -876,7 +964,9 @@ impl UnifiedEngine {
         max_hops: u32,
         verb_filter: Option<&str>,
     ) -> Result<Vec<(usize, Addr)>, UnifiedError> {
-        let bind_space = self.bind_space.read()
+        let bind_space = self
+            .bind_space
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         // Resolve verb name to address
@@ -908,7 +998,9 @@ impl UnifiedEngine {
                                 }
                             }
                         }
-                        if next_frontier.is_empty() { break; }
+                        if next_frontier.is_empty() {
+                            break;
+                        }
                         frontier = next_frontier;
                     }
                     results
@@ -932,10 +1024,14 @@ impl UnifiedEngine {
         max_hops: u32,
         max_hamming: u32,
     ) -> Result<Vec<(usize, Addr, u32)>, UnifiedError> {
-        let bind_space = self.bind_space.read()
+        let bind_space = self
+            .bind_space
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
-        let dict = self.fingerprint_dict.read()
+        let dict = self
+            .fingerprint_dict
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         let query_pop: u32 = query_fp.iter().map(|w| w.count_ones()).sum();
@@ -970,7 +1066,10 @@ impl UnifiedEngine {
 
                         // Full Hamming check
                         if let Some(target_node) = bind_space.read(Addr(target_raw)) {
-                            let dist = super::bind_space::hamming_distance(query_fp, &target_node.fingerprint);
+                            let dist = super::bind_space::hamming_distance(
+                                query_fp,
+                                &target_node.fingerprint,
+                            );
                             if dist <= max_hamming {
                                 results.push((hop, Addr(target_raw), dist));
                                 next_frontier.push(Addr(target_raw));
@@ -979,7 +1078,9 @@ impl UnifiedEngine {
                     }
                 }
 
-                if next_frontier.is_empty() { break; }
+                if next_frontier.is_empty() {
+                    break;
+                }
                 frontier = next_frontier;
             }
         }
@@ -1072,7 +1173,9 @@ impl ShardManager {
     pub fn shard_for_path(&self, path: &str) -> usize {
         // Hash first path component for shard
         let first = path.split(':').next().unwrap_or("");
-        let hash: usize = first.bytes().fold(0, |acc, b| acc.wrapping_mul(31).wrapping_add(b as usize));
+        let hash: usize = first
+            .bytes()
+            .fold(0, |acc, b| acc.wrapping_mul(31).wrapping_add(b as usize));
         hash % self.num_shards
     }
 
@@ -1113,7 +1216,11 @@ pub struct Morsel {
 impl Morsel {
     /// Create new morsel
     pub fn new(addrs: Vec<Addr>, start_idx: usize, is_last: bool) -> Self {
-        Self { addrs, start_idx, is_last }
+        Self {
+            addrs,
+            start_idx,
+            is_last,
+        }
     }
 
     /// Get morsel size
@@ -1150,7 +1257,9 @@ impl MorselDispenser {
 
     /// Get next morsel (thread-safe)
     pub fn next_morsel(&self) -> Option<Morsel> {
-        let start = self.position.fetch_add(MORSEL_SIZE as u64, Ordering::SeqCst) as usize;
+        let start = self
+            .position
+            .fetch_add(MORSEL_SIZE as u64, Ordering::SeqCst) as usize;
         if start >= self.total {
             return None;
         }
@@ -1207,7 +1316,8 @@ impl HexastoreIndex {
 
     /// Query S-P-? (given subject and predicate, find objects)
     pub fn query_sp(&self, s: Addr, p: Addr) -> &[Addr] {
-        self.spo.get(&s)
+        self.spo
+            .get(&s)
             .and_then(|ps| ps.get(&p))
             .map(|v| v.as_slice())
             .unwrap_or(&[])
@@ -1215,7 +1325,8 @@ impl HexastoreIndex {
 
     /// Query ?-P-O (given predicate and object, find subjects)
     pub fn query_po(&self, p: Addr, o: Addr) -> &[Addr] {
-        self.ops.get(&o)
+        self.ops
+            .get(&o)
             .and_then(|ps| ps.get(&p))
             .map(|v| v.as_slice())
             .unwrap_or(&[])
@@ -1223,7 +1334,8 @@ impl HexastoreIndex {
 
     /// Query S-?-? (given subject, find all predicate-object pairs)
     pub fn query_s(&self, s: Addr) -> Vec<(Addr, Addr)> {
-        self.spo.get(&s)
+        self.spo
+            .get(&s)
             .map(|ps| {
                 ps.iter()
                     .flat_map(|(p, os)| os.iter().map(move |o| (*p, *o)))
@@ -1234,7 +1346,8 @@ impl HexastoreIndex {
 
     /// Query ?-P-? (given predicate, find all subject-object pairs)
     pub fn query_p(&self, p: Addr) -> Vec<(Addr, Addr)> {
-        self.pso.get(&p)
+        self.pso
+            .get(&p)
             .map(|ss| {
                 ss.iter()
                     .flat_map(|(s, os)| os.iter().map(move |o| (*s, *o)))
@@ -1245,7 +1358,8 @@ impl HexastoreIndex {
 
     /// Total triples indexed
     pub fn len(&self) -> usize {
-        self.spo.values()
+        self.spo
+            .values()
             .flat_map(|ps| ps.values())
             .map(|os| os.len())
             .sum()
@@ -1267,7 +1381,7 @@ impl HexastoreIndex {
 /// This provides 10-100x speedup for bulk graph construction.
 pub struct CsrBatchBuffer {
     /// Pending edge additions
-    pending_adds: Vec<(Addr, Addr, Addr)>,  // (from, verb, to)
+    pending_adds: Vec<(Addr, Addr, Addr)>, // (from, verb, to)
     /// Pending edge deletions
     pending_deletes: Vec<usize>,
     /// Buffer capacity before auto-flush
@@ -1308,8 +1422,7 @@ impl CsrBatchBuffer {
 
     /// Check if flush is needed
     pub fn needs_flush(&self) -> bool {
-        self.pending_adds.len() >= self.capacity
-            || self.last_flush.elapsed() >= self.flush_interval
+        self.pending_adds.len() >= self.capacity || self.last_flush.elapsed() >= self.flush_interval
     }
 
     /// Flush buffer to bind space
@@ -1375,7 +1488,10 @@ impl TxnBatchBuffer {
     }
 
     /// Get or start a batch transaction
-    pub fn get_batch_txn(&mut self, dag: &super::xor_dag::XorDag) -> Result<u64, super::xor_dag::DagError> {
+    pub fn get_batch_txn(
+        &mut self,
+        dag: &super::xor_dag::XorDag,
+    ) -> Result<u64, super::xor_dag::DagError> {
         if let Some(_txn) = self.current_batch {
             // Check if batch should be committed
             if self.ops_in_batch >= self.max_batch_size {
@@ -1402,7 +1518,10 @@ impl TxnBatchBuffer {
     }
 
     /// Commit current batch
-    pub fn commit_batch(&mut self, dag: &super::xor_dag::XorDag) -> Result<Option<u64>, super::xor_dag::DagError> {
+    pub fn commit_batch(
+        &mut self,
+        dag: &super::xor_dag::XorDag,
+    ) -> Result<Option<u64>, super::xor_dag::DagError> {
         if let Some(txn) = self.current_batch.take() {
             let version = dag.commit(txn)?;
             self.batches_committed.fetch_add(1, Ordering::Relaxed);
@@ -1442,13 +1561,17 @@ impl UnifiedEngine {
     /// Returns the fingerprint at the path, or None if not exists.
     /// This is the primary Redis-compatible read operation.
     pub fn get(&self, path: &str) -> Result<Option<Vec<u8>>, UnifiedError> {
-        let bind_space = self.bind_space.read()
+        let bind_space = self
+            .bind_space
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         let addr = dn_path_to_addr(path);
         if let Some(node) = bind_space.read(addr) {
             // Convert fingerprint to bytes for Redis compatibility
-            let bytes: Vec<u8> = node.fingerprint.iter()
+            let bytes: Vec<u8> = node
+                .fingerprint
+                .iter()
                 .flat_map(|&w| w.to_le_bytes())
                 .collect();
             Ok(Some(bytes))
@@ -1461,7 +1584,9 @@ impl UnifiedEngine {
     ///
     /// Creates the path hierarchy if needed and sets the fingerprint.
     pub fn set(&self, path: &str, value: &[u8]) -> Result<(), UnifiedError> {
-        let mut bind_space = self.bind_space.write()
+        let mut bind_space = self
+            .bind_space
+            .write()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         // Convert bytes to fingerprint
@@ -1485,7 +1610,9 @@ impl UnifiedEngine {
     ///
     /// Gets a specific field from the node (label, rung, depth, etc.)
     pub fn hget(&self, path: &str, field: &str) -> Result<Option<String>, UnifiedError> {
-        let bind_space = self.bind_space.read()
+        let bind_space = self
+            .bind_space
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         let addr = dn_path_to_addr(path);
@@ -1510,7 +1637,9 @@ impl UnifiedEngine {
     ///
     /// Sets a specific field on the node.
     pub fn hset(&self, path: &str, field: &str, value: &str) -> Result<bool, UnifiedError> {
-        let mut bind_space = self.bind_space.write()
+        let mut bind_space = self
+            .bind_space
+            .write()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         let addr = dn_path_to_addr(path);
@@ -1541,7 +1670,9 @@ impl UnifiedEngine {
 
     /// Redis EXISTS for DN path: EXISTS Ada:A:soul:identity
     pub fn exists(&self, path: &str) -> Result<bool, UnifiedError> {
-        let bind_space = self.bind_space.read()
+        let bind_space = self
+            .bind_space
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         let addr = dn_path_to_addr(path);
@@ -1550,7 +1681,9 @@ impl UnifiedEngine {
 
     /// Redis DEL for DN path: DEL Ada:A:soul:identity
     pub fn del(&self, path: &str) -> Result<bool, UnifiedError> {
-        let mut bind_space = self.bind_space.write()
+        let mut bind_space = self
+            .bind_space
+            .write()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         let addr = dn_path_to_addr(path);
@@ -1562,7 +1695,9 @@ impl UnifiedEngine {
     /// Returns all paths matching the pattern.
     /// Supports * for single level, ** for recursive.
     pub fn keys(&self, pattern: &str) -> Result<Vec<String>, UnifiedError> {
-        let bind_space = self.bind_space.read()
+        let bind_space = self
+            .bind_space
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         // For now, return all labeled nodes that match prefix
@@ -1595,7 +1730,9 @@ impl UnifiedEngine {
         pattern: &str,
         count: usize,
     ) -> Result<(u32, Vec<String>), UnifiedError> {
-        let bind_space = self.bind_space.read()
+        let bind_space = self
+            .bind_space
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         let prefix = pattern.trim_end_matches('*').trim_end_matches(':');
@@ -1606,7 +1743,11 @@ impl UnifiedEngine {
         let start_slot = (cursor & 0xFF) as u8;
 
         for prefix_byte in start_prefix.max(PREFIX_NODE_START)..=0xFF_u8 {
-            let slot_start = if prefix_byte == start_prefix { start_slot } else { 0 };
+            let slot_start = if prefix_byte == start_prefix {
+                start_slot
+            } else {
+                0
+            };
             for slot in slot_start..=255_u8 {
                 let addr = Addr::new(prefix_byte, slot);
                 if let Some(node) = bind_space.read(addr) {
@@ -1631,7 +1772,9 @@ impl UnifiedEngine {
 
     /// Redis TYPE for DN path: TYPE Ada:A:soul
     pub fn key_type(&self, path: &str) -> Result<String, UnifiedError> {
-        let bind_space = self.bind_space.read()
+        let bind_space = self
+            .bind_space
+            .read()
             .map_err(|_| UnifiedError::LockPoisoned)?;
 
         let addr = dn_path_to_addr(path);
@@ -1777,7 +1920,9 @@ mod tests {
 
         // Write in transaction
         let fp = [99u64; FINGERPRINT_WORDS];
-        engine.write_in_txn(txn, Addr(0x8000), fp, Some("test".into())).unwrap();
+        engine
+            .write_in_txn(txn, Addr(0x8000), fp, Some("test".into()))
+            .unwrap();
 
         // Commit
         let version = engine.commit_txn(txn).unwrap();
@@ -1793,9 +1938,15 @@ mod tests {
         let engine = UnifiedEngine::default();
 
         // Create some nodes
-        let a = engine.write_labeled([1u64; FINGERPRINT_WORDS], "A").unwrap();
-        let b = engine.write_labeled([2u64; FINGERPRINT_WORDS], "B").unwrap();
-        let c = engine.write_labeled([3u64; FINGERPRINT_WORDS], "C").unwrap();
+        let a = engine
+            .write_labeled([1u64; FINGERPRINT_WORDS], "A")
+            .unwrap();
+        let b = engine
+            .write_labeled([2u64; FINGERPRINT_WORDS], "B")
+            .unwrap();
+        let c = engine
+            .write_labeled([3u64; FINGERPRINT_WORDS], "C")
+            .unwrap();
 
         // Get CAUSES verb
         let causes = engine.verb("CAUSES").unwrap().unwrap();

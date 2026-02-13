@@ -25,9 +25,9 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use super::substrate::{Substrate, SubstrateConfig};
 use super::bind_space::{FINGERPRINT_WORDS, hamming_distance};
 use super::cog_redis::{CogAddr, Tier};
+use super::substrate::{Substrate, SubstrateConfig};
 
 // =============================================================================
 // RESULT TYPES
@@ -63,9 +63,18 @@ pub enum RedisResult {
 impl RedisResult {
     /// Check if result is OK
     pub fn is_ok(&self) -> bool {
-        matches!(self, RedisResult::Ok | RedisResult::String(_) | RedisResult::Integer(_) |
-                 RedisResult::Float(_) | RedisResult::Addr(_) | RedisResult::Array(_) |
-                 RedisResult::Node(_) | RedisResult::Search(_) | RedisResult::Edge(_))
+        matches!(
+            self,
+            RedisResult::Ok
+                | RedisResult::String(_)
+                | RedisResult::Integer(_)
+                | RedisResult::Float(_)
+                | RedisResult::Addr(_)
+                | RedisResult::Array(_)
+                | RedisResult::Node(_)
+                | RedisResult::Search(_)
+                | RedisResult::Edge(_)
+        )
     }
 
     /// Check if result is error
@@ -141,30 +150,68 @@ pub enum CamResult {
 #[derive(Debug, Clone)]
 pub enum RedisCommand {
     // Core commands
-    Get { key: String },
-    Set { key: String, value: String, options: SetOptions },
-    Del { key: String, mode: DeleteMode },
+    Get {
+        key: String,
+    },
+    Set {
+        key: String,
+        value: String,
+        options: SetOptions,
+    },
+    Del {
+        key: String,
+        mode: DeleteMode,
+    },
 
     // Edge commands
-    Bind { from: String, verb: String, to: String },
-    Unbind { edge: String, known: String },
+    Bind {
+        from: String,
+        verb: String,
+        to: String,
+    },
+    Unbind {
+        edge: String,
+        known: String,
+    },
 
     // Search commands
-    Resonate { query: String, k: usize },
-    Search { query: String, k: usize, threshold: f32 },
+    Resonate {
+        query: String,
+        k: usize,
+    },
+    Search {
+        query: String,
+        k: usize,
+        threshold: f32,
+    },
 
     // Graph commands
-    Traverse { start: String, verb: String, hops: usize },
-    Fanout { addr: String },
-    Fanin { addr: String },
+    Traverse {
+        start: String,
+        verb: String,
+        hops: usize,
+    },
+    Fanout {
+        addr: String,
+    },
+    Fanin {
+        addr: String,
+    },
 
     // Lifecycle commands
-    Crystallize { addr: String },
-    Evaporate { addr: String },
+    Crystallize {
+        addr: String,
+    },
+    Evaporate {
+        addr: String,
+    },
     Tick,
 
     // CAM commands
-    Cam { operation: String, args: Vec<String> },
+    Cam {
+        operation: String,
+        args: Vec<String>,
+    },
 
     // Info commands
     Info,
@@ -257,12 +304,20 @@ impl RedisAdapter {
     pub fn execute_command(&mut self, cmd: RedisCommand) -> RedisResult {
         match cmd {
             RedisCommand::Get { key } => self.cmd_get(&key),
-            RedisCommand::Set { key, value, options } => self.cmd_set(&key, &value, options),
+            RedisCommand::Set {
+                key,
+                value,
+                options,
+            } => self.cmd_set(&key, &value, options),
             RedisCommand::Del { key, mode } => self.cmd_del(&key, mode),
             RedisCommand::Bind { from, verb, to } => self.cmd_bind(&from, &verb, &to),
             RedisCommand::Unbind { edge, known } => self.cmd_unbind(&edge, &known),
             RedisCommand::Resonate { query, k } => self.cmd_resonate(&query, k),
-            RedisCommand::Search { query, k, threshold } => self.cmd_search(&query, k, threshold),
+            RedisCommand::Search {
+                query,
+                k,
+                threshold,
+            } => self.cmd_search(&query, k, threshold),
             RedisCommand::Traverse { start, verb, hops } => self.cmd_traverse(&start, &verb, hops),
             RedisCommand::Fanout { addr } => self.cmd_fanout(&addr),
             RedisCommand::Fanin { addr } => self.cmd_fanin(&addr),
@@ -416,7 +471,8 @@ impl RedisAdapter {
         let query_fp = self.generate_fingerprint(query);
         let results = self.substrate.resonate(&query_fp, k);
 
-        let hits: Vec<SearchHit> = results.iter()
+        let hits: Vec<SearchHit> = results
+            .iter()
             .filter_map(|(addr, sim)| {
                 let node = self.substrate.read(*addr)?;
                 Some(SearchHit {
@@ -435,7 +491,8 @@ impl RedisAdapter {
         let query_fp = self.generate_fingerprint(query);
         let results = self.substrate.search(&query_fp, k, threshold);
 
-        let hits: Vec<SearchHit> = results.iter()
+        let hits: Vec<SearchHit> = results
+            .iter()
             .filter_map(|(addr, dist, sim)| {
                 let node = self.substrate.read(*addr)?;
                 Some(SearchHit {
@@ -463,7 +520,8 @@ impl RedisAdapter {
 
         let results = self.substrate.traverse_n_hops(start_addr, verb_addr, hops);
 
-        let array: Vec<RedisResult> = results.iter()
+        let array: Vec<RedisResult> = results
+            .iter()
             .map(|(hop, addr)| {
                 RedisResult::Array(vec![
                     RedisResult::Integer(*hop as i64),
@@ -483,14 +541,17 @@ impl RedisAdapter {
 
         let edges = self.substrate.edges_out(addr);
 
-        let array: Vec<RedisResult> = edges.iter()
-            .map(|e| RedisResult::Edge(EdgeResult {
-                from: e.from,
-                verb: e.verb,
-                to: e.to,
-                fingerprint: e.fingerprint,
-                weight: e.weight,
-            }))
+        let array: Vec<RedisResult> = edges
+            .iter()
+            .map(|e| {
+                RedisResult::Edge(EdgeResult {
+                    from: e.from,
+                    verb: e.verb,
+                    to: e.to,
+                    fingerprint: e.fingerprint,
+                    weight: e.weight,
+                })
+            })
             .collect();
 
         RedisResult::Array(array)
@@ -504,14 +565,17 @@ impl RedisAdapter {
 
         let edges = self.substrate.edges_in(addr);
 
-        let array: Vec<RedisResult> = edges.iter()
-            .map(|e| RedisResult::Edge(EdgeResult {
-                from: e.from,
-                verb: e.verb,
-                to: e.to,
-                fingerprint: e.fingerprint,
-                weight: e.weight,
-            }))
+        let array: Vec<RedisResult> = edges
+            .iter()
+            .map(|e| {
+                RedisResult::Edge(EdgeResult {
+                    from: e.from,
+                    verb: e.verb,
+                    to: e.to,
+                    fingerprint: e.fingerprint,
+                    weight: e.weight,
+                })
+            })
             .collect();
 
         RedisResult::Array(array)
@@ -543,7 +607,10 @@ impl RedisAdapter {
             return RedisResult::Error("Address not in node zone".to_string());
         }
 
-        match self.substrate.evaporate(addr, self.substrate.config().fluid_ttl) {
+        match self
+            .substrate
+            .evaporate(addr, self.substrate.config().fluid_ttl)
+        {
             Some(new_addr) => RedisResult::Addr(new_addr),
             None => RedisResult::Error("Evaporate failed".to_string()),
         }
@@ -559,9 +626,7 @@ impl RedisAdapter {
 
         // Route to actual implementations where possible
         match op_upper.as_str() {
-            "BIND" if args.len() >= 3 => {
-                self.cmd_bind(&args[0], &args[1], &args[2])
-            }
+            "BIND" if args.len() >= 3 => self.cmd_bind(&args[0], &args[1], &args[2]),
             "RESONATE" if !args.is_empty() => {
                 let k = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(10);
                 self.cmd_resonate(&args[0], k)
@@ -586,14 +651,12 @@ impl RedisAdapter {
                 RedisResult::Integer(popcount as i64)
             }
             // Acknowledge other known operations (not yet fully implemented)
-            "UNBIND" | "BUNDLE" | "PERMUTE" | "KNN" | "ANN" |
-            "DEDUCE" | "ABDUCT" | "INDUCE" | "REVISE" |
-            "SEE" | "DO" | "IMAGINE" => {
-                RedisResult::String(format!("CAM {} acknowledged (not fully implemented)", operation))
-            }
-            _ => {
-                RedisResult::Error(format!("Unknown CAM operation: {}", operation))
-            }
+            "UNBIND" | "BUNDLE" | "PERMUTE" | "KNN" | "ANN" | "DEDUCE" | "ABDUCT" | "INDUCE"
+            | "REVISE" | "SEE" | "DO" | "IMAGINE" => RedisResult::String(format!(
+                "CAM {} acknowledged (not fully implemented)",
+                operation
+            )),
+            _ => RedisResult::Error(format!("Unknown CAM operation: {}", operation)),
         }
     }
 
@@ -605,7 +668,9 @@ impl RedisAdapter {
             stats.hot_misses.load(std::sync::atomic::Ordering::Relaxed),
             stats.hot_nodes.load(std::sync::atomic::Ordering::Relaxed),
             stats.hot_edges.load(std::sync::atomic::Ordering::Relaxed),
-            stats.pending_writes.load(std::sync::atomic::Ordering::Relaxed),
+            stats
+                .pending_writes
+                .load(std::sync::atomic::Ordering::Relaxed),
             stats.hit_ratio(),
             self.substrate.version(),
         );
@@ -617,11 +682,15 @@ impl RedisAdapter {
         RedisResult::Array(vec![
             RedisResult::Array(vec![
                 RedisResult::String("hot_hits".to_string()),
-                RedisResult::Integer(stats.hot_hits.load(std::sync::atomic::Ordering::Relaxed) as i64),
+                RedisResult::Integer(
+                    stats.hot_hits.load(std::sync::atomic::Ordering::Relaxed) as i64
+                ),
             ]),
             RedisResult::Array(vec![
                 RedisResult::String("hot_misses".to_string()),
-                RedisResult::Integer(stats.hot_misses.load(std::sync::atomic::Ordering::Relaxed) as i64),
+                RedisResult::Integer(
+                    stats.hot_misses.load(std::sync::atomic::Ordering::Relaxed) as i64
+                ),
             ]),
             RedisResult::Array(vec![
                 RedisResult::String("hit_ratio".to_string()),
@@ -645,7 +714,9 @@ impl RedisAdapter {
         match cmd.as_str() {
             "GET" => {
                 if parts.len() >= 2 {
-                    RedisCommand::Get { key: parts[1].to_string() }
+                    RedisCommand::Get {
+                        key: parts[1].to_string(),
+                    }
                 } else {
                     RedisCommand::Unknown("GET requires key".to_string())
                 }
@@ -692,7 +763,10 @@ impl RedisAdapter {
                     } else {
                         DeleteMode::Normal
                     };
-                    RedisCommand::Del { key: parts[1].to_string(), mode }
+                    RedisCommand::Del {
+                        key: parts[1].to_string(),
+                        mode,
+                    }
                 } else {
                     RedisCommand::Unknown("DEL requires key".to_string())
                 }
@@ -725,23 +799,42 @@ impl RedisAdapter {
                     } else {
                         10
                     };
-                    RedisCommand::Resonate { query: parts[1].to_string(), k }
+                    RedisCommand::Resonate {
+                        query: parts[1].to_string(),
+                        k,
+                    }
                 } else {
                     RedisCommand::Unknown("RESONATE requires query".to_string())
                 }
             }
             "SEARCH" => {
                 if parts.len() >= 2 {
-                    let k = if parts.len() >= 3 { parts[2].parse().unwrap_or(10) } else { 10 };
-                    let threshold = if parts.len() >= 4 { parts[3].parse().unwrap_or(0.5) } else { 0.5 };
-                    RedisCommand::Search { query: parts[1].to_string(), k, threshold }
+                    let k = if parts.len() >= 3 {
+                        parts[2].parse().unwrap_or(10)
+                    } else {
+                        10
+                    };
+                    let threshold = if parts.len() >= 4 {
+                        parts[3].parse().unwrap_or(0.5)
+                    } else {
+                        0.5
+                    };
+                    RedisCommand::Search {
+                        query: parts[1].to_string(),
+                        k,
+                        threshold,
+                    }
                 } else {
                     RedisCommand::Unknown("SEARCH requires query".to_string())
                 }
             }
             "TRAVERSE" => {
                 if parts.len() >= 3 {
-                    let hops = if parts.len() >= 4 { parts[3].parse().unwrap_or(1) } else { 1 };
+                    let hops = if parts.len() >= 4 {
+                        parts[3].parse().unwrap_or(1)
+                    } else {
+                        1
+                    };
                     RedisCommand::Traverse {
                         start: parts[1].to_string(),
                         verb: parts[2].to_string(),
@@ -753,28 +846,36 @@ impl RedisAdapter {
             }
             "FANOUT" => {
                 if parts.len() >= 2 {
-                    RedisCommand::Fanout { addr: parts[1].to_string() }
+                    RedisCommand::Fanout {
+                        addr: parts[1].to_string(),
+                    }
                 } else {
                     RedisCommand::Unknown("FANOUT requires address".to_string())
                 }
             }
             "FANIN" => {
                 if parts.len() >= 2 {
-                    RedisCommand::Fanin { addr: parts[1].to_string() }
+                    RedisCommand::Fanin {
+                        addr: parts[1].to_string(),
+                    }
                 } else {
                     RedisCommand::Unknown("FANIN requires address".to_string())
                 }
             }
             "CRYSTALLIZE" => {
                 if parts.len() >= 2 {
-                    RedisCommand::Crystallize { addr: parts[1].to_string() }
+                    RedisCommand::Crystallize {
+                        addr: parts[1].to_string(),
+                    }
                 } else {
                     RedisCommand::Unknown("CRYSTALLIZE requires address".to_string())
                 }
             }
             "EVAPORATE" => {
                 if parts.len() >= 2 {
-                    RedisCommand::Evaporate { addr: parts[1].to_string() }
+                    RedisCommand::Evaporate {
+                        addr: parts[1].to_string(),
+                    }
                 } else {
                     RedisCommand::Unknown("EVAPORATE requires address".to_string())
                 }
@@ -783,7 +884,10 @@ impl RedisAdapter {
             "CAM" => {
                 if parts.len() >= 2 {
                     let args: Vec<String> = parts[2..].iter().map(|s| s.to_string()).collect();
-                    RedisCommand::Cam { operation: parts[1].to_string(), args }
+                    RedisCommand::Cam {
+                        operation: parts[1].to_string(),
+                        args,
+                    }
                 } else {
                     RedisCommand::Unknown("CAM requires operation".to_string())
                 }
@@ -960,7 +1064,11 @@ mod tests {
 
         // Test various command formats
         match adapter.parse_command("SET foo bar PROMOTE TTL 300") {
-            RedisCommand::Set { key, value, options } => {
+            RedisCommand::Set {
+                key,
+                value,
+                options,
+            } => {
                 assert_eq!(key, "foo");
                 assert_eq!(value, "bar");
                 assert!(options.promote);

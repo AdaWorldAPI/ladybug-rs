@@ -12,11 +12,11 @@
 //!   walk_to_root → MGET ada:dn:{ancestor1} ada:dn:{ancestor2} ...
 //! ```
 
-use super::adjacency::PackedDn;
-use super::record::CogRecord;
 use super::Container;
-use super::meta::MetaViewMut;
+use super::adjacency::PackedDn;
 use super::geometry::ContainerGeometry;
+use super::meta::MetaViewMut;
+use super::record::CogRecord;
 
 // ============================================================================
 // KEY NAMESPACE
@@ -58,12 +58,7 @@ pub fn children_pattern(dn: PackedDn) -> String {
     // Known prefix = d*2 chars, next 2 chars = wildcard, rest = zeros
     let prefix = &hex[..d * 2];
     let suffix_len = 16 - (d + 1) * 2;
-    format!(
-        "{}{}??{}",
-        DN_PREFIX,
-        prefix,
-        "0".repeat(suffix_len)
-    )
+    format!("{}{}??{}", DN_PREFIX, prefix, "0".repeat(suffix_len))
 }
 
 /// Generate a KEYS pattern for all descendants (subtree scan).
@@ -103,7 +98,9 @@ pub enum RedisCommand {
 
 impl RedisPipeline {
     pub fn new() -> Self {
-        Self { commands: Vec::new() }
+        Self {
+            commands: Vec::new(),
+        }
     }
 
     /// Add a GET for a DN.
@@ -198,7 +195,9 @@ impl CogRecord {
         let mut content = Vec::new();
         let mut offset = super::CONTAINER_BYTES;
         while offset + super::CONTAINER_BYTES <= data.len() {
-            content.push(parse_container(&data[offset..offset + super::CONTAINER_BYTES])?);
+            content.push(parse_container(
+                &data[offset..offset + super::CONTAINER_BYTES],
+            )?);
             offset += super::CONTAINER_BYTES;
         }
 
@@ -211,7 +210,11 @@ fn parse_container(data: &[u8]) -> Option<Container> {
         return None;
     }
     let mut words = [0u64; super::CONTAINER_WORDS];
-    for (i, chunk) in data.chunks_exact(8).enumerate().take(super::CONTAINER_WORDS) {
+    for (i, chunk) in data
+        .chunks_exact(8)
+        .enumerate()
+        .take(super::CONTAINER_WORDS)
+    {
         words[i] = u64::from_le_bytes(chunk.try_into().ok()?);
     }
     Some(Container { words })

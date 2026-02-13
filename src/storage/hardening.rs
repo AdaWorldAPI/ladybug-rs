@@ -18,11 +18,13 @@ use std::collections::{HashMap, VecDeque};
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use super::bind_space::{Addr, FINGERPRINT_WORDS, PREFIX_FLUID_START, PREFIX_FLUID_END, PREFIX_NODE_START};
+use super::bind_space::{
+    Addr, FINGERPRINT_WORDS, PREFIX_FLUID_END, PREFIX_FLUID_START, PREFIX_NODE_START,
+};
 
 // =============================================================================
 // CONFIGURATION
@@ -58,13 +60,13 @@ pub struct HardeningConfig {
 impl Default for HardeningConfig {
     fn default() -> Self {
         Self {
-            max_fluid_nodes: 20_000,      // ~80% of fluid zone
-            max_node_nodes: 25_000,       // ~80% of node zone
+            max_fluid_nodes: 20_000,                     // ~80% of fluid zone
+            max_node_nodes: 25_000,                      // ~80% of node zone
             default_fluid_ttl: Duration::from_secs(300), // 5 minutes
             maintenance_interval: Duration::from_secs(10),
-            enable_wal: false,            // Off by default for dev
+            enable_wal: false, // Off by default for dev
             wal_dir: PathBuf::from("./wal"),
-            wal_sync: false,              // Async for performance
+            wal_sync: false,                // Async for performance
             max_wal_size: 64 * 1024 * 1024, // 64MB
             query_timeout: Duration::from_secs(30),
             enable_memory_monitoring: true,
@@ -83,7 +85,7 @@ impl HardeningConfig {
             maintenance_interval: Duration::from_secs(5),
             enable_wal: true,
             wal_dir: PathBuf::from("/var/lib/ladybug/wal"),
-            wal_sync: true,               // Durability > performance
+            wal_sync: true,                  // Durability > performance
             max_wal_size: 256 * 1024 * 1024, // 256MB
             query_timeout: Duration::from_secs(60),
             enable_memory_monitoring: true,
@@ -94,11 +96,11 @@ impl HardeningConfig {
     /// High-performance configuration (less durable)
     pub fn performance() -> Self {
         Self {
-            max_fluid_nodes: 28_000,      // Use more capacity
+            max_fluid_nodes: 28_000, // Use more capacity
             max_node_nodes: 32_000,
             default_fluid_ttl: Duration::from_secs(120), // 2 minutes
             maintenance_interval: Duration::from_secs(30),
-            enable_wal: false,            // No WAL for speed
+            enable_wal: false, // No WAL for speed
             wal_dir: PathBuf::from("./wal"),
             wal_sync: false,
             max_wal_size: 128 * 1024 * 1024,
@@ -152,10 +154,7 @@ impl LruTracker {
 
     /// Get addresses to evict (oldest first)
     pub fn evict_candidates(&self, count: usize) -> Vec<u16> {
-        self.order.iter()
-            .take(count)
-            .copied()
-            .collect()
+        self.order.iter().take(count).copied().collect()
     }
 
     /// Remove address from tracking
@@ -213,7 +212,8 @@ impl TtlManager {
         let expires_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
-            .as_micros() as u64 + ttl.as_micros() as u64;
+            .as_micros() as u64
+            + ttl.as_micros() as u64;
         self.expirations.insert(addr, expires_at);
     }
 
@@ -237,7 +237,8 @@ impl TtlManager {
             .unwrap_or_default()
             .as_micros() as u64;
 
-        self.expirations.iter()
+        self.expirations
+            .iter()
             .filter(|(_, expires_at)| now >= **expires_at)
             .map(|(addr, _)| *addr)
             .collect()
@@ -282,7 +283,11 @@ impl WalEntry {
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         match self {
-            WalEntry::Write { addr, fingerprint, label } => {
+            WalEntry::Write {
+                addr,
+                fingerprint,
+                label,
+            } => {
                 buf.push(0x01); // Type marker
                 buf.extend_from_slice(&addr.to_le_bytes());
                 for word in fingerprint {
@@ -330,19 +335,32 @@ impl WalEntry {
                 for i in 0..FINGERPRINT_WORDS {
                     let offset = 3 + i * 8;
                     fingerprint[i] = u64::from_le_bytes([
-                        data[offset], data[offset+1], data[offset+2], data[offset+3],
-                        data[offset+4], data[offset+5], data[offset+6], data[offset+7],
+                        data[offset],
+                        data[offset + 1],
+                        data[offset + 2],
+                        data[offset + 3],
+                        data[offset + 4],
+                        data[offset + 5],
+                        data[offset + 6],
+                        data[offset + 7],
                     ]);
                 }
                 let label_len = data[3 + FINGERPRINT_WORDS * 8] as usize;
                 let label = if label_len > 0 {
                     let start = 4 + FINGERPRINT_WORDS * 8;
-                    Some(String::from_utf8_lossy(&data[start..start+label_len]).to_string())
+                    Some(String::from_utf8_lossy(&data[start..start + label_len]).to_string())
                 } else {
                     None
                 };
                 let consumed = 4 + FINGERPRINT_WORDS * 8 + label_len;
-                Some((WalEntry::Write { addr, fingerprint, label }, consumed))
+                Some((
+                    WalEntry::Write {
+                        addr,
+                        fingerprint,
+                        label,
+                    },
+                    consumed,
+                ))
             }
             0x02 => {
                 // Delete
@@ -368,8 +386,7 @@ impl WalEntry {
                     return None;
                 }
                 let timestamp = u64::from_le_bytes([
-                    data[1], data[2], data[3], data[4],
-                    data[5], data[6], data[7], data[8],
+                    data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8],
                 ]);
                 Some((WalEntry::Checkpoint { timestamp }, 9))
             }
@@ -398,10 +415,7 @@ impl WriteAheadLog {
     pub fn new(dir: PathBuf, max_size: usize, sync_writes: bool) -> std::io::Result<Self> {
         std::fs::create_dir_all(&dir)?;
         let path = dir.join("current.wal");
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)?;
+        let file = OpenOptions::new().create(true).append(true).open(&path)?;
         let size = file.metadata()?.len() as usize;
 
         Ok(Self {
@@ -558,7 +572,8 @@ impl QueryContext {
 
     /// Remaining time (if timeout set)
     pub fn remaining(&self) -> Option<Duration> {
-        self.deadline.map(|d| d.saturating_duration_since(Instant::now()))
+        self.deadline
+            .map(|d| d.saturating_duration_since(Instant::now()))
     }
 
     /// Check timeout and return error if exceeded
@@ -723,7 +738,12 @@ impl HardenedBindSpace {
     }
 
     /// Record a write - returns addresses to evict if needed
-    pub fn on_write(&self, addr: Addr, fingerprint: &[u64; FINGERPRINT_WORDS], label: Option<&str>) -> Vec<u16> {
+    pub fn on_write(
+        &self,
+        addr: Addr,
+        fingerprint: &[u64; FINGERPRINT_WORDS],
+        label: Option<&str>,
+    ) -> Vec<u16> {
         self.metrics.writes.fetch_add(1, Ordering::Relaxed);
 
         let prefix = addr.prefix();
@@ -739,7 +759,9 @@ impl HardenedBindSpace {
                     for &a in &to_evict {
                         lru.remove(a);
                     }
-                    self.metrics.evictions.fetch_add(count as u64, Ordering::Relaxed);
+                    self.metrics
+                        .evictions
+                        .fetch_add(count as u64, Ordering::Relaxed);
                 }
             }
             if let Ok(mut ttl) = self.ttl_manager.lock() {
@@ -755,7 +777,9 @@ impl HardenedBindSpace {
                     for &a in &to_evict {
                         lru.remove(a);
                     }
-                    self.metrics.evictions.fetch_add(count as u64, Ordering::Relaxed);
+                    self.metrics
+                        .evictions
+                        .fetch_add(count as u64, Ordering::Relaxed);
                 }
             }
         }
@@ -837,7 +861,9 @@ impl HardenedBindSpace {
         // Get expired TTLs
         if let Ok(ttl) = self.ttl_manager.lock() {
             expired = ttl.get_expired();
-            self.metrics.expirations.fetch_add(expired.len() as u64, Ordering::Relaxed);
+            self.metrics
+                .expirations
+                .fetch_add(expired.len() as u64, Ordering::Relaxed);
         }
 
         // Check WAL
@@ -976,7 +1002,11 @@ mod tests {
         let (recovered, consumed) = WalEntry::from_bytes(&bytes).unwrap();
 
         match recovered {
-            WalEntry::Write { addr, fingerprint, label } => {
+            WalEntry::Write {
+                addr,
+                fingerprint,
+                label,
+            } => {
                 assert_eq!(addr, 0x8042);
                 assert_eq!(fingerprint[0], 42);
                 assert_eq!(label, Some("test".to_string()));

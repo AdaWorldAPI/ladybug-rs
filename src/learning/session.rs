@@ -1,15 +1,22 @@
 //! LearningSession — 6-phase learning loop lifecycle
 
 use std::collections::HashMap;
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
 
+use crate::cognitive::{GateState, ThinkingStyle, evaluate_gate};
 use crate::core::Fingerprint;
-use crate::cognitive::{ThinkingStyle, GateState, evaluate_gate};
 use crate::learning::moment::{Moment, MomentBuilder, Qualia};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum SessionPhase {
-    Initialize, Encounter, Struggle, Breakthrough, Consolidate, Apply, MetaLearn, Complete,
+    Initialize,
+    Encounter,
+    Struggle,
+    Breakthrough,
+    Consolidate,
+    Apply,
+    MetaLearn,
+    Complete,
 }
 
 impl SessionPhase {
@@ -78,7 +85,7 @@ impl LearningSession {
             last_activity: Instant::now(),
         }
     }
-    
+
     pub fn state(&self) -> SessionState {
         SessionState {
             session_id: self.id.clone(),
@@ -93,7 +100,7 @@ impl LearningSession {
             cycle: self.cycle,
         }
     }
-    
+
     pub fn encounter(&mut self, content: &str) -> &Moment {
         self.transition_to(SessionPhase::Encounter);
         let moment = MomentBuilder::new(&self.id, content)
@@ -102,7 +109,7 @@ impl LearningSession {
             .build();
         self.add_moment(moment)
     }
-    
+
     pub fn struggle(&mut self, content: &str, effort: f32, confusion: f32) -> &Moment {
         self.transition_to(SessionPhase::Struggle);
         let mut qualia = Qualia::from_metrics(0.3, effort, 0.3);
@@ -113,7 +120,7 @@ impl LearningSession {
             .with_qualia(qualia);
         self.add_moment(moment)
     }
-    
+
     pub fn fail(&mut self, content: &str, lesson: &str) -> &Moment {
         let mut qualia = Qualia::from_metrics(0.4, 0.8, 0.2);
         qualia.surprise = 0.6;
@@ -123,7 +130,7 @@ impl LearningSession {
             .with_qualia(qualia);
         self.add_moment(moment)
     }
-    
+
     pub fn breakthrough(&mut self, content: &str, satisfaction: f32) -> &Moment {
         self.transition_to(SessionPhase::Breakthrough);
         let qualia = Qualia::from_metrics(0.8, 0.6, satisfaction);
@@ -133,13 +140,13 @@ impl LearningSession {
             .with_qualia(qualia);
         self.add_moment(moment)
     }
-    
+
     pub fn ice_cake(&mut self, moment_id: &str, rationale: &str) -> Option<&IceCakedDecision> {
         self.transition_to(SessionPhase::Consolidate);
         let moment = self.get_moment(moment_id)?;
         let scores = vec![moment.qualia.satisfaction, 1.0 - moment.qualia.confusion];
         let decision = evaluate_gate(&scores, false);
-        
+
         let ice_caked = IceCakedDecision {
             moment_id: moment_id.to_string(),
             content: moment.content.clone(),
@@ -147,28 +154,32 @@ impl LearningSession {
             gate_state: decision.state,
             ice_caked_at_cycle: self.cycle,
         };
-        
+
         self.ice_caked.push(ice_caked);
         self.ice_caked.last()
     }
-    
+
     pub fn apply(&mut self, content: &str, success: bool) -> &Moment {
         self.transition_to(SessionPhase::Apply);
         let satisfaction = if success { 0.9 } else { 0.4 };
         let qualia = Qualia::from_metrics(0.2, 0.3, satisfaction);
-        let moment = MomentBuilder::new(&self.id, content).build().with_qualia(qualia);
+        let moment = MomentBuilder::new(&self.id, content)
+            .build()
+            .with_qualia(qualia);
         self.add_moment(moment)
     }
-    
+
     pub fn meta_reflect(&mut self, reflection: &str) -> &Moment {
         self.transition_to(SessionPhase::MetaLearn);
         let breakthrough_count = self.moments.iter().filter(|m| m.is_breakthrough()).count();
         let novelty = if breakthrough_count > 0 { 0.7 } else { 0.3 };
         let qualia = Qualia::from_metrics(novelty, 0.4, 0.8);
-        let moment = MomentBuilder::new(&self.id, reflection).build().with_qualia(qualia);
+        let moment = MomentBuilder::new(&self.id, reflection)
+            .build()
+            .with_qualia(qualia);
         self.add_moment(moment)
     }
-    
+
     fn add_moment(&mut self, moment: Moment) -> &Moment {
         let idx = self.moments.len();
         self.moment_index.insert(moment.id.clone(), idx);
@@ -177,35 +188,40 @@ impl LearningSession {
         self.last_activity = Instant::now();
         &self.moments[idx]
     }
-    
+
     pub fn get_moment(&self, id: &str) -> Option<&Moment> {
         self.moment_index.get(id).map(|&idx| &self.moments[idx])
     }
-    
+
     fn transition_to(&mut self, new_phase: SessionPhase) {
         if self.phase != new_phase {
             self.phase = new_phase;
             self.progress = 0.0;
         }
     }
-    
+
     pub fn find_similar(&self, query: &Fingerprint, threshold: f32) -> Vec<(&Moment, f32)> {
-        let mut results: Vec<_> = self.moments.iter()
+        let mut results: Vec<_> = self
+            .moments
+            .iter()
             .map(|m| (m, query.similarity(&m.resonance_vector)))
             .filter(|(_, sim)| *sim >= threshold)
             .collect();
         results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         results
     }
-    
+
     pub fn breakthroughs(&self) -> Vec<&Moment> {
-        self.moments.iter().filter(|m| m.is_breakthrough()).collect()
+        self.moments
+            .iter()
+            .filter(|m| m.is_breakthrough())
+            .collect()
     }
-    
+
     pub fn duration(&self) -> Duration {
         self.started_at.elapsed()
     }
-    
+
     pub fn complete(&mut self) {
         self.phase = SessionPhase::Complete;
         self.progress = 1.0;

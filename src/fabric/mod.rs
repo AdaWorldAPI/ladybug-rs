@@ -29,27 +29,26 @@
 //! └─────────────────────────────────────────────────────────────────────────────┘
 //! ```
 
-pub mod mrna;
 pub mod butterfly;
-pub mod subsystem;
-pub mod firefly_frame;
 pub mod executor;
+pub mod firefly_frame;
 pub mod gel;
+pub mod mrna;
+pub mod shadow;
+pub mod subsystem;
 pub mod udp_transport;
 pub mod zero_copy;
-pub mod shadow;
 
-pub use mrna::{MRNA, ResonanceField, CrossPollination, FieldSnapshot};
-pub use butterfly::{ButterflyDetector, Butterfly, ButterflyPrediction};
-pub use subsystem::Subsystem;
+pub use butterfly::{Butterfly, ButterflyDetector, ButterflyPrediction};
+pub use executor::{ExecResult, Executor, ExecutorStats, RegisterFile};
 pub use firefly_frame::{
-    FireflyFrame, FrameHeader, Instruction, LanguagePrefix,
-    ExecutionContext, ConditionFlags, FrameBuilder,
+    ConditionFlags, ExecutionContext, FireflyFrame, FrameBuilder, FrameHeader, Instruction,
+    LanguagePrefix,
 };
-pub use executor::{Executor, RegisterFile, ExecResult, ExecutorStats};
-pub use gel::{GelParser, GelCompiler, GelProgram, compile as gel_compile, disassemble};
+pub use gel::{GelCompiler, GelParser, GelProgram, compile as gel_compile, disassemble};
+pub use mrna::{CrossPollination, FieldSnapshot, MRNA, ResonanceField};
+pub use subsystem::Subsystem;
 pub use udp_transport::{
-    UdpSender, UdpReceiver, FramePacket, LaneRouter,
-    SenderStats, ReceiverStats, MAX_UDP_PAYLOAD,
+    FramePacket, LaneRouter, MAX_UDP_PAYLOAD, ReceiverStats, SenderStats, UdpReceiver, UdpSender,
 };
-pub use zero_copy::{ZeroCopyExecutor, AddrRef, Deferred};
+pub use zero_copy::{AddrRef, Deferred, ZeroCopyExecutor};

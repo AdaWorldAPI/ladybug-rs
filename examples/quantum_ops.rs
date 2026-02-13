@@ -34,8 +34,10 @@ fn main() {
     // Measurement analog: unbinding recovers correlated state
     let measured = entangled.unbind(&state_0);
     let fidelity = measured.similarity(&state_1);
-    println!("Unbind with state_0 recovers state_1 with fidelity: {:.1}%",
-        fidelity * 100.0);
+    println!(
+        "Unbind with state_0 recovers state_1 with fidelity: {:.1}%",
+        fidelity * 100.0
+    );
 
     println!("\n✓ Quantum-inspired operations working!");
 }

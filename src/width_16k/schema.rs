@@ -88,11 +88,21 @@ pub struct AniLevels {
 impl AniLevels {
     pub fn dominant(&self) -> u8 {
         let levels = [
-            self.reactive, self.memory, self.analogy, self.planning,
-            self.meta, self.social, self.creative, self.r#abstract,
+            self.reactive,
+            self.memory,
+            self.analogy,
+            self.planning,
+            self.meta,
+            self.social,
+            self.creative,
+            self.r#abstract,
         ];
-        levels.iter().enumerate().max_by_key(|(_, v)| **v)
-            .map(|(i, _)| i as u8).unwrap_or(0)
+        levels
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, v)| **v)
+            .map(|(i, _)| i as u8)
+            .unwrap_or(0)
     }
 
     pub fn pack(&self) -> u128 {
@@ -136,14 +146,22 @@ impl NarsTruth {
         }
     }
 
-    pub fn f(&self) -> f32 { self.frequency as f32 / 65535.0 }
-    pub fn c(&self) -> f32 { self.confidence as f32 / 65535.0 }
+    pub fn f(&self) -> f32 {
+        self.frequency as f32 / 65535.0
+    }
+    pub fn c(&self) -> f32 {
+        self.confidence as f32 / 65535.0
+    }
 
     pub fn revision(&self, other: &Self) -> Self {
         let w1 = self.c() / (1.0 - self.c());
         let w2 = other.c() / (1.0 - other.c());
         let w = w1 + w2;
-        let f = if w > 0.0 { (w1 * self.f() + w2 * other.f()) / w } else { 0.5 };
+        let f = if w > 0.0 {
+            (w1 * self.f() + w2 * other.f()) / w
+        } else {
+            0.5
+        };
         Self::from_floats(f, w / (w + 1.0))
     }
 
@@ -152,8 +170,15 @@ impl NarsTruth {
         Self::from_floats(f, f * self.c() * other.c())
     }
 
-    pub fn pack(&self) -> u32 { (self.frequency as u32) | ((self.confidence as u32) << 16) }
-    pub fn unpack(v: u32) -> Self { Self { frequency: v as u16, confidence: (v >> 16) as u16 } }
+    pub fn pack(&self) -> u32 {
+        (self.frequency as u32) | ((self.confidence as u32) << 16)
+    }
+    pub fn unpack(v: u32) -> Self {
+        Self {
+            frequency: v as u16,
+            confidence: (v >> 16) as u16,
+        }
+    }
 }
 
 /// NARS budget: priority, durability, quality
@@ -177,14 +202,18 @@ impl NarsBudget {
     }
 
     pub fn pack(&self) -> u64 {
-        (self.priority as u64) | ((self.durability as u64) << 16)
-            | ((self.quality as u64) << 32) | ((self._reserved as u64) << 48)
+        (self.priority as u64)
+            | ((self.durability as u64) << 16)
+            | ((self.quality as u64) << 32)
+            | ((self._reserved as u64) << 48)
     }
 
     pub fn unpack(v: u64) -> Self {
         Self {
-            priority: v as u16, durability: (v >> 16) as u16,
-            quality: (v >> 32) as u16, _reserved: (v >> 48) as u16,
+            priority: v as u16,
+            durability: (v >> 16) as u16,
+            quality: (v >> 32) as u16,
+            _reserved: (v >> 48) as u16,
         }
     }
 }
@@ -201,26 +230,48 @@ pub struct EdgeTypeMarker {
 
 impl EdgeTypeMarker {
     pub fn pack(&self) -> u32 {
-        (self.verb_id as u32) | ((self.direction as u32) << 8)
-            | ((self.weight as u32) << 16) | ((self.flags as u32) << 24)
+        (self.verb_id as u32)
+            | ((self.direction as u32) << 8)
+            | ((self.weight as u32) << 16)
+            | ((self.flags as u32) << 24)
     }
     pub fn unpack(v: u32) -> Self {
-        Self { verb_id: v as u8, direction: (v >> 8) as u8,
-               weight: (v >> 16) as u8, flags: (v >> 24) as u8 }
+        Self {
+            verb_id: v as u8,
+            direction: (v >> 8) as u8,
+            weight: (v >> 16) as u8,
+            flags: (v >> 24) as u8,
+        }
     }
-    pub fn is_temporal(&self) -> bool { self.flags & 1 != 0 }
-    pub fn is_causal(&self) -> bool { self.flags & 2 != 0 }
-    pub fn is_hierarchical(&self) -> bool { self.flags & 4 != 0 }
+    pub fn is_temporal(&self) -> bool {
+        self.flags & 1 != 0
+    }
+    pub fn is_causal(&self) -> bool {
+        self.flags & 2 != 0
+    }
+    pub fn is_hierarchical(&self) -> bool {
+        self.flags & 4 != 0
+    }
 }
 
 /// Node kind
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum NodeKind {
-    Entity = 0, Concept = 1, Event = 2, Rule = 3,
-    Goal = 4, Query = 5, Hypothesis = 6, Observation = 7,
+    Entity = 0,
+    Concept = 1,
+    Event = 2,
+    Rule = 3,
+    Goal = 4,
+    Query = 5,
+    Hypothesis = 6,
+    Observation = 7,
 }
-impl Default for NodeKind { fn default() -> Self { Self::Entity } }
+impl Default for NodeKind {
+    fn default() -> Self {
+        Self::Entity
+    }
+}
 
 /// Node type: kind + subtype + provenance
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -236,43 +287,74 @@ impl NodeTypeMarker {
         (self.kind as u32) | ((self.subtype as u32) << 8) | ((self.provenance as u32) << 16)
     }
     pub fn unpack(v: u32) -> Self {
-        Self { kind: v as u8, subtype: (v >> 8) as u8, provenance: (v >> 16) as u16 }
+        Self {
+            kind: v as u8,
+            subtype: (v >> 8) as u8,
+            provenance: (v >> 16) as u16,
+        }
     }
 }
 
 /// Q-values: 16 x i8 = 128 bits
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct InlineQValues { pub values: [i8; 16] }
+pub struct InlineQValues {
+    pub values: [i8; 16],
+}
 
 impl InlineQValues {
-    pub fn q(&self, a: usize) -> f32 { if a < 16 { self.values[a] as f32 / 127.0 } else { 0.0 } }
+    pub fn q(&self, a: usize) -> f32 {
+        if a < 16 {
+            self.values[a] as f32 / 127.0
+        } else {
+            0.0
+        }
+    }
     pub fn set_q(&mut self, a: usize, v: f32) {
-        if a < 16 { self.values[a] = (v.clamp(-1.0, 1.0) * 127.0) as i8; }
+        if a < 16 {
+            self.values[a] = (v.clamp(-1.0, 1.0) * 127.0) as i8;
+        }
     }
     pub fn best_action(&self) -> usize {
-        self.values.iter().enumerate().max_by_key(|(_, v)| **v).map(|(i, _)| i).unwrap_or(0)
+        self.values
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, v)| **v)
+            .map(|(i, _)| i)
+            .unwrap_or(0)
     }
     pub fn pack(&self) -> [u64; 2] {
         let mut w = [0u64; 2];
-        for i in 0..8 { w[0] |= ((self.values[i] as u8) as u64) << (i * 8); }
-        for i in 0..8 { w[1] |= ((self.values[i + 8] as u8) as u64) << (i * 8); }
+        for i in 0..8 {
+            w[0] |= ((self.values[i] as u8) as u64) << (i * 8);
+        }
+        for i in 0..8 {
+            w[1] |= ((self.values[i + 8] as u8) as u64) << (i * 8);
+        }
         w
     }
     pub fn unpack(w: [u64; 2]) -> Self {
         let mut v = [0i8; 16];
-        for i in 0..8 { v[i] = ((w[0] >> (i * 8)) & 0xFF) as u8 as i8; }
-        for i in 0..8 { v[i + 8] = ((w[1] >> (i * 8)) & 0xFF) as u8 as i8; }
+        for i in 0..8 {
+            v[i] = ((w[0] >> (i * 8)) & 0xFF) as u8 as i8;
+        }
+        for i in 0..8 {
+            v[i + 8] = ((w[1] >> (i * 8)) & 0xFF) as u8 as i8;
+        }
         Self { values: v }
     }
 }
 
 /// Reward history: 8 x i16 = 128 bits
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct InlineRewards { pub rewards: [i16; 8] }
+pub struct InlineRewards {
+    pub rewards: [i16; 8],
+}
 
 impl InlineRewards {
     pub fn push(&mut self, reward: f32) {
-        for i in 0..7 { self.rewards[i] = self.rewards[i + 1]; }
+        for i in 0..7 {
+            self.rewards[i] = self.rewards[i + 1];
+        }
         self.rewards[7] = (reward.clamp(-1.0, 1.0) * 32767.0) as i16;
     }
     pub fn average(&self) -> f32 {
@@ -281,30 +363,44 @@ impl InlineRewards {
     }
     pub fn pack(&self) -> [u64; 2] {
         let mut w = [0u64; 2];
-        for i in 0..4 { w[0] |= ((self.rewards[i] as u16) as u64) << (i * 16); }
-        for i in 0..4 { w[1] |= ((self.rewards[i + 4] as u16) as u64) << (i * 16); }
+        for i in 0..4 {
+            w[0] |= ((self.rewards[i] as u16) as u64) << (i * 16);
+        }
+        for i in 0..4 {
+            w[1] |= ((self.rewards[i + 4] as u16) as u64) << (i * 16);
+        }
         w
     }
 }
 
 /// STDP timestamps: 8 x u16 = 128 bits
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct StdpMarkers { pub timestamps: [u16; 8] }
+pub struct StdpMarkers {
+    pub timestamps: [u16; 8],
+}
 
 impl StdpMarkers {
     pub fn record_spike(&mut self, time: u16) {
-        for i in 0..7 { self.timestamps[i] = self.timestamps[i + 1]; }
+        for i in 0..7 {
+            self.timestamps[i] = self.timestamps[i + 1];
+        }
         self.timestamps[7] = time;
     }
 }
 
 /// Hebbian weights: 8 x u16 = 128 bits
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct InlineHebbian { pub weights: [u16; 8] }
+pub struct InlineHebbian {
+    pub weights: [u16; 8],
+}
 
 impl InlineHebbian {
     pub fn weight(&self, i: usize) -> f32 {
-        if i < 8 { self.weights[i] as f32 / 65535.0 } else { 0.0 }
+        if i < 8 {
+            self.weights[i] as f32 / 65535.0
+        } else {
+            0.0
+        }
     }
     pub fn strengthen(&mut self, i: usize, amount: f32) {
         if i < 8 {
@@ -313,7 +409,9 @@ impl InlineHebbian {
         }
     }
     pub fn decay(&mut self, factor: f32) {
-        for w in &mut self.weights { *w = ((*w as f32) * factor) as u16; }
+        for w in &mut self.weights {
+            *w = ((*w as f32) * factor) as u16;
+        }
     }
 }
 
@@ -326,11 +424,15 @@ impl InlineHebbian {
 /// path[0] = root, path[depth-1] = self. Depth stored in block 14.
 /// Parent = path[depth-2] (or root if depth <= 1).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct CompressedDnAddr { pub path: [u8; 32] }
+pub struct CompressedDnAddr {
+    pub path: [u8; 32],
+}
 
 /// Neighbor bloom: 4 x u64 = 256 bits, 3-hash
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct NeighborBloom { pub words: [u64; 4] }
+pub struct NeighborBloom {
+    pub words: [u64; 4],
+}
 
 impl NeighborBloom {
     pub fn insert(&mut self, id: u64) {
@@ -349,8 +451,12 @@ impl NeighborBloom {
             && self.get_bit(h2 as usize % 256)
             && self.get_bit(h3 as usize % 256)
     }
-    fn set_bit(&mut self, i: usize) { self.words[i / 64] |= 1u64 << (i % 64); }
-    fn get_bit(&self, i: usize) -> bool { self.words[i / 64] & (1u64 << (i % 64)) != 0 }
+    fn set_bit(&mut self, i: usize) {
+        self.words[i / 64] |= 1u64 << (i % 64);
+    }
+    fn get_bit(&self, i: usize) -> bool {
+        self.words[i / 64] & (1u64 << (i % 64)) != 0
+    }
 }
 
 /// Graph metrics (packed into one u64)
@@ -366,15 +472,21 @@ pub struct GraphMetrics {
 
 impl GraphMetrics {
     pub fn pack(&self) -> u64 {
-        (self.pagerank as u64) | ((self.hop_to_root as u64) << 16)
-            | ((self.cluster_id as u64) << 24) | ((self.degree as u64) << 40)
-            | ((self.in_degree as u64) << 48) | ((self.out_degree as u64) << 56)
+        (self.pagerank as u64)
+            | ((self.hop_to_root as u64) << 16)
+            | ((self.cluster_id as u64) << 24)
+            | ((self.degree as u64) << 40)
+            | ((self.in_degree as u64) << 48)
+            | ((self.out_degree as u64) << 56)
     }
     pub fn unpack(v: u64) -> Self {
         Self {
-            pagerank: v as u16, hop_to_root: (v >> 16) as u8,
-            cluster_id: (v >> 24) as u16, degree: (v >> 40) as u8,
-            in_degree: (v >> 48) as u8, out_degree: (v >> 56) as u8,
+            pagerank: v as u16,
+            hop_to_root: (v >> 16) as u8,
+            cluster_id: (v >> 24) as u16,
+            degree: (v >> 40) as u8,
+            in_degree: (v >> 48) as u8,
+            out_degree: (v >> 56) as u8,
         }
     }
 }
@@ -387,9 +499,18 @@ pub struct InlineEdge {
 }
 
 impl InlineEdge {
-    pub fn pack(&self) -> u16 { (self.verb as u16) | ((self.target as u16) << 8) }
-    pub fn unpack(v: u16) -> Self { Self { verb: v as u8, target: (v >> 8) as u8 } }
-    pub fn is_empty(&self) -> bool { self.verb == 0 && self.target == 0 }
+    pub fn pack(&self) -> u16 {
+        (self.verb as u16) | ((self.target as u16) << 8)
+    }
+    pub fn unpack(v: u16) -> Self {
+        Self {
+            verb: v as u8,
+            target: (v >> 8) as u8,
+        }
+    }
+    pub fn is_empty(&self) -> bool {
+        self.verb == 0 && self.target == 0
+    }
 }
 
 /// Inline edge array: 7 words = 28 edge slots (words 249-255)
@@ -467,8 +588,8 @@ impl SchemaSidecar {
         words[226] = self.identity.label_hash;
 
         // [227] edge_type | version | reserved
-        words[227] = (self.identity.edge_type.pack() as u64)
-            | ((Self::SCHEMA_VERSION as u64) << 32);
+        words[227] =
+            (self.identity.edge_type.pack() as u64) | ((Self::SCHEMA_VERSION as u64) << 32);
 
         // [228-229] ANI levels
         let ani = self.ani_levels.pack();
@@ -494,15 +615,23 @@ impl SchemaSidecar {
 
         // [236-237] STDP
         let mut sw = [0u64; 2];
-        for i in 0..4 { sw[0] |= (self.stdp.timestamps[i] as u64) << (i * 16); }
-        for i in 0..4 { sw[1] |= (self.stdp.timestamps[i + 4] as u64) << (i * 16); }
+        for i in 0..4 {
+            sw[0] |= (self.stdp.timestamps[i] as u64) << (i * 16);
+        }
+        for i in 0..4 {
+            sw[1] |= (self.stdp.timestamps[i + 4] as u64) << (i * 16);
+        }
         words[236] = sw[0];
         words[237] = sw[1];
 
         // [238-239] Hebbian
         let mut hw = [0u64; 2];
-        for i in 0..4 { hw[0] |= (self.hebbian.weights[i] as u64) << (i * 16); }
-        for i in 0..4 { hw[1] |= (self.hebbian.weights[i + 4] as u64) << (i * 16); }
+        for i in 0..4 {
+            hw[0] |= (self.hebbian.weights[i] as u64) << (i * 16);
+        }
+        for i in 0..4 {
+            hw[1] |= (self.hebbian.weights[i + 4] as u64) << (i * 16);
+        }
         words[238] = hw[0];
         words[239] = hw[1];
 
@@ -511,12 +640,16 @@ impl SchemaSidecar {
         // [240-243] DN address
         for i in 0..4 {
             let mut w = 0u64;
-            for j in 0..8 { w |= (self.dn_addr.path[i * 8 + j] as u64) << (j * 8); }
+            for j in 0..8 {
+                w |= (self.dn_addr.path[i * 8 + j] as u64) << (j * 8);
+            }
             words[240 + i] = w;
         }
 
         // [244-247] Bloom
-        for i in 0..4 { words[244 + i] = self.neighbors.words[i]; }
+        for i in 0..4 {
+            words[244 + i] = self.neighbors.words[i];
+        }
 
         // [248] Graph metrics
         words[248] = self.metrics.pack();
@@ -533,7 +666,9 @@ impl SchemaSidecar {
     }
 
     pub fn read_version(words: &[u64]) -> u8 {
-        if words.len() < VECTOR_WORDS { return 0; }
+        if words.len() < VECTOR_WORDS {
+            return 0;
+        }
         ((words[227] >> 32) & 0xFF) as u8
     }
 
@@ -564,16 +699,28 @@ impl SchemaSidecar {
         let q_values = InlineQValues::unpack([words[232], words[233]]);
 
         let mut rewards = InlineRewards::default();
-        for i in 0..4 { rewards.rewards[i] = ((words[234] >> (i * 16)) & 0xFFFF) as u16 as i16; }
-        for i in 0..4 { rewards.rewards[i + 4] = ((words[235] >> (i * 16)) & 0xFFFF) as u16 as i16; }
+        for i in 0..4 {
+            rewards.rewards[i] = ((words[234] >> (i * 16)) & 0xFFFF) as u16 as i16;
+        }
+        for i in 0..4 {
+            rewards.rewards[i + 4] = ((words[235] >> (i * 16)) & 0xFFFF) as u16 as i16;
+        }
 
         let mut stdp = StdpMarkers::default();
-        for i in 0..4 { stdp.timestamps[i] = ((words[236] >> (i * 16)) & 0xFFFF) as u16; }
-        for i in 0..4 { stdp.timestamps[i + 4] = ((words[237] >> (i * 16)) & 0xFFFF) as u16; }
+        for i in 0..4 {
+            stdp.timestamps[i] = ((words[236] >> (i * 16)) & 0xFFFF) as u16;
+        }
+        for i in 0..4 {
+            stdp.timestamps[i + 4] = ((words[237] >> (i * 16)) & 0xFFFF) as u16;
+        }
 
         let mut hebbian = InlineHebbian::default();
-        for i in 0..4 { hebbian.weights[i] = ((words[238] >> (i * 16)) & 0xFFFF) as u16; }
-        for i in 0..4 { hebbian.weights[i + 4] = ((words[239] >> (i * 16)) & 0xFFFF) as u16; }
+        for i in 0..4 {
+            hebbian.weights[i] = ((words[238] >> (i * 16)) & 0xFFFF) as u16;
+        }
+        for i in 0..4 {
+            hebbian.weights[i + 4] = ((words[239] >> (i * 16)) & 0xFFFF) as u16;
+        }
 
         // --- Block 15 ---
         let mut dn_addr = CompressedDnAddr::default();
@@ -584,7 +731,9 @@ impl SchemaSidecar {
         }
 
         let mut neighbors = NeighborBloom::default();
-        for i in 0..4 { neighbors.words[i] = words[244 + i]; }
+        for i in 0..4 {
+            neighbors.words[i] = words[244 + i];
+        }
 
         let metrics = GraphMetrics::unpack(words[248]);
 
@@ -598,9 +747,18 @@ impl SchemaSidecar {
         }
 
         Self {
-            identity, ani_levels, nars_truth, nars_budget,
-            q_values, rewards, stdp, hebbian,
-            dn_addr, neighbors, metrics, edges,
+            identity,
+            ani_levels,
+            nars_truth,
+            nars_budget,
+            q_values,
+            rewards,
+            stdp,
+            hebbian,
+            dn_addr,
+            neighbors,
+            metrics,
+            edges,
         }
     }
 }
@@ -642,8 +800,16 @@ mod tests {
 
     #[test]
     fn test_ani_pack_unpack() {
-        let l = AniLevels { reactive: 100, memory: 200, analogy: 300, planning: 400,
-            meta: 500, social: 600, creative: 700, r#abstract: 800 };
+        let l = AniLevels {
+            reactive: 100,
+            memory: 200,
+            analogy: 300,
+            planning: 400,
+            meta: 500,
+            social: 600,
+            creative: 700,
+            r#abstract: 800,
+        };
         assert_eq!(AniLevels::unpack(l.pack()), l);
     }
 
@@ -669,7 +835,9 @@ mod tests {
     #[test]
     fn test_bloom() {
         let mut b = NeighborBloom::default();
-        b.insert(42); b.insert(100); b.insert(999);
+        b.insert(42);
+        b.insert(100);
+        b.insert(999);
         assert!(b.might_contain(42));
         assert!(b.might_contain(100));
         assert!(b.might_contain(999));
@@ -677,8 +845,14 @@ mod tests {
 
     #[test]
     fn test_graph_metrics() {
-        let m = GraphMetrics { pagerank: 1000, hop_to_root: 3, cluster_id: 42,
-            degree: 10, in_degree: 5, out_degree: 5 };
+        let m = GraphMetrics {
+            pagerank: 1000,
+            hop_to_root: 3,
+            cluster_id: 42,
+            degree: 10,
+            in_degree: 5,
+            out_degree: 5,
+        };
         assert_eq!(GraphMetrics::unpack(m.pack()), m);
     }
 
@@ -752,8 +926,11 @@ mod tests {
 
         // Words 0-223 (resonance) must be untouched
         for i in 0..224 {
-            assert_eq!(w[i], 0xAAAAAAAAAAAAAAAA,
-                "Word {} was modified (resonance zone)", i);
+            assert_eq!(
+                w[i], 0xAAAAAAAAAAAAAAAA,
+                "Word {} was modified (resonance zone)",
+                i
+            );
         }
     }
 

@@ -13,11 +13,9 @@
 //! Each slot stores a fingerprint encoding the style's FieldModulation parameters
 //! so agents can find compatible thinking styles via HDR resonance search.
 
+use crate::cognitive::{FieldModulation, ThinkingStyle};
+use crate::storage::bind_space::{Addr, BindSpace, FINGERPRINT_WORDS, PREFIX_THINKING};
 use serde::{Deserialize, Serialize};
-use crate::cognitive::{ThinkingStyle, FieldModulation};
-use crate::storage::bind_space::{
-    Addr, BindSpace, FINGERPRINT_WORDS, PREFIX_THINKING,
-};
 
 /// Style override — allows YAML templates to fine-tune FieldModulation
 /// Any field left as None inherits from the base ThinkingStyle.
@@ -211,8 +209,8 @@ impl ThinkingTemplateRegistry {
         struct TemplateList {
             templates: Vec<ThinkingTemplate>,
         }
-        let list: TemplateList = serde_yml::from_str(yaml)
-            .map_err(|e| format!("YAML parse error: {}", e))?;
+        let list: TemplateList =
+            serde_yml::from_str(yaml).map_err(|e| format!("YAML parse error: {}", e))?;
         Ok(list.templates)
     }
 

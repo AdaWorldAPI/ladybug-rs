@@ -27,12 +27,12 @@
 
 use arrow::array::*;
 use arrow::record_batch::RecordBatch;
-use datafusion::prelude::*;
 use datafusion::execution::context::SessionContext;
+use datafusion::prelude::*;
 use std::sync::Arc;
 
-use crate::core::DIM;
 use crate::Result;
+use crate::core::DIM;
 
 // =============================================================================
 // HAMMING OPERATIONS (Pure functions for UDFs)
@@ -42,7 +42,7 @@ use crate::Result;
 fn hamming_distance_bytes(a: &[u8], b: &[u8]) -> u32 {
     let min_len = a.len().min(b.len());
     let mut dist: u32 = 0;
-    
+
     // Process 8 bytes at a time for SIMD-friendly access
     let chunks = min_len / 8;
     for i in 0..chunks {
@@ -51,12 +51,12 @@ fn hamming_distance_bytes(a: &[u8], b: &[u8]) -> u32 {
         let b_u64 = u64::from_le_bytes(b[offset..offset + 8].try_into().unwrap());
         dist += (a_u64 ^ b_u64).count_ones();
     }
-    
+
     // Handle remaining bytes
     for i in (chunks * 8)..min_len {
         dist += (a[i] ^ b[i]).count_ones();
     }
-    
+
     dist
 }
 
@@ -86,46 +86,44 @@ impl SqlEngine {
     /// Create a new SQL engine
     pub async fn new() -> Self {
         let ctx = SessionContext::new();
-        let mut engine = Self {
-            ctx,
-            db_path: None,
-        };
-        
+        let mut engine = Self { ctx, db_path: None };
+
         // Register custom UDFs
         engine.register_udfs();
-        
+
         engine
     }
-    
+
     /// Create engine with database path for Lance tables
     pub async fn with_database(path: impl Into<String>) -> Result<Self> {
         let mut engine = Self::new().await;
         let db_path = path.into();
         engine.db_path = Some(db_path.clone());
-        
+
         // Register Lance tables
         engine.register_lance_tables(&db_path).await?;
-        
+
         Ok(engine)
     }
-    
+
     /// Register all cognitive UDFs (DataFusion 50+ ScalarUDFImpl)
     fn register_udfs(&mut self) {
         use super::cognitive_udfs::register_cognitive_udfs;
         register_cognitive_udfs(&self.ctx);
     }
-    
+
     /// Register Lance tables as DataFusion tables
     #[cfg(feature = "lancedb")]
     async fn register_lance_tables(&mut self, db_path: &str) -> Result<()> {
-        use lance::Dataset;
-        use datafusion::datasource::MemTable;
         use arrow::datatypes::Schema as ArrowSchema;
+        use datafusion::datasource::MemTable;
+        use lance::Dataset;
 
         // Register nodes table
         let nodes_path = format!("{}/nodes.lance", db_path);
         if std::path::Path::new(&nodes_path).exists() {
-            let dataset = Dataset::open(&nodes_path).await
+            let dataset = Dataset::open(&nodes_path)
+                .await
                 .map_err(|e| Error::Storage(e.to_string()))?;
             let lance_schema = dataset.schema().clone();
             let arrow_schema: ArrowSchema = ArrowSchema::from(&lance_schema);
@@ -153,7 +151,8 @@ impl SqlEngine {
         // Register edges table
         let edges_path = format!("{}/edges.lance", db_path);
         if std::path::Path::new(&edges_path).exists() {
-            let dataset = Dataset::open(&edges_path).await
+            let dataset = Dataset::open(&edges_path)
+                .await
                 .map_err(|e| Error::Storage(e.to_string()))?;
             let lance_schema = dataset.schema().clone();
             let arrow_schema: ArrowSchema = ArrowSchema::from(&lance_schema);
@@ -185,32 +184,32 @@ impl SqlEngine {
     async fn register_lance_tables(&mut self, _db_path: &str) -> Result<()> {
         Ok(())
     }
-    
+
     /// Register an in-memory table
     pub fn register_table(&mut self, name: &str, batches: Vec<RecordBatch>) -> Result<()> {
         if batches.is_empty() {
             return Ok(());
         }
-        
+
         let schema = batches[0].schema();
         let table = datafusion::datasource::MemTable::try_new(schema, vec![batches])?;
         self.ctx.register_table(name, Arc::new(table))?;
         Ok(())
     }
-    
+
     /// Execute a SQL query
     pub async fn execute(&self, sql: &str) -> Result<Vec<RecordBatch>> {
         let df = self.ctx.sql(sql).await?;
         let batches = df.collect().await?;
         Ok(batches)
     }
-    
+
     /// Execute a SQL query and return a DataFrame
     pub async fn query(&self, sql: &str) -> Result<DataFrame> {
         let df = self.ctx.sql(sql).await?;
         Ok(df)
     }
-    
+
     /// Execute with parameters (prepared statement style)
     pub async fn execute_with_params(
         &self,
@@ -231,10 +230,10 @@ impl SqlEngine {
             };
             processed_sql = processed_sql.replace(&placeholder, &replacement);
         }
-        
+
         self.execute(&processed_sql).await
     }
-    
+
     /// Get the underlying DataFusion context
     pub fn context(&self) -> &SessionContext {
         &self.ctx
@@ -245,10 +244,7 @@ impl Default for SqlEngine {
     fn default() -> Self {
         // Create synchronously for Default trait
         let ctx = SessionContext::new();
-        let mut engine = Self {
-            ctx,
-            db_path: None,
-        };
+        let mut engine = Self { ctx, db_path: None };
         engine.register_udfs();
         engine
     }
@@ -274,7 +270,7 @@ fn create_hamming_udf() -> ScalarUDF {
         TypeSignature::Any(2),
         Volatility::Immutable,
     );
-    
+
     ScalarUDF::new(
         "hamming",
         &signature,
@@ -285,7 +281,7 @@ fn create_hamming_udf() -> ScalarUDF {
                     let result = hamming_array(a.clone(), b.clone())?;
                     Ok(ColumnarValue::Array(result))
                 }
-                (ColumnarValue::Scalar(ScalarValue::Binary(Some(a))), 
+                (ColumnarValue::Scalar(ScalarValue::Binary(Some(a))),
                  ColumnarValue::Scalar(ScalarValue::Binary(Some(b)))) => {
                     let dist = hamming_distance_bytes(a, b);
                     Ok(ColumnarValue::Scalar(ScalarValue::UInt32(Some(dist))))
@@ -304,7 +300,7 @@ fn create_similarity_udf() -> ScalarUDF {
         TypeSignature::Any(2),
         Volatility::Immutable,
     );
-    
+
     ScalarUDF::new(
         "similarity",
         &signature,
@@ -315,7 +311,7 @@ fn create_similarity_udf() -> ScalarUDF {
                     let result = similarity_array(a.clone(), b.clone())?;
                     Ok(ColumnarValue::Array(result))
                 }
-                (ColumnarValue::Scalar(ScalarValue::Binary(Some(a))), 
+                (ColumnarValue::Scalar(ScalarValue::Binary(Some(a))),
                  ColumnarValue::Scalar(ScalarValue::Binary(Some(b)))) => {
                     let dist = hamming_distance_bytes(a, b);
                     let sim = hamming_similarity(dist);
@@ -335,7 +331,7 @@ fn create_popcount_udf() -> ScalarUDF {
         TypeSignature::Any(1),
         Volatility::Immutable,
     );
-    
+
     ScalarUDF::new(
         "popcount",
         &signature,
@@ -363,7 +359,7 @@ fn create_xor_bind_udf() -> ScalarUDF {
         TypeSignature::Any(2),
         Volatility::Immutable,
     );
-    
+
     ScalarUDF::new(
         "xor_bind",
         &signature,
@@ -374,7 +370,7 @@ fn create_xor_bind_udf() -> ScalarUDF {
                     let result = xor_bind_array(a.clone(), b.clone())?;
                     Ok(ColumnarValue::Array(result))
                 }
-                (ColumnarValue::Scalar(ScalarValue::Binary(Some(a))), 
+                (ColumnarValue::Scalar(ScalarValue::Binary(Some(a))),
                  ColumnarValue::Scalar(ScalarValue::Binary(Some(b)))) => {
                     let result = xor_bind_bytes(a, b);
                     Ok(ColumnarValue::Scalar(ScalarValue::Binary(Some(result))))
@@ -395,13 +391,13 @@ End of disabled UDF code */
 /// Compute Hamming distance for arrays
 #[allow(dead_code)]
 fn hamming_array(a: ArrayRef, b: ArrayRef) -> datafusion::error::Result<ArrayRef> {
-    let a_bin = a.as_any().downcast_ref::<BinaryArray>()
-        .or_else(|| {
-            a.as_any().downcast_ref::<FixedSizeBinaryArray>()
-                .map(|_| todo!("Convert FixedSizeBinaryArray"))
-        });
+    let a_bin = a.as_any().downcast_ref::<BinaryArray>().or_else(|| {
+        a.as_any()
+            .downcast_ref::<FixedSizeBinaryArray>()
+            .map(|_| todo!("Convert FixedSizeBinaryArray"))
+    });
     let b_bin = b.as_any().downcast_ref::<BinaryArray>();
-    
+
     match (a_bin, b_bin) {
         (Some(a), Some(b)) => {
             let mut builder = UInt32Builder::new();
@@ -419,7 +415,7 @@ fn hamming_array(a: ArrayRef, b: ArrayRef) -> datafusion::error::Result<ArrayRef
             // Try FixedSizeBinaryArray
             let a_fixed = a.as_any().downcast_ref::<FixedSizeBinaryArray>();
             let b_fixed = b.as_any().downcast_ref::<FixedSizeBinaryArray>();
-            
+
             match (a_fixed, b_fixed) {
                 (Some(a), Some(b)) => {
                     let mut builder = UInt32Builder::new();
@@ -434,8 +430,8 @@ fn hamming_array(a: ArrayRef, b: ArrayRef) -> datafusion::error::Result<ArrayRef
                     Ok(Arc::new(builder.finish()))
                 }
                 _ => Err(datafusion::error::DataFusionError::Execution(
-                    "hamming_array requires binary arrays".into()
-                ))
+                    "hamming_array requires binary arrays".into(),
+                )),
             }
         }
     }
@@ -446,7 +442,7 @@ fn hamming_array(a: ArrayRef, b: ArrayRef) -> datafusion::error::Result<ArrayRef
 fn similarity_array(a: ArrayRef, b: ArrayRef) -> datafusion::error::Result<ArrayRef> {
     let a_fixed = a.as_any().downcast_ref::<FixedSizeBinaryArray>();
     let b_fixed = b.as_any().downcast_ref::<FixedSizeBinaryArray>();
-    
+
     match (a_fixed, b_fixed) {
         (Some(a), Some(b)) => {
             let mut builder = Float32Builder::new();
@@ -465,7 +461,7 @@ fn similarity_array(a: ArrayRef, b: ArrayRef) -> datafusion::error::Result<Array
             // Try regular binary
             let a_bin = a.as_any().downcast_ref::<BinaryArray>();
             let b_bin = b.as_any().downcast_ref::<BinaryArray>();
-            
+
             match (a_bin, b_bin) {
                 (Some(a), Some(b)) => {
                     let mut builder = Float32Builder::new();
@@ -481,8 +477,8 @@ fn similarity_array(a: ArrayRef, b: ArrayRef) -> datafusion::error::Result<Array
                     Ok(Arc::new(builder.finish()))
                 }
                 _ => Err(datafusion::error::DataFusionError::Execution(
-                    "similarity_array requires binary arrays".into()
-                ))
+                    "similarity_array requires binary arrays".into(),
+                )),
             }
         }
     }
@@ -492,7 +488,7 @@ fn similarity_array(a: ArrayRef, b: ArrayRef) -> datafusion::error::Result<Array
 #[allow(dead_code)]
 fn popcount_array(arr: ArrayRef) -> datafusion::error::Result<ArrayRef> {
     let u64_arr = arr.as_any().downcast_ref::<UInt64Array>();
-    
+
     match u64_arr {
         Some(arr) => {
             let mut builder = UInt32Builder::new();
@@ -522,8 +518,8 @@ fn popcount_array(arr: ArrayRef) -> datafusion::error::Result<ArrayRef> {
                     Ok(Arc::new(builder.finish()))
                 }
                 None => Err(datafusion::error::DataFusionError::Execution(
-                    "popcount_array requires uint64 or binary array".into()
-                ))
+                    "popcount_array requires uint64 or binary array".into(),
+                )),
             }
         }
     }
@@ -534,7 +530,7 @@ fn popcount_array(arr: ArrayRef) -> datafusion::error::Result<ArrayRef> {
 fn xor_bind_array(a: ArrayRef, b: ArrayRef) -> datafusion::error::Result<ArrayRef> {
     let a_bin = a.as_any().downcast_ref::<BinaryArray>();
     let b_bin = b.as_any().downcast_ref::<BinaryArray>();
-    
+
     match (a_bin, b_bin) {
         (Some(a), Some(b)) => {
             let mut builder = BinaryBuilder::new();
@@ -552,7 +548,7 @@ fn xor_bind_array(a: ArrayRef, b: ArrayRef) -> datafusion::error::Result<ArrayRe
             // Try FixedSizeBinaryArray
             let a_fixed = a.as_any().downcast_ref::<FixedSizeBinaryArray>();
             let b_fixed = b.as_any().downcast_ref::<FixedSizeBinaryArray>();
-            
+
             match (a_fixed, b_fixed) {
                 (Some(a), Some(b)) => {
                     let size = a.value_length() as usize;
@@ -568,8 +564,8 @@ fn xor_bind_array(a: ArrayRef, b: ArrayRef) -> datafusion::error::Result<ArrayRe
                     Ok(Arc::new(builder.finish()))
                 }
                 _ => Err(datafusion::error::DataFusionError::Execution(
-                    "xor_bind_array requires binary arrays".into()
-                ))
+                    "xor_bind_array requires binary arrays".into(),
+                )),
             }
         }
     }
@@ -603,61 +599,64 @@ impl QueryBuilder {
             offset: None,
         }
     }
-    
+
     /// Add SELECT columns
     pub fn select(mut self, columns: &[&str]) -> Self {
         self.select.extend(columns.iter().map(|s| s.to_string()));
         self
     }
-    
+
     /// Add a JOIN clause
     pub fn join(mut self, join_type: &str, table: &str, on: &str) -> Self {
-        self.joins.push(format!("{} JOIN {} ON {}", join_type, table, on));
+        self.joins
+            .push(format!("{} JOIN {} ON {}", join_type, table, on));
         self
     }
-    
+
     /// Add a WHERE condition
     pub fn where_clause(mut self, condition: &str) -> Self {
         self.where_clauses.push(condition.to_string());
         self
     }
-    
+
     /// Add Hamming distance filter
     pub fn where_hamming_lt(mut self, col: &str, param: &str, max_dist: u32) -> Self {
-        self.where_clauses.push(format!("hamming({}, {}) < {}", col, param, max_dist));
+        self.where_clauses
+            .push(format!("hamming({}, {}) < {}", col, param, max_dist));
         self
     }
-    
+
     /// Add similarity filter
     pub fn where_similar(mut self, col: &str, param: &str, min_sim: f32) -> Self {
         let max_dist = ((1.0 - min_sim) * DIM as f32) as u32;
-        self.where_clauses.push(format!("hamming({}, {}) < {}", col, param, max_dist));
+        self.where_clauses
+            .push(format!("hamming({}, {}) < {}", col, param, max_dist));
         self
     }
-    
+
     /// Add ORDER BY
     pub fn order_by(mut self, expr: &str, desc: bool) -> Self {
         let dir = if desc { "DESC" } else { "ASC" };
         self.order_by.push(format!("{} {}", expr, dir));
         self
     }
-    
+
     /// Set LIMIT
     pub fn limit(mut self, n: u64) -> Self {
         self.limit = Some(n);
         self
     }
-    
+
     /// Set OFFSET
     pub fn offset(mut self, n: u64) -> Self {
         self.offset = Some(n);
         self
     }
-    
+
     /// Build the SQL query string
     pub fn build(self) -> String {
         let mut sql = String::new();
-        
+
         // SELECT
         let cols = if self.select.is_empty() {
             "*".to_string()
@@ -665,36 +664,36 @@ impl QueryBuilder {
             self.select.join(", ")
         };
         sql.push_str(&format!("SELECT {}\n", cols));
-        
+
         // FROM
         sql.push_str(&format!("FROM {}\n", self.from));
-        
+
         // JOINs
         for join in self.joins {
             sql.push_str(&join);
             sql.push('\n');
         }
-        
+
         // WHERE
         if !self.where_clauses.is_empty() {
             sql.push_str(&format!("WHERE {}\n", self.where_clauses.join(" AND ")));
         }
-        
+
         // ORDER BY
         if !self.order_by.is_empty() {
             sql.push_str(&format!("ORDER BY {}\n", self.order_by.join(", ")));
         }
-        
+
         // LIMIT
         if let Some(n) = self.limit {
             sql.push_str(&format!("LIMIT {}\n", n));
         }
-        
+
         // OFFSET
         if let Some(n) = self.offset {
             sql.push_str(&format!("OFFSET {}\n", n));
         }
-        
+
         sql
     }
 }
@@ -714,24 +713,24 @@ mod tests {
         let b = vec![0x00, 0xFF, 0x00, 0xFF];
         // All bits differ: 4 bytes * 8 bits = 32
         assert_eq!(hamming_distance_bytes(&a, &b), 32);
-        
+
         let c = vec![0xFF, 0xFF, 0xFF, 0xFF];
         let d = vec![0xFF, 0xFF, 0xFF, 0xFF];
         assert_eq!(hamming_distance_bytes(&c, &d), 0);
     }
-    
+
     #[test]
     fn test_similarity() {
         let sim = hamming_similarity(0);
         assert_eq!(sim, 1.0);
-        
+
         let sim = hamming_similarity(DIM as u32);
         assert_eq!(sim, 0.0);
-        
+
         let sim = hamming_similarity(DIM as u32 / 2);
         assert!((sim - 0.5).abs() < 0.01);
     }
-    
+
     #[test]
     fn test_query_builder() {
         let sql = QueryBuilder::from("nodes")
@@ -741,7 +740,7 @@ mod tests {
             .order_by("created_at", true)
             .limit(10)
             .build();
-        
+
         assert!(sql.contains("SELECT id, label, content"));
         assert!(sql.contains("FROM nodes"));
         assert!(sql.contains("label = 'Thought'"));
@@ -749,29 +748,30 @@ mod tests {
         assert!(sql.contains("ORDER BY created_at DESC"));
         assert!(sql.contains("LIMIT 10"));
     }
-    
+
     #[tokio::test]
     async fn test_sql_engine_basic() {
         let engine = SqlEngine::new().await;
-        
+
         // Register a simple test table
         let schema = arrow::datatypes::Schema::new(vec![
             arrow::datatypes::Field::new("id", DataType::Int64, false),
             arrow::datatypes::Field::new("name", DataType::Utf8, false),
         ]);
-        
+
         let ids: Int64Array = vec![1, 2, 3].into_iter().map(Some).collect();
         let names: StringArray = vec!["a", "b", "c"].into_iter().map(Some).collect();
-        
-        let batch = RecordBatch::try_new(
-            Arc::new(schema),
-            vec![Arc::new(ids), Arc::new(names)],
-        ).unwrap();
-        
+
+        let batch =
+            RecordBatch::try_new(Arc::new(schema), vec![Arc::new(ids), Arc::new(names)]).unwrap();
+
         let mut engine = engine;
         engine.register_table("test", vec![batch]).unwrap();
-        
-        let results = engine.execute("SELECT * FROM test WHERE id > 1").await.unwrap();
+
+        let results = engine
+            .execute("SELECT * FROM test WHERE id > 1")
+            .await
+            .unwrap();
         assert_eq!(results[0].num_rows(), 2);
     }
 }

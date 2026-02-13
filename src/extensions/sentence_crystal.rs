@@ -63,20 +63,20 @@
 //! // Returns cells containing relevant memories
 //! ```
 
+use super::context_crystal::QualiaVector;
+use super::nsm_substrate::{MetacognitiveSubstrate, NsmCodebook};
 use crate::core::Fingerprint;
 use crate::storage::bind_space::{Addr, BindSpace, dn_path_to_addr};
-use super::nsm_substrate::{NsmCodebook, MetacognitiveSubstrate};
-use super::context_crystal::QualiaVector;
 use std::collections::HashMap;
 
 // =============================================================================
 // Constants
 // =============================================================================
 
-const GRID: usize = 5;              // 5^5 crystal
-const CELLS: usize = 3125;          // 5^5
-const EMBEDDING_DIM: usize = 1024;  // Jina v3 dimension
-const PROJECTION_DIM: usize = 5;    // Crystal dimensions
+const GRID: usize = 5; // 5^5 crystal
+const CELLS: usize = 3125; // 5^5
+const EMBEDDING_DIM: usize = 1024; // Jina v3 dimension
+const PROJECTION_DIM: usize = 5; // Crystal dimensions
 
 // =============================================================================
 // Coordinate in 5D Crystal
@@ -101,12 +101,12 @@ impl Coord5D {
             e: e % GRID,
         }
     }
-    
+
     /// Convert to linear index
     pub fn to_index(&self) -> usize {
         self.a * 625 + self.b * 125 + self.c * 25 + self.d * 5 + self.e
     }
-    
+
     /// Convert from linear index
     pub fn from_index(idx: usize) -> Self {
         let idx = idx % CELLS;
@@ -118,7 +118,7 @@ impl Coord5D {
             e: idx % 5,
         }
     }
-    
+
     /// Manhattan distance to another coordinate
     pub fn distance(&self, other: &Self) -> usize {
         let da = (self.a as i32 - other.a as i32).unsigned_abs() as usize;
@@ -128,11 +128,11 @@ impl Coord5D {
         let de = (self.e as i32 - other.e as i32).unsigned_abs() as usize;
         da + db + dc + dd + de
     }
-    
+
     /// Get all coordinates within Manhattan distance
     pub fn neighborhood(&self, radius: usize) -> Vec<Coord5D> {
         let mut coords = Vec::new();
-        
+
         for da in 0..=radius {
             for db in 0..=(radius - da) {
                 for dc in 0..=(radius - da - db) {
@@ -145,12 +145,22 @@ impl Coord5D {
                                     for sc in [-1i32, 1] {
                                         for sd in [-1i32, 1] {
                                             for se in [-1i32, 1] {
-                                                let na = (self.a as i32 + sa * da as i32).rem_euclid(GRID as i32) as usize;
-                                                let nb = (self.b as i32 + sb * db as i32).rem_euclid(GRID as i32) as usize;
-                                                let nc = (self.c as i32 + sc * dc as i32).rem_euclid(GRID as i32) as usize;
-                                                let nd = (self.d as i32 + sd * dd as i32).rem_euclid(GRID as i32) as usize;
-                                                let ne = (self.e as i32 + se * de as i32).rem_euclid(GRID as i32) as usize;
-                                                
+                                                let na = (self.a as i32 + sa * da as i32)
+                                                    .rem_euclid(GRID as i32)
+                                                    as usize;
+                                                let nb = (self.b as i32 + sb * db as i32)
+                                                    .rem_euclid(GRID as i32)
+                                                    as usize;
+                                                let nc = (self.c as i32 + sc * dc as i32)
+                                                    .rem_euclid(GRID as i32)
+                                                    as usize;
+                                                let nd = (self.d as i32 + sd * dd as i32)
+                                                    .rem_euclid(GRID as i32)
+                                                    as usize;
+                                                let ne = (self.e as i32 + se * de as i32)
+                                                    .rem_euclid(GRID as i32)
+                                                    as usize;
+
                                                 let coord = Coord5D::new(na, nb, nc, nd, ne);
                                                 if !coords.contains(&coord) {
                                                     coords.push(coord);
@@ -185,31 +195,34 @@ impl ProjectionMatrix {
     pub fn new(seed: u64) -> Self {
         let mut weights = [[0.0f32; EMBEDDING_DIM]; PROJECTION_DIM];
         let mut state = seed;
-        
+
         // LFSR-based PRNG
         for d in 0..PROJECTION_DIM {
             for i in 0..EMBEDDING_DIM {
-                state = state.wrapping_mul(6364136223846793005)
+                state = state
+                    .wrapping_mul(6364136223846793005)
                     .wrapping_add(1442695040888963407);
                 // Gaussian-ish via Box-Muller approximation
                 let u1 = (state >> 32) as f32 / u32::MAX as f32;
-                state = state.wrapping_mul(6364136223846793005)
+                state = state
+                    .wrapping_mul(6364136223846793005)
                     .wrapping_add(1442695040888963407);
                 let u2 = (state >> 32) as f32 / u32::MAX as f32;
-                
+
                 // Approximate Gaussian
-                let g = (-2.0 * (u1 + 0.0001).ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos();
+                let g =
+                    (-2.0 * (u1 + 0.0001).ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos();
                 weights[d][i] = g / (EMBEDDING_DIM as f32).sqrt();
             }
         }
-        
+
         Self { weights }
     }
-    
+
     /// Project 1024D embedding to 5D coordinates
     pub fn project(&self, embedding: &[f32]) -> Coord5D {
         let mut coords = [0usize; 5];
-        
+
         for d in 0..PROJECTION_DIM {
             let mut sum = 0.0f32;
             for (i, &v) in embedding.iter().take(EMBEDDING_DIM).enumerate() {
@@ -219,7 +232,7 @@ impl ProjectionMatrix {
             let normalized = (sum.tanh() + 1.0) * 2.5;
             coords[d] = (normalized as usize).min(GRID - 1);
         }
-        
+
         Coord5D::new(coords[0], coords[1], coords[2], coords[3], coords[4])
     }
 }
@@ -246,7 +259,6 @@ pub struct CrystalCell {
     // =========================================================================
     // DN TREE AWARENESS (for hierarchical context)
     // =========================================================================
-
     /// DN paths associated with entries in this cell
     /// Enables context-aware retrieval: "what does Ada know about X?"
     pub dn_contexts: Vec<String>,
@@ -388,7 +400,6 @@ pub struct SentenceCrystal {
     // =========================================================================
     // DN TREE INTEGRATION (for aware traversal)
     // =========================================================================
-
     /// Index: DN path prefix → cell indices
     /// Enables fast "what does Ada know?" style queries
     dn_index: HashMap<String, Vec<usize>>,
@@ -412,14 +423,14 @@ impl SentenceCrystal {
             addr_index: HashMap::new(),
         }
     }
-    
+
     /// Get embedding for text (uses cache, falls back to pseudo-embedding)
     fn get_embedding(&mut self, text: &str) -> Vec<f32> {
         // Check cache first
         if let Some(cached) = self.embedding_cache.get(text) {
             return cached.clone();
         }
-        
+
         // Try Jina API if key is available
         let embedding = if let Some(ref api_key) = self.jina_api_key {
             match super::spo::jina_embed_curl(api_key, &[text]) {
@@ -429,17 +440,18 @@ impl SentenceCrystal {
         } else {
             generate_pseudo_embedding(text)
         };
-        
+
         // Cache and return
-        self.embedding_cache.insert(text.to_string(), embedding.clone());
+        self.embedding_cache
+            .insert(text.to_string(), embedding.clone());
         embedding
     }
-    
+
     /// Store a text in the crystal
     pub fn store(&mut self, text: &str) {
         self.store_with_qualia(text, None);
     }
-    
+
     /// Store with explicit qualia
     pub fn store_with_qualia(&mut self, text: &str, qualia: Option<QualiaVector>) {
         // Get dense embedding
@@ -552,7 +564,7 @@ impl SentenceCrystal {
                 .push(cell_idx);
         }
     }
-    
+
     /// Query the crystal for similar content
     /// Returns: Vec<(coordinate, similarity, texts)>
     pub fn query(&mut self, text: &str, radius: usize) -> Vec<QueryResult> {
@@ -566,7 +578,8 @@ impl SentenceCrystal {
         // Search neighborhood
         let neighborhood = coords.neighborhood(radius);
 
-        let mut results: Vec<QueryResult> = neighborhood.iter()
+        let mut results: Vec<QueryResult> = neighborhood
+            .iter()
             .map(|c| {
                 let cell = &self.cells[c.to_index()];
                 QueryResult {
@@ -721,12 +734,7 @@ impl SentenceCrystal {
     pub fn cells_in_subtree(&self, dn_prefix: &str) -> Vec<(usize, &CrystalCell)> {
         self.dn_index
             .get(dn_prefix)
-            .map(|indices| {
-                indices
-                    .iter()
-                    .map(|&idx| (idx, &self.cells[idx]))
-                    .collect()
-            })
+            .map(|indices| indices.iter().map(|&idx| (idx, &self.cells[idx])).collect())
             .unwrap_or_default()
     }
 
@@ -803,21 +811,22 @@ impl SentenceCrystal {
             })
             .collect()
     }
-    
+
     /// Get cell at specific coordinates
     pub fn get_cell(&self, coords: &Coord5D) -> &CrystalCell {
         &self.cells[coords.to_index()]
     }
-    
+
     /// Get all non-empty cells
     pub fn active_cells(&self) -> Vec<(Coord5D, &CrystalCell)> {
-        self.cells.iter()
+        self.cells
+            .iter()
             .enumerate()
             .filter(|(_, c)| c.count > 0)
             .map(|(i, c)| (Coord5D::from_index(i), c))
             .collect()
     }
-    
+
     /// Compute resonance between two texts
     pub fn resonance(&mut self, text_a: &str, text_b: &str) -> f32 {
         let fp_a = self.codebook.encode(text_a);
@@ -825,13 +834,13 @@ impl SentenceCrystal {
 
         fp_a.similarity(&fp_b)
     }
-    
+
     /// Get crystal statistics
     pub fn stats(&self) -> CrystalStats {
         let active = self.cells.iter().filter(|c| c.count > 0).count();
         let max_count = self.cells.iter().map(|c| c.count).max().unwrap_or(0);
         let total_texts: usize = self.cells.iter().map(|c| c.texts.len()).sum();
-        
+
         CrystalStats {
             total_cells: CELLS,
             active_cells: active,
@@ -925,28 +934,28 @@ fn dn_path_similarity(a: &str, b: &str) -> f32 {
 fn generate_pseudo_embedding(text: &str) -> Vec<f32> {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
-    
+
     let mut embedding = vec![0.0f32; EMBEDDING_DIM];
     let bytes = text.as_bytes();
-    
+
     for (i, window) in bytes.windows(3.min(bytes.len())).enumerate() {
         let mut hasher = DefaultHasher::new();
         window.hash(&mut hasher);
         (i as u64).hash(&mut hasher);
         let h = hasher.finish();
-        
+
         for j in 0..16 {
             let idx = ((h >> (j * 4)) as usize + i * 17) % EMBEDDING_DIM;
             let sign = if (h >> (j + 48)) & 1 == 0 { 1.0 } else { -1.0 };
             embedding[idx] += sign * 0.1;
         }
     }
-    
+
     for (i, &byte) in bytes.iter().enumerate() {
         let idx = (byte as usize * 4 + i) % EMBEDDING_DIM;
         embedding[idx] += 0.05;
     }
-    
+
     // L2 normalize
     let norm: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
     if norm > 0.0 {
@@ -954,7 +963,7 @@ fn generate_pseudo_embedding(text: &str) -> Vec<f32> {
             *x /= norm;
         }
     }
-    
+
     embedding
 }
 
@@ -965,7 +974,7 @@ fn generate_pseudo_embedding(text: &str) -> Vec<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_coord5d() {
         let c = Coord5D::new(1, 2, 3, 4, 0);
@@ -973,25 +982,25 @@ mod tests {
         let c2 = Coord5D::from_index(idx);
         assert_eq!(c, c2);
     }
-    
+
     #[test]
     fn test_coord_distance() {
         let c1 = Coord5D::new(0, 0, 0, 0, 0);
         let c2 = Coord5D::new(1, 1, 1, 1, 1);
         assert_eq!(c1.distance(&c2), 5);
     }
-    
+
     #[test]
     fn test_projection() {
         let proj = ProjectionMatrix::new(42);
-        
+
         let e1 = generate_pseudo_embedding("hello world");
         let e2 = generate_pseudo_embedding("hello world");
         let e3 = generate_pseudo_embedding("completely different");
-        
+
         // Same text → same coordinates
         assert_eq!(proj.project(&e1), proj.project(&e2));
-        
+
         // Different text → likely different coordinates
         // (not guaranteed, but probabilistically true)
         let c1 = proj.project(&e1);
@@ -999,53 +1008,60 @@ mod tests {
         println!("Coord 'hello world': {:?}", c1);
         println!("Coord 'completely different': {:?}", c3);
     }
-    
+
     #[test]
     fn test_sentence_crystal_store_query() {
         let mut crystal = SentenceCrystal::new(None);
-        
+
         // Store some memories
         crystal.store("Ada feels curious about consciousness");
         crystal.store("Ada explores the nature of awareness");
         crystal.store("Jan builds semantic architectures");
         crystal.store("Jan programs AI systems");
         crystal.store("The weather is nice today");
-        
+
         let stats = crystal.stats();
         assert_eq!(stats.total_entries, 5);
-        println!("Active cells: {} / {}", stats.active_cells, stats.total_cells);
-        
+        println!(
+            "Active cells: {} / {}",
+            stats.active_cells, stats.total_cells
+        );
+
         // Query for Ada
         let results = crystal.query("Ada's consciousness", 2);
         println!("\nQuery: 'Ada's consciousness'");
         for r in results.iter().take(3) {
-            println!("  {:?} sim={:.3} count={} texts={:?}", 
-                     r.coords, r.similarity, r.count, r.texts);
+            println!(
+                "  {:?} sim={:.3} count={} texts={:?}",
+                r.coords, r.similarity, r.count, r.texts
+            );
         }
-        
+
         // Query for Jan
         let results = crystal.query("Jan's programming work", 2);
         println!("\nQuery: 'Jan's programming work'");
         for r in results.iter().take(3) {
-            println!("  {:?} sim={:.3} count={} texts={:?}", 
-                     r.coords, r.similarity, r.count, r.texts);
+            println!(
+                "  {:?} sim={:.3} count={} texts={:?}",
+                r.coords, r.similarity, r.count, r.texts
+            );
         }
     }
-    
+
     #[test]
     fn test_resonance() {
         let mut crystal = SentenceCrystal::new(None);
-        
+
         let r1 = crystal.resonance("I want to know", "I desire understanding");
         let r2 = crystal.resonance("I want to know", "The sky is blue");
-        
+
         println!("Resonance 'want/know' vs 'desire/understand': {:.3}", r1);
         println!("Resonance 'want/know' vs 'sky/blue': {:.3}", r2);
-        
+
         // Semantically similar should have higher resonance
         assert!(r1 > r2);
     }
-    
+
     #[test]
     fn test_neighborhood() {
         let c = Coord5D::new(2, 2, 2, 2, 2);
@@ -1118,7 +1134,10 @@ mod tests {
         assert!(!ada_cells.is_empty(), "Should have cells under Ada");
 
         let ada_soul_cells = crystal.cells_in_subtree("Ada:A:soul");
-        assert!(!ada_soul_cells.is_empty(), "Should have cells under Ada:A:soul");
+        assert!(
+            !ada_soul_cells.is_empty(),
+            "Should have cells under Ada:A:soul"
+        );
     }
 
     #[test]
@@ -1192,13 +1211,7 @@ mod tests {
         let mut crystal = SentenceCrystal::new(None);
 
         // Store semantically similar content in different trees
-        crystal.store_with_dn_context(
-            "exploring new ideas",
-            "Ada:A:soul:exploration",
-            None,
-            3,
-            4,
-        );
+        crystal.store_with_dn_context("exploring new ideas", "Ada:A:soul:exploration", None, 3, 4);
 
         crystal.store_with_dn_context(
             "exploring new territories",

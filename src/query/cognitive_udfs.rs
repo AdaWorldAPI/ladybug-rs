@@ -26,7 +26,7 @@ use datafusion::logical_expr::{
     ColumnarValue, ScalarFunctionArgs, ScalarUDFImpl, Signature, TypeSignature, Volatility,
 };
 
-use crate::core::{DIM, scent_distance as core_scent_distance, extract_scent, SCENT_BYTES};
+use crate::core::{DIM, SCENT_BYTES, extract_scent, scent_distance as core_scent_distance};
 
 // =============================================================================
 // CONSTANTS
@@ -467,11 +467,13 @@ impl ScalarUDFImpl for PopcountUdf {
                     datafusion::scalar::ScalarValue::UInt64(Some(n)) => n.count_ones(),
                     datafusion::scalar::ScalarValue::Binary(Some(b)) => popcount_bytes(b),
                     datafusion::scalar::ScalarValue::LargeBinary(Some(b)) => popcount_bytes(b),
-                    datafusion::scalar::ScalarValue::FixedSizeBinary(_, Some(b)) => popcount_bytes(b),
+                    datafusion::scalar::ScalarValue::FixedSizeBinary(_, Some(b)) => {
+                        popcount_bytes(b)
+                    }
                     _ => {
                         return Err(datafusion::error::DataFusionError::Execution(
                             "popcount requires binary or uint64".into(),
-                        ))
+                        ));
                     }
                 };
                 Ok(ColumnarValue::Scalar(
@@ -1067,7 +1069,7 @@ fn extract_nars_args(args: &[ColumnarValue]) -> Result<(f64, f64, f64, f64)> {
         _ => {
             return Err(datafusion::error::DataFusionError::Execution(
                 "NARS functions require Float64 scalars".into(),
-            ))
+            ));
         }
     };
     let c1 = match &args[1] {
@@ -1075,7 +1077,7 @@ fn extract_nars_args(args: &[ColumnarValue]) -> Result<(f64, f64, f64, f64)> {
         _ => {
             return Err(datafusion::error::DataFusionError::Execution(
                 "NARS functions require Float64 scalars".into(),
-            ))
+            ));
         }
     };
     let f2 = match &args[2] {
@@ -1083,7 +1085,7 @@ fn extract_nars_args(args: &[ColumnarValue]) -> Result<(f64, f64, f64, f64)> {
         _ => {
             return Err(datafusion::error::DataFusionError::Execution(
                 "NARS functions require Float64 scalars".into(),
-            ))
+            ));
         }
     };
     let c2 = match &args[3] {
@@ -1091,7 +1093,7 @@ fn extract_nars_args(args: &[ColumnarValue]) -> Result<(f64, f64, f64, f64)> {
         _ => {
             return Err(datafusion::error::DataFusionError::Execution(
                 "NARS functions require Float64 scalars".into(),
-            ))
+            ));
         }
     };
     Ok((f1, c1, f2, c2))
@@ -1119,7 +1121,7 @@ fn nars_result_scalar(f: f64, c: f64) -> ColumnarValue {
 // MEMBRANE UDFs (Sigma-10 Consciousness Encoding)
 // =============================================================================
 
-use crate::cognitive::membrane::{Membrane, ConsciousnessParams};
+use crate::cognitive::membrane::{ConsciousnessParams, Membrane};
 
 /// Membrane Encode: tau, sigma, qualia -> 10K-bit fingerprint
 ///
@@ -1171,21 +1173,27 @@ impl ScalarUDFImpl for MembraneEncodeUdf {
         // Extract scalar arguments
         let tau = match &args[0] {
             ColumnarValue::Scalar(datafusion::scalar::ScalarValue::Float32(Some(v))) => *v,
-            _ => return Err(datafusion::error::DataFusionError::Execution(
-                "membrane_encode requires Float32 for tau".into(),
-            )),
+            _ => {
+                return Err(datafusion::error::DataFusionError::Execution(
+                    "membrane_encode requires Float32 for tau".into(),
+                ));
+            }
         };
         let sigma = match &args[1] {
             ColumnarValue::Scalar(datafusion::scalar::ScalarValue::Float32(Some(v))) => *v,
-            _ => return Err(datafusion::error::DataFusionError::Execution(
-                "membrane_encode requires Float32 for sigma".into(),
-            )),
+            _ => {
+                return Err(datafusion::error::DataFusionError::Execution(
+                    "membrane_encode requires Float32 for sigma".into(),
+                ));
+            }
         };
         let qualia = match &args[2] {
             ColumnarValue::Scalar(datafusion::scalar::ScalarValue::Utf8(Some(s))) => s.clone(),
-            _ => return Err(datafusion::error::DataFusionError::Execution(
-                "membrane_encode requires Utf8 for qualia".into(),
-            )),
+            _ => {
+                return Err(datafusion::error::DataFusionError::Execution(
+                    "membrane_encode requires Utf8 for qualia".into(),
+                ));
+            }
         };
 
         // Encode using membrane
@@ -1195,10 +1203,7 @@ impl ScalarUDFImpl for MembraneEncodeUdf {
         let bytes = fp.to_bytes();
 
         Ok(ColumnarValue::Scalar(
-            datafusion::scalar::ScalarValue::FixedSizeBinary(
-                FP_BYTES as i32,
-                Some(bytes),
-            ),
+            datafusion::scalar::ScalarValue::FixedSizeBinary(FP_BYTES as i32, Some(bytes)),
         ))
     }
 }
@@ -1261,9 +1266,11 @@ impl ScalarUDFImpl for MembraneDecodeUdf {
         let args = &args.args;
         let bytes = match &args[0] {
             ColumnarValue::Scalar(s) => scalar_to_bytes(s)?,
-            _ => return Err(datafusion::error::DataFusionError::Execution(
-                "membrane_decode requires scalar binary".into(),
-            )),
+            _ => {
+                return Err(datafusion::error::DataFusionError::Execution(
+                    "membrane_decode requires scalar binary".into(),
+                ));
+            }
         };
 
         // Decode using membrane

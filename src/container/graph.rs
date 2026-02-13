@@ -14,15 +14,15 @@
 //!
 //! One Redis GET returns both the vector AND its edges.
 
-use std::collections::HashMap;
 use super::Container;
-use super::record::CogRecord;
-use super::meta::MetaViewMut;
 use super::adjacency::{
-    PackedDn, InlineEdge, InlineEdgeView, InlineEdgeViewMut,
-    AdjacencyView, CsrOverflowView, EdgeDescriptor, CsrOverflowViewMut,
+    AdjacencyView, CsrOverflowView, CsrOverflowViewMut, EdgeDescriptor, InlineEdge, InlineEdgeView,
+    InlineEdgeViewMut, PackedDn,
 };
+use super::meta::MetaViewMut;
+use super::record::CogRecord;
 use super::search::belichtungsmesser;
+use std::collections::HashMap;
 
 // ============================================================================
 // CONTAINER GRAPH
@@ -123,17 +123,23 @@ impl ContainerGraph {
 
     /// Get the adjacency view for a node.
     pub fn adjacency(&self, dn: &PackedDn) -> Option<AdjacencyView<'_>> {
-        self.records.get(dn).map(|r| AdjacencyView::new(&r.meta.words))
+        self.records
+            .get(dn)
+            .map(|r| AdjacencyView::new(&r.meta.words))
     }
 
     /// Get inline edges of a node.
     pub fn inline_edges(&self, dn: &PackedDn) -> Option<InlineEdgeView<'_>> {
-        self.records.get(dn).map(|r| InlineEdgeView::new(&r.meta.words))
+        self.records
+            .get(dn)
+            .map(|r| InlineEdgeView::new(&r.meta.words))
     }
 
     /// Get CSR overflow edges of a node.
     pub fn overflow_edges(&self, dn: &PackedDn) -> Option<CsrOverflowView<'_>> {
-        self.records.get(dn).map(|r| CsrOverflowView::new(&r.meta.words))
+        self.records
+            .get(dn)
+            .map(|r| CsrOverflowView::new(&r.meta.words))
     }
 
     /// Add an inline edge from `src` to `dst` with a verb.
@@ -170,11 +176,7 @@ impl ContainerGraph {
     }
 
     /// Add an edge to the CSR overflow region (for high-degree nodes).
-    pub fn add_overflow_edge(
-        &mut self,
-        src: &PackedDn,
-        edge: EdgeDescriptor,
-    ) -> Option<usize> {
+    pub fn add_overflow_edge(&mut self, src: &PackedDn, edge: EdgeDescriptor) -> Option<usize> {
         let record = self.records.get_mut(src)?;
         let mut view = CsrOverflowViewMut::new(&mut record.meta.words);
         view.push_edge(edge)
@@ -186,8 +188,7 @@ impl ContainerGraph {
 
     /// Get the primary fingerprint (content container 0) of a node.
     pub fn fingerprint(&self, dn: &PackedDn) -> Option<&Container> {
-        self.records.get(dn)
-            .and_then(|r| r.content.first())
+        self.records.get(dn).and_then(|r| r.content.first())
     }
 
     /// Hamming distance between two nodes' fingerprints.
@@ -228,9 +229,13 @@ impl ContainerGraph {
     /// Find the k nearest nodes to a query fingerprint using Belichtungsmesser.
     /// Returns Vec of (dn, estimated_distance) sorted by distance.
     pub fn nearest_k(&self, query: &Container, k: usize) -> Vec<(PackedDn, u32)> {
-        let mut results: Vec<(PackedDn, u32)> = self.records.iter()
+        let mut results: Vec<(PackedDn, u32)> = self
+            .records
+            .iter()
             .filter_map(|(dn, record)| {
-                record.content.first()
+                record
+                    .content
+                    .first()
                     .map(|fp| (*dn, belichtungsmesser(fp, query)))
             })
             .collect();

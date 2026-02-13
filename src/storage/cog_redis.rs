@@ -66,14 +66,14 @@
 //! Hot concepts promote. Cold nodes demote. TTL governs forgetting.
 //! Graph queries traverse all tiers transparently.
 
+use super::bind_space::{Addr, BindNode, BindSpace, FINGERPRINT_WORDS, dn_path_to_addr};
+use crate::core::Fingerprint;
+use crate::learning::cam_ops::{HammingOp, LanceOp, OpCategory, SqlOp};
+use crate::learning::cognitive_frameworks::TruthValue;
+use crate::search::causal::CausalSearch;
+use crate::search::cognitive::{CognitiveAtom, CognitiveSearch, QualiaVector};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use crate::core::Fingerprint;
-use crate::search::cognitive::{QualiaVector, CognitiveAtom, CognitiveSearch};
-use crate::search::causal::CausalSearch;
-use crate::learning::cognitive_frameworks::TruthValue;
-use crate::learning::cam_ops::{OpCategory, LanceOp, SqlOp, HammingOp};
-use super::bind_space::{BindSpace, BindNode, Addr, FINGERPRINT_WORDS, dn_path_to_addr};
 
 // =============================================================================
 // ADDRESS SPACE CONSTANTS (8-bit prefix : 8-bit slot)
@@ -91,22 +91,22 @@ pub const PREFIX_SURFACE_END: u8 = 0x0F;
 pub const SURFACE_PREFIXES: usize = 16;
 
 /// Surface compartments
-pub const PREFIX_LANCE: u8 = 0x00;      // Lance/Kuzu vector ops
-pub const PREFIX_SQL: u8 = 0x01;        // SQL relational ops
-pub const PREFIX_CYPHER: u8 = 0x02;     // Neo4j/Cypher graph ops
-pub const PREFIX_GRAPHQL: u8 = 0x03;    // GraphQL ops
-pub const PREFIX_NARS: u8 = 0x04;       // NARS inference
-pub const PREFIX_CAUSAL: u8 = 0x05;     // Causal reasoning (Pearl)
-pub const PREFIX_META: u8 = 0x06;       // Meta-cognition
-pub const PREFIX_VERBS: u8 = 0x07;      // Verbs (CAUSES, BECOMES...)
-pub const PREFIX_CONCEPTS: u8 = 0x08;   // Core concept types
-pub const PREFIX_QUALIA: u8 = 0x09;     // Qualia operations
-pub const PREFIX_MEMORY: u8 = 0x0A;     // Memory operations
-pub const PREFIX_LEARNING: u8 = 0x0B;   // Learning operations
+pub const PREFIX_LANCE: u8 = 0x00; // Lance/Kuzu vector ops
+pub const PREFIX_SQL: u8 = 0x01; // SQL relational ops
+pub const PREFIX_CYPHER: u8 = 0x02; // Neo4j/Cypher graph ops
+pub const PREFIX_GRAPHQL: u8 = 0x03; // GraphQL ops
+pub const PREFIX_NARS: u8 = 0x04; // NARS inference
+pub const PREFIX_CAUSAL: u8 = 0x05; // Causal reasoning (Pearl)
+pub const PREFIX_META: u8 = 0x06; // Meta-cognition
+pub const PREFIX_VERBS: u8 = 0x07; // Verbs (CAUSES, BECOMES...)
+pub const PREFIX_CONCEPTS: u8 = 0x08; // Core concept types
+pub const PREFIX_QUALIA: u8 = 0x09; // Qualia operations
+pub const PREFIX_MEMORY: u8 = 0x0A; // Memory operations
+pub const PREFIX_LEARNING: u8 = 0x0B; // Learning operations
 
 /// Legacy constants (for compatibility)
 pub const SURFACE_START: u16 = 0x0000;
-pub const SURFACE_END: u16 = 0x0FFF;    // 16 prefixes × 256 slots
+pub const SURFACE_END: u16 = 0x0FFF; // 16 prefixes × 256 slots
 pub const SURFACE_SIZE: usize = 4096;
 
 // -----------------------------------------------------------------------------
@@ -118,7 +118,7 @@ pub const PREFIX_FLUID_END: u8 = 0x7F;
 pub const FLUID_PREFIXES: usize = 112;
 pub const FLUID_START: u16 = 0x1000;
 pub const FLUID_END: u16 = 0x7FFF;
-pub const FLUID_SIZE: usize = 28672;    // 112 × 256
+pub const FLUID_SIZE: usize = 28672; // 112 × 256
 
 // -----------------------------------------------------------------------------
 // NODES: 128 prefixes (0x80-0xFF) × 256 = 32,768 addresses
@@ -129,7 +129,7 @@ pub const PREFIX_NODE_END: u8 = 0xFF;
 pub const NODE_PREFIXES: usize = 128;
 pub const NODE_START: u16 = 0x8000;
 pub const NODE_END: u16 = 0xFFFF;
-pub const NODE_SIZE: usize = 32768;   // 128 chunks × 256
+pub const NODE_SIZE: usize = 32768; // 128 chunks × 256
 
 /// Total address space
 pub const TOTAL_SIZE: usize = 65536;
@@ -139,7 +139,7 @@ pub const TOTAL_SIZE: usize = 65536;
 // =============================================================================
 
 /// 16-bit cognitive address as prefix:slot (8-bit each)
-/// 
+///
 /// Pure array indexing. No hash lookup. 3-5 cycles.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct CogAddr(pub u16);
@@ -149,66 +149,66 @@ impl CogAddr {
     pub fn new(addr: u16) -> Self {
         Self(addr)
     }
-    
+
     /// Create from prefix and slot (the fast path)
     #[inline(always)]
     pub fn from_parts(prefix: u8, slot: u8) -> Self {
         Self(((prefix as u16) << 8) | (slot as u16))
     }
-    
+
     /// Get prefix (high byte) - determines tier/compartment
     #[inline(always)]
     pub fn prefix(&self) -> u8 {
         (self.0 >> 8) as u8
     }
-    
+
     /// Get slot (low byte) - index within chunk
     #[inline(always)]
     pub fn slot(&self) -> u8 {
         (self.0 & 0xFF) as u8
     }
-    
+
     /// Which tier does this address belong to?
     #[inline(always)]
     pub fn tier(&self) -> Tier {
         let p = self.prefix();
         match p {
-            0x00..=0x0F => Tier::Surface,  // 16 prefixes
-            0x10..=0x7F => Tier::Fluid,    // 112 prefixes
-            _ => Tier::Node,               // 128 prefixes
+            0x00..=0x0F => Tier::Surface, // 16 prefixes
+            0x10..=0x7F => Tier::Fluid,   // 112 prefixes
+            _ => Tier::Node,              // 128 prefixes
         }
     }
-    
+
     /// Which surface compartment (if surface tier)
     #[inline(always)]
     pub fn surface_compartment(&self) -> Option<SurfaceCompartment> {
         SurfaceCompartment::from_prefix(self.prefix())
     }
-    
+
     /// Is this in the persistent node tier?
     #[inline(always)]
     pub fn is_node(&self) -> bool {
         self.prefix() >= PREFIX_NODE_START
     }
-    
+
     /// Is this in the fluid zone?
     #[inline(always)]
     pub fn is_fluid(&self) -> bool {
         let p = self.prefix();
         p >= PREFIX_FLUID_START && p <= PREFIX_FLUID_END
     }
-    
+
     /// Is this a surface operation?
     #[inline(always)]
     pub fn is_surface(&self) -> bool {
         self.prefix() <= PREFIX_SURFACE_END
     }
-    
+
     /// Promote to node tier (move to 0x80+ prefix, keep slot)
     pub fn promote(&self) -> CogAddr {
         CogAddr::from_parts(PREFIX_NODE_START, self.slot())
     }
-    
+
     /// Demote to fluid tier (move to 0x10+ prefix, keep slot)
     pub fn demote(&self) -> CogAddr {
         CogAddr::from_parts(PREFIX_FLUID_START, self.slot())
@@ -268,11 +268,11 @@ impl SurfaceCompartment {
     pub fn prefix(self) -> u8 {
         self as u8
     }
-    
+
     pub fn addr(self, slot: u8) -> CogAddr {
         CogAddr::from_parts(self as u8, slot)
     }
-    
+
     pub fn from_prefix(prefix: u8) -> Option<Self> {
         match prefix {
             0x00 => Some(Self::Lance),
@@ -331,27 +331,27 @@ impl CogValue {
             label: None,
         }
     }
-    
+
     pub fn with_qualia(mut self, qualia: QualiaVector) -> Self {
         self.qualia = qualia;
         self
     }
-    
+
     pub fn with_truth(mut self, truth: TruthValue) -> Self {
         self.truth = truth;
         self
     }
-    
+
     pub fn with_ttl(mut self, ttl: Duration) -> Self {
         self.ttl = Some(ttl);
         self
     }
-    
+
     pub fn with_label(mut self, label: &str) -> Self {
         self.label = Some(label.to_string());
         self
     }
-    
+
     /// Is this value expired?
     pub fn is_expired(&self) -> bool {
         if let Some(ttl) = self.ttl {
@@ -360,29 +360,26 @@ impl CogValue {
             false
         }
     }
-    
+
     /// Record an access
     pub fn touch(&mut self) {
         self.access_count += 1;
         self.last_access = Instant::now();
     }
-    
+
     /// Should this value be promoted to node tier?
     pub fn should_promote(&self, threshold: u32) -> bool {
         self.access_count >= threshold
     }
-    
+
     /// Should this value be demoted from node tier?
     pub fn should_demote(&self, cold_duration: Duration) -> bool {
         self.last_access.elapsed() > cold_duration
     }
-    
+
     /// Apply decay to truth value
     pub fn decay(&mut self, factor: f32) {
-        self.truth = TruthValue::new(
-            self.truth.f,
-            self.truth.c * factor,
-        );
+        self.truth = TruthValue::new(self.truth.f, self.truth.c * factor);
     }
 }
 
@@ -408,7 +405,14 @@ pub struct CogEdge {
 }
 
 impl CogEdge {
-    pub fn new(from: CogAddr, verb: CogAddr, to: CogAddr, from_fp: &[u64; 256], verb_fp: &[u64; 256], to_fp: &[u64; 256]) -> Self {
+    pub fn new(
+        from: CogAddr,
+        verb: CogAddr,
+        to: CogAddr,
+        from_fp: &[u64; 256],
+        verb_fp: &[u64; 256],
+        to_fp: &[u64; 256],
+    ) -> Self {
         let mut fingerprint = [0u64; 256];
         for i in 0..256 {
             fingerprint[i] = from_fp[i] ^ verb_fp[i] ^ to_fp[i];
@@ -429,18 +433,18 @@ impl CogEdge {
 // =============================================================================
 
 /// Cognitive Redis - Redis syntax, cognitive semantics
-/// 
+///
 /// # Hot Cache Architecture
-/// 
+///
 /// The hot cache provides O(1) lookup for frequent edge queries:
 /// ```text
 /// Query: "edges from A via CAUSES"
 /// Pattern = A_fingerprint XOR CAUSES_fingerprint
-/// 
+///
 /// 1. Check hot_cache[pattern] → HIT: return cached edge indices
 /// 2. MISS: AVX-512 batch scan → cache result → return
 /// ```
-/// 
+///
 /// This bridges the gap between:
 /// - Kuzu CSR: O(1) via pointer arrays (but no fingerprint semantics)
 /// - Pure AVX scan: O(n/512) but no caching
@@ -449,7 +453,6 @@ pub struct CogRedis {
     // =========================================================================
     // BIND SPACE - The universal DTO (array-based O(1) storage)
     // =========================================================================
-
     /// Universal bind space - all query languages hit this
     /// Pure array indexing. No HashMap. 3-5 cycles per lookup.
     bind_space: BindSpace,
@@ -457,7 +460,6 @@ pub struct CogRedis {
     // =========================================================================
     // LEGACY HASH MAPS (for backward compatibility during transition)
     // =========================================================================
-
     /// Surface tier: CAM operations (fixed)
     surface: HashMap<CogAddr, CogValue>,
     /// Fluid zone: working memory
@@ -484,7 +486,6 @@ pub struct CogRedis {
     // =========================================================================
     // HOT CACHE (Redis-style caching for fingerprint CSR)
     // =========================================================================
-
     /// Hot edge cache: query pattern → edge indices
     /// Key = from_fingerprint XOR verb_fingerprint (the ABBA query pattern)
     /// Value = indices into self.edges that match
@@ -513,8 +514,8 @@ impl CogRedis {
             next_fluid: FLUID_START,
             next_node: NODE_START,
             promotion_threshold: 10,
-            demotion_threshold: Duration::from_secs(3600),  // 1 hour
-            default_ttl: Duration::from_secs(300),  // 5 minutes
+            demotion_threshold: Duration::from_secs(3600), // 1 hour
+            default_ttl: Duration::from_secs(300),         // 5 minutes
             // Hot cache initialization
             hot_cache: HashMap::new(),
             fanout_cache: HashMap::new(),
@@ -562,15 +563,15 @@ impl CogRedis {
             dn_path_to_addr(key)
         } else {
             // Standard hash-based addressing
-            use std::hash::{Hash, Hasher};
             use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
 
             let mut hasher = DefaultHasher::new();
             key.hash(&mut hasher);
             let hash = hasher.finish();
 
             // Map to node address space (0x80-0xFF:XX)
-            let prefix = 0x80 + ((hash >> 8) as u8 & 0x7F);  // 0x80-0xFF
+            let prefix = 0x80 + ((hash >> 8) as u8 & 0x7F); // 0x80-0xFF
             let slot = (hash & 0xFF) as u8;
             Addr::new(prefix, slot)
         }
@@ -586,7 +587,11 @@ impl CogRedis {
     ///
     /// Returns address where key's value should be stored.
     /// DN paths auto-create parent chain for hierarchy.
-    pub fn resolve_or_allocate(&mut self, key: &str, fingerprint: [u64; FINGERPRINT_WORDS]) -> Addr {
+    pub fn resolve_or_allocate(
+        &mut self,
+        key: &str,
+        fingerprint: [u64; FINGERPRINT_WORDS],
+    ) -> Addr {
         // Check if already exists
         if let Some(addr) = self.resolve_key(key) {
             return addr;
@@ -611,33 +616,33 @@ impl CogRedis {
     pub fn bind_set(&mut self, key: &str, fingerprint: [u64; FINGERPRINT_WORDS]) -> Addr {
         self.resolve_or_allocate(key, fingerprint)
     }
-    
+
     /// Allocate next fluid address
     fn alloc_fluid(&mut self) -> CogAddr {
         let addr = CogAddr(self.next_fluid);
         self.next_fluid = self.next_fluid.wrapping_add(1);
         if self.next_fluid >= NODE_START {
-            self.next_fluid = FLUID_START;  // Wrap around
+            self.next_fluid = FLUID_START; // Wrap around
         }
         addr
     }
-    
+
     /// Allocate next node address
     fn alloc_node(&mut self) -> CogAddr {
         let addr = CogAddr(self.next_node);
         self.next_node = self.next_node.wrapping_add(1);
         if self.next_node == 0 {
-            self.next_node = NODE_START;  // Wrap around
+            self.next_node = NODE_START; // Wrap around
         }
         addr
     }
-    
+
     // =========================================================================
     // CORE REDIS-LIKE OPERATIONS
     // =========================================================================
-    
+
     /// GET - retrieve value with cognitive metadata
-    /// 
+    ///
     /// Returns: (value, qualia, truth, tier)
     pub fn get(&mut self, addr: CogAddr) -> Option<GetResult> {
         // Check all tiers
@@ -655,10 +660,10 @@ impl CogRedis {
         } else {
             return None;
         };
-        
+
         // Touch and maybe promote
         value.touch();
-        
+
         let result = GetResult {
             fingerprint: value.fingerprint,
             qualia: value.qualia,
@@ -667,26 +672,26 @@ impl CogRedis {
             access_count: value.access_count,
             label: value.label.clone(),
         };
-        
+
         // Check for promotion (fluid → node)
         if tier == Tier::Fluid && value.should_promote(self.promotion_threshold) {
             self.promote(addr);
         }
-        
+
         Some(result)
     }
-    
+
     /// GET with FEEL - returns qualia-weighted result
     pub fn get_feel(&mut self, addr: CogAddr) -> Option<(GetResult, f32)> {
         let result = self.get(addr)?;
         let intensity = result.qualia.arousal * 0.5 + result.qualia.valence.abs() * 0.5;
         Some((result, intensity))
     }
-    
+
     /// SET - store value with cognitive metadata
     pub fn set(&mut self, fingerprint: [u64; 256], opts: SetOptions) -> CogAddr {
         let mut value = CogValue::new(fingerprint);
-        
+
         if let Some(q) = opts.qualia {
             value.qualia = q;
         }
@@ -701,7 +706,7 @@ impl CogRedis {
         if let Some(label) = opts.label {
             value.label = Some(label);
         }
-        
+
         // Decide tier
         let addr = if opts.promote {
             let addr = self.alloc_node();
@@ -712,20 +717,20 @@ impl CogRedis {
             self.fluid.insert(addr, value.clone());
             addr
         };
-        
+
         // Add to search index
         let atom = CognitiveAtom::new(fingerprint)
             .with_qualia(value.qualia)
             .with_truth(value.truth);
         self.search.add_atom(atom);
-        
+
         addr
     }
-    
+
     /// SET at specific address
     pub fn set_at(&mut self, addr: CogAddr, fingerprint: [u64; 256], opts: SetOptions) {
         let mut value = CogValue::new(fingerprint);
-        
+
         if let Some(q) = opts.qualia {
             value.qualia = q;
         }
@@ -738,14 +743,20 @@ impl CogRedis {
         if let Some(label) = opts.label {
             value.label = Some(label);
         }
-        
+
         match addr.tier() {
-            Tier::Surface => { self.surface.insert(addr, value); }
-            Tier::Fluid => { self.fluid.insert(addr, value); }
-            Tier::Node => { self.nodes.insert(addr, value); }
+            Tier::Surface => {
+                self.surface.insert(addr, value);
+            }
+            Tier::Fluid => {
+                self.fluid.insert(addr, value);
+            }
+            Tier::Node => {
+                self.nodes.insert(addr, value);
+            }
         }
     }
-    
+
     /// DEL - remove value
     pub fn del(&mut self, addr: CogAddr) -> bool {
         match addr.tier() {
@@ -754,7 +765,7 @@ impl CogRedis {
             Tier::Node => self.nodes.remove(&addr).is_some(),
         }
     }
-    
+
     /// DEL with FORGET - decay truth before removing
     pub fn forget(&mut self, addr: CogAddr, decay_factor: f32) -> bool {
         let value = match addr.tier() {
@@ -762,7 +773,7 @@ impl CogRedis {
             Tier::Fluid => self.fluid.get_mut(&addr),
             Tier::Node => self.nodes.get_mut(&addr),
         };
-        
+
         if let Some(v) = value {
             v.decay(decay_factor);
             if v.truth.c < 0.1 {
@@ -774,7 +785,7 @@ impl CogRedis {
             false
         }
     }
-    
+
     /// DEL with SUPPRESS - move to negative valence instead of deleting
     pub fn suppress(&mut self, addr: CogAddr) -> bool {
         let value = match addr.tier() {
@@ -782,7 +793,7 @@ impl CogRedis {
             Tier::Fluid => self.fluid.get_mut(&addr),
             Tier::Node => self.nodes.get_mut(&addr),
         };
-        
+
         if let Some(v) = value {
             v.qualia.valence = -1.0;
             v.qualia.arousal *= 0.5;
@@ -791,17 +802,17 @@ impl CogRedis {
             false
         }
     }
-    
+
     // =========================================================================
     // TIER MANAGEMENT
     // =========================================================================
-    
+
     /// CRYSTALLIZE - promote from fluid to node
     pub fn promote(&mut self, addr: CogAddr) -> Option<CogAddr> {
         if !addr.is_fluid() {
             return None;
         }
-        
+
         if let Some(value) = self.fluid.remove(&addr) {
             let new_addr = self.alloc_node();
             self.nodes.insert(new_addr, value);
@@ -810,15 +821,15 @@ impl CogRedis {
             None
         }
     }
-    
+
     /// EVAPORATE - demote from node to fluid
     pub fn demote(&mut self, addr: CogAddr) -> Option<CogAddr> {
         if !addr.is_node() {
             return None;
         }
-        
+
         if let Some(mut value) = self.nodes.remove(&addr) {
-            value.ttl = Some(self.default_ttl);  // Add TTL on demotion
+            value.ttl = Some(self.default_ttl); // Add TTL on demotion
             let new_addr = self.alloc_fluid();
             self.fluid.insert(new_addr, value);
             Some(new_addr)
@@ -826,51 +837,57 @@ impl CogRedis {
             None
         }
     }
-    
+
     /// Run maintenance: expire TTLs, demote cold nodes
     pub fn maintain(&mut self) {
         // Expire fluid zone
-        let expired: Vec<_> = self.fluid.iter()
+        let expired: Vec<_> = self
+            .fluid
+            .iter()
             .filter(|(_, v)| v.is_expired())
             .map(|(k, _)| *k)
             .collect();
-        
+
         for addr in expired {
             self.fluid.remove(&addr);
         }
-        
+
         // Demote cold nodes
-        let cold: Vec<_> = self.nodes.iter()
+        let cold: Vec<_> = self
+            .nodes
+            .iter()
             .filter(|(_, v)| v.should_demote(self.demotion_threshold))
             .map(|(k, _)| *k)
             .collect();
-        
+
         for addr in cold {
             self.demote(addr);
         }
     }
-    
+
     // =========================================================================
     // GRAPH OPERATIONS
     // =========================================================================
-    
+
     /// BIND - create edge between two addresses
     pub fn bind(&mut self, from: CogAddr, verb: CogAddr, to: CogAddr) -> Option<CogAddr> {
         let from_val = self.get(from)?;
         let verb_val = self.get(verb)?;
         let to_val = self.get(to)?;
-        
+
         let edge = CogEdge::new(
-            from, verb, to,
+            from,
+            verb,
+            to,
             &from_val.fingerprint,
             &verb_val.fingerprint,
             &to_val.fingerprint,
         );
-        
+
         // Store edge fingerprint
         let edge_addr = self.set(edge.fingerprint, SetOptions::default());
         self.edges.push(edge);
-        
+
         // Invalidate affected caches
         self.fanout_cache.remove(&from);
         self.fanin_cache.remove(&to);
@@ -880,116 +897,114 @@ impl CogRedis {
             pattern[i] = from_val.fingerprint[i] ^ verb_val.fingerprint[i];
         }
         self.hot_cache.remove(&pattern);
-        
+
         // Also store in causal search as correlation
-        self.causal.store_correlation(&from_val.fingerprint, &to_val.fingerprint, 1.0);
-        
+        self.causal
+            .store_correlation(&from_val.fingerprint, &to_val.fingerprint, 1.0);
+
         Some(edge_addr)
     }
-    
+
     /// UNBIND - given edge and one component, recover the other (ABBA)
     pub fn unbind(&mut self, edge_addr: CogAddr, known: CogAddr) -> Option<[u64; 256]> {
         let edge_val = self.get(edge_addr)?;
         let known_val = self.get(known)?;
-        
+
         // Find the edge metadata
-        let edge = self.edges.iter()
+        let edge = self
+            .edges
+            .iter()
             .find(|e| hamming_distance(&e.fingerprint, &edge_val.fingerprint) < 100)?;
-        
+
         // Get verb fingerprint
         let verb_val = self.get(edge.verb)?;
-        
+
         // ABBA: edge ⊗ known ⊗ verb = other
         let mut result = [0u64; 256];
         for i in 0..256 {
-            result[i] = edge_val.fingerprint[i] ^ known_val.fingerprint[i] ^ verb_val.fingerprint[i];
+            result[i] =
+                edge_val.fingerprint[i] ^ known_val.fingerprint[i] ^ verb_val.fingerprint[i];
         }
-        
+
         Some(result)
     }
-    
+
     /// FANOUT - find all edges from a node (with cache)
-    /// 
+    ///
     /// O(1) for cached queries, O(n) fallback with cache population
     pub fn fanout(&mut self, addr: CogAddr) -> Vec<&CogEdge> {
         // Check cache
         if let Some(indices) = self.fanout_cache.get(&addr) {
             self.cache_hits += 1;
-            return indices.iter()
-                .filter_map(|&i| self.edges.get(i))
-                .collect();
+            return indices.iter().filter_map(|&i| self.edges.get(i)).collect();
         }
-        
+
         self.cache_misses += 1;
-        
+
         // Scan and cache
-        let indices: Vec<usize> = self.edges.iter()
+        let indices: Vec<usize> = self
+            .edges
+            .iter()
             .enumerate()
             .filter(|(_, e)| e.from == addr)
             .map(|(i, _)| i)
             .collect();
-        
+
         self.fanout_cache.insert(addr, indices.clone());
-        
-        indices.iter()
-            .filter_map(|&i| self.edges.get(i))
-            .collect()
+
+        indices.iter().filter_map(|&i| self.edges.get(i)).collect()
     }
-    
+
     /// FANIN - find all edges to a node (with cache)
     pub fn fanin(&mut self, addr: CogAddr) -> Vec<&CogEdge> {
         // Check cache
         if let Some(indices) = self.fanin_cache.get(&addr) {
             self.cache_hits += 1;
-            return indices.iter()
-                .filter_map(|&i| self.edges.get(i))
-                .collect();
+            return indices.iter().filter_map(|&i| self.edges.get(i)).collect();
         }
-        
+
         self.cache_misses += 1;
-        
+
         // Scan and cache
-        let indices: Vec<usize> = self.edges.iter()
+        let indices: Vec<usize> = self
+            .edges
+            .iter()
             .enumerate()
             .filter(|(_, e)| e.to == addr)
             .map(|(i, _)| i)
             .collect();
-        
+
         self.fanin_cache.insert(addr, indices.clone());
-        
-        indices.iter()
-            .filter_map(|&i| self.edges.get(i))
-            .collect()
+
+        indices.iter().filter_map(|&i| self.edges.get(i)).collect()
     }
-    
+
     /// Query by fingerprint pattern (from ⊗ verb) with hot cache
-    /// 
+    ///
     /// This is the Redis-style cached CSR: same query twice = O(1)
     pub fn query_pattern(&mut self, pattern: &[u64; 256], threshold: u32) -> Vec<&CogEdge> {
         // Check hot cache
         if let Some(indices) = self.hot_cache.get(pattern) {
             self.cache_hits += 1;
-            return indices.iter()
-                .filter_map(|&i| self.edges.get(i))
-                .collect();
+            return indices.iter().filter_map(|&i| self.edges.get(i)).collect();
         }
-        
+
         self.cache_misses += 1;
-        
+
         // AVX-512 style scan (even without SIMD, cache makes repeat queries fast)
-        let indices: Vec<usize> = self.edges.iter()
+        let indices: Vec<usize> = self
+            .edges
+            .iter()
             .enumerate()
             .filter(|(_, e)| hamming_distance(pattern, &e.fingerprint) < threshold)
             .map(|(i, _)| i)
             .collect();
-        
+
         self.hot_cache.insert(*pattern, indices.clone());
-        
-        indices.iter()
-            .filter_map(|&i| self.edges.get(i))
-            .collect()
+
+        indices.iter().filter_map(|&i| self.edges.get(i)).collect()
     }
-    
+
     /// Cache statistics: (hits, misses, hit_rate)
     pub fn cache_stats(&self) -> (u64, u64, f64) {
         let total = self.cache_hits + self.cache_misses;
@@ -1000,23 +1015,29 @@ impl CogRedis {
         };
         (self.cache_hits, self.cache_misses, hit_rate)
     }
-    
+
     /// Clear all caches (call after bulk edge operations)
     pub fn invalidate_caches(&mut self) {
         self.hot_cache.clear();
         self.fanout_cache.clear();
         self.fanin_cache.clear();
     }
-    
+
     // =========================================================================
     // COGNITIVE SEARCH OPERATIONS
     // =========================================================================
-    
+
     /// RESONATE - find similar by fingerprint + qualia
-    pub fn resonate(&self, query: &[u64; 256], qualia: &QualiaVector, k: usize) -> Vec<ResonateResult> {
+    pub fn resonate(
+        &self,
+        query: &[u64; 256],
+        qualia: &QualiaVector,
+        k: usize,
+    ) -> Vec<ResonateResult> {
         let results = self.search.explore(query, qualia, k);
-        
-        results.into_iter()
+
+        results
+            .into_iter()
             .map(|r| ResonateResult {
                 fingerprint: r.atom.fingerprint,
                 qualia: r.atom.qualia,
@@ -1027,12 +1048,13 @@ impl CogRedis {
             })
             .collect()
     }
-    
+
     /// INTUIT - find by qualia only (Mexican hat resonance)
     pub fn intuit(&self, qualia: &QualiaVector, k: usize) -> Vec<ResonateResult> {
         let results = self.search.intuit(qualia, k);
-        
-        results.into_iter()
+
+        results
+            .into_iter()
             .map(|r| ResonateResult {
                 fingerprint: r.atom.fingerprint,
                 qualia: r.atom.qualia,
@@ -1043,7 +1065,7 @@ impl CogRedis {
             })
             .collect()
     }
-    
+
     /// KEYS - find by qualia range
     pub fn keys_by_qualia(
         &self,
@@ -1051,139 +1073,174 @@ impl CogRedis {
         arousal_range: Option<(f32, f32)>,
     ) -> Vec<CogAddr> {
         let mut results = Vec::new();
-        
+
         for (addr, value) in self.fluid.iter().chain(self.nodes.iter()) {
             let mut matches = true;
-            
+
             if let Some((min, max)) = valence_range {
                 if value.qualia.valence < min || value.qualia.valence > max {
                     matches = false;
                 }
             }
-            
+
             if let Some((min, max)) = arousal_range {
                 if value.qualia.arousal < min || value.qualia.arousal > max {
                     matches = false;
                 }
             }
-            
+
             if matches {
                 results.push(*addr);
             }
         }
-        
+
         results
     }
-    
+
     // =========================================================================
     // CAUSAL OPERATIONS (Pearl's Ladder)
     // =========================================================================
-    
+
     /// CAUSE - what does this cause? (Rung 2: intervention)
     pub fn cause(&mut self, addr: CogAddr, action: CogAddr) -> Vec<CausalResult> {
         let state = self.get(addr);
         let act = self.get(action);
-        
+
         if let (Some(s), Some(a)) = (state, act) {
             self.causal.query_outcome(&s.fingerprint, &a.fingerprint)
         } else {
             Vec::new()
         }
     }
-    
+
     /// WOULD - what would have happened? (Rung 3: counterfactual)
     pub fn would(&mut self, addr: CogAddr, alt_action: CogAddr) -> Vec<CausalResult> {
         let state = self.get(addr);
         let act = self.get(alt_action);
-        
+
         if let (Some(s), Some(a)) = (state, act) {
-            self.causal.query_counterfactual(&s.fingerprint, &a.fingerprint)
+            self.causal
+                .query_counterfactual(&s.fingerprint, &a.fingerprint)
         } else {
             Vec::new()
         }
     }
-    
+
     /// Store intervention for causal learning
-    pub fn store_cause(&mut self, state: CogAddr, action: CogAddr, outcome: CogAddr, strength: f32) {
+    pub fn store_cause(
+        &mut self,
+        state: CogAddr,
+        action: CogAddr,
+        outcome: CogAddr,
+        strength: f32,
+    ) {
         let s = self.get(state);
         let a = self.get(action);
         let outcome_val = self.get(outcome);
 
         if let (Some(sv), Some(av), Some(ov)) = (s, a, outcome_val) {
-            self.causal.store_intervention(&sv.fingerprint, &av.fingerprint, &ov.fingerprint, strength);
+            self.causal.store_intervention(
+                &sv.fingerprint,
+                &av.fingerprint,
+                &ov.fingerprint,
+                strength,
+            );
         }
     }
 
     /// Store counterfactual for what-if reasoning
-    pub fn store_would(&mut self, state: CogAddr, alt_action: CogAddr, alt_outcome: CogAddr, strength: f32) {
+    pub fn store_would(
+        &mut self,
+        state: CogAddr,
+        alt_action: CogAddr,
+        alt_outcome: CogAddr,
+        strength: f32,
+    ) {
         let s = self.get(state);
         let a = self.get(alt_action);
         let outcome_val = self.get(alt_outcome);
 
         if let (Some(sv), Some(av), Some(ov)) = (s, a, outcome_val) {
-            self.causal.store_counterfactual(&sv.fingerprint, &av.fingerprint, &ov.fingerprint, strength);
+            self.causal.store_counterfactual(
+                &sv.fingerprint,
+                &av.fingerprint,
+                &ov.fingerprint,
+                strength,
+            );
         }
     }
-    
+
     // =========================================================================
     // NARS OPERATIONS
     // =========================================================================
-    
+
     /// DEDUCE - derive conclusion from premises
     pub fn deduce(&self, premise1: CogAddr, premise2: CogAddr) -> Option<DeduceResult> {
-        let p1 = self.nodes.get(&premise1).or_else(|| self.fluid.get(&premise1))?;
-        let p2 = self.nodes.get(&premise2).or_else(|| self.fluid.get(&premise2))?;
-        
+        let p1 = self
+            .nodes
+            .get(&premise1)
+            .or_else(|| self.fluid.get(&premise1))?;
+        let p2 = self
+            .nodes
+            .get(&premise2)
+            .or_else(|| self.fluid.get(&premise2))?;
+
         let atom1 = CognitiveAtom::new(p1.fingerprint)
             .with_qualia(p1.qualia)
             .with_truth(p1.truth);
         let atom2 = CognitiveAtom::new(p2.fingerprint)
             .with_qualia(p2.qualia)
             .with_truth(p2.truth);
-        
+
         let result = self.search.deduce(&atom1, &atom2)?;
-        
+
         Some(DeduceResult {
             fingerprint: result.atom.fingerprint,
             qualia: result.atom.qualia,
             truth: result.atom.truth,
         })
     }
-    
+
     /// ABDUCT - generate hypothesis from observation
     pub fn abduct(&self, premise1: CogAddr, premise2: CogAddr) -> Option<DeduceResult> {
-        let p1 = self.nodes.get(&premise1).or_else(|| self.fluid.get(&premise1))?;
-        let p2 = self.nodes.get(&premise2).or_else(|| self.fluid.get(&premise2))?;
-        
+        let p1 = self
+            .nodes
+            .get(&premise1)
+            .or_else(|| self.fluid.get(&premise1))?;
+        let p2 = self
+            .nodes
+            .get(&premise2)
+            .or_else(|| self.fluid.get(&premise2))?;
+
         let atom1 = CognitiveAtom::new(p1.fingerprint)
             .with_qualia(p1.qualia)
             .with_truth(p1.truth);
         let atom2 = CognitiveAtom::new(p2.fingerprint)
             .with_qualia(p2.qualia)
             .with_truth(p2.truth);
-        
+
         let result = self.search.abduct(&atom1, &atom2)?;
-        
+
         Some(DeduceResult {
             fingerprint: result.atom.fingerprint,
             qualia: result.atom.qualia,
             truth: result.atom.truth,
         })
     }
-    
+
     /// JUDGE - evaluate truth of a statement
     pub fn judge(&self, addr: CogAddr) -> TruthValue {
         if let Some(result) = self.nodes.get(&addr).or_else(|| self.fluid.get(&addr)) {
             result.truth
         } else {
-            TruthValue::new(0.5, 0.1)  // Unknown
+            TruthValue::new(0.5, 0.1) // Unknown
         }
     }
-    
+
     // =========================================================================
     // STATS
     // =========================================================================
-    
+
     pub fn stats(&self) -> CogRedisStats {
         CogRedisStats {
             surface_count: self.surface.len(),
@@ -1231,22 +1288,22 @@ impl SetOptions {
         self.qualia = Some(q);
         self
     }
-    
+
     pub fn truth(mut self, f: f32, c: f32) -> Self {
         self.truth = Some(TruthValue::new(f, c));
         self
     }
-    
+
     pub fn ttl(mut self, secs: u64) -> Self {
         self.ttl = Some(Duration::from_secs(secs));
         self
     }
-    
+
     pub fn permanent(mut self) -> Self {
         self.promote = true;
         self
     }
-    
+
     pub fn label(mut self, s: &str) -> Self {
         self.label = Some(s.to_string());
         self
@@ -1364,7 +1421,8 @@ impl CogRedis {
                 // Search BindSpace for similar fingerprints using resonate
                 let qualia = QualiaVector::default();
                 let results = self.resonate(&fp_to_words(query), &qualia, k);
-                let fps: Vec<(Addr, Fingerprint)> = results.into_iter()
+                let fps: Vec<(Addr, Fingerprint)> = results
+                    .into_iter()
                     .map(|r| {
                         let addr = Addr::new(0x80, 0); // Placeholder address
                         (addr, words_to_fp(&r.fingerprint))
@@ -1375,7 +1433,9 @@ impl CogRedis {
             // Insert (0x30)
             0x30 => {
                 if args.is_empty() {
-                    return CamResult::Error("Insert requires at least one fingerprint".to_string());
+                    return CamResult::Error(
+                        "Insert requires at least one fingerprint".to_string(),
+                    );
                 }
                 let addr = self.bind_space.write(fp_to_words(&args[0]));
                 CamResult::Addr(addr)
@@ -1389,7 +1449,8 @@ impl CogRedis {
                         let addr = Addr::new(prefix, slot);
                         if let Some(node) = self.bind_space.read(addr) {
                             results.push((addr, words_to_fp(&node.fingerprint)));
-                            if results.len() >= 100 { // Limit scan
+                            if results.len() >= 100 {
+                                // Limit scan
                                 return CamResult::Fingerprints(results);
                             }
                         }
@@ -1412,7 +1473,8 @@ impl CogRedis {
                 let query = &args[0];
                 let qualia = QualiaVector::default();
                 let results = self.resonate(&fp_to_words(query), &qualia, 10);
-                let fps: Vec<(Addr, Fingerprint)> = results.into_iter()
+                let fps: Vec<(Addr, Fingerprint)> = results
+                    .into_iter()
                     .map(|r| {
                         let addr = Addr::new(0x80, 0);
                         (addr, words_to_fp(&r.fingerprint))
@@ -1435,7 +1497,8 @@ impl CogRedis {
                 // Same as vector search
                 let qualia = QualiaVector::default();
                 let results = self.resonate(&fp_to_words(&args[0]), &qualia, 10);
-                let fps: Vec<(Addr, Fingerprint)> = results.into_iter()
+                let fps: Vec<(Addr, Fingerprint)> = results
+                    .into_iter()
                     .map(|r| {
                         let addr = Addr::new(0x80, 0);
                         (addr, words_to_fp(&r.fingerprint))
@@ -1556,13 +1619,17 @@ impl CogRedis {
                     return CamResult::Error("DoIntervene requires intervention".to_string());
                 }
                 // Store intervention as causal operation
-                let addr = self.bind_space.write_labeled(fp_to_words(&args[0]), "causal:intervention");
+                let addr = self
+                    .bind_space
+                    .write_labeled(fp_to_words(&args[0]), "causal:intervention");
                 CamResult::Addr(addr)
             }
             // Counterfactual (0x30) - Rung 3
             0x30 => {
                 if args.len() < 2 {
-                    return CamResult::Error("Counterfactual requires world and change".to_string());
+                    return CamResult::Error(
+                        "Counterfactual requires world and change".to_string(),
+                    );
                 }
                 // Counterfactual: what if A had been B?
                 let counterfactual = args[0].bind(&args[1].not());
@@ -1578,16 +1645,20 @@ impl CogRedis {
             // Reflect (0x00)
             0x00 => {
                 // Reflection: create fingerprint of current state
-                let state_fp = Fingerprint::from_content(&format!("meta:state:{}",
-                    self.bind_space.stats().node_count));
+                let state_fp = Fingerprint::from_content(&format!(
+                    "meta:state:{}",
+                    self.bind_space.stats().node_count
+                ));
                 CamResult::Fingerprint(state_fp)
             }
             // Monitor (0x20)
             0x20 => {
                 // Monitor: return stats as fingerprint
                 let stats = self.bind_space.stats();
-                let monitor_fp = Fingerprint::from_content(&format!("meta:monitor:{}:{}:{}",
-                    stats.surface_count, stats.fluid_count, stats.node_count));
+                let monitor_fp = Fingerprint::from_content(&format!(
+                    "meta:monitor:{}:{}:{}",
+                    stats.surface_count, stats.fluid_count, stats.node_count
+                ));
                 CamResult::Fingerprint(monitor_fp)
             }
             _ => CamResult::Error(format!("Unknown Meta op: 0x{:02X}", slot)),
@@ -1631,7 +1702,9 @@ impl CogRedis {
                 }
                 // Capture learning moment: bind input → output
                 let moment = args[0].bind(&args[1]);
-                let addr = self.bind_space.write_labeled(fp_to_words(&moment), "learning:moment");
+                let addr = self
+                    .bind_space
+                    .write_labeled(fp_to_words(&moment), "learning:moment");
                 CamResult::Addr(addr)
             }
             // Hebbian (0x10)
@@ -1651,15 +1724,15 @@ impl CogRedis {
     pub fn execute_cam_named(&mut self, name: &str, args: &[Fingerprint]) -> CamResult {
         // Map common names to operation IDs (using exact enum values)
         let op_id = match name.to_uppercase().as_str() {
-            "BIND" => HammingOp::Bind as u16,           // 0x310
-            "UNBIND" => HammingOp::Unbind as u16,       // 0x311
-            "SIMILARITY" => HammingOp::Similarity as u16, // 0x301
-            "DISTANCE" => HammingOp::Distance as u16,   // 0x300
-            "BUNDLE" => HammingOp::Bundle as u16,       // 0x312
-            "PERMUTE" => HammingOp::Permute as u16,     // 0x330
+            "BIND" => HammingOp::Bind as u16,                // 0x310
+            "UNBIND" => HammingOp::Unbind as u16,            // 0x311
+            "SIMILARITY" => HammingOp::Similarity as u16,    // 0x301
+            "DISTANCE" => HammingOp::Distance as u16,        // 0x300
+            "BUNDLE" => HammingOp::Bundle as u16,            // 0x312
+            "PERMUTE" => HammingOp::Permute as u16,          // 0x330
             "VECTOR_SEARCH" => LanceOp::VectorSearch as u16, // 0x060
-            "INSERT" => LanceOp::Insert as u16,         // 0x030
-            "SCAN" => LanceOp::Scan as u16,             // 0x040
+            "INSERT" => LanceOp::Insert as u16,              // 0x030
+            "SCAN" => LanceOp::Scan as u16,                  // 0x040
             "SELECT_SIMILAR" => SqlOp::SelectSimilar as u16, // 0x110
             _ => return CamResult::Error(format!("Unknown operation: {}", name)),
         };
@@ -1795,7 +1868,9 @@ impl CogRedis {
 
         let key = args[0];
         if let Some(node) = self.bind_get(key) {
-            let fp_hex = node.fingerprint.iter()
+            let fp_hex = node
+                .fingerprint
+                .iter()
                 .map(|w| format!("{:016x}", w))
                 .collect::<Vec<_>>()
                 .join("");
@@ -1851,7 +1926,11 @@ impl CogRedis {
         let stats = self.bind_space.stats();
         RedisResult::String(format!(
             "# BindSpace\r\nsurface_count:{}\r\nfluid_count:{}\r\nnode_count:{}\r\nedge_count:{}\r\ncontext:{:?}",
-            stats.surface_count, stats.fluid_count, stats.node_count, stats.edge_count, stats.context
+            stats.surface_count,
+            stats.fluid_count,
+            stats.node_count,
+            stats.edge_count,
+            stats.context
         ))
     }
 
@@ -1891,7 +1970,9 @@ impl CogRedis {
         let result = self.execute_cam(HammingOp::Unbind as u16, &[edge, a]);
         match result {
             CamResult::Fingerprint(fp) => {
-                let hex = fp.as_raw().iter()
+                let hex = fp
+                    .as_raw()
+                    .iter()
                     .take(4)
                     .map(|w| format!("{:016x}", w))
                     .collect::<Vec<_>>()
@@ -1918,7 +1999,8 @@ impl CogRedis {
         let result = self.execute_cam(LanceOp::VectorSearch as u16, &[query]);
         match result {
             CamResult::Fingerprints(fps) => {
-                let results: Vec<RedisResult> = fps.iter()
+                let results: Vec<RedisResult> = fps
+                    .iter()
                     .take(k)
                     .map(|(addr, _fp)| RedisResult::String(format!("{:04X}", addr.0)))
                     .collect();
@@ -1955,7 +2037,9 @@ impl CogRedis {
 
         match result {
             CamResult::Fingerprint(fp) => {
-                let hex = fp.as_raw().iter()
+                let hex = fp
+                    .as_raw()
+                    .iter()
                     .take(4)
                     .map(|w| format!("{:016x}", w))
                     .collect::<Vec<_>>()
@@ -1978,7 +2062,9 @@ impl CogRedis {
 
         match result {
             CamResult::Fingerprint(fp) => {
-                let hex = fp.as_raw().iter()
+                let hex = fp
+                    .as_raw()
+                    .iter()
                     .take(4)
                     .map(|w| format!("{:016x}", w))
                     .collect::<Vec<_>>()
@@ -2012,12 +2098,12 @@ impl CogRedis {
 
         // Parse address from hex
         let addr_str = args[0];
-        let addr_val = u16::from_str_radix(addr_str.trim_start_matches("0x"), 16)
-            .unwrap_or(0);
+        let addr_val = u16::from_str_radix(addr_str.trim_start_matches("0x"), 16).unwrap_or(0);
         let addr = CogAddr(addr_val);
 
         let edges = self.fanout(addr);
-        let results: Vec<RedisResult> = edges.iter()
+        let results: Vec<RedisResult> = edges
+            .iter()
             .map(|edge| RedisResult::String(format!("{:04X} -> {:04X}", edge.from.0, edge.to.0)))
             .collect();
 
@@ -2056,7 +2142,12 @@ impl CogRedis {
                 RedisResult::String(format!("label:{}", node.label.as_deref().unwrap_or(""))),
                 RedisResult::String(format!("depth:{}", node.depth)),
                 RedisResult::String(format!("rung:{}", node.rung)),
-                RedisResult::String(format!("parent:{}", node.parent.map(|p| format!("{:04X}", p.0)).unwrap_or_default())),
+                RedisResult::String(format!(
+                    "parent:{}",
+                    node.parent
+                        .map(|p| format!("{:04X}", p.0))
+                        .unwrap_or_default()
+                )),
             ])
         } else {
             RedisResult::Nil
@@ -2106,7 +2197,7 @@ impl CogRedis {
                 RedisResult::String(parent_path.to_string())
             }
         } else {
-            RedisResult::Nil  // Root node has no parent
+            RedisResult::Nil // Root node has no parent
         }
     }
 
@@ -2150,7 +2241,9 @@ impl CogRedis {
         let path = args[0];
         let addr = dn_path_to_addr(path);
 
-        let ancestors: Vec<RedisResult> = self.bind_space.ancestors(addr)
+        let ancestors: Vec<RedisResult> = self
+            .bind_space
+            .ancestors(addr)
             .filter_map(|anc_addr| {
                 self.bind_space.read(anc_addr).map(|node| {
                     RedisResult::Array(vec![
@@ -2174,7 +2267,9 @@ impl CogRedis {
         let path = args[0];
         let addr = dn_path_to_addr(path);
 
-        let siblings: Vec<RedisResult> = self.bind_space.siblings(addr)
+        let siblings: Vec<RedisResult> = self
+            .bind_space
+            .siblings(addr)
             .filter_map(|sib_addr| {
                 self.bind_space.read(sib_addr).map(|node| {
                     RedisResult::Array(vec![
@@ -2283,7 +2378,6 @@ impl CogRedis {
     /// DAG.BEGIN [STRATEGY merge|reject|last] - Start ACID transaction
     fn cmd_dag_begin(&mut self, args: &[&str]) -> RedisResult {
         use super::xor_dag::ConflictStrategy;
-        
 
         // Parse strategy if provided
         let _strategy = if args.len() >= 2 && args[0].to_uppercase() == "STRATEGY" {
@@ -2321,7 +2415,9 @@ impl CogRedis {
 
         match dag.read(txn_id, addr) {
             Ok(Some(node)) => {
-                let fp_hex = node.fingerprint.iter()
+                let fp_hex = node
+                    .fingerprint
+                    .iter()
                     .map(|w| format!("{:016x}", w))
                     .collect::<Vec<_>>()
                     .join("");
@@ -2339,7 +2435,9 @@ impl CogRedis {
     /// DAG.WRITE TXN_ID key fingerprint [label] - Stage write in transaction
     fn cmd_dag_write(&mut self, args: &[&str]) -> RedisResult {
         if args.len() < 3 {
-            return RedisResult::Error("DAG.WRITE requires TXN_ID, key, and fingerprint".to_string());
+            return RedisResult::Error(
+                "DAG.WRITE requires TXN_ID, key, and fingerprint".to_string(),
+            );
         }
 
         let txn_id: u64 = args[0].parse().unwrap_or(0);
@@ -2414,7 +2512,8 @@ impl CogRedis {
 
         match dag.read_at_version(addr, version) {
             Ok(Some(fp)) => {
-                let fp_hex = fp.iter()
+                let fp_hex = fp
+                    .iter()
                     .map(|w| format!("{:016x}", w))
                     .collect::<Vec<_>>()
                     .join("");
@@ -2442,7 +2541,8 @@ impl CogRedis {
             Ok(Some(diff)) => {
                 // Count changed bits
                 let bits_changed: u32 = diff.iter().map(|w| w.count_ones()).sum();
-                let diff_hex = diff.iter()
+                let diff_hex = diff
+                    .iter()
                     .map(|w| format!("{:016x}", w))
                     .collect::<Vec<_>>()
                     .join("");
@@ -2476,9 +2576,10 @@ impl CogRedis {
                     RedisResult::String("OK - all parity blocks valid".to_string())
                 } else {
                     RedisResult::Array(
-                        invalid.into_iter()
+                        invalid
+                            .into_iter()
                             .map(|id| RedisResult::Integer(id as i64))
-                            .collect()
+                            .collect(),
                     )
                 }
             }
@@ -2499,7 +2600,8 @@ impl CogRedis {
 
         match dag.recover_addr(addr) {
             Ok(recovered) => {
-                let fp_hex = recovered.iter()
+                let fp_hex = recovered
+                    .iter()
                     .map(|w| format!("{:016x}", w))
                     .collect::<Vec<_>>()
                     .join("");
@@ -2538,7 +2640,7 @@ impl CogRedis {
     /// This implementation uses OnceLock for safe lazy initialization.
     fn get_or_create_dag(&self) -> &'static super::xor_dag::XorDag {
         use super::xor_dag::{XorDag, XorDagConfig};
-        use std::sync::{Arc, RwLock, OnceLock};
+        use std::sync::{Arc, OnceLock, RwLock};
 
         static DAG: OnceLock<super::xor_dag::XorDag> = OnceLock::new();
 
@@ -2557,7 +2659,8 @@ impl CogRedis {
         }
 
         let op_name = args[0];
-        let fp_args: Vec<Fingerprint> = args[1..].iter()
+        let fp_args: Vec<Fingerprint> = args[1..]
+            .iter()
             .map(|s| Fingerprint::from_content(s))
             .collect();
 
@@ -2570,9 +2673,9 @@ impl CogRedis {
             return RedisResult::Error("CAM.ID requires operation ID".to_string());
         }
 
-        let op_id = u16::from_str_radix(args[0].trim_start_matches("0x"), 16)
-            .unwrap_or(0);
-        let fp_args: Vec<Fingerprint> = args[1..].iter()
+        let op_id = u16::from_str_radix(args[0].trim_start_matches("0x"), 16).unwrap_or(0);
+        let fp_args: Vec<Fingerprint> = args[1..]
+            .iter()
             .map(|s| Fingerprint::from_content(s))
             .collect();
 
@@ -2596,7 +2699,9 @@ impl CogRedis {
 fn cam_result_to_redis(result: CamResult) -> RedisResult {
     match result {
         CamResult::Fingerprint(fp) => {
-            let hex = fp.as_raw().iter()
+            let hex = fp
+                .as_raw()
+                .iter()
                 .take(8)
                 .map(|w| format!("{:016x}", w))
                 .collect::<Vec<_>>()
@@ -2604,7 +2709,8 @@ fn cam_result_to_redis(result: CamResult) -> RedisResult {
             RedisResult::String(hex)
         }
         CamResult::Fingerprints(fps) => {
-            let results: Vec<RedisResult> = fps.iter()
+            let results: Vec<RedisResult> = fps
+                .iter()
                 .map(|(addr, _fp)| RedisResult::String(format!("{:04X}", addr.0)))
                 .collect();
             RedisResult::Array(results)
@@ -2641,7 +2747,7 @@ fn words_to_fp(words: &[u64; 256]) -> Fingerprint {
 // PRODUCTION-HARDENED COGREDIS
 // =============================================================================
 
-use super::hardening::{HardeningConfig, HardenedBindSpace, QueryContext};
+use super::hardening::{HardenedBindSpace, HardeningConfig, QueryContext};
 
 /// Production-hardened CogRedis with memory limits, TTL, WAL, and timeouts
 ///
@@ -2697,11 +2803,9 @@ impl HardenedCogRedis {
     /// SET with hardening (tracks LRU, sets TTL, logs to WAL)
     pub fn set(&mut self, fingerprint: [u64; 256], opts: SetOptions) -> CogAddr {
         let addr = self.inner.set(fingerprint, opts.clone());
-        let to_evict = self.hardening.on_write(
-            Addr::from(addr.0),
-            &fingerprint,
-            opts.label.as_deref(),
-        );
+        let to_evict =
+            self.hardening
+                .on_write(Addr::from(addr.0), &fingerprint, opts.label.as_deref());
 
         // Evict if needed
         for evict_addr in to_evict {
@@ -2723,11 +2827,8 @@ impl HardenedCogRedis {
     /// BIND with hardening (logs to WAL)
     pub fn bind(&mut self, from: CogAddr, verb: CogAddr, to: CogAddr) -> Option<CogAddr> {
         let result = self.inner.bind(from, verb, to)?;
-        self.hardening.on_link(
-            Addr::from(from.0),
-            Addr::from(verb.0),
-            Addr::from(to.0),
-        );
+        self.hardening
+            .on_link(Addr::from(from.0), Addr::from(verb.0), Addr::from(to.0));
         Some(result)
     }
 
@@ -2761,7 +2862,12 @@ impl HardenedCogRedis {
     }
 
     /// RESONATE with timeout
-    pub fn resonate(&self, query: &[u64; 256], qualia: &QualiaVector, k: usize) -> Vec<ResonateResult> {
+    pub fn resonate(
+        &self,
+        query: &[u64; 256],
+        qualia: &QualiaVector,
+        k: usize,
+    ) -> Vec<ResonateResult> {
         self.inner.resonate(query, qualia, k)
     }
 
@@ -2805,7 +2911,11 @@ impl HardenedCogRedis {
 
         for entry in entries {
             match entry {
-                super::hardening::WalEntry::Write { addr, fingerprint, label: _ } => {
+                super::hardening::WalEntry::Write {
+                    addr,
+                    fingerprint,
+                    label: _,
+                } => {
                     let _bind_addr = Addr::from(addr);
                     self.inner.bind_space_mut().write(fingerprint);
                     // Note: label recovery would require bind_space modification
@@ -2817,7 +2927,9 @@ impl HardenedCogRedis {
                     let from_addr = Addr::from(from);
                     let verb_addr = Addr::from(verb);
                     let to_addr = Addr::from(to);
-                    self.inner.bind_space_mut().link(from_addr, verb_addr, to_addr);
+                    self.inner
+                        .bind_space_mut()
+                        .link(from_addr, verb_addr, to_addr);
                 }
                 super::hardening::WalEntry::Checkpoint { .. } => {
                     // Skip checkpoint markers
@@ -2890,7 +3002,7 @@ impl Default for HardenedCogRedis {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     fn random_fp() -> [u64; 256] {
         let mut fp = [0u64; 256];
         for i in 0..256 {
@@ -2898,7 +3010,7 @@ mod tests {
         }
         fp
     }
-    
+
     #[test]
     fn test_address_tiers() {
         assert_eq!(CogAddr(0x0000).tier(), Tier::Surface);
@@ -2908,68 +3020,68 @@ mod tests {
         assert_eq!(CogAddr(0x8000).tier(), Tier::Node);
         assert_eq!(CogAddr(0xFFFF).tier(), Tier::Node);
     }
-    
+
     #[test]
     fn test_promote_demote() {
         let fluid_addr = CogAddr(0x1234);
         assert!(fluid_addr.is_fluid());
-        
+
         let promoted = fluid_addr.promote();
         assert!(promoted.is_node());
-        
+
         let demoted = promoted.demote();
         assert!(demoted.is_fluid());
     }
-    
+
     #[test]
     fn test_set_get() {
         let mut redis = CogRedis::new();
-        
+
         let fp = random_fp();
         let addr = redis.set(fp, SetOptions::default());
-        
+
         assert!(addr.is_fluid());
-        
+
         let result = redis.get(addr);
         assert!(result.is_some());
         assert_eq!(result.unwrap().tier, Tier::Fluid);
     }
-    
+
     #[test]
     fn test_promotion() {
         let mut redis = CogRedis::new();
         redis.promotion_threshold = 3;
-        
+
         let fp = random_fp();
         let addr = redis.set(fp, SetOptions::default());
-        
+
         // Access multiple times
         for _ in 0..5 {
             redis.get(addr);
         }
-        
+
         // Should have been promoted
         // (The original addr is gone, value is in a new node addr)
         let result = redis.get(addr);
         assert!(result.is_none() || result.unwrap().tier == Tier::Node);
     }
-    
+
     #[test]
     fn test_bind_unbind() {
         let mut redis = CogRedis::new();
-        
+
         let a = redis.set(random_fp(), SetOptions::default().label("A"));
         let verb = redis.set(random_fp(), SetOptions::default().label("CAUSES"));
         let b = redis.set(random_fp(), SetOptions::default().label("B"));
-        
+
         let edge = redis.bind(a, verb, b);
         assert!(edge.is_some());
-        
+
         // Unbind should recover B given A
         let recovered = redis.unbind(edge.unwrap(), a);
         assert!(recovered.is_some());
     }
-    
+
     #[test]
     fn test_qualia_search() {
         let mut redis = CogRedis::new();

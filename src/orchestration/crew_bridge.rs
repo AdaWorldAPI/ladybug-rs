@@ -32,19 +32,19 @@
 //! standalone — if crewAI is not connected, these endpoints simply
 //! return empty results or are not called.
 
-use serde::{Deserialize, Serialize};
-use crate::storage::bind_space::{Addr, BindSpace, FINGERPRINT_WORDS};
+use super::a2a::{A2AMessage, A2AProtocol, DeliveryStatus};
 use super::agent_card::{AgentCard, AgentRegistry};
-use super::thinking_template::{ThinkingTemplate, ThinkingTemplateRegistry};
 use super::blackboard_agent::{AgentBlackboard, BlackboardRegistry};
-use super::a2a::{A2AProtocol, A2AMessage, DeliveryStatus};
-use super::persona::{Persona, PersonaRegistry};
-use super::meta_orchestrator::MetaOrchestrator;
-use super::semantic_kernel::SemanticKernel;
 use super::handover::{HandoverDecision, HandoverPolicy};
 use super::kernel_extensions::{
     FilterPipeline, KernelGuardrail, MemoryBank, ObservabilityManager, VerificationEngine,
 };
+use super::meta_orchestrator::MetaOrchestrator;
+use super::persona::{Persona, PersonaRegistry};
+use super::semantic_kernel::SemanticKernel;
+use super::thinking_template::{ThinkingTemplate, ThinkingTemplateRegistry};
+use crate::storage::bind_space::{Addr, BindSpace, FINGERPRINT_WORDS};
+use serde::{Deserialize, Serialize};
 
 /// Task status in the dispatch pipeline
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -305,7 +305,11 @@ impl CrewBridge {
     }
 
     /// Evaluate handover for an agent via the meta-orchestrator
-    pub fn evaluate_handover(&mut self, source_slot: u8, task_desc: Option<&str>) -> HandoverDecision {
+    pub fn evaluate_handover(
+        &mut self,
+        source_slot: u8,
+        task_desc: Option<&str>,
+    ) -> HandoverDecision {
         self.orchestrator.evaluate_handover(
             source_slot,
             &self.blackboards,
@@ -320,7 +324,8 @@ impl CrewBridge {
         decision: &HandoverDecision,
         space: &mut BindSpace,
     ) -> Option<DeliveryStatus> {
-        self.orchestrator.execute_handover(decision, &mut self.a2a, space)
+        self.orchestrator
+            .execute_handover(decision, &mut self.a2a, space)
     }
 
     /// Update an agent's flow state from a gate evaluation
@@ -333,7 +338,8 @@ impl CrewBridge {
 
     /// Route a task to the best available agent using resonance scoring
     pub fn route_task(&mut self, task_description: &str) -> Option<(u8, f32)> {
-        self.orchestrator.route_task(task_description, &self.personas)
+        self.orchestrator
+            .route_task(task_description, &self.personas)
     }
 
     /// Tick the orchestrator — evaluate all agents and return non-Continue decisions
@@ -370,8 +376,16 @@ impl CrewBridge {
             agents_registered: self.agents.count(),
             templates_registered: self.templates.list().len(),
             personas_registered: self.personas.list().len(),
-            tasks_queued: self.task_queue.iter().filter(|t| t.status == TaskStatus::Queued).count(),
-            tasks_in_progress: self.task_queue.iter().filter(|t| t.status == TaskStatus::InProgress).count(),
+            tasks_queued: self
+                .task_queue
+                .iter()
+                .filter(|t| t.status == TaskStatus::Queued)
+                .count(),
+            tasks_in_progress: self
+                .task_queue
+                .iter()
+                .filter(|t| t.status == TaskStatus::InProgress)
+                .count(),
             tasks_completed: self.completed.len(),
             a2a_channels: self.a2a.channels().len(),
             filters_registered: self.filters.count(),
@@ -409,7 +423,7 @@ pub struct BridgeStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::orchestration::agent_card::{AgentRole, AgentGoal};
+    use crate::orchestration::agent_card::{AgentGoal, AgentRole};
 
     fn test_agent(id: &str) -> AgentCard {
         AgentCard {

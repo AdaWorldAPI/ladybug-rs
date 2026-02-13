@@ -28,7 +28,7 @@ impl Edge {
             amplification: 1.0,
         }
     }
-    
+
     pub fn with_amplification(mut self, amp: f32) -> Self {
         self.amplification = amp;
         self

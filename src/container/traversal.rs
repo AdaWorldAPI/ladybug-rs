@@ -9,11 +9,11 @@
 //! container:    1 lookup per node  (record has fp + edges + metadata)
 //! ```
 
-use std::collections::HashMap;
 use super::Container;
-use super::adjacency::{PackedDn, InlineEdgeView};
+use super::adjacency::{InlineEdgeView, PackedDn};
 use super::graph::ContainerGraph;
 use super::search::belichtungsmesser;
+use std::collections::HashMap;
 
 // ============================================================================
 // DN SEMIRING TRAIT: Container-native
@@ -67,15 +67,30 @@ pub struct BooleanBfs;
 impl DnSemiring for BooleanBfs {
     type Value = bool;
 
-    fn zero(&self) -> bool { false }
+    fn zero(&self) -> bool {
+        false
+    }
 
-    fn multiply(&self, _verb: u8, _w: u8, input: &bool, _src: &Container, _dst: Option<&Container>) -> bool {
+    fn multiply(
+        &self,
+        _verb: u8,
+        _w: u8,
+        input: &bool,
+        _src: &Container,
+        _dst: Option<&Container>,
+    ) -> bool {
         *input // If source is reachable, destination is reachable
     }
 
-    fn add(&self, a: &bool, b: &bool) -> bool { *a || *b }
-    fn is_zero(&self, val: &bool) -> bool { !*val }
-    fn name(&self) -> &'static str { "BooleanBfs" }
+    fn add(&self, a: &bool, b: &bool) -> bool {
+        *a || *b
+    }
+    fn is_zero(&self, val: &bool) -> bool {
+        !*val
+    }
+    fn name(&self) -> &'static str {
+        "BooleanBfs"
+    }
 }
 
 /// Hamming-distance shortest path: MinPlus with Hamming as edge weight.
@@ -84,11 +99,17 @@ pub struct HammingMinPlus;
 impl DnSemiring for HammingMinPlus {
     type Value = u32;
 
-    fn zero(&self) -> u32 { u32::MAX }
+    fn zero(&self) -> u32 {
+        u32::MAX
+    }
 
     fn multiply(
-        &self, _verb: u8, _w: u8, input: &u32,
-        src_fp: &Container, dst_fp: Option<&Container>,
+        &self,
+        _verb: u8,
+        _w: u8,
+        input: &u32,
+        src_fp: &Container,
+        dst_fp: Option<&Container>,
     ) -> u32 {
         if *input == u32::MAX {
             return u32::MAX;
@@ -99,9 +120,15 @@ impl DnSemiring for HammingMinPlus {
         }
     }
 
-    fn add(&self, a: &u32, b: &u32) -> u32 { (*a).min(*b) }
-    fn is_zero(&self, val: &u32) -> bool { *val == u32::MAX }
-    fn name(&self) -> &'static str { "HammingMinPlus" }
+    fn add(&self, a: &u32, b: &u32) -> u32 {
+        (*a).min(*b)
+    }
+    fn is_zero(&self, val: &u32) -> bool {
+        *val == u32::MAX
+    }
+    fn name(&self) -> &'static str {
+        "HammingMinPlus"
+    }
 }
 
 /// HDR path binding: XOR-compose path fingerprints, Bundle at junctions.
@@ -110,11 +137,17 @@ pub struct HdrPathBind;
 impl DnSemiring for HdrPathBind {
     type Value = Option<Container>;
 
-    fn zero(&self) -> Option<Container> { None }
+    fn zero(&self) -> Option<Container> {
+        None
+    }
 
     fn multiply(
-        &self, _verb: u8, _w: u8, input: &Option<Container>,
-        _src_fp: &Container, dst_fp: Option<&Container>,
+        &self,
+        _verb: u8,
+        _w: u8,
+        input: &Option<Container>,
+        _src_fp: &Container,
+        dst_fp: Option<&Container>,
     ) -> Option<Container> {
         match (input, dst_fp) {
             (Some(path), Some(dst)) => Some(path.xor(dst)),
@@ -130,8 +163,12 @@ impl DnSemiring for HdrPathBind {
         }
     }
 
-    fn is_zero(&self, val: &Option<Container>) -> bool { val.is_none() }
-    fn name(&self) -> &'static str { "HdrPathBind" }
+    fn is_zero(&self, val: &Option<Container>) -> bool {
+        val.is_none()
+    }
+    fn name(&self) -> &'static str {
+        "HdrPathBind"
+    }
 }
 
 /// Resonance: find paths that resonate with a query fingerprint.
@@ -143,11 +180,17 @@ pub struct ResonanceSearch {
 impl DnSemiring for ResonanceSearch {
     type Value = u32;
 
-    fn zero(&self) -> u32 { 0 }
+    fn zero(&self) -> u32 {
+        0
+    }
 
     fn multiply(
-        &self, _verb: u8, _w: u8, _input: &u32,
-        src_fp: &Container, dst_fp: Option<&Container>,
+        &self,
+        _verb: u8,
+        _w: u8,
+        _input: &u32,
+        src_fp: &Container,
+        dst_fp: Option<&Container>,
     ) -> u32 {
         match dst_fp {
             Some(dst) => {
@@ -160,9 +203,15 @@ impl DnSemiring for ResonanceSearch {
         }
     }
 
-    fn add(&self, a: &u32, b: &u32) -> u32 { (*a).max(*b) }
-    fn is_zero(&self, val: &u32) -> bool { *val == 0 }
-    fn name(&self) -> &'static str { "ResonanceSearch" }
+    fn add(&self, a: &u32, b: &u32) -> u32 {
+        (*a).max(*b)
+    }
+    fn is_zero(&self, val: &u32) -> bool {
+        *val == 0
+    }
+    fn name(&self) -> &'static str {
+        "ResonanceSearch"
+    }
 }
 
 /// PageRank-style value propagation.
@@ -173,20 +222,32 @@ pub struct PageRankPropagation {
 impl DnSemiring for PageRankPropagation {
     type Value = f32;
 
-    fn zero(&self) -> f32 { 0.0 }
+    fn zero(&self) -> f32 {
+        0.0
+    }
 
     fn multiply(
-        &self, _verb: u8, _w: u8, input: &f32,
-        _src_fp: &Container, _dst_fp: Option<&Container>,
+        &self,
+        _verb: u8,
+        _w: u8,
+        input: &f32,
+        _src_fp: &Container,
+        _dst_fp: Option<&Container>,
     ) -> f32 {
         // Simplified: contribution = damping * rank / out_degree
         // Out-degree normalization happens in the traverse loop
         self.damping * input
     }
 
-    fn add(&self, a: &f32, b: &f32) -> f32 { a + b }
-    fn is_zero(&self, val: &f32) -> bool { *val < 1e-9 }
-    fn name(&self) -> &'static str { "PageRankPropagation" }
+    fn add(&self, a: &f32, b: &f32) -> f32 {
+        a + b
+    }
+    fn is_zero(&self, val: &f32) -> bool {
+        *val < 1e-9
+    }
+    fn name(&self) -> &'static str {
+        "PageRankPropagation"
+    }
 }
 
 /// Cascaded Hamming with Belichtungsmesser pre-filter.
@@ -198,11 +259,17 @@ pub struct CascadedHamming {
 impl DnSemiring for CascadedHamming {
     type Value = u32;
 
-    fn zero(&self) -> u32 { u32::MAX }
+    fn zero(&self) -> u32 {
+        u32::MAX
+    }
 
     fn multiply(
-        &self, _verb: u8, _w: u8, input: &u32,
-        src_fp: &Container, dst_fp: Option<&Container>,
+        &self,
+        _verb: u8,
+        _w: u8,
+        input: &u32,
+        src_fp: &Container,
+        dst_fp: Option<&Container>,
     ) -> u32 {
         if *input == u32::MAX {
             return u32::MAX;
@@ -221,9 +288,15 @@ impl DnSemiring for CascadedHamming {
         }
     }
 
-    fn add(&self, a: &u32, b: &u32) -> u32 { (*a).min(*b) }
-    fn is_zero(&self, val: &u32) -> bool { *val == u32::MAX }
-    fn name(&self) -> &'static str { "CascadedHamming" }
+    fn add(&self, a: &u32, b: &u32) -> u32 {
+        (*a).min(*b)
+    }
+    fn is_zero(&self, val: &u32) -> bool {
+        *val == u32::MAX
+    }
+    fn name(&self) -> &'static str {
+        "CascadedHamming"
+    }
 }
 
 // ============================================================================
@@ -249,6 +322,7 @@ impl DnSemiring for CascadedHamming {
 /// - F record lookups (MGET in Redis)
 /// - F×D edge reads (zero-copy from Container 0)
 /// - F×D semiring multiply + add operations
+///
 /// No separate CSR lookup. No fingerprint lookup.
 pub fn container_mxv<S: DnSemiring>(
     graph: &ContainerGraph,
@@ -289,16 +363,12 @@ pub fn container_mxv<S: DnSemiring>(
             for dst_dn in destinations {
                 let dst_fp = graph.fingerprint(&dst_dn);
 
-                let contribution = semiring.multiply(
-                    edge.verb,
-                    edge.target_hint,
-                    input_val,
-                    src_fp,
-                    dst_fp,
-                );
+                let contribution =
+                    semiring.multiply(edge.verb, edge.target_hint, input_val, src_fp, dst_fp);
 
                 if !semiring.is_zero(&contribution) {
-                    result.entry(dst_dn)
+                    result
+                        .entry(dst_dn)
                         .and_modify(|existing| {
                             *existing = semiring.add(existing, &contribution);
                         })
@@ -361,7 +431,8 @@ fn resolve_target_hint(
     // Strategy 3: search the parent's children
     if let Some(parent) = src_dn.parent() {
         for &child_dn in graph.children_of(&parent) {
-            if child_dn.component(child_dn.depth().saturating_sub(1) as usize) == Some(target_hint) {
+            if child_dn.component(child_dn.depth().saturating_sub(1) as usize) == Some(target_hint)
+            {
                 return vec![child_dn];
             }
         }

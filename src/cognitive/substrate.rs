@@ -54,14 +54,16 @@
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
-use crate::core::{Fingerprint, VsaOps};
+use crate::cognitive::collapse_gate::{CollapseDecision, GateState, calculate_sd, evaluate_gate};
+use crate::cognitive::quad_triangle::{CognitiveProfiles, QuadTriangle};
+use crate::cognitive::seven_layer::{
+    ConsciousnessSnapshot, SevenLayerNode, process_layers_wave, snapshot_consciousness,
+};
 use crate::cognitive::style::ThinkingStyle;
-use crate::cognitive::quad_triangle::{QuadTriangle, CognitiveProfiles};
-use crate::cognitive::seven_layer::{SevenLayerNode, ConsciousnessSnapshot, process_layers_wave, snapshot_consciousness};
-use crate::cognitive::collapse_gate::{GateState, CollapseDecision, evaluate_gate, calculate_sd};
-use crate::fabric::mrna::{MRNA, Resonance};
+use crate::core::{Fingerprint, VsaOps};
 use crate::fabric::Subsystem;
-use crate::fabric::butterfly::{ButterflyDetector, Butterfly};
+use crate::fabric::butterfly::{Butterfly, ButterflyDetector};
+use crate::fabric::mrna::{MRNA, Resonance};
 
 // =============================================================================
 // COGNITIVE STATE
@@ -72,19 +74,19 @@ use crate::fabric::butterfly::{ButterflyDetector, Butterfly};
 pub struct CognitiveState {
     /// Quad-triangle cognitive texture
     pub quad_triangle: QuadTriangle,
-    
+
     /// 7-layer consciousness markers
     pub consciousness: SevenLayerNode,
-    
+
     /// Current thinking style
     pub thinking_style: ThinkingStyle,
-    
+
     /// Last collapse decision
     pub last_collapse: Option<CollapseDecision>,
-    
+
     /// Processing cycle
     pub cycle: u64,
-    
+
     /// Timestamp
     pub timestamp: Instant,
 }
@@ -101,7 +103,7 @@ impl CognitiveState {
             timestamp: Instant::now(),
         }
     }
-    
+
     /// Get global fingerprint (quad-triangle + consciousness)
     pub fn fingerprint(&self) -> Fingerprint {
         let qt_fp = self.quad_triangle.fingerprint().clone();
@@ -160,43 +162,46 @@ impl CognitiveSubstrate {
             profiles: CognitiveProfilesCache::default(),
         }
     }
-    
+
     /// Create with specific thinking style
     pub fn with_style(style: ThinkingStyle) -> Self {
         let substrate = Self::new();
         substrate.set_thinking_style(style);
         substrate
     }
-    
+
     // =========================================================================
     // THINKING STYLE
     // =========================================================================
-    
+
     /// Set thinking style (modulates all subsystems)
     pub fn set_thinking_style(&self, style: ThinkingStyle) {
         // Update mRNA field
         self.mrna.set_style(style);
-        
+
         // Update butterfly detector style
         if let Ok(mut butterfly) = self.butterfly.write() {
             butterfly.set_style(style);
         }
-        
+
         // Update cognitive state
         if let Ok(mut state) = self.state.write() {
             state.thinking_style = style;
-            
+
             // Nudge quad-triangle toward style-appropriate profile
             let target = self.profile_for_style(style);
             state.quad_triangle.nudge_toward(target, 0.3);
         }
     }
-    
+
     /// Get thinking style
     pub fn thinking_style(&self) -> ThinkingStyle {
-        self.state.read().map(|s| s.thinking_style).unwrap_or(ThinkingStyle::Analytical)
+        self.state
+            .read()
+            .map(|s| s.thinking_style)
+            .unwrap_or(ThinkingStyle::Analytical)
     }
-    
+
     /// Get profile for thinking style
     fn profile_for_style(&self, style: ThinkingStyle) -> &QuadTriangle {
         match style {
@@ -213,11 +218,11 @@ impl CognitiveSubstrate {
             ThinkingStyle::Metacognitive => &self.profiles.counterfactual,
         }
     }
-    
+
     // =========================================================================
     // POLLINATION
     // =========================================================================
-    
+
     /// Pollinate field with concept (returns resonances)
     pub fn pollinate(&self, concept: &Fingerprint) -> Vec<Resonance> {
         self.mrna.pollinate(concept)
@@ -235,14 +240,15 @@ impl CognitiveSubstrate {
         concept: &Fingerprint,
         target: Subsystem,
     ) -> Option<f32> {
-        self.mrna.cross_pollinate(source, concept, target)
+        self.mrna
+            .cross_pollinate(source, concept, target)
             .map(|cp| cp.strongest_similarity)
     }
-    
+
     // =========================================================================
     // CONSCIOUSNESS PROCESSING
     // =========================================================================
-    
+
     /// Process input through 7-layer consciousness
     pub fn process_consciousness(&self, input: &Fingerprint) -> ConsciousnessSnapshot {
         let mut state = self.state.write().expect("lock poisoned");
@@ -255,48 +261,52 @@ impl CognitiveSubstrate {
         // Take snapshot
         snapshot_consciousness(&state.consciousness, cycle)
     }
-    
+
     /// Get current consciousness snapshot
     pub fn consciousness_snapshot(&self) -> ConsciousnessSnapshot {
         let state = self.state.read().expect("lock poisoned");
         snapshot_consciousness(&state.consciousness, state.cycle)
     }
-    
+
     // =========================================================================
     // COLLAPSE GATE
     // =========================================================================
-    
+
     /// Evaluate collapse gate for candidates
     pub fn evaluate_collapse(&self, candidate_scores: &[f32]) -> CollapseDecision {
         let decision = evaluate_gate(candidate_scores, true);
-        
+
         // Store last decision
         if let Ok(mut state) = self.state.write() {
             state.last_collapse = Some(decision.clone());
         }
-        
+
         decision
     }
-    
+
     /// Check if collapse is permitted
     pub fn can_collapse(&self, candidate_scores: &[f32]) -> bool {
         let decision = evaluate_gate(candidate_scores, true);
         decision.can_collapse
     }
-    
+
     /// Get collapse gate state
     pub fn gate_state(&self, candidate_scores: &[f32]) -> GateState {
         let sd = calculate_sd(candidate_scores);
         crate::cognitive::collapse_gate::get_gate_state(sd)
     }
-    
+
     // =========================================================================
     // BUTTERFLY DETECTION
     // =========================================================================
-    
+
     /// Detect butterfly effects in resonance cascade
     /// Note: Requires access to mRNA field's history via snapshot mechanism
-    pub fn detect_butterfly(&mut self, input: &Fingerprint, cascade_size: usize) -> Option<Butterfly> {
+    pub fn detect_butterfly(
+        &mut self,
+        input: &Fingerprint,
+        cascade_size: usize,
+    ) -> Option<Butterfly> {
         // Get history from mRNA's internal field
         // Since MRNA doesn't expose history() directly, we use snapshots
         // For now, return None - butterfly detection needs architectural review
@@ -311,7 +321,8 @@ impl CognitiveSubstrate {
         let snapshot = self.mrna.snapshot();
 
         if let Ok(butterfly) = self.butterfly.read() {
-            let prediction = butterfly.predict(hypothetical, &superposition, snapshot.concept_count);
+            let prediction =
+                butterfly.predict(hypothetical, &superposition, snapshot.concept_count);
             if prediction.confidence > 0.5 {
                 Some(prediction.predicted_amplification)
             } else {
@@ -321,16 +332,20 @@ impl CognitiveSubstrate {
             None
         }
     }
-    
+
     // =========================================================================
     // QUAD-TRIANGLE
     // =========================================================================
-    
+
     /// Get quad-triangle state
     pub fn quad_triangle(&self) -> QuadTriangle {
-        self.state.read().expect("lock poisoned").quad_triangle.clone()
+        self.state
+            .read()
+            .expect("lock poisoned")
+            .quad_triangle
+            .clone()
     }
-    
+
     /// Set quad-triangle activations
     pub fn set_quad_triangle_activations(
         &self,
@@ -340,58 +355,59 @@ impl CognitiveSubstrate {
         crystallization: [f32; 3],
     ) {
         if let Ok(mut state) = self.state.write() {
-            state.quad_triangle = QuadTriangle::with_activations(
-                processing, content, gestalt, crystallization
-            );
+            state.quad_triangle =
+                QuadTriangle::with_activations(processing, content, gestalt, crystallization);
         }
     }
-    
+
     /// Get cognitive signature
     pub fn cognitive_signature(&self) -> String {
-        self.state.read()
+        self.state
+            .read()
             .map(|s| s.quad_triangle.signature())
             .unwrap_or_else(|_| "Unknown".to_string())
     }
-    
+
     /// Check if in global flow
     pub fn is_global_flow(&self) -> bool {
-        self.state.read()
+        self.state
+            .read()
             .map(|s| s.quad_triangle.is_global_flow())
             .unwrap_or(false)
     }
-    
+
     // =========================================================================
     // UNIFIED QUERY
     // =========================================================================
-    
+
     /// Unified resonance query across all subsystems
     pub fn query(&self, input: &Fingerprint) -> UnifiedQueryResult {
         let state = self.state.read().expect("lock poisoned");
-        
+
         // Quad-triangle resonance
         let qt_resonance = state.quad_triangle.query_resonance(input);
-        
+
         // Consciousness resonance (against VSA core)
         let consciousness_resonance = input.similarity(&state.consciousness.vsa_core);
-        
+
         // mRNA field resonance
         let field_resonances = self.mrna.pollinate(input);
         let mrna_resonance = if field_resonances.is_empty() {
             0.0
         } else {
-            field_resonances.iter().map(|r| r.similarity).sum::<f32>() / field_resonances.len() as f32
+            field_resonances.iter().map(|r| r.similarity).sum::<f32>()
+                / field_resonances.len() as f32
         };
-        
+
         // Style modulation
         let modulation = state.thinking_style.field_modulation();
-        
+
         // Combined score (weighted by style)
-        let combined = (
-            qt_resonance * modulation.depth_bias +
-            consciousness_resonance * modulation.breadth_bias +
-            mrna_resonance * (1.0 - modulation.noise_tolerance)
-        ) / 3.0;
-        
+        let combined = (qt_resonance * modulation.depth_bias
+            + consciousness_resonance * modulation.breadth_bias
+            + mrna_resonance * (1.0 - modulation.noise_tolerance))
+            / 3.0;
+
         UnifiedQueryResult {
             quad_triangle_resonance: qt_resonance,
             consciousness_resonance,
@@ -402,23 +418,24 @@ impl CognitiveSubstrate {
             flow_count: state.quad_triangle.flow_count(),
         }
     }
-    
+
     // =========================================================================
     // STATE MANAGEMENT
     // =========================================================================
-    
+
     /// Get current cycle
     pub fn cycle(&self) -> u64 {
         self.state.read().map(|s| s.cycle).unwrap_or(0)
     }
-    
+
     /// Get global fingerprint
     pub fn fingerprint(&self) -> Fingerprint {
-        self.state.read()
+        self.state
+            .read()
             .map(|s| s.fingerprint())
             .unwrap_or_else(|_| Fingerprint::zero())
     }
-    
+
     /// Reset to neutral state
     pub fn reset(&self) {
         if let Ok(mut state) = self.state.write() {
@@ -444,22 +461,22 @@ impl Default for CognitiveSubstrate {
 pub struct UnifiedQueryResult {
     /// Resonance with quad-triangle
     pub quad_triangle_resonance: f32,
-    
+
     /// Resonance with consciousness core
     pub consciousness_resonance: f32,
-    
+
     /// Resonance with mRNA field
     pub mrna_resonance: f32,
-    
+
     /// Combined weighted score
     pub combined_score: f32,
-    
+
     /// Current thinking style
     pub thinking_style: ThinkingStyle,
-    
+
     /// Cognitive signature
     pub cognitive_signature: String,
-    
+
     /// Number of triangles in flow
     pub flow_count: usize,
 }
@@ -472,10 +489,10 @@ pub struct UnifiedQueryResult {
 pub struct CognitiveFabric {
     /// Core substrate
     pub substrate: CognitiveSubstrate,
-    
+
     /// mRNA reference
     pub mrna: Arc<MRNA>,
-    
+
     /// Butterfly detector
     pub butterfly: ButterflyDetector,
 }
@@ -486,10 +503,14 @@ impl CognitiveFabric {
         let substrate = CognitiveSubstrate::new();
         let mrna = substrate.mrna.clone();
         let butterfly = ButterflyDetector::new();
-        
-        Self { substrate, mrna, butterfly }
+
+        Self {
+            substrate,
+            mrna,
+            butterfly,
+        }
     }
-    
+
     /// Create with thinking style
     pub fn with_style(style: ThinkingStyle) -> Self {
         let mut fabric = Self::new();
@@ -497,7 +518,7 @@ impl CognitiveFabric {
         fabric.butterfly.set_style(style);
         fabric
     }
-    
+
     /// Full cognitive cycle
     pub fn cognitive_cycle(&mut self, input: &Fingerprint) -> CognitiveCycleResult {
         // 1. Pollinate mRNA field
@@ -562,39 +583,39 @@ pub struct CognitiveCycleResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_substrate_creation() {
         let substrate = CognitiveSubstrate::new();
         assert_eq!(substrate.thinking_style(), ThinkingStyle::Analytical);
     }
-    
+
     #[test]
     fn test_style_modulation() {
         let substrate = CognitiveSubstrate::new();
-        
+
         substrate.set_thinking_style(ThinkingStyle::Creative);
         assert_eq!(substrate.thinking_style(), ThinkingStyle::Creative);
-        
+
         // Signature should reflect creative profile
         let sig = substrate.cognitive_signature();
         assert!(!sig.is_empty());
     }
-    
+
     #[test]
     fn test_unified_query() {
         let substrate = CognitiveSubstrate::new();
         let input = Fingerprint::from_content("test input");
-        
+
         let result = substrate.query(&input);
         assert!(result.combined_score >= 0.0 && result.combined_score <= 1.0);
     }
-    
+
     #[test]
     fn test_cognitive_cycle() {
         let mut fabric = CognitiveFabric::new();
         let input = Fingerprint::from_content("test stimulus");
-        
+
         let result = fabric.cognitive_cycle(&input);
         assert!(result.cycle > 0);
     }

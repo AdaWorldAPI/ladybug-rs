@@ -6,13 +6,12 @@
 //!
 //! Compatible with crewAI's agents.yaml format.
 
-use serde::{Deserialize, Serialize};
+use super::persona::Persona;
 use crate::cognitive::ThinkingStyle;
 use crate::storage::bind_space::{
-    Addr, BindSpace, FINGERPRINT_WORDS,
-    PREFIX_AGENTS, SLOT_SUBDIVISION,
+    Addr, BindSpace, FINGERPRINT_WORDS, PREFIX_AGENTS, SLOT_SUBDIVISION,
 };
-use super::persona::Persona;
+use serde::{Deserialize, Serialize};
 
 /// Agent role mirrors crewAI's role field
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -103,18 +102,18 @@ impl AgentCard {
 
     /// Get the BindSpace address for this agent's capability fingerprint
     pub fn capability_addr(&self) -> Option<Addr> {
-        self.slot.map(|s| Addr::new(PREFIX_AGENTS, s | SLOT_SUBDIVISION))
+        self.slot
+            .map(|s| Addr::new(PREFIX_AGENTS, s | SLOT_SUBDIVISION))
     }
 
     /// Generate a fingerprint from the agent's identity
     /// (role + goal + backstory → SHA256 → expanded to 10K bits)
     pub fn identity_fingerprint(&self) -> [u64; FINGERPRINT_WORDS] {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
 
         let identity = format!(
             "{}:{}:{}:{}",
-            self.role.name, self.role.description,
-            self.goal.objective, self.backstory
+            self.role.name, self.role.description, self.goal.objective, self.backstory
         );
 
         let mut hasher = Sha256::new();

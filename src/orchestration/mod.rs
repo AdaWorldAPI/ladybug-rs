@@ -54,82 +54,53 @@
 //! | 0x0E | Blackboard | 0x00-0xFF: per-agent state (matches agent slot) |
 //! | 0x0F | A2A Routing | 0x00-0xFF: message channels (sender:receiver pairs) |
 
-pub mod agent_card;
-pub mod thinking_template;
 pub mod a2a;
+pub mod agent_card;
 pub mod blackboard_agent;
 pub mod crew_bridge;
-pub mod persona;
-pub mod handover;
-pub mod meta_orchestrator;
-pub mod semantic_kernel;
-pub mod kernel_extensions;
 pub mod debate;
+pub mod handover;
+pub mod kernel_extensions;
+pub mod meta_orchestrator;
+pub mod persona;
+pub mod semantic_kernel;
+pub mod thinking_template;
 
-pub use agent_card::{
-    AgentCard, AgentCapability, AgentRole, AgentGoal,
-    AgentRegistry,
-};
+pub use agent_card::{AgentCapability, AgentCard, AgentGoal, AgentRegistry, AgentRole};
 
-pub use thinking_template::{
-    ThinkingTemplate, ThinkingTemplateRegistry,
-    StyleOverride,
-};
+pub use thinking_template::{StyleOverride, ThinkingTemplate, ThinkingTemplateRegistry};
 
-pub use a2a::{
-    A2AMessage, A2AChannel, A2AProtocol,
-    MessageKind, DeliveryStatus,
-};
+pub use a2a::{A2AChannel, A2AMessage, A2AProtocol, DeliveryStatus, MessageKind};
 
-pub use blackboard_agent::{
-    AgentBlackboard, AgentAwareness,
-    BlackboardRegistry,
-};
+pub use blackboard_agent::{AgentAwareness, AgentBlackboard, BlackboardRegistry};
 
-pub use crew_bridge::{
-    CrewBridge, CrewTask, CrewDispatch,
-    TaskStatus, DispatchResult,
-};
+pub use crew_bridge::{CrewBridge, CrewDispatch, CrewTask, DispatchResult, TaskStatus};
 
 pub use persona::{
-    Persona, VolitionDTO, PersonalityTrait,
-    CommunicationStyle, FeatureAd,
-    PersonaExchange, VolitionSummary,
-    PersonaRegistry,
+    CommunicationStyle, FeatureAd, Persona, PersonaExchange, PersonaRegistry, PersonalityTrait,
+    VolitionDTO, VolitionSummary,
 };
 
 pub use handover::{
-    FlowState, FlowTransition,
-    HandoverAction, HandoverDecision, HandoverReason,
-    HandoverPolicy,
+    FlowState, FlowTransition, HandoverAction, HandoverDecision, HandoverPolicy, HandoverReason,
 };
 
 pub use meta_orchestrator::{
-    MetaOrchestrator, AffinityEdge,
-    OrchestratorEvent, OrchestratorStatus,
+    AffinityEdge, MetaOrchestrator, OrchestratorEvent, OrchestratorStatus,
 };
 
 pub use semantic_kernel::{
-    SemanticKernel, KernelOp, KernelZone,
-    KernelTruth, CausalRung, EscalationResult,
-    KernelIntrospection, PrefixStats,
-    DataFusionMapping, DataFusionColumn,
-    ExpansionRegistry, ExpansionSummary, KernelDescription,
-    PrefixAllocation,
-    CrystalPlugin, RungEscalationStrategy,
-    KernelOperator, ProtocolExtension, CollapseStrategy,
+    CausalRung, CollapseStrategy, CrystalPlugin, DataFusionColumn, DataFusionMapping,
+    EscalationResult, ExpansionRegistry, ExpansionSummary, KernelDescription, KernelIntrospection,
+    KernelOp, KernelOperator, KernelTruth, KernelZone, PrefixAllocation, PrefixStats,
+    ProtocolExtension, RungEscalationStrategy, SemanticKernel,
 };
 
 pub use kernel_extensions::{
-    FilterPipeline, KernelFilter, FilterPhase, FilterContext, FilterResult,
-    KernelGuardrail, GuardrailResult, GuardrailAction,
-    ContentCategory, GuardrailSeverity, DeniedTopic,
-    GroundingResult, ClaimGrounding,
-    WorkflowNode, WorkflowStep, WorkflowOp, WorkflowResult,
-    execute_workflow,
-    MemoryBank, KernelMemory, MemoryKind,
-    ObservabilityManager, ObservabilitySummary,
-    KernelSession, KernelTrace, KernelSpan,
-    GroundingMetadata, GroundingSource,
-    VerificationEngine, VerificationRule, VerificationKind, VerificationResult,
+    ClaimGrounding, ContentCategory, DeniedTopic, FilterContext, FilterPhase, FilterPipeline,
+    FilterResult, GroundingMetadata, GroundingResult, GroundingSource, GuardrailAction,
+    GuardrailResult, GuardrailSeverity, KernelFilter, KernelGuardrail, KernelMemory, KernelSession,
+    KernelSpan, KernelTrace, MemoryBank, MemoryKind, ObservabilityManager, ObservabilitySummary,
+    VerificationEngine, VerificationKind, VerificationResult, VerificationRule, WorkflowNode,
+    WorkflowOp, WorkflowResult, WorkflowStep, execute_workflow,
 };

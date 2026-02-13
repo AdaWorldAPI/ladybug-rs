@@ -1,5 +1,5 @@
 //! CAM operations benchmark
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 
 fn cam_ops_benchmark(_c: &mut Criterion) {
     // Placeholder

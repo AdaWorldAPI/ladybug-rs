@@ -5,9 +5,9 @@
 //! whatever state the children have. No lock needed — XOR is commutative
 //! and associative.
 
-use std::collections::HashMap;
 use super::Container;
-use super::cache::{ContainerCache, CacheError};
+use super::cache::{CacheError, ContainerCache};
+use std::collections::HashMap;
 
 /// Spine-aware container cache.
 ///
@@ -134,10 +134,7 @@ impl SpineCache {
     /// Add a child to an existing spine. Marks the spine dirty.
     pub fn add_child_to_spine(&mut self, spine_idx: usize, child_idx: usize) {
         // Forward mapping
-        self.spine_map
-            .entry(spine_idx)
-            .or_default()
-            .push(child_idx);
+        self.spine_map.entry(spine_idx).or_default().push(child_idx);
 
         // Reverse mapping
         self.child_to_spines

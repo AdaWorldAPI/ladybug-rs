@@ -12,10 +12,10 @@
 
 use ladybug::bench::{
     self, BenchConfig,
+    comparison::run_comparison_benchmark,
     memory::compute_memory_comparison,
     recall::measure_recall,
     throughput::{measure_throughput, throughput_scaling_test},
-    comparison::run_comparison_benchmark,
 };
 use std::env;
 

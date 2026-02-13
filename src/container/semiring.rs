@@ -4,7 +4,7 @@
 //! The DN-Sparse semirings from holograph operate on content containers.
 //! Adjacency comes from metadata containers.
 
-use super::{Container, CONTAINER_BITS};
+use super::{CONTAINER_BITS, Container};
 
 /// Semiring for graph traversal on CogRecords.
 pub trait ContainerSemiring: Send + Sync {
@@ -107,13 +107,7 @@ pub struct HammingMinPlus;
 impl ContainerSemiring for HammingMinPlus {
     type Value = u32;
 
-    fn multiply(
-        &self,
-        _edge_weight: f32,
-        input: &u32,
-        src: &Container,
-        dst: &Container,
-    ) -> u32 {
+    fn multiply(&self, _edge_weight: f32, input: &u32, src: &Container, dst: &Container) -> u32 {
         input.saturating_add(src.hamming(dst))
     }
 
@@ -149,13 +143,7 @@ impl Default for PageRankSemiring {
 impl ContainerSemiring for PageRankSemiring {
     type Value = f32;
 
-    fn multiply(
-        &self,
-        edge_weight: f32,
-        input: &f32,
-        _src: &Container,
-        _dst: &Container,
-    ) -> f32 {
+    fn multiply(&self, edge_weight: f32, input: &f32, _src: &Container, _dst: &Container) -> f32 {
         self.damping * input * edge_weight
     }
 
@@ -182,13 +170,7 @@ pub struct ResonanceMax;
 impl ContainerSemiring for ResonanceMax {
     type Value = f32;
 
-    fn multiply(
-        &self,
-        edge_weight: f32,
-        input: &f32,
-        src: &Container,
-        dst: &Container,
-    ) -> f32 {
+    fn multiply(&self, edge_weight: f32, input: &f32, src: &Container, dst: &Container) -> f32 {
         let sim = 1.0 - (src.hamming(dst) as f32 / CONTAINER_BITS as f32);
         input * sim * edge_weight
     }
@@ -219,13 +201,7 @@ pub struct CascadedHammingMinPlus {
 impl ContainerSemiring for CascadedHammingMinPlus {
     type Value = u32;
 
-    fn multiply(
-        &self,
-        _edge_weight: f32,
-        input: &u32,
-        src: &Container,
-        dst: &Container,
-    ) -> u32 {
+    fn multiply(&self, _edge_weight: f32, input: &u32, src: &Container, dst: &Container) -> u32 {
         // Quick estimate first
         let estimate = super::search::belichtungsmesser(src, dst);
         if input.saturating_add(estimate) > self.max_path_dist {
@@ -261,13 +237,7 @@ pub struct CascadedResonanceMax {
 impl ContainerSemiring for CascadedResonanceMax {
     type Value = f32;
 
-    fn multiply(
-        &self,
-        edge_weight: f32,
-        input: &f32,
-        src: &Container,
-        dst: &Container,
-    ) -> f32 {
+    fn multiply(&self, edge_weight: f32, input: &f32, src: &Container, dst: &Container) -> f32 {
         // Quick estimate
         let estimate = super::search::belichtungsmesser(src, dst);
         let est_sim = 1.0 - (estimate as f32 / CONTAINER_BITS as f32);
@@ -348,12 +318,7 @@ pub fn traverse<S: ContainerSemiring>(
                 if neighbor >= n {
                     continue;
                 }
-                let new_val = semiring.multiply(
-                    weight,
-                    val,
-                    &contents[*node],
-                    &contents[neighbor],
-                );
+                let new_val = semiring.multiply(weight, val, &contents[*node], &contents[neighbor]);
                 let combined = semiring.add(&values[neighbor], &new_val);
                 values[neighbor] = combined.clone();
                 next_frontier.push((neighbor, new_val));

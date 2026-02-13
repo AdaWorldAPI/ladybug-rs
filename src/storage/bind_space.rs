@@ -45,8 +45,8 @@
 
 use std::collections::HashMap;
 
-use crate::container::{Container, CONTAINER_WORDS, MetaView, MetaViewMut};
 use crate::container::adjacency::PackedDn;
+use crate::container::{CONTAINER_WORDS, Container, MetaView, MetaViewMut};
 
 // =============================================================================
 // ADDRESS CONSTANTS (8-bit prefix : 8-bit slot)
@@ -66,24 +66,24 @@ pub const CHUNK_SIZE: usize = 256;
 pub const PREFIX_SURFACE_START: u8 = 0x00;
 pub const PREFIX_SURFACE_END: u8 = 0x0F;
 pub const SURFACE_PREFIXES: usize = 16;
-pub const SURFACE_SIZE: usize = 4096;  // 16 × 256
+pub const SURFACE_SIZE: usize = 4096; // 16 × 256
 
 /// Surface compartments (16 prefixes, some with slot subdivision)
-pub const PREFIX_LANCE: u8 = 0x00;     // Lance/Kuzu - vector ops
-pub const PREFIX_SQL: u8 = 0x01;       // SQL/CQL (columnar languages)
-pub const PREFIX_CQL: u8 = 0x01;       // CQL shares prefix with SQL (slot 0x80+)
-pub const PREFIX_CYPHER: u8 = 0x02;    // Cypher/GQL (property graph languages)
-pub const PREFIX_GQL: u8 = 0x02;       // GQL shares prefix with Cypher (slot 0x80+)
-pub const PREFIX_GRAPHQL: u8 = 0x03;   // GraphQL (schema-first, distinct paradigm)
-pub const PREFIX_NARS: u8 = 0x04;      // NARS/ACT-R (cognitive architectures)
-pub const PREFIX_ACTR: u8 = 0x04;      // ACT-R shares prefix with NARS (slot 0x80+)
-pub const PREFIX_CAUSAL: u8 = 0x05;    // Causal reasoning (Pearl)
-pub const PREFIX_META: u8 = 0x06;      // Meta-cognition
-pub const PREFIX_VERBS: u8 = 0x07;     // Verbs (CAUSES, BECOMES...)
-pub const PREFIX_CONCEPTS: u8 = 0x08;  // Core concepts/types
-pub const PREFIX_QUALIA: u8 = 0x09;    // Qualia operations
-pub const PREFIX_MEMORY: u8 = 0x0A;    // Memory operations
-pub const PREFIX_LEARNING: u8 = 0x0B;  // Learning operations
+pub const PREFIX_LANCE: u8 = 0x00; // Lance/Kuzu - vector ops
+pub const PREFIX_SQL: u8 = 0x01; // SQL/CQL (columnar languages)
+pub const PREFIX_CQL: u8 = 0x01; // CQL shares prefix with SQL (slot 0x80+)
+pub const PREFIX_CYPHER: u8 = 0x02; // Cypher/GQL (property graph languages)
+pub const PREFIX_GQL: u8 = 0x02; // GQL shares prefix with Cypher (slot 0x80+)
+pub const PREFIX_GRAPHQL: u8 = 0x03; // GraphQL (schema-first, distinct paradigm)
+pub const PREFIX_NARS: u8 = 0x04; // NARS/ACT-R (cognitive architectures)
+pub const PREFIX_ACTR: u8 = 0x04; // ACT-R shares prefix with NARS (slot 0x80+)
+pub const PREFIX_CAUSAL: u8 = 0x05; // Causal reasoning (Pearl)
+pub const PREFIX_META: u8 = 0x06; // Meta-cognition
+pub const PREFIX_VERBS: u8 = 0x07; // Verbs (CAUSES, BECOMES...)
+pub const PREFIX_CONCEPTS: u8 = 0x08; // Core concepts/types
+pub const PREFIX_QUALIA: u8 = 0x09; // Qualia operations
+pub const PREFIX_MEMORY: u8 = 0x0A; // Memory operations
+pub const PREFIX_LEARNING: u8 = 0x0B; // Learning operations
 pub const PREFIX_RESERVED_C: u8 = 0x0C;
 pub const PREFIX_RESERVED_D: u8 = 0x0D;
 pub const PREFIX_RESERVED_E: u8 = 0x0E;
@@ -92,10 +92,10 @@ pub const PREFIX_RESERVED_F: u8 = 0x0F;
 // --- Orchestration prefixes (crewai feature) ---
 // These overlay the reserved 0x0C-0x0F surface addresses.
 // Slot subdivision: 0x00-0x7F primary, 0x80-0xFF secondary (same as SQL/Cypher)
-pub const PREFIX_AGENTS: u8 = 0x0C;       // Agent registry (cards, capabilities, goals)
-pub const PREFIX_THINKING: u8 = 0x0D;     // Thinking style templates (YAML → FieldModulation)
-pub const PREFIX_BLACKBOARD: u8 = 0x0E;   // Per-agent blackboard state (ice-caked awareness)
-pub const PREFIX_A2A: u8 = 0x0F;          // Agent-to-Agent message routing channels
+pub const PREFIX_AGENTS: u8 = 0x0C; // Agent registry (cards, capabilities, goals)
+pub const PREFIX_THINKING: u8 = 0x0D; // Thinking style templates (YAML → FieldModulation)
+pub const PREFIX_BLACKBOARD: u8 = 0x0E; // Per-agent blackboard state (ice-caked awareness)
+pub const PREFIX_A2A: u8 = 0x0F; // Agent-to-Agent message routing channels
 
 // Slot subdivision boundary for shared prefixes
 // Slots 0x00-0x7F: primary language (SQL, Cypher, NARS)
@@ -108,8 +108,8 @@ pub const SLOT_SUBDIVISION: u8 = 0x80;
 
 pub const PREFIX_FLUID_START: u8 = 0x10;
 pub const PREFIX_FLUID_END: u8 = 0x7F;
-pub const FLUID_PREFIXES: usize = 112;  // 0x7F - 0x10 + 1
-pub const FLUID_SIZE: usize = 28672;    // 112 × 256
+pub const FLUID_PREFIXES: usize = 112; // 0x7F - 0x10 + 1
+pub const FLUID_SIZE: usize = 28672; // 112 × 256
 
 // -----------------------------------------------------------------------------
 // NODES: 128 prefixes (0x80-0xFF) × 256 = 32,768 addresses
@@ -117,11 +117,11 @@ pub const FLUID_SIZE: usize = 28672;    // 112 × 256
 
 pub const PREFIX_NODE_START: u8 = 0x80;
 pub const PREFIX_NODE_END: u8 = 0xFF;
-pub const NODE_PREFIXES: usize = 128;   // 0xFF - 0x80 + 1
-pub const NODE_SIZE: usize = 32768;     // 128 × 256
+pub const NODE_PREFIXES: usize = 128; // 0xFF - 0x80 + 1
+pub const NODE_SIZE: usize = 32768; // 128 × 256
 
 /// Total addressable
-pub const TOTAL_ADDRESSES: usize = 65536;  // 256 × 256
+pub const TOTAL_ADDRESSES: usize = 65536; // 256 × 256
 
 // =============================================================================
 // ADDRESS TYPE
@@ -137,38 +137,38 @@ impl Addr {
     pub fn new(prefix: u8, slot: u8) -> Self {
         Self(((prefix as u16) << 8) | (slot as u16))
     }
-    
+
     /// Get prefix (high byte)
     #[inline(always)]
     pub fn prefix(self) -> u8 {
         (self.0 >> 8) as u8
     }
-    
+
     /// Get slot (low byte)
     #[inline(always)]
     pub fn slot(self) -> u8 {
         (self.0 & 0xFF) as u8
     }
-    
+
     /// Check if in surface (prefix 0x00-0x0F)
     #[inline(always)]
     pub fn is_surface(self) -> bool {
         self.prefix() <= PREFIX_SURFACE_END
     }
-    
+
     /// Check if in fluid zone (prefix 0x10-0x7F)
     #[inline(always)]
     pub fn is_fluid(self) -> bool {
         let p = self.prefix();
         p >= PREFIX_FLUID_START && p <= PREFIX_FLUID_END
     }
-    
+
     /// Check if in node space (prefix 0x80-0xFF)
     #[inline(always)]
     pub fn is_node(self) -> bool {
         self.prefix() >= PREFIX_NODE_START
     }
-    
+
     /// Get surface compartment (0x00-0x0F) or None
     #[inline(always)]
     pub fn surface_compartment(self) -> Option<SurfaceCompartment> {
@@ -232,10 +232,10 @@ pub enum SurfaceCompartment {
 pub enum Sublanguage {
     // Columnar (prefix 0x01)
     Sql,
-    Cql,  // Cassandra Query Language
+    Cql, // Cassandra Query Language
     // Graph (prefix 0x02)
     Cypher,
-    Gql,  // ISO Graph Query Language
+    Gql, // ISO Graph Query Language
     // Cognitive (prefix 0x04)
     Nars,
     ActR, // ACT-R cognitive architecture
@@ -282,9 +282,21 @@ impl SurfaceCompartment {
         let is_secondary = slot >= SLOT_SUBDIVISION;
 
         match prefix {
-            PREFIX_SQL => Some(if is_secondary { Sublanguage::Cql } else { Sublanguage::Sql }),
-            PREFIX_CYPHER => Some(if is_secondary { Sublanguage::Gql } else { Sublanguage::Cypher }),
-            PREFIX_NARS => Some(if is_secondary { Sublanguage::ActR } else { Sublanguage::Nars }),
+            PREFIX_SQL => Some(if is_secondary {
+                Sublanguage::Cql
+            } else {
+                Sublanguage::Sql
+            }),
+            PREFIX_CYPHER => Some(if is_secondary {
+                Sublanguage::Gql
+            } else {
+                Sublanguage::Cypher
+            }),
+            PREFIX_NARS => Some(if is_secondary {
+                Sublanguage::ActR
+            } else {
+                Sublanguage::Nars
+            }),
             _ => None,
         }
     }
@@ -333,7 +345,6 @@ pub struct BindNode {
     // =========================================================================
     // DN TREE FIELDS (for zero-copy hierarchical traversal)
     // =========================================================================
-
     /// Parent node address (None = root). O(1) upward traversal.
     pub parent: Option<Addr>,
     /// Tree depth (0 = root, max 255)
@@ -407,7 +418,8 @@ impl BindNode {
     #[inline]
     pub fn meta_container(&self) -> Container {
         let mut c = Container::zero();
-        c.words.copy_from_slice(&self.fingerprint[..CONTAINER_WORDS]);
+        c.words
+            .copy_from_slice(&self.fingerprint[..CONTAINER_WORDS]);
         c
     }
 
@@ -416,7 +428,8 @@ impl BindNode {
     #[inline]
     pub fn content_container(&self) -> Container {
         let mut c = Container::zero();
-        c.words.copy_from_slice(&self.fingerprint[CONTAINER_WORDS..]);
+        c.words
+            .copy_from_slice(&self.fingerprint[CONTAINER_WORDS..]);
         c
     }
 
@@ -596,7 +609,7 @@ impl BindEdge {
             weight: 1.0,
         }
     }
-    
+
     /// Bind: compute edge fingerprint via XOR
     pub fn bind(
         &mut self,
@@ -608,7 +621,7 @@ impl BindEdge {
             self.fingerprint[i] = from_fp[i] ^ verb_fp[i] ^ to_fp[i];
         }
     }
-    
+
     /// ABBA unbind: recover unknown from edge + known + verb
     pub fn unbind(
         &self,
@@ -638,8 +651,8 @@ impl BindEdge {
 /// It is an address book, nothing more. All data lives in BindSpace.
 pub struct DnIndex {
     dn_to_addr: HashMap<PackedDn, Addr>,
-    addr_to_dn: Vec<Option<PackedDn>>,       // indexed by Addr.0, 65536 entries
-    children:   HashMap<u16, Vec<Addr>>,      // parent addr.0 → [child_addrs]
+    addr_to_dn: Vec<Option<PackedDn>>, // indexed by Addr.0, 65536 entries
+    children: HashMap<u16, Vec<Addr>>, // parent addr.0 → [child_addrs]
 }
 
 impl DnIndex {
@@ -680,7 +693,10 @@ impl DnIndex {
     /// Children of addr (for downward tree traversal).
     /// Upward traversal doesn't need this — use PackedDn::parent().
     pub fn children(&self, addr: Addr) -> &[Addr] {
-        self.children.get(&addr.0).map(|v| v.as_slice()).unwrap_or(&[])
+        self.children
+            .get(&addr.0)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
 
     /// Number of registered DN paths.
@@ -739,8 +755,9 @@ impl DirtyBits {
     fn iter_ones(&self) -> impl Iterator<Item = u16> + '_ {
         self.bits.iter().enumerate().flat_map(|(wi, &word)| {
             let base = (wi * 64) as u16;
-            (0..64u16).filter(move |&bit| word & (1u64 << bit) != 0)
-                      .map(move |bit| base + bit)
+            (0..64u16)
+                .filter(move |&bit| word & (1u64 << bit) != 0)
+                .map(move |bit| base + bit)
         })
     }
 }
@@ -757,30 +774,27 @@ pub struct BindSpace {
     // =========================================================================
     // SURFACES: 16 prefixes (0x00-0x0F) × 256 slots = 4,096 addresses
     // =========================================================================
-    
     /// All 16 surface compartments
     surfaces: Vec<Box<[Option<BindNode>; CHUNK_SIZE]>>,
-    
+
     // =========================================================================
     // FLUID: 112 prefixes (0x10-0x7F) × 256 slots = 28,672 addresses
     // =========================================================================
-    
     /// Fluid chunks for edge storage + working memory
     fluid: Vec<Box<[Option<BindNode>; CHUNK_SIZE]>>,
-    
+
     /// Edges (separate for efficient traversal)
     edges: Vec<BindEdge>,
-    
+
     /// Edge index: from.0 -> edge indices (CSR-style)
     edge_out: Vec<Vec<usize>>,
-    
+
     /// Edge index: to.0 -> edge indices (reverse CSR)
     edge_in: Vec<Vec<usize>>,
 
     // =========================================================================
     // BITPACKED CSR (zero-copy, Arrow-friendly adjacency)
     // =========================================================================
-
     /// Bitpacked CSR for zero-copy traversal (built on demand)
     csr: Option<BitpackedCsr>,
     /// CSR dirty flag (rebuild needed after edge modifications)
@@ -789,14 +803,12 @@ pub struct BindSpace {
     // =========================================================================
     // NODES: 128 prefixes (0x80-0xFF) × 256 slots = 32,768 addresses
     // =========================================================================
-
     /// Node chunks - THE UNIVERSAL BIND SPACE
     nodes: Vec<Box<[Option<BindNode>; CHUNK_SIZE]>>,
 
     // =========================================================================
     // STATE
     // =========================================================================
-
     /// Current context
     context: ChunkContext,
 
@@ -809,7 +821,6 @@ pub struct BindSpace {
     // =========================================================================
     // UNIFICATION: DnIndex + dirty tracking (Phases 3-4)
     // =========================================================================
-
     /// Bidirectional PackedDn ↔ Addr index for DN tree navigation.
     pub dn_index: DnIndex,
 
@@ -875,7 +886,7 @@ impl BindSpace {
         space.init_surfaces();
         space
     }
-    
+
     /// Initialize surfaces with core ops
     fn init_surfaces(&mut self) {
         // Surface 0x00: Lance/Kuzu ops
@@ -894,9 +905,10 @@ impl BindSpace {
             (0x0B, "QUANTIZE"),
         ];
         for (slot, label) in lance_ops {
-            self.surfaces[PREFIX_LANCE as usize][slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
+            self.surfaces[PREFIX_LANCE as usize][slot] =
+                Some(BindNode::new(label_fingerprint(label)).with_label(label));
         }
-        
+
         // Surface 0x01: SQL ops
         let sql_ops = [
             (0x00, "SELECT"),
@@ -909,9 +921,10 @@ impl BindSpace {
             (0x07, "ORDER"),
         ];
         for (slot, label) in sql_ops {
-            self.surfaces[PREFIX_SQL as usize][slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
+            self.surfaces[PREFIX_SQL as usize][slot] =
+                Some(BindNode::new(label_fingerprint(label)).with_label(label));
         }
-        
+
         // Surface 0x02: Neo4j/Cypher ops
         let cypher_ops = [
             (0x00, "MATCH"),
@@ -924,9 +937,10 @@ impl BindSpace {
             (0x07, "DETACH_DELETE"),
         ];
         for (slot, label) in cypher_ops {
-            self.surfaces[PREFIX_CYPHER as usize][slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
+            self.surfaces[PREFIX_CYPHER as usize][slot] =
+                Some(BindNode::new(label_fingerprint(label)).with_label(label));
         }
-        
+
         // Surface 0x04: NARS inference ops
         let nars_ops = [
             (0x00, "DEDUCE"),
@@ -937,22 +951,24 @@ impl BindSpace {
             (0x05, "EXPECTATION"),
         ];
         for (slot, label) in nars_ops {
-            self.surfaces[PREFIX_NARS as usize][slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
+            self.surfaces[PREFIX_NARS as usize][slot] =
+                Some(BindNode::new(label_fingerprint(label)).with_label(label));
         }
-        
+
         // Surface 0x05: Causal ops (Pearl's ladder)
         let causal_ops = [
-            (0x00, "OBSERVE"),    // Rung 1
-            (0x01, "INTERVENE"),  // Rung 2 (do)
-            (0x02, "IMAGINE"),    // Rung 3 (counterfactual)
+            (0x00, "OBSERVE"),   // Rung 1
+            (0x01, "INTERVENE"), // Rung 2 (do)
+            (0x02, "IMAGINE"),   // Rung 3 (counterfactual)
             (0x03, "CAUSE"),
             (0x04, "EFFECT"),
             (0x05, "CONFOUND"),
         ];
         for (slot, label) in causal_ops {
-            self.surfaces[PREFIX_CAUSAL as usize][slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
+            self.surfaces[PREFIX_CAUSAL as usize][slot] =
+                Some(BindNode::new(label_fingerprint(label)).with_label(label));
         }
-        
+
         // Surface 0x06: Meta-cognition ops
         let meta_ops = [
             (0x00, "REFLECT"),
@@ -964,9 +980,10 @@ impl BindSpace {
             (0x06, "COUNTERFACT"),
         ];
         for (slot, label) in meta_ops {
-            self.surfaces[PREFIX_META as usize][slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
+            self.surfaces[PREFIX_META as usize][slot] =
+                Some(BindNode::new(label_fingerprint(label)).with_label(label));
         }
-        
+
         // Surface 0x07: Verbs (the Go board verbs)
         let verb_ops = [
             (0x00, "CAUSES"),
@@ -1008,9 +1025,10 @@ impl BindSpace {
             (0x27, "PREV_SIBLING"),  // Previous sibling
         ];
         for (slot, label) in verb_ops {
-            self.surfaces[PREFIX_VERBS as usize][slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
+            self.surfaces[PREFIX_VERBS as usize][slot] =
+                Some(BindNode::new(label_fingerprint(label)).with_label(label));
         }
-        
+
         // Surface 0x08: Core concepts
         let concept_ops = [
             (0x00, "ENTITY"),
@@ -1021,9 +1039,10 @@ impl BindSpace {
             (0x05, "PROCESS"),
         ];
         for (slot, label) in concept_ops {
-            self.surfaces[PREFIX_CONCEPTS as usize][slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
+            self.surfaces[PREFIX_CONCEPTS as usize][slot] =
+                Some(BindNode::new(label_fingerprint(label)).with_label(label));
         }
-        
+
         // Surface 0x09: Qualia ops
         let qualia_ops = [
             (0x00, "FEEL"),
@@ -1034,9 +1053,10 @@ impl BindSpace {
             (0x05, "TENSION"),
         ];
         for (slot, label) in qualia_ops {
-            self.surfaces[PREFIX_QUALIA as usize][slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
+            self.surfaces[PREFIX_QUALIA as usize][slot] =
+                Some(BindNode::new(label_fingerprint(label)).with_label(label));
         }
-        
+
         // Surface 0x0A: Memory ops
         let memory_ops = [
             (0x00, "STORE"),
@@ -1046,9 +1066,10 @@ impl BindSpace {
             (0x04, "ASSOCIATE"),
         ];
         for (slot, label) in memory_ops {
-            self.surfaces[PREFIX_MEMORY as usize][slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
+            self.surfaces[PREFIX_MEMORY as usize][slot] =
+                Some(BindNode::new(label_fingerprint(label)).with_label(label));
         }
-        
+
         // Surface 0x0B: Learning ops
         let learning_ops = [
             (0x00, "LEARN"),
@@ -1058,23 +1079,24 @@ impl BindSpace {
             (0x04, "SPECIALIZE"),
         ];
         for (slot, label) in learning_ops {
-            self.surfaces[PREFIX_LEARNING as usize][slot] = Some(BindNode::new(label_fingerprint(label)).with_label(label));
+            self.surfaces[PREFIX_LEARNING as usize][slot] =
+                Some(BindNode::new(label_fingerprint(label)).with_label(label));
         }
     }
-    
+
     // =========================================================================
     // CORE READ/WRITE (Pure array indexing - 3-5 cycles)
     // =========================================================================
-    
+
     /// Read from any address - THE HOT PATH
-    /// 
+    ///
     /// This is what GET, MATCH, SELECT all become.
     /// Pure array indexing, no hash, no search.
     #[inline(always)]
     pub fn read(&self, addr: Addr) -> Option<&BindNode> {
         let prefix = addr.prefix();
         let slot = addr.slot() as usize;
-        
+
         match prefix {
             // Surface: 0x00-0x0F
             p if p <= PREFIX_SURFACE_END => {
@@ -1093,18 +1115,19 @@ impl BindSpace {
             _ => None,
         }
     }
-    
+
     /// Read mutable with touch
     #[inline(always)]
     pub fn read_mut(&mut self, addr: Addr) -> Option<&mut BindNode> {
         let prefix = addr.prefix();
         let slot = addr.slot() as usize;
-        
+
         let node = match prefix {
             // Surface: 0x00-0x0F
-            p if p <= PREFIX_SURFACE_END => {
-                self.surfaces.get_mut(p as usize).and_then(|c| c[slot].as_mut())
-            }
+            p if p <= PREFIX_SURFACE_END => self
+                .surfaces
+                .get_mut(p as usize)
+                .and_then(|c| c[slot].as_mut()),
             // Fluid: 0x10-0x7F
             p if p >= PREFIX_FLUID_START && p <= PREFIX_FLUID_END => {
                 let chunk = (p - PREFIX_FLUID_START) as usize;
@@ -1117,7 +1140,7 @@ impl BindSpace {
             }
             _ => None,
         };
-        
+
         if let Some(n) = node {
             n.touch();
             Some(n)
@@ -1125,7 +1148,7 @@ impl BindSpace {
             None
         }
     }
-    
+
     /// Write to node space
     ///
     /// This is what SET, CREATE, INSERT all become.
@@ -1136,7 +1159,7 @@ impl BindSpace {
         // Advance next slot
         self.next_node = if slot == 255 {
             if prefix == PREFIX_NODE_END {
-                (PREFIX_NODE_START, 0)  // Wrap
+                (PREFIX_NODE_START, 0) // Wrap
             } else {
                 (prefix + 1, 0)
             }
@@ -1153,7 +1176,7 @@ impl BindSpace {
 
         addr
     }
-    
+
     /// Write with label
     pub fn write_labeled(&mut self, fingerprint: [u64; FINGERPRINT_WORDS], label: &str) -> Addr {
         let addr = self.write(fingerprint);
@@ -1209,12 +1232,12 @@ impl BindSpace {
     pub fn delete(&mut self, addr: Addr) -> Option<BindNode> {
         let prefix = addr.prefix();
         let slot = addr.slot() as usize;
-        
+
         // Can't delete surfaces
         if prefix <= PREFIX_SURFACE_END {
             return None;
         }
-        
+
         if prefix >= PREFIX_FLUID_START && prefix <= PREFIX_FLUID_END {
             let chunk = (prefix - PREFIX_FLUID_START) as usize;
             self.fluid.get_mut(chunk).and_then(|c| c[slot].take())
@@ -1225,11 +1248,11 @@ impl BindSpace {
             None
         }
     }
-    
+
     // =========================================================================
     // EDGE OPERATIONS (CSR-style O(1) lookup)
     // =========================================================================
-    
+
     /// Create an edge
     pub fn link(&mut self, from: Addr, verb: Addr, to: Addr) -> usize {
         let mut edge = BindEdge::new(from, verb, to);
@@ -1256,7 +1279,7 @@ impl BindSpace {
         self.edges.push(edge);
         idx
     }
-    
+
     /// Get outgoing edges (O(1) index lookup)
     #[inline(always)]
     pub fn edges_out(&self, from: Addr) -> impl Iterator<Item = &BindEdge> {
@@ -1264,7 +1287,7 @@ impl BindSpace {
             .iter()
             .filter_map(|&i| self.edges.get(i))
     }
-    
+
     /// Get incoming edges (O(1) index lookup)
     #[inline(always)]
     pub fn edges_in(&self, to: Addr) -> impl Iterator<Item = &BindEdge> {
@@ -1272,7 +1295,7 @@ impl BindSpace {
             .iter()
             .filter_map(|&i| self.edges.get(i))
     }
-    
+
     /// Traverse: from -> via verb -> targets
     pub fn traverse(&self, from: Addr, verb: Addr) -> Vec<Addr> {
         self.edges_out(from)
@@ -1280,7 +1303,7 @@ impl BindSpace {
             .map(|e| e.to)
             .collect()
     }
-    
+
     /// Reverse traverse: sources <- via verb <- to
     pub fn traverse_reverse(&self, to: Addr, verb: Addr) -> Vec<Addr> {
         self.edges_in(to)
@@ -1288,17 +1311,17 @@ impl BindSpace {
             .map(|e| e.from)
             .collect()
     }
-    
+
     /// N-hop traversal (Kuzu CSR equivalent)
     pub fn traverse_n_hops(&self, start: Addr, verb: Addr, max_hops: usize) -> Vec<(usize, Addr)> {
         let mut results = Vec::new();
         let mut frontier = vec![start];
         let mut visited = std::collections::HashSet::new();
         visited.insert(start.0);
-        
+
         for hop in 1..=max_hops {
             let mut next_frontier = Vec::new();
-            
+
             for &node in &frontier {
                 for target in self.traverse(node, verb) {
                     if visited.insert(target.0) {
@@ -1307,13 +1330,13 @@ impl BindSpace {
                     }
                 }
             }
-            
+
             if next_frontier.is_empty() {
                 break;
             }
             frontier = next_frontier;
         }
-        
+
         results
     }
 
@@ -1495,15 +1518,15 @@ impl BindSpace {
     pub fn set_context(&mut self, ctx: ChunkContext) {
         self.context = ctx;
     }
-    
+
     pub fn context(&self) -> ChunkContext {
         self.context
     }
-    
+
     // =========================================================================
     // SURFACE HELPERS
     // =========================================================================
-    
+
     /// Get verb address by name (searches PREFIX_VERBS compartment)
     pub fn verb(&self, name: &str) -> Option<Addr> {
         if let Some(verbs) = self.surfaces.get(PREFIX_VERBS as usize) {
@@ -1517,7 +1540,7 @@ impl BindSpace {
         }
         None
     }
-    
+
     /// Get op address by name from any surface compartment
     pub fn surface_op(&self, compartment: u8, name: &str) -> Option<Addr> {
         if compartment > PREFIX_SURFACE_END {
@@ -1534,26 +1557,32 @@ impl BindSpace {
         }
         None
     }
-    
+
     /// Get verb fingerprint by address
     pub fn verb_fingerprint(&self, verb: Addr) -> Option<&[u64; FINGERPRINT_WORDS]> {
         self.read(verb).map(|n| &n.fingerprint)
     }
-    
+
     // =========================================================================
     // STATS
     // =========================================================================
-    
+
     pub fn stats(&self) -> BindSpaceStats {
-        let surface_count: usize = self.surfaces.iter()
+        let surface_count: usize = self
+            .surfaces
+            .iter()
             .map(|s| s.iter().filter(|x| x.is_some()).count())
             .sum();
 
-        let fluid_count: usize = self.fluid.iter()
+        let fluid_count: usize = self
+            .fluid
+            .iter()
             .map(|c| c.iter().filter(|x| x.is_some()).count())
             .sum();
 
-        let node_count: usize = self.nodes.iter()
+        let node_count: usize = self
+            .nodes
+            .iter()
             .map(|c| c.iter().filter(|x| x.is_some()).count())
             .sum();
 
@@ -1618,19 +1647,22 @@ impl BindSpace {
     pub fn nodes_iter(&self) -> impl Iterator<Item = (Addr, &BindNode)> + '_ {
         let surfaces = self.surfaces.iter().enumerate().flat_map(|(pi, chunk)| {
             chunk.iter().enumerate().filter_map(move |(si, slot)| {
-                slot.as_ref().map(|node| (Addr::new(pi as u8, si as u8), node))
+                slot.as_ref()
+                    .map(|node| (Addr::new(pi as u8, si as u8), node))
             })
         });
         let fluid = self.fluid.iter().enumerate().flat_map(|(ci, chunk)| {
             let prefix = PREFIX_FLUID_START + ci as u8;
             chunk.iter().enumerate().filter_map(move |(si, slot)| {
-                slot.as_ref().map(|node| (Addr::new(prefix, si as u8), node))
+                slot.as_ref()
+                    .map(|node| (Addr::new(prefix, si as u8), node))
             })
         });
         let nodes = self.nodes.iter().enumerate().flat_map(|(ci, chunk)| {
             let prefix = PREFIX_NODE_START + ci as u8;
             chunk.iter().enumerate().filter_map(move |(si, slot)| {
-                slot.as_ref().map(|node| (Addr::new(prefix, si as u8), node))
+                slot.as_ref()
+                    .map(|node| (Addr::new(prefix, si as u8), node))
             })
         });
         surfaces.chain(fluid).chain(nodes)
@@ -1726,8 +1758,8 @@ fn label_fingerprint(label: &str) -> [u64; FINGERPRINT_WORDS] {
 /// - "Ada:A:soul:identity" -> address X
 /// - "Ada:A:soul" (parent) -> different address Y (O(1) string truncate)
 pub fn dn_path_to_addr(path: &str) -> Addr {
-    use std::hash::{Hash, Hasher};
     use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
 
     let mut hasher = DefaultHasher::new();
     path.hash(&mut hasher);
@@ -1761,10 +1793,12 @@ pub fn dn_levenshtein(a: &str, b: &str) -> usize {
     for i in 1..=m {
         curr[0] = i;
         for j in 1..=n {
-            let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
-            curr[j] = (prev[j] + 1)
-                .min(curr[j - 1] + 1)
-                .min(prev[j - 1] + cost);
+            let cost = if a_chars[i - 1] == b_chars[j - 1] {
+                0
+            } else {
+                1
+            };
+            curr[j] = (prev[j] + 1).min(curr[j - 1] + 1).min(prev[j - 1] + cost);
         }
         std::mem::swap(&mut prev, &mut curr);
     }
@@ -1799,9 +1833,13 @@ pub struct QueryResult {
 
 impl QueryResult {
     pub fn empty() -> Self {
-        Self { columns: Vec::new(), rows: Vec::new(), affected: 0 }
+        Self {
+            columns: Vec::new(),
+            rows: Vec::new(),
+            affected: 0,
+        }
     }
-    
+
     pub fn single(addr: Addr) -> Self {
         Self {
             columns: vec!["addr".to_string()],
@@ -1829,7 +1867,7 @@ pub enum QueryValue {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_addr_split() {
         let addr = Addr::new(0x80, 0x42);
@@ -1837,95 +1875,95 @@ mod tests {
         assert_eq!(addr.slot(), 0x42);
         assert_eq!(addr.0, 0x8042);
     }
-    
+
     #[test]
     fn test_surface_compartments() {
         let lance = Addr::new(PREFIX_LANCE, 0x05);
         let sql = Addr::new(PREFIX_SQL, 0x10);
         let meta = Addr::new(PREFIX_META, 0x00);
         let verbs = Addr::new(PREFIX_VERBS, 0x01);
-        
+
         assert!(lance.is_surface());
         assert!(sql.is_surface());
         assert!(meta.is_surface());
         assert!(verbs.is_surface());
-        
+
         assert_eq!(lance.surface_compartment(), Some(SurfaceCompartment::Lance));
         assert_eq!(verbs.surface_compartment(), Some(SurfaceCompartment::Verbs));
     }
-    
+
     #[test]
     fn test_fluid_node_ranges() {
         let fluid = Addr::new(0x50, 0x00);
         let node = Addr::new(0x80, 0x00);
-        
+
         assert!(fluid.is_fluid());
         assert!(!fluid.is_node());
-        
+
         assert!(node.is_node());
         assert!(!node.is_fluid());
     }
-    
+
     #[test]
     fn test_bind_space_surfaces() {
         let space = BindSpace::new();
-        
+
         // Check verbs initialized
         let causes = Addr::new(PREFIX_VERBS, 0x00);
         let node = space.read(causes);
         assert!(node.is_some());
         assert_eq!(node.unwrap().label.as_deref(), Some("CAUSES"));
     }
-    
+
     #[test]
     fn test_write_read() {
         let mut space = BindSpace::new();
         let fp = [42u64; FINGERPRINT_WORDS];
-        
+
         let addr = space.write(fp);
         assert!(addr.is_node());
-        
+
         let node = space.read(addr);
         assert!(node.is_some());
         assert_eq!(node.unwrap().fingerprint, fp);
     }
-    
+
     #[test]
     fn test_link_traverse() {
         let mut space = BindSpace::new();
-        
+
         let a = space.write_labeled([1u64; FINGERPRINT_WORDS], "A");
         let b = space.write_labeled([2u64; FINGERPRINT_WORDS], "B");
-        
-        let causes = Addr::new(PREFIX_VERBS, 0x00);  // CAUSES
+
+        let causes = Addr::new(PREFIX_VERBS, 0x00); // CAUSES
         space.link(a, causes, b);
-        
+
         let targets = space.traverse(a, causes);
         assert_eq!(targets.len(), 1);
         assert_eq!(targets[0], b);
     }
-    
+
     #[test]
     fn test_n_hop() {
         let mut space = BindSpace::new();
-        
+
         let a = space.write([1u64; FINGERPRINT_WORDS]);
         let b = space.write([2u64; FINGERPRINT_WORDS]);
         let c = space.write([3u64; FINGERPRINT_WORDS]);
         let d = space.write([4u64; FINGERPRINT_WORDS]);
-        
+
         let causes = Addr::new(PREFIX_VERBS, 0x00);
         space.link(a, causes, b);
         space.link(b, causes, c);
         space.link(c, causes, d);
-        
+
         let results = space.traverse_n_hops(a, causes, 3);
         assert_eq!(results.len(), 3);
         assert_eq!(results[0], (1, b));
         assert_eq!(results[1], (2, c));
         assert_eq!(results[2], (3, d));
     }
-    
+
     #[test]
     fn test_verb_lookup() {
         let space = BindSpace::new();
@@ -1974,7 +2012,10 @@ mod tests {
     #[test]
     fn test_dn_parent_path() {
         // O(1) parent extraction from DN path
-        assert_eq!(BindSpace::dn_parent_path("Ada:A:soul:identity"), Some("Ada:A:soul"));
+        assert_eq!(
+            BindSpace::dn_parent_path("Ada:A:soul:identity"),
+            Some("Ada:A:soul")
+        );
         assert_eq!(BindSpace::dn_parent_path("Ada:A:soul"), Some("Ada:A"));
         assert_eq!(BindSpace::dn_parent_path("Ada:A"), Some("Ada"));
         assert_eq!(BindSpace::dn_parent_path("Ada"), None);

@@ -13,11 +13,11 @@
 
 use std::time::Instant;
 
+use ladybug::cognitive::{GateState, get_gate_state};
 use ladybug::core::Fingerprint;
 use ladybug::core::simd::hamming_distance;
 use ladybug::nars::TruthValue;
-use ladybug::cognitive::{get_gate_state, GateState};
-use ladybug::storage::{BindSpace, Addr, FINGERPRINT_WORDS};
+use ladybug::storage::{Addr, BindSpace, FINGERPRINT_WORDS};
 
 fn main() {
     println!();
@@ -84,7 +84,9 @@ fn main() {
         assert!(
             revised.confidence > tv1.confidence && revised.confidence > tv2.confidence,
             "Revision must increase confidence: {:.3} should be > {:.3} and {:.3}",
-            revised.confidence, tv1.confidence, tv2.confidence
+            revised.confidence,
+            tv1.confidence,
+            tv2.confidence
         );
         // Frequency should be between inputs (weighted average)
         assert!(
@@ -92,7 +94,10 @@ fn main() {
             "Frequency out of range"
         );
         checks_passed += 1;
-        println!("OK  (f={:.3}, c={:.3})", revised.frequency, revised.confidence);
+        println!(
+            "OK  (f={:.3}, c={:.3})",
+            revised.frequency, revised.confidence
+        );
     }
 
     // ── 4. Collapse Gate ────────────────────────────────────────────────
@@ -125,14 +130,20 @@ fn main() {
     let elapsed = t0.elapsed();
     println!();
     println!("----------------------------------------------------------");
-    println!("  Result: {}/{} checks passed in {:.1}ms",
-        checks_passed, total_checks, elapsed.as_secs_f64() * 1000.0);
+    println!(
+        "  Result: {}/{} checks passed in {:.1}ms",
+        checks_passed,
+        total_checks,
+        elapsed.as_secs_f64() * 1000.0
+    );
 
     if checks_passed == total_checks {
         println!("  HEARTBEAT: ALIVE");
     } else {
-        println!("  HEARTBEAT: DEGRADED ({} failures)",
-            total_checks - checks_passed);
+        println!(
+            "  HEARTBEAT: DEGRADED ({} failures)",
+            total_checks - checks_passed
+        );
     }
     println!("==========================================================");
     println!();

@@ -34,9 +34,9 @@
 //! - **Semantic**: Split on topic changes (requires embeddings)
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::RwLock;
 use std::path::PathBuf;
+use std::sync::RwLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 // ============================================================================
 // Fingerprint Generation (Scent)
@@ -166,9 +166,10 @@ pub fn chunk_document(
         ChunkStrategy::Paragraph { max_paragraphs } => {
             chunk_by_paragraphs(doc_id, text, max_paragraphs, &mut next_id)
         }
-        ChunkStrategy::Sliding { window_size, overlap } => {
-            chunk_sliding_window(doc_id, text, window_size, overlap, &mut next_id)
-        }
+        ChunkStrategy::Sliding {
+            window_size,
+            overlap,
+        } => chunk_sliding_window(doc_id, text, window_size, overlap, &mut next_id),
         ChunkStrategy::FixedSize { target_size } => {
             chunk_fixed_size(doc_id, text, target_size, &mut next_id)
         }
@@ -176,7 +177,12 @@ pub fn chunk_document(
 }
 
 /// Split by sentence boundaries
-fn chunk_by_sentences(doc_id: &str, text: &str, max_sentences: usize, next_id: &mut u64) -> Vec<Chunk> {
+fn chunk_by_sentences(
+    doc_id: &str,
+    text: &str,
+    max_sentences: usize,
+    next_id: &mut u64,
+) -> Vec<Chunk> {
     let mut chunks = Vec::new();
     let mut position = 0u32;
 
@@ -231,12 +237,19 @@ fn chunk_by_sentences(doc_id: &str, text: &str, max_sentences: usize, next_id: &
 
 /// Check if text ends with a common abbreviation
 fn is_abbreviation(text: &str) -> bool {
-    let abbrevs = ["Mr.", "Mrs.", "Ms.", "Dr.", "Jr.", "Sr.", "vs.", "etc.", "i.e.", "e.g."];
+    let abbrevs = [
+        "Mr.", "Mrs.", "Ms.", "Dr.", "Jr.", "Sr.", "vs.", "etc.", "i.e.", "e.g.",
+    ];
     abbrevs.iter().any(|a| text.ends_with(a))
 }
 
 /// Split by paragraph boundaries
-fn chunk_by_paragraphs(doc_id: &str, text: &str, max_paragraphs: usize, next_id: &mut u64) -> Vec<Chunk> {
+fn chunk_by_paragraphs(
+    doc_id: &str,
+    text: &str,
+    max_paragraphs: usize,
+    next_id: &mut u64,
+) -> Vec<Chunk> {
     let mut chunks = Vec::new();
     let mut position = 0u32;
 
@@ -728,7 +741,10 @@ pub fn parse_gutenberg(text: &str) -> Result<(DocumentMeta, String), CorpusError
     }
 
     // Extract release date/year
-    if let Some(date_line) = header.lines().find(|l| l.starts_with("Release Date:") || l.starts_with("Posting Date:")) {
+    if let Some(date_line) = header
+        .lines()
+        .find(|l| l.starts_with("Release Date:") || l.starts_with("Posting Date:"))
+    {
         // Try to extract year
         let date_text = if date_line.starts_with("Release Date:") {
             &date_line[13..]
@@ -864,8 +880,14 @@ mod tests {
 
     #[test]
     fn test_chunk_by_paragraphs() {
-        let text = "First paragraph with some text.\n\nSecond paragraph here.\n\nThird paragraph too.";
-        let chunks = chunk_document("doc1", text, ChunkStrategy::Paragraph { max_paragraphs: 1 }, 0);
+        let text =
+            "First paragraph with some text.\n\nSecond paragraph here.\n\nThird paragraph too.";
+        let chunks = chunk_document(
+            "doc1",
+            text,
+            ChunkStrategy::Paragraph { max_paragraphs: 1 },
+            0,
+        );
 
         assert_eq!(chunks.len(), 3);
         assert!(chunks[0].text.contains("First"));
@@ -876,7 +898,12 @@ mod tests {
     #[test]
     fn test_chunk_by_sentences() {
         let text = "First sentence. Second sentence. Third sentence. Fourth sentence.";
-        let chunks = chunk_document("doc1", text, ChunkStrategy::Sentence { max_sentences: 2 }, 0);
+        let chunks = chunk_document(
+            "doc1",
+            text,
+            ChunkStrategy::Sentence { max_sentences: 2 },
+            0,
+        );
 
         assert_eq!(chunks.len(), 2);
         assert!(chunks[0].text.contains("First"));
@@ -889,7 +916,10 @@ mod tests {
         let chunks = chunk_document(
             "doc1",
             text,
-            ChunkStrategy::Sliding { window_size: 10, overlap: 5 },
+            ChunkStrategy::Sliding {
+                window_size: 10,
+                overlap: 5,
+            },
             0,
         );
 

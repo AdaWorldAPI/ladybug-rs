@@ -99,16 +99,30 @@ pub struct ComparisonResult {
 
 impl ComparisonReport {
     pub fn print(&self) {
-        println!("\n╔══════════════════════════════════════════════════════════════════════════════════╗");
-        println!("║                         VECTOR DB COMPARISON                                     ║");
-        println!("║                         {} vectors                                           ║", format_num(self.num_vectors));
-        println!("╠══════════════════════════════════════════════════════════════════════════════════╣");
-        println!("║ System        │ Memory      │ Latency     │ Recall  │ QPS        │ $/1M queries ║");
-        println!("╠═══════════════╪═════════════╪═════════════╪═════════╪════════════╪══════════════╣");
+        println!(
+            "\n╔══════════════════════════════════════════════════════════════════════════════════╗"
+        );
+        println!(
+            "║                         VECTOR DB COMPARISON                                     ║"
+        );
+        println!(
+            "║                         {} vectors                                           ║",
+            format_num(self.num_vectors)
+        );
+        println!(
+            "╠══════════════════════════════════════════════════════════════════════════════════╣"
+        );
+        println!(
+            "║ System        │ Memory      │ Latency     │ Recall  │ QPS        │ $/1M queries ║"
+        );
+        println!(
+            "╠═══════════════╪═════════════╪═════════════╪═════════╪════════════╪══════════════╣"
+        );
 
         for (db, result) in &self.results {
             let highlight = if *db == VectorDB::Ladybug { "►" } else { " " };
-            println!("║{}{:<13} │ {:>11} │ {:>11} │ {:>6.1}% │ {:>10} │ {:>12} ║",
+            println!(
+                "║{}{:<13} │ {:>11} │ {:>11} │ {:>6.1}% │ {:>10} │ {:>12} ║",
                 highlight,
                 db.name(),
                 format_mb(result.memory_mb),
@@ -119,7 +133,9 @@ impl ComparisonReport {
             );
         }
 
-        println!("╚═══════════════╧═════════════╧═════════════╧═════════╧════════════╧══════════════╝");
+        println!(
+            "╚═══════════════╧═════════════╧═════════════╧═════════╧════════════╧══════════════╝"
+        );
 
         // Calculate advantages
         if let (Some(ladybug), Some(qdrant)) = (
@@ -128,12 +144,18 @@ impl ComparisonReport {
         ) {
             println!("\n┌─────────────────────────────────────────────────────────────┐");
             println!("│ LADYBUG ADVANTAGES vs Qdrant:                               │");
-            println!("│   Memory:  {:.1}x LESS RAM                                   │",
-                qdrant.1.memory_mb / ladybug.1.memory_mb);
-            println!("│   Speed:   {:.1}x FASTER                                     │",
-                qdrant.1.latency_us as f64 / ladybug.1.latency_us as f64);
-            println!("│   Cost:    {:.1}x CHEAPER                                    │",
-                qdrant.1.cost_per_1m_queries / ladybug.1.cost_per_1m_queries);
+            println!(
+                "│   Memory:  {:.1}x LESS RAM                                   │",
+                qdrant.1.memory_mb / ladybug.1.memory_mb
+            );
+            println!(
+                "│   Speed:   {:.1}x FASTER                                     │",
+                qdrant.1.latency_us as f64 / ladybug.1.latency_us as f64
+            );
+            println!(
+                "│   Cost:    {:.1}x CHEAPER                                    │",
+                qdrant.1.cost_per_1m_queries / ladybug.1.cost_per_1m_queries
+            );
             println!("└─────────────────────────────────────────────────────────────┘");
         }
     }
@@ -150,33 +172,39 @@ pub fn compare_all(num_vectors: usize) -> ComparisonReport {
         VectorDB::Chroma,
     ];
 
-    let results: Vec<_> = dbs.into_iter().map(|db| {
-        let bytes = db.bytes_per_vector() * num_vectors;
-        let memory_mb = bytes as f64 / (1024.0 * 1024.0);
-        let latency_us = db.typical_latency_us(num_vectors);
-        let recall = db.typical_recall();
-        let qps = 1_000_000.0 / latency_us as f64;
+    let results: Vec<_> = dbs
+        .into_iter()
+        .map(|db| {
+            let bytes = db.bytes_per_vector() * num_vectors;
+            let memory_mb = bytes as f64 / (1024.0 * 1024.0);
+            let latency_us = db.typical_latency_us(num_vectors);
+            let recall = db.typical_recall();
+            let qps = 1_000_000.0 / latency_us as f64;
 
-        // Cost estimation:
-        // - Ladybug: self-hosted, ~$0.001/1M (CPU only)
-        // - Cloud services: ~$0.05-0.50/1M depending on provider
-        let cost_per_1m_queries = match db {
-            VectorDB::Ladybug => 0.001,
-            VectorDB::Qdrant => 0.02,
-            VectorDB::Milvus => 0.03,
-            VectorDB::Weaviate => 0.05,
-            VectorDB::Pinecone => 0.10,
-            VectorDB::Chroma => 0.01,
-        };
+            // Cost estimation:
+            // - Ladybug: self-hosted, ~$0.001/1M (CPU only)
+            // - Cloud services: ~$0.05-0.50/1M depending on provider
+            let cost_per_1m_queries = match db {
+                VectorDB::Ladybug => 0.001,
+                VectorDB::Qdrant => 0.02,
+                VectorDB::Milvus => 0.03,
+                VectorDB::Weaviate => 0.05,
+                VectorDB::Pinecone => 0.10,
+                VectorDB::Chroma => 0.01,
+            };
 
-        (db, ComparisonResult {
-            memory_mb,
-            latency_us,
-            recall,
-            qps,
-            cost_per_1m_queries,
+            (
+                db,
+                ComparisonResult {
+                    memory_mb,
+                    latency_us,
+                    recall,
+                    qps,
+                    cost_per_1m_queries,
+                },
+            )
         })
-    }).collect();
+        .collect();
 
     ComparisonReport {
         num_vectors,
@@ -210,7 +238,11 @@ pub fn run_comparison_benchmark(config: BenchConfig) -> ComparisonReport {
     let mut report = compare_all(config.num_vectors);
 
     // Update Ladybug with real measurements
-    if let Some((_, result)) = report.results.iter_mut().find(|(db, _)| *db == VectorDB::Ladybug) {
+    if let Some((_, result)) = report
+        .results
+        .iter_mut()
+        .find(|(db, _)| *db == VectorDB::Ladybug)
+    {
         result.latency_us = ladybug_latency;
         result.memory_mb = ladybug_memory as f64 / (1024.0 * 1024.0);
         result.qps = 1_000_000.0 / ladybug_latency as f64;
@@ -277,12 +309,16 @@ mod tests {
         report.print();
 
         // Ladybug should use less memory than Qdrant
-        let ladybug_mem = report.results.iter()
+        let ladybug_mem = report
+            .results
+            .iter()
             .find(|(db, _)| *db == VectorDB::Ladybug)
             .map(|(_, r)| r.memory_mb)
             .unwrap();
 
-        let qdrant_mem = report.results.iter()
+        let qdrant_mem = report
+            .results
+            .iter()
             .find(|(db, _)| *db == VectorDB::Qdrant)
             .map(|(_, r)| r.memory_mb)
             .unwrap();

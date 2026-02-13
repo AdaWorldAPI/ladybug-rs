@@ -25,8 +25,8 @@
 //! - Memory-mapped where possible
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::bind_space::FINGERPRINT_WORDS;
@@ -99,8 +99,7 @@ impl TemporalEntry {
 
     /// Check if entry is visible at given version
     pub fn visible_at(&self, version: Version) -> bool {
-        self.created_version <= version
-            && self.deleted_version.map(|v| v > version).unwrap_or(true)
+        self.created_version <= version && self.deleted_version.map(|v| v > version).unwrap_or(true)
     }
 
     /// Mark as deleted at given version
@@ -124,8 +123,7 @@ pub struct TemporalEdge {
 
 impl TemporalEdge {
     pub fn visible_at(&self, version: Version) -> bool {
-        self.created_version <= version
-            && self.deleted_version.map(|v| v > version).unwrap_or(true)
+        self.created_version <= version && self.deleted_version.map(|v| v > version).unwrap_or(true)
     }
 }
 
@@ -191,7 +189,12 @@ impl Transaction {
     }
 
     /// Stage a write
-    pub fn write(&mut self, addr: u16, fingerprint: [u64; FINGERPRINT_WORDS], label: Option<String>) {
+    pub fn write(
+        &mut self,
+        addr: u16,
+        fingerprint: [u64; FINGERPRINT_WORDS],
+        label: Option<String>,
+    ) {
         let entry = TemporalEntry::new(addr, fingerprint, label, 0, self.id); // version set on commit
         self.pending_writes.insert(addr, entry);
     }
@@ -297,7 +300,8 @@ impl VersionManager {
     /// Find version at or before timestamp
     pub fn version_at_time(&self, ts: Timestamp) -> Option<Version> {
         let times = self.version_times.read().ok()?;
-        times.iter()
+        times
+            .iter()
             .filter(|(_, t)| **t <= ts)
             .max_by_key(|(v, _)| *v)
             .map(|(v, _)| *v)
@@ -386,7 +390,9 @@ impl TemporalStore {
         // validation; if conflict detection fails we put it back (abort path
         // handles cleanup). We clone first so we can re-insert on failure.
         let txn = {
-            let txns = self.active_txns.read()
+            let txns = self
+                .active_txns
+                .read()
                 .map_err(|_| TemporalError::LockError)?;
             txns.get(&txn_id)
                 .cloned()
@@ -401,7 +407,10 @@ impl TemporalStore {
         // across conflict detection AND write application to close the
         // TOCTOU gap that previously existed.
         let mut entries = self.entries.write().map_err(|_| TemporalError::LockError)?;
-        let mut addr_idx = self.addr_index.write().map_err(|_| TemporalError::LockError)?;
+        let mut addr_idx = self
+            .addr_index
+            .write()
+            .map_err(|_| TemporalError::LockError)?;
 
         // Conflict detection for Serializable (while holding write locks,
         // so no other commit can modify the data we're checking against).
@@ -461,7 +470,8 @@ impl TemporalStore {
         drop(entries);
 
         // NOW remove the transaction from active set (commit is durable).
-        self.active_txns.write()
+        self.active_txns
+            .write()
             .map_err(|_| TemporalError::LockError)?
             .remove(&txn_id);
 
@@ -470,7 +480,8 @@ impl TemporalStore {
 
     /// Abort transaction
     pub fn abort(&self, txn_id: TxnId) -> Result<(), TemporalError> {
-        self.active_txns.write()
+        self.active_txns
+            .write()
             .map_err(|_| TemporalError::LockError)?
             .remove(&txn_id)
             .ok_or(TemporalError::TxnNotFound(txn_id))?;
@@ -496,7 +507,8 @@ impl TemporalStore {
         let indices = self.addr_index.read().ok()?.get(&addr)?.clone();
 
         // Find latest entry visible at version
-        indices.iter()
+        indices
+            .iter()
             .rev()
             .filter_map(|&idx| entries.get(idx))
             .find(|e| e.visible_at(version))
@@ -528,9 +540,11 @@ impl TemporalStore {
 
     /// Scan all entries visible at version
     pub fn scan_at(&self, version: Version) -> Vec<TemporalEntry> {
-        self.entries.read()
+        self.entries
+            .read()
             .map(|entries| {
-                entries.iter()
+                entries
+                    .iter()
                     .filter(|e| e.visible_at(version))
                     .cloned()
                     .collect()
@@ -550,24 +564,45 @@ impl TemporalStore {
         fingerprint: [u64; FINGERPRINT_WORDS],
         label: Option<String>,
     ) -> Result<(), TemporalError> {
-        let mut txns = self.active_txns.write().map_err(|_| TemporalError::LockError)?;
-        let txn = txns.get_mut(&txn_id).ok_or(TemporalError::TxnNotFound(txn_id))?;
+        let mut txns = self
+            .active_txns
+            .write()
+            .map_err(|_| TemporalError::LockError)?;
+        let txn = txns
+            .get_mut(&txn_id)
+            .ok_or(TemporalError::TxnNotFound(txn_id))?;
         txn.write(addr, fingerprint, label);
         Ok(())
     }
 
     /// Delete within transaction
     pub fn delete_in_txn(&self, txn_id: TxnId, addr: u16) -> Result<(), TemporalError> {
-        let mut txns = self.active_txns.write().map_err(|_| TemporalError::LockError)?;
-        let txn = txns.get_mut(&txn_id).ok_or(TemporalError::TxnNotFound(txn_id))?;
+        let mut txns = self
+            .active_txns
+            .write()
+            .map_err(|_| TemporalError::LockError)?;
+        let txn = txns
+            .get_mut(&txn_id)
+            .ok_or(TemporalError::TxnNotFound(txn_id))?;
         txn.delete(addr);
         Ok(())
     }
 
     /// Link within transaction
-    pub fn link_in_txn(&self, txn_id: TxnId, from: u16, verb: u16, to: u16) -> Result<(), TemporalError> {
-        let mut txns = self.active_txns.write().map_err(|_| TemporalError::LockError)?;
-        let txn = txns.get_mut(&txn_id).ok_or(TemporalError::TxnNotFound(txn_id))?;
+    pub fn link_in_txn(
+        &self,
+        txn_id: TxnId,
+        from: u16,
+        verb: u16,
+        to: u16,
+    ) -> Result<(), TemporalError> {
+        let mut txns = self
+            .active_txns
+            .write()
+            .map_err(|_| TemporalError::LockError)?;
+        let txn = txns
+            .get_mut(&txn_id)
+            .ok_or(TemporalError::TxnNotFound(txn_id))?;
         txn.link(from, verb, to);
         Ok(())
     }
@@ -642,12 +677,10 @@ impl TemporalStore {
         let mut removed = Vec::new();
         let mut modified = Vec::new();
 
-        let from_map: HashMap<u16, TemporalEntry> = from_state.into_iter()
-            .map(|e| (e.addr, e))
-            .collect();
-        let to_map: HashMap<u16, TemporalEntry> = to_state.into_iter()
-            .map(|e| (e.addr, e))
-            .collect();
+        let from_map: HashMap<u16, TemporalEntry> =
+            from_state.into_iter().map(|e| (e.addr, e)).collect();
+        let to_map: HashMap<u16, TemporalEntry> =
+            to_state.into_iter().map(|e| (e.addr, e)).collect();
 
         for (addr, to_entry) in &to_map {
             match from_map.get(addr) {
@@ -666,7 +699,13 @@ impl TemporalStore {
             }
         }
 
-        VersionDiff { from, to, added, removed, modified }
+        VersionDiff {
+            from,
+            to,
+            added,
+            removed,
+            modified,
+        }
     }
 }
 
@@ -697,13 +736,21 @@ pub struct WhatIfBranch {
 impl WhatIfBranch {
     fn new(base_version: Version, store: &TemporalStore) -> Self {
         // Copy current state at base version
-        let entries: HashMap<u16, TemporalEntry> = store.scan_at(base_version)
+        let entries: HashMap<u16, TemporalEntry> = store
+            .scan_at(base_version)
             .into_iter()
             .map(|e| (e.addr, e))
             .collect();
 
-        let edges = store.edges.read()
-            .map(|es| es.iter().filter(|e| e.visible_at(base_version)).cloned().collect())
+        let edges = store
+            .edges
+            .read()
+            .map(|es| {
+                es.iter()
+                    .filter(|e| e.visible_at(base_version))
+                    .cloned()
+                    .collect()
+            })
             .unwrap_or_default();
 
         Self {
@@ -721,7 +768,12 @@ impl WhatIfBranch {
     }
 
     /// Write in this branch (speculative)
-    pub fn write(&mut self, addr: u16, fingerprint: [u64; FINGERPRINT_WORDS], label: Option<String>) {
+    pub fn write(
+        &mut self,
+        addr: u16,
+        fingerprint: [u64; FINGERPRINT_WORDS],
+        label: Option<String>,
+    ) {
         let entry = TemporalEntry::new(addr, fingerprint, label, self.base_version, 0);
         self.entries.insert(addr, entry);
         self.modified.push(addr);
@@ -740,7 +792,8 @@ impl WhatIfBranch {
 
     /// Compare with another branch or main store state
     pub fn diff_from_base(&self, store: &TemporalStore) -> VersionDiff {
-        let base_state: HashMap<u16, TemporalEntry> = store.scan_at(self.base_version)
+        let base_state: HashMap<u16, TemporalEntry> = store
+            .scan_at(self.base_version)
             .into_iter()
             .map(|e| (e.addr, e))
             .collect();
@@ -860,9 +913,16 @@ impl std::fmt::Display for TemporalError {
         match self {
             Self::TxnNotFound(id) => write!(f, "Transaction {} not found", id),
             Self::TxnNotActive(id) => write!(f, "Transaction {} not active", id),
-            Self::Conflict { txn_id, addr, conflicting_version } => {
-                write!(f, "Conflict in txn {}: addr {:04x} modified at version {}",
-                    txn_id, addr, conflicting_version)
+            Self::Conflict {
+                txn_id,
+                addr,
+                conflicting_version,
+            } => {
+                write!(
+                    f,
+                    "Conflict in txn {}: addr {:04x} modified at version {}",
+                    txn_id, addr, conflicting_version
+                )
             }
             Self::LockError => write!(f, "Lock acquisition failed"),
             Self::VersionNotFound(v) => write!(f, "Version {} not found", v),
@@ -877,8 +937,8 @@ impl std::error::Error for TemporalError {}
 // TEMPORAL COGREDIS EXTENSION
 // =============================================================================
 
-use super::cog_redis::{CogRedis, CogAddr, SetOptions, RedisResult};
-use super::hardening::{HardeningConfig, HardenedBindSpace};
+use super::cog_redis::{CogAddr, CogRedis, RedisResult, SetOptions};
+use super::hardening::{HardenedBindSpace, HardeningConfig};
 
 /// TemporalCogRedis - CogRedis with ACID, time travel, and what-if semantics
 pub struct TemporalCogRedis {
@@ -920,15 +980,23 @@ impl TemporalCogRedis {
 
     /// COMMIT
     pub fn commit(&mut self) -> Result<Version, TemporalError> {
-        let txn_id = self.current_txn.take()
-            .ok_or(TemporalError::InvalidOperation("No active transaction".into()))?;
+        let txn_id = self
+            .current_txn
+            .take()
+            .ok_or(TemporalError::InvalidOperation(
+                "No active transaction".into(),
+            ))?;
         self.temporal.commit(txn_id)
     }
 
     /// ROLLBACK (abort current transaction)
     pub fn rollback(&mut self) -> Result<(), TemporalError> {
-        let txn_id = self.current_txn.take()
-            .ok_or(TemporalError::InvalidOperation("No active transaction".into()))?;
+        let txn_id = self
+            .current_txn
+            .take()
+            .ok_or(TemporalError::InvalidOperation(
+                "No active transaction".into(),
+            ))?;
         self.temporal.abort(txn_id)
     }
 
@@ -953,11 +1021,15 @@ impl TemporalCogRedis {
         };
 
         if let Some(txn_id) = self.current_txn {
-            let _ = self.temporal.write_in_txn(txn_id, addr.0, fp_words, opts.label);
+            let _ = self
+                .temporal
+                .write_in_txn(txn_id, addr.0, fp_words, opts.label);
         } else {
             // Auto-commit single operation
             let txn_id = self.temporal.begin(IsolationLevel::ReadCommitted);
-            let _ = self.temporal.write_in_txn(txn_id, addr.0, fp_words, opts.label);
+            let _ = self
+                .temporal
+                .write_in_txn(txn_id, addr.0, fp_words, opts.label);
             let _ = self.temporal.commit(txn_id);
         }
 
@@ -1032,7 +1104,8 @@ impl TemporalCogRedis {
 
     /// ROLLBACK TO checkpoint
     pub fn rollback_to_checkpoint(&self, name: &str) -> Result<Version, TemporalError> {
-        let version = self.get_checkpoint(name)
+        let version = self
+            .get_checkpoint(name)
             .ok_or(TemporalError::VersionNotFound(0))?;
         self.rollback_to(version)
     }
@@ -1090,12 +1163,10 @@ impl TemporalCogRedis {
                 let txn_id = self.begin_with_isolation(isolation);
                 RedisResult::String(format!("OK txn:{}", txn_id))
             }
-            "COMMIT" => {
-                match self.commit() {
-                    Ok(v) => RedisResult::String(format!("OK version:{}", v)),
-                    Err(e) => RedisResult::Error(e.to_string()),
-                }
-            }
+            "COMMIT" => match self.commit() {
+                Ok(v) => RedisResult::String(format!("OK version:{}", v)),
+                Err(e) => RedisResult::Error(e.to_string()),
+            },
             "ABORT" | "ROLLBACK" => {
                 if parts.len() > 1 && parts[1].to_uppercase() == "TO" {
                     // ROLLBACK TO version/checkpoint
@@ -1134,9 +1205,7 @@ impl TemporalCogRedis {
             }
 
             // Time travel commands
-            "VERSION" => {
-                RedisResult::String(format!("{}", self.version()))
-            }
+            "VERSION" => RedisResult::String(format!("{}", self.version())),
             "READAT" => {
                 if parts.len() > 2 {
                     if let (Ok(addr), Ok(version)) = (
@@ -1146,7 +1215,8 @@ impl TemporalCogRedis {
                         if let Some(entry) = self.read_at(CogAddr(addr), version) {
                             RedisResult::String(format!(
                                 "addr:{:04x} version:{} label:{}",
-                                entry.addr, entry.created_version,
+                                entry.addr,
+                                entry.created_version,
                                 entry.label.as_deref().unwrap_or("-")
                             ))
                         } else {
@@ -1177,14 +1247,15 @@ impl TemporalCogRedis {
 
             "DIFF" => {
                 if parts.len() > 2 {
-                    if let (Ok(from), Ok(to)) = (
-                        parts[1].parse::<Version>(),
-                        parts[2].parse::<Version>(),
-                    ) {
+                    if let (Ok(from), Ok(to)) =
+                        (parts[1].parse::<Version>(), parts[2].parse::<Version>())
+                    {
                         let diff = self.diff(from, to);
                         RedisResult::String(format!(
                             "added:{} removed:{} modified:{}",
-                            diff.added.len(), diff.removed.len(), diff.modified.len()
+                            diff.added.len(),
+                            diff.removed.len(),
+                            diff.modified.len()
                         ))
                     } else {
                         RedisResult::Error("DIFF requires two version numbers".into())
@@ -1209,7 +1280,12 @@ impl TemporalCogRedis {
             current_version: self.temporal.current_version(),
             entry_count: self.temporal.entries.read().map(|e| e.len()).unwrap_or(0),
             edge_count: self.temporal.edges.read().map(|e| e.len()).unwrap_or(0),
-            active_txn_count: self.temporal.active_txns.read().map(|t| t.len()).unwrap_or(0),
+            active_txn_count: self
+                .temporal
+                .active_txns
+                .read()
+                .map(|t| t.len())
+                .unwrap_or(0),
             in_transaction: self.in_transaction(),
         }
     }
@@ -1248,7 +1324,9 @@ mod tests {
 
         // Write
         let fp = [42u64; FINGERPRINT_WORDS];
-        store.write_in_txn(txn_id, 0x8001, fp, Some("test".into())).unwrap();
+        store
+            .write_in_txn(txn_id, 0x8001, fp, Some("test".into()))
+            .unwrap();
 
         // Not visible before commit
         assert!(store.read(0x8001).is_none());
@@ -1284,12 +1362,16 @@ mod tests {
 
         // Write v1
         let txn1 = store.begin(IsolationLevel::ReadCommitted);
-        store.write_in_txn(txn1, 0x8001, [1u64; FINGERPRINT_WORDS], Some("v1".into())).unwrap();
+        store
+            .write_in_txn(txn1, 0x8001, [1u64; FINGERPRINT_WORDS], Some("v1".into()))
+            .unwrap();
         let v1 = store.commit(txn1).unwrap();
 
         // Write v2 (overwrites)
         let txn2 = store.begin(IsolationLevel::ReadCommitted);
-        store.write_in_txn(txn2, 0x8001, [2u64; FINGERPRINT_WORDS], Some("v2".into())).unwrap();
+        store
+            .write_in_txn(txn2, 0x8001, [2u64; FINGERPRINT_WORDS], Some("v2".into()))
+            .unwrap();
         let _v2 = store.commit(txn2).unwrap();
 
         // Current shows v2
@@ -1307,13 +1389,27 @@ mod tests {
 
         // Write and checkpoint
         let txn1 = store.begin(IsolationLevel::ReadCommitted);
-        store.write_in_txn(txn1, 0x8001, [1u64; FINGERPRINT_WORDS], Some("before".into())).unwrap();
+        store
+            .write_in_txn(
+                txn1,
+                0x8001,
+                [1u64; FINGERPRINT_WORDS],
+                Some("before".into()),
+            )
+            .unwrap();
         store.commit(txn1).unwrap();
         store.checkpoint("before_change");
 
         // More writes
         let txn2 = store.begin(IsolationLevel::ReadCommitted);
-        store.write_in_txn(txn2, 0x8001, [2u64; FINGERPRINT_WORDS], Some("after".into())).unwrap();
+        store
+            .write_in_txn(
+                txn2,
+                0x8001,
+                [2u64; FINGERPRINT_WORDS],
+                Some("after".into()),
+            )
+            .unwrap();
         store.commit(txn2).unwrap();
 
         // Current shows "after"
@@ -1335,14 +1431,25 @@ mod tests {
 
         // Initial state
         let txn1 = store.begin(IsolationLevel::ReadCommitted);
-        store.write_in_txn(txn1, 0x8001, [1u64; FINGERPRINT_WORDS], Some("original".into())).unwrap();
+        store
+            .write_in_txn(
+                txn1,
+                0x8001,
+                [1u64; FINGERPRINT_WORDS],
+                Some("original".into()),
+            )
+            .unwrap();
         let v1 = store.commit(txn1).unwrap();
 
         // Fork
         let mut branch = store.fork(v1);
 
         // Speculative write in branch
-        branch.write(0x8001, [99u64; FINGERPRINT_WORDS], Some("speculative".into()));
+        branch.write(
+            0x8001,
+            [99u64; FINGERPRINT_WORDS],
+            Some("speculative".into()),
+        );
 
         // Main store unchanged
         let main = store.read(0x8001).unwrap();
@@ -1367,13 +1474,19 @@ mod tests {
 
         // v1: write A
         let txn1 = store.begin(IsolationLevel::ReadCommitted);
-        store.write_in_txn(txn1, 0x8001, [1u64; FINGERPRINT_WORDS], Some("A".into())).unwrap();
+        store
+            .write_in_txn(txn1, 0x8001, [1u64; FINGERPRINT_WORDS], Some("A".into()))
+            .unwrap();
         let v1 = store.commit(txn1).unwrap();
 
         // v2: write B, modify A
         let txn2 = store.begin(IsolationLevel::ReadCommitted);
-        store.write_in_txn(txn2, 0x8002, [2u64; FINGERPRINT_WORDS], Some("B".into())).unwrap();
-        store.write_in_txn(txn2, 0x8001, [11u64; FINGERPRINT_WORDS], Some("A'".into())).unwrap();
+        store
+            .write_in_txn(txn2, 0x8002, [2u64; FINGERPRINT_WORDS], Some("B".into()))
+            .unwrap();
+        store
+            .write_in_txn(txn2, 0x8001, [11u64; FINGERPRINT_WORDS], Some("A'".into()))
+            .unwrap();
         let v2 = store.commit(txn2).unwrap();
 
         let diff = store.diff(v1, v2);
@@ -1388,7 +1501,9 @@ mod tests {
 
         // Setup: write initial value
         let setup = store.begin(IsolationLevel::ReadCommitted);
-        store.write_in_txn(setup, 0x8001, [1u64; FINGERPRINT_WORDS], None).unwrap();
+        store
+            .write_in_txn(setup, 0x8001, [1u64; FINGERPRINT_WORDS], None)
+            .unwrap();
         store.commit(setup).unwrap();
 
         // T1: start serializable, read value
@@ -1397,7 +1512,9 @@ mod tests {
 
         // T2: write same addr and commit
         let t2 = store.begin(IsolationLevel::ReadCommitted);
-        store.write_in_txn(t2, 0x8001, [2u64; FINGERPRINT_WORDS], None).unwrap();
+        store
+            .write_in_txn(t2, 0x8001, [2u64; FINGERPRINT_WORDS], None)
+            .unwrap();
         store.commit(t2).unwrap();
 
         // T1: try to commit - should detect conflict

@@ -37,10 +37,8 @@
 //! | Control | nop, jump, branch, call, ret, cmp, halt        |
 //! | Trap    | syscall, debug                                  |
 
+use super::firefly_frame::{FireflyFrame, FrameHeader, Instruction, LanguagePrefix};
 use std::collections::HashMap;
-use super::firefly_frame::{
-    FireflyFrame, FrameHeader, Instruction, LanguagePrefix,
-};
 
 // =============================================================================
 // AST
@@ -119,7 +117,11 @@ pub struct ParseError {
 
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}: {}", self.location.line, self.location.column, self.message)
+        write!(
+            f,
+            "{}:{}: {}",
+            self.location.line, self.location.column, self.message
+        )
     }
 }
 
@@ -203,7 +205,11 @@ impl GelParser {
             }
         }
 
-        Ok(GelInstruction { mnemonic, operands, location })
+        Ok(GelInstruction {
+            mnemonic,
+            operands,
+            location,
+        })
     }
 
     fn parse_operand(&mut self) -> Result<Operand, ParseError> {
@@ -263,8 +269,7 @@ impl GelParser {
                     self.advance();
                 }
                 let hex = &self.input[hex_start..self.pos];
-                return i64::from_str_radix(hex, 16)
-                    .map_err(|_| self.error("invalid hex number"));
+                return i64::from_str_radix(hex, 16).map_err(|_| self.error("invalid hex number"));
             }
         }
 
@@ -277,8 +282,7 @@ impl GelParser {
         }
 
         let num_str = &self.input[start..self.pos];
-        num_str.parse()
-            .map_err(|_| self.error("invalid number"))
+        num_str.parse().map_err(|_| self.error("invalid number"))
     }
 
     fn peek_is_label(&self) -> bool {
@@ -362,7 +366,10 @@ impl GelParser {
     }
 
     fn location(&self) -> Location {
-        Location { line: self.line, column: self.column }
+        Location {
+            line: self.line,
+            column: self.column,
+        }
     }
 
     fn error(&self, message: &str) -> ParseError {
@@ -434,7 +441,9 @@ impl GelCompiler {
         self.sequence = self.sequence.wrapping_add(1);
 
         // Resolve operands
-        let ops: Vec<u16> = inst.operands.iter()
+        let ops: Vec<u16> = inst
+            .operands
+            .iter()
             .map(|op| self.resolve_operand(op, labels))
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -532,9 +541,7 @@ impl GelCompiler {
             }
 
             // === CONTROL: Flow Control ===
-            "nop" => {
-                Instruction::new(LanguagePrefix::Control, 0x00, 0, 0, 0)
-            }
+            "nop" => Instruction::new(LanguagePrefix::Control, 0x00, 0, 0, 0),
             "jump" | "jmp" => {
                 let target = self.get_1_op(&ops, &inst.mnemonic)?;
                 Instruction::new(LanguagePrefix::Control, 0x01, 0, 0, target)
@@ -559,28 +566,20 @@ impl GelCompiler {
                 let target = self.get_1_op(&ops, &inst.mnemonic)?;
                 Instruction::new(LanguagePrefix::Control, 0x03, 0, 0, target)
             }
-            "ret" | "return" => {
-                Instruction::new(LanguagePrefix::Control, 0x04, 0, 0, 0)
-            }
+            "ret" | "return" => Instruction::new(LanguagePrefix::Control, 0x04, 0, 0, 0),
             "cmp" => {
                 let (a, b) = self.get_2_ops(&ops, &inst.mnemonic)?;
                 Instruction::new(LanguagePrefix::Control, 0x10, 0, a, b)
             }
-            "halt" => {
-                Instruction::new(LanguagePrefix::Trap, 0x00, 0, 0, 0)
-            }
+            "halt" => Instruction::new(LanguagePrefix::Trap, 0x00, 0, 0, 0),
 
             // === TRAP: System Calls ===
             "syscall" => {
                 let num = ops.first().copied().unwrap_or(0);
                 Instruction::new(LanguagePrefix::Trap, num as u8, 0, 0, 0)
             }
-            "debug" => {
-                Instruction::new(LanguagePrefix::Trap, 0xFF, 0, 0, 0)
-            }
-            "panic" => {
-                Instruction::new(LanguagePrefix::Trap, 0x01, 0, 0, 0)
-            }
+            "debug" => Instruction::new(LanguagePrefix::Trap, 0xFF, 0, 0, 0),
+            "panic" => Instruction::new(LanguagePrefix::Trap, 0x01, 0, 0, 0),
 
             // === CYPHER: Graph (stubs) ===
             "match" => {
@@ -624,16 +623,16 @@ impl GelCompiler {
             }
             Operand::Address(addr) => Ok(*addr),
             Operand::Immediate(val) => Ok(*val),
-            Operand::Label(name) => {
-                labels.get(name)
-                    .copied()
-                    .ok_or_else(|| format!("undefined label: {}", name))
-            }
+            Operand::Label(name) => labels
+                .get(name)
+                .copied()
+                .ok_or_else(|| format!("undefined label: {}", name)),
         }
     }
 
     fn get_1_op(&self, ops: &[u16], mnemonic: &str) -> Result<u16, String> {
-        ops.first().copied()
+        ops.first()
+            .copied()
             .ok_or_else(|| format!("{} requires 1 operand", mnemonic))
     }
 
@@ -665,8 +664,7 @@ impl Default for GelCompiler {
 /// Parse and compile GEL source code to frames
 pub fn compile(source: &str) -> Result<Vec<FireflyFrame>, String> {
     let parser = GelParser::new(source);
-    let program = parser.parse()
-        .map_err(|e| e.to_string())?;
+    let program = parser.parse().map_err(|e| e.to_string())?;
     let mut compiler = GelCompiler::new();
     compiler.compile(&program)
 }
@@ -874,6 +872,9 @@ mod tests {
         let results = exec.run(&frames, 100);
 
         assert_eq!(results.len(), 5);
-        assert!(matches!(results.last(), Some(crate::fabric::executor::ExecResult::Halt)));
+        assert!(matches!(
+            results.last(),
+            Some(crate::fabric::executor::ExecResult::Halt)
+        ));
     }
 }

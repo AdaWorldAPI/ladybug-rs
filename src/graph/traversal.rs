@@ -18,17 +18,17 @@ impl Traversal {
             amplification_threshold: None,
         }
     }
-    
+
     pub fn causes(mut self) -> Self {
         self.edge_type = Some("CAUSES".to_string());
         self
     }
-    
+
     pub fn depth(mut self, range: RangeInclusive<usize>) -> Self {
         self.depth = range;
         self
     }
-    
+
     pub fn amplifies(mut self, threshold: f32) -> Self {
         self.amplification_threshold = Some(threshold);
         self

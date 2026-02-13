@@ -2,8 +2,8 @@
 //!
 //! Demonstrates graph operations with fingerprint-based addressing.
 
-use ladybug::storage::{CogRedis, CogAddr, CogValue, Tier};
 use ladybug::core::Fingerprint;
+use ladybug::storage::{CogAddr, CogRedis, CogValue, Tier};
 
 fn main() {
     // Create cognitive Redis instance
@@ -33,8 +33,10 @@ fn main() {
 
     // Access bind space directly
     let bind_space = cog.bind_space();
-    println!("\nBind space initialized with {} surface ops",
-        bind_space.stats().surface_count);
+    println!(
+        "\nBind space initialized with {} surface ops",
+        bind_space.stats().surface_count
+    );
 
     println!("\n✓ Cognitive graph operations working!");
 }

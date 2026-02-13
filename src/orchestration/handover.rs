@@ -23,8 +23,8 @@
 //! 4. **Dunning-Kruger guard** — agents with low coherence but high
 //!    confidence are flagged for metacognitive review
 
-use serde::{Deserialize, Serialize};
 use crate::cognitive::{GateState, ThinkingStyle};
+use serde::{Deserialize, Serialize};
 
 // =============================================================================
 // FLOW STATE
@@ -48,7 +48,10 @@ pub enum FlowState {
 
     /// Agent is in handover — actively transitioning to another agent.
     /// `target_slot` is the receiving agent's slot in 0x0C.
-    Handover { target_slot: u8, resonance_score: f32 },
+    Handover {
+        target_slot: u8,
+        resonance_score: f32,
+    },
 }
 
 impl Default for FlowState {
@@ -88,7 +91,9 @@ impl FlowState {
                 let prev_momentum = previous.momentum();
                 // Momentum accumulates in flow, capped at 1.0
                 let new_momentum = (prev_momentum + 0.1).min(1.0);
-                FlowState::Flow { momentum: new_momentum }
+                FlowState::Flow {
+                    momentum: new_momentum,
+                }
             }
             GateState::Hold => {
                 let hold_cycles = match previous {
@@ -97,11 +102,9 @@ impl FlowState {
                 };
                 FlowState::Hold { hold_cycles }
             }
-            GateState::Block => {
-                FlowState::Block {
-                    reason: "Gate evaluation returned Block".to_string(),
-                }
-            }
+            GateState::Block => FlowState::Block {
+                reason: "Gate evaluation returned Block".to_string(),
+            },
         }
     }
 }
@@ -229,7 +232,10 @@ impl HandoverPolicy {
 
         // --- Check 1: Flow momentum shield ---
         // Agents in deep flow resist handover
-        if self.flow_preserving && flow_state.is_flow() && flow_state.momentum() >= self.flow_momentum_shield {
+        if self.flow_preserving
+            && flow_state.is_flow()
+            && flow_state.momentum() >= self.flow_momentum_shield
+        {
             return HandoverDecision {
                 source_slot,
                 action: HandoverAction::Continue,
@@ -439,10 +445,10 @@ mod tests {
         let decision = policy.evaluate(
             0,
             &flow_state,
-            0.8,                    // good coherence
-            0.5,                    // good alignment
-            0.7,                    // good confidence
-            Some((1, 0.95)),        // excellent alternative available
+            0.8,             // good coherence
+            0.5,             // good alignment
+            0.7,             // good confidence
+            Some((1, 0.95)), // excellent alternative available
         );
 
         // Despite excellent alternative, flow shield keeps agent working
@@ -457,10 +463,10 @@ mod tests {
         let decision = policy.evaluate(
             0,
             &flow_state,
-            0.1,                    // very low coherence
-            0.5,                    // good alignment
-            0.5,                    // medium confidence
-            Some((1, 0.7)),         // compatible alternative
+            0.1,            // very low coherence
+            0.5,            // good alignment
+            0.5,            // medium confidence
+            Some((1, 0.7)), // compatible alternative
         );
 
         match decision.action {
@@ -477,14 +483,7 @@ mod tests {
         };
         let flow_state = FlowState::Hold { hold_cycles: 5 };
 
-        let decision = policy.evaluate(
-            0,
-            &flow_state,
-            0.5,
-            0.5,
-            0.5,
-            None,
-        );
+        let decision = policy.evaluate(0, &flow_state, 0.5, 0.5, 0.5, None);
 
         // No alternative available → escalate
         assert_eq!(decision.action, HandoverAction::Escalate);
@@ -498,10 +497,10 @@ mod tests {
         let decision = policy.evaluate(
             0,
             &flow_state,
-            0.8,                    // good coherence (no other handover triggers)
-            0.5,                    // good alignment
-            0.95,                   // VERY high confidence
-            None,                   // DK gap: 0.95 - 0.3 = 0.65 > 0.4 threshold
+            0.8,  // good coherence (no other handover triggers)
+            0.5,  // good alignment
+            0.95, // VERY high confidence
+            None, // DK gap: 0.95 - 0.3 = 0.65 > 0.4 threshold
         );
 
         // Wait, coherence is 0.8 and confidence is 0.95, gap = 0.15 < 0.4
@@ -517,9 +516,9 @@ mod tests {
         let decision = policy.evaluate(
             0,
             &flow_state,
-            0.5,                    // ok coherence
-            0.5,                    // ok alignment
-            0.95,                   // confidence - coherence = 0.45 > 0.4
+            0.5,  // ok coherence
+            0.5,  // ok alignment
+            0.95, // confidence - coherence = 0.45 > 0.4
             None,
         );
 
@@ -533,14 +532,7 @@ mod tests {
             reason: "Cannot resolve ambiguity".to_string(),
         };
 
-        let decision = policy.evaluate(
-            0,
-            &flow_state,
-            0.5,
-            0.5,
-            0.5,
-            Some((2, 0.75)),
-        );
+        let decision = policy.evaluate(0, &flow_state, 0.5, 0.5, 0.5, Some((2, 0.75)));
 
         match decision.action {
             HandoverAction::Delegate { target_slot, .. } => assert_eq!(target_slot, 2),
@@ -557,9 +549,9 @@ mod tests {
             0,
             &flow_state,
             0.6,
-            -0.5,                   // strong aversion
+            -0.5, // strong aversion
             0.5,
-            None,                   // no alternative
+            None, // no alternative
         );
 
         assert_eq!(decision.action, HandoverAction::Escalate);

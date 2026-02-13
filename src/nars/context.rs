@@ -6,7 +6,7 @@
 //! - QueryMode → causal mode selection (PearlMode)
 //! - GateState → confidence/depth modulation (CollapseModulation)
 
-use crate::cognitive::{ThinkingStyle, RungLevel, GateState};
+use crate::cognitive::{GateState, RungLevel, ThinkingStyle};
 use crate::search::causal::QueryMode;
 
 // =============================================================================
@@ -348,9 +348,9 @@ impl CollapseModulation {
     /// Create from GateState
     pub fn from_gate(gate: GateState) -> Self {
         let (confidence_modifier, depth_delta) = match gate {
-            GateState::Flow => (1.4, -2),   // Commit fast
-            GateState::Hold => (1.0, 0),    // Neutral
-            GateState::Block => (0.6, 2),   // Explore deep
+            GateState::Flow => (1.4, -2), // Commit fast
+            GateState::Hold => (1.0, 0),  // Neutral
+            GateState::Block => (0.6, 2), // Explore deep
         };
 
         Self {
@@ -414,10 +414,9 @@ impl InferenceContext {
         let min_confidence = style.confidence_modifier * collapse.confidence_modifier;
 
         // Modifiers add for depth
-        let max_chain_depth = (BASE_DEPTH as i16
-            + style.chain_depth_delta as i16
-            + collapse.depth_delta as i16)
-            .clamp(1, 20) as u8;
+        let max_chain_depth =
+            (BASE_DEPTH as i16 + style.chain_depth_delta as i16 + collapse.depth_delta as i16)
+                .clamp(1, 20) as u8;
 
         Self {
             style_weights: style,
@@ -576,8 +575,7 @@ mod tests {
 
     #[test]
     fn test_extended_weights_passthrough() {
-        let weights = StyleWeights::neutral()
-            .with_extended_weights(vec![1.0, 2.0, 3.0]);
+        let weights = StyleWeights::neutral().with_extended_weights(vec![1.0, 2.0, 3.0]);
 
         let ctx = InferenceContext::build(
             weights,

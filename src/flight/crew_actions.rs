@@ -17,17 +17,17 @@
 //! | `style.list` | List all thinking templates | {} |
 //! | `agent.blackboard` | Get agent blackboard state | {agent_slot: u8} |
 
-use std::sync::Arc;
 use parking_lot::RwLock;
+use std::sync::Arc;
 
 use arrow_array::{
-    ArrayRef, RecordBatch, StringArray, UInt8Array, UInt32Array, BooleanArray, Float32Array,
+    ArrayRef, BooleanArray, Float32Array, RecordBatch, StringArray, UInt8Array, UInt32Array,
 };
 use arrow_ipc::writer::StreamWriter;
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
 
-use crate::storage::BindSpace;
 use crate::orchestration::crew_bridge::CrewBridge;
+use crate::storage::BindSpace;
 
 // =============================================================================
 // SCHEMAS
@@ -125,7 +125,8 @@ fn error_result(msg: &str) -> Result<Vec<u8>, String> {
             Arc::new(BooleanArray::from(vec![true])) as ArrayRef,
             Arc::new(StringArray::from(vec![msg])) as ArrayRef,
         ],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
     encode_to_ipc(&batch)
 }
 
@@ -137,7 +138,8 @@ fn ok_message(msg: &str) -> Result<Vec<u8>, String> {
             Arc::new(BooleanArray::from(vec![false])) as ArrayRef,
             Arc::new(StringArray::from(vec![msg])) as ArrayRef,
         ],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
     encode_to_ipc(&batch)
 }
 
@@ -155,15 +157,18 @@ pub fn execute_crew_action(
     match action_type {
         // === Crew Actions ===
         "crew.register_agent" => {
-            let yaml = std::str::from_utf8(body)
-                .map_err(|e| format!("Invalid UTF-8: {}", e))?;
+            let yaml = std::str::from_utf8(body).map_err(|e| format!("Invalid UTF-8: {}", e))?;
 
             let mut bridge = bridge.write();
             match bridge.register_agents_yaml(yaml) {
                 Ok(addrs) => {
-                    let msg = format!("Registered {} agents at {:?}",
+                    let msg = format!(
+                        "Registered {} agents at {:?}",
                         addrs.len(),
-                        addrs.iter().map(|a| format!("{:#06x}", a.0)).collect::<Vec<_>>()
+                        addrs
+                            .iter()
+                            .map(|a| format!("{:#06x}", a.0))
+                            .collect::<Vec<_>>()
                     );
                     ok_message(&msg)
                 }
@@ -172,15 +177,18 @@ pub fn execute_crew_action(
         }
 
         "crew.register_style" => {
-            let yaml = std::str::from_utf8(body)
-                .map_err(|e| format!("Invalid UTF-8: {}", e))?;
+            let yaml = std::str::from_utf8(body).map_err(|e| format!("Invalid UTF-8: {}", e))?;
 
             let mut bridge = bridge.write();
             match bridge.register_templates_yaml(yaml) {
                 Ok(addrs) => {
-                    let msg = format!("Registered {} templates at {:?}",
+                    let msg = format!(
+                        "Registered {} templates at {:?}",
                         addrs.len(),
-                        addrs.iter().map(|a| format!("{:#06x}", a.0)).collect::<Vec<_>>()
+                        addrs
+                            .iter()
+                            .map(|a| format!("{:#06x}", a.0))
+                            .collect::<Vec<_>>()
                     );
                     ok_message(&msg)
                 }
@@ -190,8 +198,7 @@ pub fn execute_crew_action(
 
         "crew.submit_task" => {
             let task: crate::orchestration::crew_bridge::CrewTask =
-                serde_json::from_slice(body)
-                    .map_err(|e| format!("JSON parse error: {}", e))?;
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             let mut bridge = bridge.write();
             let result = bridge.submit_task(task);
@@ -201,8 +208,7 @@ pub fn execute_crew_action(
 
         "crew.dispatch" => {
             let dispatch: crate::orchestration::crew_bridge::CrewDispatch =
-                serde_json::from_slice(body)
-                    .map_err(|e| format!("JSON parse error: {}", e))?;
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             let mut bridge = bridge.write();
             let results = bridge.dispatch_crew(dispatch);
@@ -222,16 +228,20 @@ pub fn execute_crew_action(
                     Arc::new(UInt8Array::from(slots)) as ArrayRef,
                     Arc::new(StringArray::from(messages)) as ArrayRef,
                 ],
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
 
             encode_to_ipc(&batch)
         }
 
         "crew.complete_task" => {
             #[derive(serde::Deserialize)]
-            struct CompleteReq { task_id: String, outcome: String }
-            let req: CompleteReq = serde_json::from_slice(body)
-                .map_err(|e| format!("JSON parse error: {}", e))?;
+            struct CompleteReq {
+                task_id: String,
+                outcome: String,
+            }
+            let req: CompleteReq =
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             let mut bridge = bridge.write();
             match bridge.complete_task(&req.task_id, &req.outcome) {
@@ -252,8 +262,10 @@ pub fn execute_crew_action(
                 schema,
                 vec![
                     Arc::new(UInt32Array::from(vec![status.agents_registered as u32])) as ArrayRef,
-                    Arc::new(UInt32Array::from(vec![status.templates_registered as u32])) as ArrayRef,
-                    Arc::new(UInt32Array::from(vec![status.personas_registered as u32])) as ArrayRef,
+                    Arc::new(UInt32Array::from(vec![status.templates_registered as u32]))
+                        as ArrayRef,
+                    Arc::new(UInt32Array::from(vec![status.personas_registered as u32]))
+                        as ArrayRef,
                     Arc::new(UInt32Array::from(vec![status.tasks_queued as u32])) as ArrayRef,
                     Arc::new(UInt32Array::from(vec![status.tasks_in_progress as u32])) as ArrayRef,
                     Arc::new(UInt32Array::from(vec![status.tasks_completed as u32])) as ArrayRef,
@@ -263,7 +275,8 @@ pub fn execute_crew_action(
                     Arc::new(UInt32Array::from(vec![status.memories_stored as u32])) as ArrayRef,
                     Arc::new(UInt32Array::from(vec![status.verification_rules as u32])) as ArrayRef,
                 ],
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
 
             encode_to_ipc(&batch)
         }
@@ -278,8 +291,7 @@ pub fn execute_crew_action(
         // === A2A Actions ===
         "a2a.send" => {
             let msg: crate::orchestration::a2a::A2AMessage =
-                serde_json::from_slice(body)
-                    .map_err(|e| format!("JSON parse error: {}", e))?;
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             let mut bridge = bridge.write();
             let mut space = bind_space.write();
@@ -289,9 +301,11 @@ pub fn execute_crew_action(
 
         "a2a.receive" => {
             #[derive(serde::Deserialize)]
-            struct RecvReq { agent_slot: u8 }
-            let req: RecvReq = serde_json::from_slice(body)
-                .map_err(|e| format!("JSON parse error: {}", e))?;
+            struct RecvReq {
+                agent_slot: u8,
+            }
+            let req: RecvReq =
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             let mut bridge = bridge.write();
             let messages = bridge.receive_a2a(req.agent_slot);
@@ -313,15 +327,18 @@ pub fn execute_crew_action(
                     let batch = RecordBatch::try_new(
                         schema,
                         vec![
-                            Arc::new(UInt8Array::from(vec![template.slot.unwrap_or(0)])) as ArrayRef,
+                            Arc::new(UInt8Array::from(vec![template.slot.unwrap_or(0)]))
+                                as ArrayRef,
                             Arc::new(StringArray::from(vec![template.name.as_str()])) as ArrayRef,
-                            Arc::new(StringArray::from(vec![template.base_style.as_str()])) as ArrayRef,
+                            Arc::new(StringArray::from(vec![template.base_style.as_str()]))
+                                as ArrayRef,
                             Arc::new(Float32Array::from(vec![m.resonance_threshold])) as ArrayRef,
                             Arc::new(UInt32Array::from(vec![m.fan_out as u32])) as ArrayRef,
                             Arc::new(Float32Array::from(vec![m.depth_bias])) as ArrayRef,
                             Arc::new(Float32Array::from(vec![m.exploration])) as ArrayRef,
                         ],
-                    ).map_err(|e| e.to_string())?;
+                    )
+                    .map_err(|e| e.to_string())?;
                     encode_to_ipc(&batch)
                 }
                 None => error_result(&format!("Template '{}' not found", name)),
@@ -335,10 +352,22 @@ pub fn execute_crew_action(
             let slots: Vec<u8> = templates.iter().map(|t| t.slot.unwrap_or(0)).collect();
             let names: Vec<&str> = templates.iter().map(|t| t.name.as_str()).collect();
             let bases: Vec<&str> = templates.iter().map(|t| t.base_style.as_str()).collect();
-            let thresholds: Vec<f32> = templates.iter().map(|t| t.effective_modulation().resonance_threshold).collect();
-            let fan_outs: Vec<u32> = templates.iter().map(|t| t.effective_modulation().fan_out as u32).collect();
-            let depths: Vec<f32> = templates.iter().map(|t| t.effective_modulation().depth_bias).collect();
-            let explorations: Vec<f32> = templates.iter().map(|t| t.effective_modulation().exploration).collect();
+            let thresholds: Vec<f32> = templates
+                .iter()
+                .map(|t| t.effective_modulation().resonance_threshold)
+                .collect();
+            let fan_outs: Vec<u32> = templates
+                .iter()
+                .map(|t| t.effective_modulation().fan_out as u32)
+                .collect();
+            let depths: Vec<f32> = templates
+                .iter()
+                .map(|t| t.effective_modulation().depth_bias)
+                .collect();
+            let explorations: Vec<f32> = templates
+                .iter()
+                .map(|t| t.effective_modulation().exploration)
+                .collect();
 
             let schema = template_list_schema();
             let batch = RecordBatch::try_new(
@@ -352,7 +381,8 @@ pub fn execute_crew_action(
                     Arc::new(Float32Array::from(depths)) as ArrayRef,
                     Arc::new(Float32Array::from(explorations)) as ArrayRef,
                 ],
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
 
             encode_to_ipc(&batch)
         }
@@ -360,9 +390,11 @@ pub fn execute_crew_action(
         // === Agent Blackboard ===
         "agent.blackboard" => {
             #[derive(serde::Deserialize)]
-            struct BbReq { agent_slot: u8 }
-            let req: BbReq = serde_json::from_slice(body)
-                .map_err(|e| format!("JSON parse error: {}", e))?;
+            struct BbReq {
+                agent_slot: u8,
+            }
+            let req: BbReq =
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             let bridge = bridge.read();
             match bridge.blackboards.get(req.agent_slot) {
@@ -373,15 +405,20 @@ pub fn execute_crew_action(
                         vec![
                             Arc::new(UInt8Array::from(vec![bb.agent_slot])) as ArrayRef,
                             Arc::new(StringArray::from(vec![bb.agent_id.as_str()])) as ArrayRef,
-                            Arc::new(StringArray::from(vec![bb.awareness.active_style.as_str()])) as ArrayRef,
+                            Arc::new(StringArray::from(vec![bb.awareness.active_style.as_str()]))
+                                as ArrayRef,
                             Arc::new(Float32Array::from(vec![bb.awareness.coherence])) as ArrayRef,
                             Arc::new(Float32Array::from(vec![bb.awareness.progress])) as ArrayRef,
                             Arc::new(UInt32Array::from(vec![bb.cycle as u32])) as ArrayRef,
-                            Arc::new(UInt32Array::from(vec![bb.knowledge_addrs.len() as u32])) as ArrayRef,
-                            Arc::new(UInt32Array::from(vec![bb.awareness.ice_caked.len() as u32])) as ArrayRef,
-                            Arc::new(UInt32Array::from(vec![bb.awareness.pending_messages])) as ArrayRef,
+                            Arc::new(UInt32Array::from(vec![bb.knowledge_addrs.len() as u32]))
+                                as ArrayRef,
+                            Arc::new(UInt32Array::from(vec![bb.awareness.ice_caked.len() as u32]))
+                                as ArrayRef,
+                            Arc::new(UInt32Array::from(vec![bb.awareness.pending_messages]))
+                                as ArrayRef,
                         ],
-                    ).map_err(|e| e.to_string())?;
+                    )
+                    .map_err(|e| e.to_string())?;
                     encode_to_ipc(&batch)
                 }
                 None => error_result(&format!("No blackboard for agent slot {}", req.agent_slot)),
@@ -390,9 +427,11 @@ pub fn execute_crew_action(
 
         "agent.blackboard.yaml" => {
             #[derive(serde::Deserialize)]
-            struct BbReq { agent_slot: u8 }
-            let req: BbReq = serde_json::from_slice(body)
-                .map_err(|e| format!("JSON parse error: {}", e))?;
+            struct BbReq {
+                agent_slot: u8,
+            }
+            let req: BbReq =
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             let bridge = bridge.read();
             match bridge.blackboards.get(req.agent_slot) {
@@ -423,7 +462,8 @@ pub fn execute_crew_action(
                     Arc::new(StringArray::from(styles)) as ArrayRef,
                     Arc::new(BooleanArray::from(delegations)) as ArrayRef,
                 ],
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
 
             encode_to_ipc(&batch)
         }
@@ -435,23 +475,27 @@ pub fn execute_crew_action(
                 agent_slot: u8,
                 persona: crate::orchestration::persona::Persona,
             }
-            let req: AttachReq = serde_json::from_slice(body)
-                .map_err(|e| format!("JSON parse error: {}", e))?;
+            let req: AttachReq =
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             let mut bridge = bridge.write();
             bridge.personas.attach(req.agent_slot, req.persona);
-            ok_message(&format!("Persona attached to agent slot {}", req.agent_slot))
+            ok_message(&format!(
+                "Persona attached to agent slot {}",
+                req.agent_slot
+            ))
         }
 
         "persona.attach_yaml" => {
-            let yaml = std::str::from_utf8(body)
-                .map_err(|e| format!("Invalid UTF-8: {}", e))?;
+            let yaml = std::str::from_utf8(body).map_err(|e| format!("Invalid UTF-8: {}", e))?;
 
             let persona = crate::orchestration::persona::Persona::from_yaml(yaml)?;
             // Extract agent_slot from first line comment or separate field
             // For now, require JSON wrapper with agent_slot
             #[derive(serde::Deserialize)]
-            struct YamlAttach { agent_slot: u8 }
+            struct YamlAttach {
+                agent_slot: u8,
+            }
 
             // Try parsing as YAML with agent_slot field
             #[derive(serde::Deserialize)]
@@ -461,19 +505,24 @@ pub fn execute_crew_action(
                 persona: crate::orchestration::persona::Persona,
             }
 
-            let req: YamlReq = serde_yml::from_str(yaml)
-                .map_err(|e| format!("YAML parse error: {}", e))?;
+            let req: YamlReq =
+                serde_yml::from_str(yaml).map_err(|e| format!("YAML parse error: {}", e))?;
 
             let mut bridge = bridge.write();
             bridge.personas.attach(req.agent_slot, req.persona);
-            ok_message(&format!("Persona attached to agent slot {}", req.agent_slot))
+            ok_message(&format!(
+                "Persona attached to agent slot {}",
+                req.agent_slot
+            ))
         }
 
         "persona.get" => {
             #[derive(serde::Deserialize)]
-            struct GetReq { agent_slot: u8 }
-            let req: GetReq = serde_json::from_slice(body)
-                .map_err(|e| format!("JSON parse error: {}", e))?;
+            struct GetReq {
+                agent_slot: u8,
+            }
+            let req: GetReq =
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             let bridge = bridge.read();
             match bridge.personas.get(req.agent_slot) {
@@ -484,9 +533,11 @@ pub fn execute_crew_action(
 
         "persona.get_yaml" => {
             #[derive(serde::Deserialize)]
-            struct GetReq { agent_slot: u8 }
-            let req: GetReq = serde_json::from_slice(body)
-                .map_err(|e| format!("JSON parse error: {}", e))?;
+            struct GetReq {
+                agent_slot: u8,
+            }
+            let req: GetReq =
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             let bridge = bridge.read();
             match bridge.personas.get(req.agent_slot) {
@@ -497,9 +548,12 @@ pub fn execute_crew_action(
 
         "persona.compatible" => {
             #[derive(serde::Deserialize)]
-            struct CompatReq { agent_slot: u8, threshold: f32 }
-            let req: CompatReq = serde_json::from_slice(body)
-                .map_err(|e| format!("JSON parse error: {}", e))?;
+            struct CompatReq {
+                agent_slot: u8,
+                threshold: f32,
+            }
+            let req: CompatReq =
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             let bridge = bridge.read();
             match bridge.personas.get(req.agent_slot) {
@@ -513,8 +567,8 @@ pub fn execute_crew_action(
         }
 
         "persona.best_for_task" => {
-            let description = std::str::from_utf8(body)
-                .map_err(|e| format!("Invalid UTF-8: {}", e))?;
+            let description =
+                std::str::from_utf8(body).map_err(|e| format!("Invalid UTF-8: {}", e))?;
 
             let bridge = bridge.read();
             match bridge.personas.best_for_task(description) {
@@ -532,23 +586,23 @@ pub fn execute_crew_action(
         // === Handover Actions ===
         "handover.evaluate" => {
             #[derive(serde::Deserialize)]
-            struct EvalReq { agent_slot: u8, task_description: Option<String> }
-            let req: EvalReq = serde_json::from_slice(body)
-                .map_err(|e| format!("JSON parse error: {}", e))?;
+            struct EvalReq {
+                agent_slot: u8,
+                task_description: Option<String>,
+            }
+            let req: EvalReq =
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             let mut bridge = bridge.write();
-            let decision = bridge.evaluate_handover(
-                req.agent_slot,
-                req.task_description.as_deref(),
-            );
+            let decision =
+                bridge.evaluate_handover(req.agent_slot, req.task_description.as_deref());
             let json = serde_json::to_vec(&decision).map_err(|e| e.to_string())?;
             Ok(json)
         }
 
         "handover.execute" => {
             let decision: crate::orchestration::handover::HandoverDecision =
-                serde_json::from_slice(body)
-                    .map_err(|e| format!("JSON parse error: {}", e))?;
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             let mut bridge = bridge.write();
             let mut space = bind_space.write();
@@ -562,9 +616,12 @@ pub fn execute_crew_action(
 
         "handover.update_flow" => {
             #[derive(serde::Deserialize)]
-            struct FlowReq { agent_slot: u8, gate_state: String }
-            let req: FlowReq = serde_json::from_slice(body)
-                .map_err(|e| format!("JSON parse error: {}", e))?;
+            struct FlowReq {
+                agent_slot: u8,
+                gate_state: String,
+            }
+            let req: FlowReq =
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             let gate = match req.gate_state.to_lowercase().as_str() {
                 "flow" => crate::cognitive::GateState::Flow,
@@ -587,8 +644,8 @@ pub fn execute_crew_action(
         }
 
         "orchestrator.route_task" => {
-            let description = std::str::from_utf8(body)
-                .map_err(|e| format!("Invalid UTF-8: {}", e))?;
+            let description =
+                std::str::from_utf8(body).map_err(|e| format!("Invalid UTF-8: {}", e))?;
 
             let mut bridge = bridge.write();
             match bridge.route_task(description) {
@@ -612,9 +669,12 @@ pub fn execute_crew_action(
 
         "orchestrator.affinity" => {
             #[derive(serde::Deserialize)]
-            struct AffReq { agent_a: u8, agent_b: u8 }
-            let req: AffReq = serde_json::from_slice(body)
-                .map_err(|e| format!("JSON parse error: {}", e))?;
+            struct AffReq {
+                agent_a: u8,
+                agent_b: u8,
+            }
+            let req: AffReq =
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             let bridge = bridge.read();
             let affinity = bridge.orchestrator.affinity(req.agent_a, req.agent_b);
@@ -654,9 +714,11 @@ pub fn execute_crew_action(
 
         "kernel.zone_density" => {
             #[derive(serde::Deserialize)]
-            struct ZoneReq { prefix: u8 }
-            let req: ZoneReq = serde_json::from_slice(body)
-                .map_err(|e| format!("JSON parse error: {}", e))?;
+            struct ZoneReq {
+                prefix: u8,
+            }
+            let req: ZoneReq =
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             let bridge = bridge.read();
             let space = bind_space.read();
@@ -687,8 +749,7 @@ pub fn execute_crew_action(
         // === Filter Pipeline Actions ===
         "filter.add" => {
             let filter: crate::orchestration::kernel_extensions::KernelFilter =
-                serde_json::from_slice(body)
-                    .map_err(|e| format!("JSON parse error: {}", e))?;
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
             let name = filter.name.clone();
             let mut bridge = bridge.write();
             bridge.filters.add(filter);
@@ -713,8 +774,7 @@ pub fn execute_crew_action(
 
         "filter.apply" => {
             let ctx: crate::orchestration::kernel_extensions::FilterContext =
-                serde_json::from_slice(body)
-                    .map_err(|e| format!("JSON parse error: {}", e))?;
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
             let bridge = bridge.read();
             let result = bridge.filters.apply(ctx);
             let json = serde_json::json!({
@@ -734,8 +794,8 @@ pub fn execute_crew_action(
                 fingerprint: Vec<u64>,
                 source_addrs: Option<Vec<u16>>,
             }
-            let req: GuardrailReq = serde_json::from_slice(body)
-                .map_err(|e| format!("JSON parse error: {}", e))?;
+            let req: GuardrailReq =
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             if req.fingerprint.len() != crate::storage::bind_space::FINGERPRINT_WORDS {
                 return error_result(&format!(
@@ -749,24 +809,23 @@ pub fn execute_crew_action(
             fp.copy_from_slice(&req.fingerprint);
 
             let space = bind_space.read();
-            let sources: Option<Vec<crate::storage::bind_space::Addr>> = req.source_addrs.map(|addrs|
-                addrs.iter().map(|&a| crate::storage::bind_space::Addr(a)).collect()
-            );
+            let sources: Option<Vec<crate::storage::bind_space::Addr>> =
+                req.source_addrs.map(|addrs| {
+                    addrs
+                        .iter()
+                        .map(|&a| crate::storage::bind_space::Addr(a))
+                        .collect()
+                });
 
             let bridge = bridge.read();
-            let result = bridge.guardrail.apply(
-                &fp,
-                &space,
-                sources.as_deref(),
-            );
+            let result = bridge.guardrail.apply(&fp, &space, sources.as_deref());
             let json = serde_json::to_vec(&result).map_err(|e| e.to_string())?;
             Ok(json)
         }
 
         "guardrail.add_topic" => {
             let topic: crate::orchestration::kernel_extensions::DeniedTopic =
-                serde_json::from_slice(body)
-                    .map_err(|e| format!("JSON parse error: {}", e))?;
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
             let name = topic.name.clone();
             let mut bridge = bridge.write();
             bridge.guardrail.add_denied_topic(topic);
@@ -775,12 +834,17 @@ pub fn execute_crew_action(
 
         "guardrail.enable_grounding" => {
             #[derive(serde::Deserialize)]
-            struct GroundReq { threshold: f32 }
-            let req: GroundReq = serde_json::from_slice(body)
-                .map_err(|e| format!("JSON parse error: {}", e))?;
+            struct GroundReq {
+                threshold: f32,
+            }
+            let req: GroundReq =
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
             let mut bridge = bridge.write();
             bridge.guardrail.enable_grounding(req.threshold);
-            ok_message(&format!("Grounding enabled with threshold {:.2}", req.threshold))
+            ok_message(&format!(
+                "Grounding enabled with threshold {:.2}",
+                req.threshold
+            ))
         }
 
         "guardrail.add_content_filter" => {
@@ -789,23 +853,26 @@ pub fn execute_crew_action(
                 category: crate::orchestration::kernel_extensions::ContentCategory,
                 max_severity: crate::orchestration::kernel_extensions::GuardrailSeverity,
             }
-            let req: ContentReq = serde_json::from_slice(body)
-                .map_err(|e| format!("JSON parse error: {}", e))?;
+            let req: ContentReq =
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
             let mut bridge = bridge.write();
-            bridge.guardrail.add_content_filter(req.category, req.max_severity);
+            bridge
+                .guardrail
+                .add_content_filter(req.category, req.max_severity);
             ok_message("Content filter added")
         }
 
         // === Workflow Actions ===
         "workflow.execute" => {
             let node: crate::orchestration::kernel_extensions::WorkflowNode =
-                serde_json::from_slice(body)
-                    .map_err(|e| format!("JSON parse error: {}", e))?;
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             let bridge = bridge.read();
             let mut space = bind_space.write();
             let result = crate::orchestration::kernel_extensions::execute_workflow(
-                &node, &mut space, &bridge.kernel,
+                &node,
+                &mut space,
+                &bridge.kernel,
             );
             let json = serde_json::to_vec(&result).map_err(|e| e.to_string())?;
             Ok(json)
@@ -821,8 +888,8 @@ pub fn execute_crew_action(
                 cycle: u64,
                 source_agent: Option<u8>,
             }
-            let req: StoreReq = serde_json::from_slice(body)
-                .map_err(|e| format!("JSON parse error: {}", e))?;
+            let req: StoreReq =
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             if req.fingerprint.len() != crate::storage::bind_space::FINGERPRINT_WORDS {
                 return error_result(&format!(
@@ -837,7 +904,14 @@ pub fn execute_crew_action(
 
             let mut bridge = bridge.write();
             let mut space = bind_space.write();
-            match bridge.memory.store(req.kind, &req.content, fp, &mut space, req.cycle, req.source_agent) {
+            match bridge.memory.store(
+                req.kind,
+                &req.content,
+                fp,
+                &mut space,
+                req.cycle,
+                req.source_agent,
+            ) {
                 Some(addr) => ok_message(&format!("Memory stored at {:04X}", addr.0)),
                 None => error_result("Memory prefix full (255 slots)"),
             }
@@ -852,8 +926,8 @@ pub fn execute_crew_action(
                 limit: usize,
                 cycle: u64,
             }
-            let req: RetrieveReq = serde_json::from_slice(body)
-                .map_err(|e| format!("JSON parse error: {}", e))?;
+            let req: RetrieveReq =
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             if req.query.len() != crate::storage::bind_space::FINGERPRINT_WORDS {
                 return error_result(&format!(
@@ -868,16 +942,25 @@ pub fn execute_crew_action(
 
             let mut bridge = bridge.write();
             let space = bind_space.read();
-            let results = bridge.memory.retrieve(&query, req.kind, &space, req.threshold, req.limit, req.cycle);
+            let results = bridge.memory.retrieve(
+                &query,
+                req.kind,
+                &space,
+                req.threshold,
+                req.limit,
+                req.cycle,
+            );
             let json = serde_json::to_vec(&results).map_err(|e| e.to_string())?;
             Ok(json)
         }
 
         "memory.extract_semantic" => {
             #[derive(serde::Deserialize)]
-            struct ExtractReq { cycle: u64 }
-            let req: ExtractReq = serde_json::from_slice(body)
-                .map_err(|e| format!("JSON parse error: {}", e))?;
+            struct ExtractReq {
+                cycle: u64,
+            }
+            let req: ExtractReq =
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             let mut bridge = bridge.write();
             let mut space = bind_space.write();
@@ -891,9 +974,11 @@ pub fn execute_crew_action(
 
         "memory.list" => {
             #[derive(serde::Deserialize)]
-            struct ListReq { kind: Option<crate::orchestration::kernel_extensions::MemoryKind> }
-            let req: ListReq = serde_json::from_slice(body)
-                .map_err(|e| format!("JSON parse error: {}", e))?;
+            struct ListReq {
+                kind: Option<crate::orchestration::kernel_extensions::MemoryKind>,
+            }
+            let req: ListReq =
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             let bridge = bridge.read();
             let memories = bridge.memory.list(req.kind);
@@ -904,20 +989,28 @@ pub fn execute_crew_action(
         // === Observability Actions ===
         "observability.start_session" => {
             #[derive(serde::Deserialize)]
-            struct SessionReq { agent_slot: Option<u8>, cycle: u64 }
-            let req: SessionReq = serde_json::from_slice(body)
-                .map_err(|e| format!("JSON parse error: {}", e))?;
+            struct SessionReq {
+                agent_slot: Option<u8>,
+                cycle: u64,
+            }
+            let req: SessionReq =
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             let mut bridge = bridge.write();
-            let id = bridge.observability.start_session(req.agent_slot, req.cycle);
+            let id = bridge
+                .observability
+                .start_session(req.agent_slot, req.cycle);
             ok_message(&format!("Session started: {}", id))
         }
 
         "observability.start_trace" => {
             #[derive(serde::Deserialize)]
-            struct TraceReq { operation: String, cycle: u64 }
-            let req: TraceReq = serde_json::from_slice(body)
-                .map_err(|e| format!("JSON parse error: {}", e))?;
+            struct TraceReq {
+                operation: String,
+                cycle: u64,
+            }
+            let req: TraceReq =
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             let mut bridge = bridge.write();
             let id = bridge.observability.start_trace(&req.operation, req.cycle);
@@ -930,8 +1023,8 @@ pub fn execute_crew_action(
                 trace_id: String,
                 span: crate::orchestration::kernel_extensions::KernelSpan,
             }
-            let req: SpanReq = serde_json::from_slice(body)
-                .map_err(|e| format!("JSON parse error: {}", e))?;
+            let req: SpanReq =
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             let mut bridge = bridge.write();
             bridge.observability.add_span(&req.trace_id, req.span);
@@ -945,11 +1038,13 @@ pub fn execute_crew_action(
                 cycle: u64,
                 grounding: Option<crate::orchestration::kernel_extensions::GroundingMetadata>,
             }
-            let req: CompleteReq = serde_json::from_slice(body)
-                .map_err(|e| format!("JSON parse error: {}", e))?;
+            let req: CompleteReq =
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             let mut bridge = bridge.write();
-            bridge.observability.complete_trace(&req.trace_id, req.cycle, req.grounding);
+            bridge
+                .observability
+                .complete_trace(&req.trace_id, req.cycle, req.grounding);
             ok_message(&format!("Trace {} completed", req.trace_id))
         }
 
@@ -963,8 +1058,7 @@ pub fn execute_crew_action(
         // === Verification Actions ===
         "verification.add_rule" => {
             let rule: crate::orchestration::kernel_extensions::VerificationRule =
-                serde_json::from_slice(body)
-                    .map_err(|e| format!("JSON parse error: {}", e))?;
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
             let name = rule.name.clone();
             let mut bridge = bridge.write();
             bridge.verification.add_rule(rule);
@@ -977,8 +1071,8 @@ pub fn execute_crew_action(
                 fingerprint: Vec<u64>,
                 addr: u16,
             }
-            let req: VerifyReq = serde_json::from_slice(body)
-                .map_err(|e| format!("JSON parse error: {}", e))?;
+            let req: VerifyReq =
+                serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
 
             if req.fingerprint.len() != crate::storage::bind_space::FINGERPRINT_WORDS {
                 return error_result(&format!(
@@ -992,10 +1086,9 @@ pub fn execute_crew_action(
             fp.copy_from_slice(&req.fingerprint);
 
             let bridge = bridge.read();
-            let results = bridge.verification.verify_fingerprint(
-                &fp,
-                crate::storage::bind_space::Addr(req.addr),
-            );
+            let results = bridge
+                .verification
+                .verify_fingerprint(&fp, crate::storage::bind_space::Addr(req.addr));
             let json = serde_json::to_vec(&results).map_err(|e| e.to_string())?;
             Ok(json)
         }

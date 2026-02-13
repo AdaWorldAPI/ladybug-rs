@@ -5,16 +5,16 @@
 pub enum Subsystem {
     /// Query planning and execution
     Query,
-    
+
     /// Data compression and encoding
     Compression,
-    
+
     /// Reinforcement learning
     Learning,
-    
+
     /// NARS inference
     Inference,
-    
+
     /// Thinking style management
     Style,
 }
@@ -28,18 +28,18 @@ impl Subsystem {
         Self::Inference,
         Self::Style,
     ];
-    
+
     /// Default priority (higher = pollinates first)
     pub fn priority(&self) -> u8 {
         match self {
-            Self::Style => 5,      // Metacognitive observes all
-            Self::Inference => 4,  // Reasoning shapes understanding
-            Self::Query => 3,      // Queries drive activity
-            Self::Learning => 2,   // Learning adapts
+            Self::Style => 5,       // Metacognitive observes all
+            Self::Inference => 4,   // Reasoning shapes understanding
+            Self::Query => 3,       // Queries drive activity
+            Self::Learning => 2,    // Learning adapts
             Self::Compression => 1, // Compression reacts
         }
     }
-    
+
     /// Emoji for display
     pub fn emoji(&self) -> &'static str {
         match self {

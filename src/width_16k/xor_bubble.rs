@@ -59,7 +59,10 @@ impl XorDelta {
 
     /// Empty delta (no changes)
     pub fn empty() -> Self {
-        Self { bitmap: [0; 4], values: Vec::new() }
+        Self {
+            bitmap: [0; 4],
+            values: Vec::new(),
+        }
     }
 
     /// Is this delta empty?
@@ -124,13 +127,17 @@ pub struct XorWriteCache {
 
 impl XorWriteCache {
     pub fn new() -> Self {
-        Self { deltas: HashMap::new() }
+        Self {
+            deltas: HashMap::new(),
+        }
     }
 
     /// Stage a write: compute delta from old to new, merge with existing delta
     pub fn stage(&mut self, id: u64, old: &[u64; VECTOR_WORDS], new: &[u64; VECTOR_WORDS]) {
         let delta = XorDelta::compute(old, new);
-        if delta.is_empty() { return; }
+        if delta.is_empty() {
+            return;
+        }
 
         if let Some(existing) = self.deltas.get_mut(&id) {
             // Merge: apply existing delta to old, then compute delta to new
@@ -183,7 +190,9 @@ pub struct ConcurrentWriteCache {
 
 impl ConcurrentWriteCache {
     pub fn new() -> Self {
-        Self { inner: RwLock::new(XorWriteCache::new()) }
+        Self {
+            inner: RwLock::new(XorWriteCache::new()),
+        }
     }
 
     pub fn stage(&self, id: u64, old: &[u64; VECTOR_WORDS], new: &[u64; VECTOR_WORDS]) {

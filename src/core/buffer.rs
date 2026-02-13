@@ -18,15 +18,15 @@ impl BufferPool {
             capacity,
         }
     }
-    
+
     pub fn capacity(&self) -> usize {
         self.capacity
     }
-    
+
     pub fn distances_mut(&mut self) -> &mut [u32] {
         &mut self.distances
     }
-    
+
     pub fn indices_mut(&mut self) -> &mut [usize] {
         &mut self.indices
     }

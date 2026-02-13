@@ -41,8 +41,8 @@
 //! ```
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
-use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
-use std::sync::{Arc, RwLock, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use super::bind_space::{Addr, BindNode, BindSpace, FINGERPRINT_WORDS};
@@ -100,7 +100,10 @@ pub fn xor_slices(a: &[u8], b: &[u8]) -> Vec<u8> {
 
 /// XOR fingerprints (the main data type in BindSpace)
 #[inline]
-pub fn xor_fingerprints(a: &[u64; FINGERPRINT_WORDS], b: &[u64; FINGERPRINT_WORDS]) -> [u64; FINGERPRINT_WORDS] {
+pub fn xor_fingerprints(
+    a: &[u64; FINGERPRINT_WORDS],
+    b: &[u64; FINGERPRINT_WORDS],
+) -> [u64; FINGERPRINT_WORDS] {
     let mut result = [0u64; FINGERPRINT_WORDS];
     for i in 0..FINGERPRINT_WORDS {
         result[i] = a[i] ^ b[i];
@@ -182,7 +185,11 @@ impl ParityBlock {
     ///
     /// Incremental update: P_new = P_old ⊗ old_fp ⊗ new_fp
     /// This is O(1) regardless of how many addresses are covered
-    pub fn update_single(&mut self, old_fp: &[u64; FINGERPRINT_WORDS], new_fp: &[u64; FINGERPRINT_WORDS]) {
+    pub fn update_single(
+        &mut self,
+        old_fp: &[u64; FINGERPRINT_WORDS],
+        new_fp: &[u64; FINGERPRINT_WORDS],
+    ) {
         // XOR out old, XOR in new
         for i in 0..FINGERPRINT_WORDS {
             self.parity_fingerprint[i] ^= old_fp[i] ^ new_fp[i];
@@ -195,7 +202,11 @@ impl ParityBlock {
     ///
     /// If we know P and all fps except one, we can recover:
     /// missing = P ⊗ fp[0] ⊗ fp[1] ⊗ ... (all except missing)
-    pub fn recover_missing(&self, bind_space: &BindSpace, missing_addr: Addr) -> Option<[u64; FINGERPRINT_WORDS]> {
+    pub fn recover_missing(
+        &self,
+        bind_space: &BindSpace,
+        missing_addr: Addr,
+    ) -> Option<[u64; FINGERPRINT_WORDS]> {
         if !self.covered_addrs.contains(&missing_addr) {
             return None;
         }
@@ -219,7 +230,8 @@ impl ParityBlock {
 
     /// Verify parity is still valid
     pub fn verify(&self, bind_space: &BindSpace) -> bool {
-        let fps: Vec<[u64; FINGERPRINT_WORDS]> = self.covered_addrs
+        let fps: Vec<[u64; FINGERPRINT_WORDS]> = self
+            .covered_addrs
             .iter()
             .filter_map(|&addr| bind_space.read(addr).map(|n| n.fingerprint))
             .collect();
@@ -270,10 +282,18 @@ pub struct WorkItem {
 
 #[derive(Debug, Clone)]
 pub enum WorkOperation {
-    Write { fingerprint: [u64; FINGERPRINT_WORDS], label: Option<String> },
+    Write {
+        fingerprint: [u64; FINGERPRINT_WORDS],
+        label: Option<String>,
+    },
     Delete,
-    Link { target: Addr, edge_type: String },
-    UpdateParity { parity_id: u64 },
+    Link {
+        target: Addr,
+        edge_type: String,
+    },
+    UpdateParity {
+        parity_id: u64,
+    },
 }
 
 impl Default for EpochGuard {
@@ -287,10 +307,7 @@ impl EpochGuard {
         Self {
             epoch: AtomicU64::new(0),
             reader_counts: [AtomicU64::new(0), AtomicU64::new(0)],
-            pending: [
-                Mutex::new(VecDeque::new()),
-                Mutex::new(VecDeque::new()),
-            ],
+            pending: [Mutex::new(VecDeque::new()), Mutex::new(VecDeque::new())],
             steal_active: AtomicBool::new(false),
         }
     }
@@ -351,11 +368,7 @@ impl EpochGuard {
 
         self.steal_active.store(false, Ordering::SeqCst);
 
-        if items.is_empty() {
-            None
-        } else {
-            Some(items)
-        }
+        if items.is_empty() { None } else { Some(items) }
     }
 
     /// Current epoch
@@ -365,8 +378,8 @@ impl EpochGuard {
 
     /// Pending work count
     pub fn pending_count(&self) -> usize {
-        self.pending[0].lock().map(|p| p.len()).unwrap_or(0) +
-        self.pending[1].lock().map(|p| p.len()).unwrap_or(0)
+        self.pending[0].lock().map(|p| p.len()).unwrap_or(0)
+            + self.pending[1].lock().map(|p| p.len()).unwrap_or(0)
     }
 }
 
@@ -473,7 +486,8 @@ impl WriteConflict {
     pub fn is_orthogonal(&self) -> bool {
         if let Some(ancestor) = &self.ancestor {
             let our_delta = xor_fingerprints(&self.our_state.fingerprint, &ancestor.fingerprint);
-            let their_delta = xor_fingerprints(&self.current_state.fingerprint, &ancestor.fingerprint);
+            let their_delta =
+                xor_fingerprints(&self.current_state.fingerprint, &ancestor.fingerprint);
 
             // Orthogonal if no bits changed in both
             for i in 0..FINGERPRINT_WORDS {
@@ -559,14 +573,22 @@ impl DagTransaction {
     }
 
     /// Stage a write
-    pub fn stage_write(&mut self, addr: Addr, fingerprint: [u64; FINGERPRINT_WORDS], label: Option<String>) {
+    pub fn stage_write(
+        &mut self,
+        addr: Addr,
+        fingerprint: [u64; FINGERPRINT_WORDS],
+        label: Option<String>,
+    ) {
         let expected = self.reads.get(&addr).map(|s| s.version).unwrap_or(0);
-        self.writes.insert(addr, WriteIntent {
+        self.writes.insert(
             addr,
-            fingerprint,
-            label,
-            expected_version: expected,
-        });
+            WriteIntent {
+                addr,
+                fingerprint,
+                label,
+                expected_version: expected,
+            },
+        );
     }
 
     /// Mark parity block as needing update
@@ -760,7 +782,10 @@ impl XorDag {
 
         let txn = DagTransaction::new(txn_id, self.config.conflict_strategy, epoch);
 
-        let mut txns = self.active_txns.write().map_err(|_| DagError::LockPoisoned)?;
+        let mut txns = self
+            .active_txns
+            .write()
+            .map_err(|_| DagError::LockPoisoned)?;
         txns.insert(txn_id, txn);
 
         self.stats.txns_started.fetch_add(1, Ordering::Relaxed);
@@ -786,7 +811,10 @@ impl XorDag {
                 delta_from_prev: None, // Could populate from delta_chain
             };
 
-            let mut txns = self.active_txns.write().map_err(|_| DagError::LockPoisoned)?;
+            let mut txns = self
+                .active_txns
+                .write()
+                .map_err(|_| DagError::LockPoisoned)?;
             if let Some(txn) = txns.get_mut(&txn_id) {
                 txn.record_read(snapshot);
             }
@@ -796,8 +824,17 @@ impl XorDag {
     }
 
     /// Write within a transaction (staged until commit)
-    pub fn write(&self, txn_id: u64, addr: Addr, fingerprint: [u64; FINGERPRINT_WORDS], label: Option<String>) -> Result<(), DagError> {
-        let mut txns = self.active_txns.write().map_err(|_| DagError::LockPoisoned)?;
+    pub fn write(
+        &self,
+        txn_id: u64,
+        addr: Addr,
+        fingerprint: [u64; FINGERPRINT_WORDS],
+        label: Option<String>,
+    ) -> Result<(), DagError> {
+        let mut txns = self
+            .active_txns
+            .write()
+            .map_err(|_| DagError::LockPoisoned)?;
         let txn = txns.get_mut(&txn_id).ok_or(DagError::TxnNotFound(txn_id))?;
 
         if txn.state != TxnState::Active {
@@ -826,7 +863,10 @@ impl XorDag {
 
         // Get transaction
         let txn = {
-            let mut txns = self.active_txns.write().map_err(|_| DagError::LockPoisoned)?;
+            let mut txns = self
+                .active_txns
+                .write()
+                .map_err(|_| DagError::LockPoisoned)?;
             txns.remove(&txn_id).ok_or(DagError::TxnNotFound(txn_id))?
         };
 
@@ -838,7 +878,9 @@ impl XorDag {
         let conflicts = self.validate_reads(&txn)?;
 
         if !conflicts.is_empty() {
-            self.stats.conflicts_detected.fetch_add(conflicts.len() as u64, Ordering::Relaxed);
+            self.stats
+                .conflicts_detected
+                .fetch_add(conflicts.len() as u64, Ordering::Relaxed);
 
             // Try to resolve conflicts
             let resolved = self.resolve_conflicts(&txn, &conflicts)?;
@@ -848,11 +890,16 @@ impl XorDag {
                 return Err(DagError::ConflictUnresolved(conflicts));
             }
 
-            self.stats.conflicts_merged.fetch_add(conflicts.len() as u64, Ordering::Relaxed);
+            self.stats
+                .conflicts_merged
+                .fetch_add(conflicts.len() as u64, Ordering::Relaxed);
         }
 
         // Apply writes
-        let mut bind_space = self.bind_space.write().map_err(|_| DagError::LockPoisoned)?;
+        let mut bind_space = self
+            .bind_space
+            .write()
+            .map_err(|_| DagError::LockPoisoned)?;
         let mut deltas = Vec::new();
 
         // Get next version from global counter
@@ -888,7 +935,10 @@ impl XorDag {
                 timestamp: timestamp_micros(),
             };
 
-            let mut chain = self.delta_chain.write().map_err(|_| DagError::LockPoisoned)?;
+            let mut chain = self
+                .delta_chain
+                .write()
+                .map_err(|_| DagError::LockPoisoned)?;
             chain.insert(version, delta);
             self.stats.deltas_created.fetch_add(1, Ordering::Relaxed);
 
@@ -919,7 +969,10 @@ impl XorDag {
 
     /// Abort transaction
     pub fn abort(&self, txn_id: u64) -> Result<(), DagError> {
-        let mut txns = self.active_txns.write().map_err(|_| DagError::LockPoisoned)?;
+        let mut txns = self
+            .active_txns
+            .write()
+            .map_err(|_| DagError::LockPoisoned)?;
 
         if let Some(mut txn) = txns.remove(&txn_id) {
             txn.state = TxnState::Aborted;
@@ -935,7 +988,11 @@ impl XorDag {
     // =========================================================================
 
     /// Read at a specific version (time-travel)
-    pub fn read_at_version(&self, addr: Addr, target_version: Version) -> Result<Option<[u64; FINGERPRINT_WORDS]>, DagError> {
+    pub fn read_at_version(
+        &self,
+        addr: Addr,
+        target_version: Version,
+    ) -> Result<Option<[u64; FINGERPRINT_WORDS]>, DagError> {
         let bind_space = self.bind_space.read().map_err(|_| DagError::LockPoisoned)?;
         let current = bind_space.read(addr);
 
@@ -946,7 +1003,10 @@ impl XorDag {
         let current = current.unwrap();
 
         // Walk delta chain backward from latest to target
-        let chain = self.delta_chain.read().map_err(|_| DagError::LockPoisoned)?;
+        let chain = self
+            .delta_chain
+            .read()
+            .map_err(|_| DagError::LockPoisoned)?;
 
         // If no deltas or target is current, return current
         if chain.is_empty() {
@@ -986,7 +1046,12 @@ impl XorDag {
     }
 
     /// Get diff between two versions
-    pub fn diff_versions(&self, addr: Addr, v1: Version, v2: Version) -> Result<Option<[u64; FINGERPRINT_WORDS]>, DagError> {
+    pub fn diff_versions(
+        &self,
+        addr: Addr,
+        v1: Version,
+        v2: Version,
+    ) -> Result<Option<[u64; FINGERPRINT_WORDS]>, DagError> {
         let fp1 = self.read_at_version(addr, v1)?;
         let fp2 = self.read_at_version(addr, v2)?;
 
@@ -1003,7 +1068,10 @@ impl XorDag {
     /// Initialize parity blocks for all tiers
     pub fn init_parity(&self) -> Result<(), DagError> {
         let bind_space = self.bind_space.read().map_err(|_| DagError::LockPoisoned)?;
-        let mut parity_blocks = self.parity_blocks.write().map_err(|_| DagError::LockPoisoned)?;
+        let mut parity_blocks = self
+            .parity_blocks
+            .write()
+            .map_err(|_| DagError::LockPoisoned)?;
 
         // Create parity blocks for each tier
         for tier in [ParityTier::Hot, ParityTier::Warm, ParityTier::Cold] {
@@ -1027,7 +1095,10 @@ impl XorDag {
     /// Verify all parity blocks
     pub fn verify_parity(&self) -> Result<Vec<u64>, DagError> {
         let bind_space = self.bind_space.read().map_err(|_| DagError::LockPoisoned)?;
-        let parity_blocks = self.parity_blocks.read().map_err(|_| DagError::LockPoisoned)?;
+        let parity_blocks = self
+            .parity_blocks
+            .read()
+            .map_err(|_| DagError::LockPoisoned)?;
 
         let mut invalid = Vec::new();
 
@@ -1045,7 +1116,10 @@ impl XorDag {
     /// Recover missing data using parity
     pub fn recover_addr(&self, addr: Addr) -> Result<[u64; FINGERPRINT_WORDS], DagError> {
         let bind_space = self.bind_space.read().map_err(|_| DagError::LockPoisoned)?;
-        let parity_blocks = self.parity_blocks.read().map_err(|_| DagError::LockPoisoned)?;
+        let parity_blocks = self
+            .parity_blocks
+            .read()
+            .map_err(|_| DagError::LockPoisoned)?;
 
         // Find parity block covering this address
         for block in parity_blocks.values() {
@@ -1068,17 +1142,24 @@ impl XorDag {
     pub fn process_stolen_work(&self) -> Result<usize, DagError> {
         if let Some(items) = self.epoch_guard.try_steal() {
             let count = items.len();
-            self.stats.work_stolen.fetch_add(count as u64, Ordering::Relaxed);
+            self.stats
+                .work_stolen
+                .fetch_add(count as u64, Ordering::Relaxed);
 
             for item in items {
                 match item.operation {
                     WorkOperation::UpdateParity { parity_id } => {
                         // Re-compute parity for this block
-                        let bind_space = self.bind_space.read().map_err(|_| DagError::LockPoisoned)?;
-                        let mut parity_blocks = self.parity_blocks.write().map_err(|_| DagError::LockPoisoned)?;
+                        let bind_space =
+                            self.bind_space.read().map_err(|_| DagError::LockPoisoned)?;
+                        let mut parity_blocks = self
+                            .parity_blocks
+                            .write()
+                            .map_err(|_| DagError::LockPoisoned)?;
 
                         if let Some(block) = parity_blocks.get_mut(&parity_id) {
-                            let fps: Vec<_> = block.covered_addrs
+                            let fps: Vec<_> = block
+                                .covered_addrs
                                 .iter()
                                 .filter_map(|&a| bind_space.read(a).map(|n| n.fingerprint))
                                 .collect();
@@ -1112,9 +1193,9 @@ impl XorDag {
     /// Get addresses for a tier
     fn addrs_for_tier(&self, tier: ParityTier) -> Vec<Addr> {
         let (start, end) = match tier {
-            ParityTier::Hot => (0x8000, 0xFFFF),   // Nodes
-            ParityTier::Warm => (0x1000, 0x7FFF),  // Fluid
-            ParityTier::Cold => (0x0000, 0x0FFF),  // Surface
+            ParityTier::Hot => (0x8000, 0xFFFF),  // Nodes
+            ParityTier::Warm => (0x1000, 0x7FFF), // Fluid
+            ParityTier::Cold => (0x0000, 0x0FFF), // Surface
             ParityTier::Cross => return Vec::new(),
         };
 
@@ -1160,7 +1241,12 @@ impl XorDag {
     }
 
     /// Find common ancestor version for conflict resolution
-    fn find_ancestor(&self, _addr: Addr, v1: Version, v2: Version) -> Result<Option<StateSnapshot>, DagError> {
+    fn find_ancestor(
+        &self,
+        _addr: Addr,
+        v1: Version,
+        v2: Version,
+    ) -> Result<Option<StateSnapshot>, DagError> {
         // Find the common ancestor by walking delta chain
         // For now, return None (no ancestor known)
         // A full implementation would track version history
@@ -1169,11 +1255,15 @@ impl XorDag {
     }
 
     /// Resolve conflicts using configured strategy
-    fn resolve_conflicts(&self, txn: &DagTransaction, conflicts: &[WriteConflict]) -> Result<bool, DagError> {
+    fn resolve_conflicts(
+        &self,
+        txn: &DagTransaction,
+        conflicts: &[WriteConflict],
+    ) -> Result<bool, DagError> {
         match txn.strategy {
             ConflictStrategy::LastWriteWins => Ok(true), // Just overwrite
             ConflictStrategy::FirstWriteWins => Ok(false), // Abort
-            ConflictStrategy::Reject => Ok(false), // Always reject
+            ConflictStrategy::Reject => Ok(false),       // Always reject
             ConflictStrategy::XorMerge => {
                 // Try to auto-merge all conflicts
                 for conflict in conflicts {
@@ -1188,13 +1278,21 @@ impl XorDag {
     }
 
     /// Update parity blocks after writes
-    fn update_parity_blocks(&self, parity_ids: &HashSet<u64>, bind_space: &BindSpace) -> Result<(), DagError> {
-        let mut parity_blocks = self.parity_blocks.write().map_err(|_| DagError::LockPoisoned)?;
+    fn update_parity_blocks(
+        &self,
+        parity_ids: &HashSet<u64>,
+        bind_space: &BindSpace,
+    ) -> Result<(), DagError> {
+        let mut parity_blocks = self
+            .parity_blocks
+            .write()
+            .map_err(|_| DagError::LockPoisoned)?;
 
         for &id in parity_ids {
             if let Some(block) = parity_blocks.get_mut(&id) {
                 // Recompute parity (could be incremental with old values)
-                let fps: Vec<_> = block.covered_addrs
+                let fps: Vec<_> = block
+                    .covered_addrs
                     .iter()
                     .filter_map(|&a| bind_space.read(a).map(|n| n.fingerprint))
                     .collect();
@@ -1209,10 +1307,14 @@ impl XorDag {
 
     /// Update cross-tier parity
     fn update_cross_parity(&self, bind_space: &BindSpace) -> Result<(), DagError> {
-        let parity_blocks = self.parity_blocks.read().map_err(|_| DagError::LockPoisoned)?;
+        let parity_blocks = self
+            .parity_blocks
+            .read()
+            .map_err(|_| DagError::LockPoisoned)?;
 
         // Collect all tier parities
-        let tier_parities: Vec<[u64; FINGERPRINT_WORDS]> = parity_blocks.values()
+        let tier_parities: Vec<[u64; FINGERPRINT_WORDS]> = parity_blocks
+            .values()
             .filter(|b| b.tier != ParityTier::Cross)
             .map(|b| b.parity_fingerprint)
             .collect();
@@ -1223,7 +1325,10 @@ impl XorDag {
 
         let cross = xor_fingerprints_multi(&tier_parities);
 
-        let mut cross_parity = self.cross_parity.write().map_err(|_| DagError::LockPoisoned)?;
+        let mut cross_parity = self
+            .cross_parity
+            .write()
+            .map_err(|_| DagError::LockPoisoned)?;
         *cross_parity = Some(ParityBlock {
             id: 0,
             covered_addrs: Vec::new(), // Cross parity covers tier parities, not addrs
@@ -1388,7 +1493,8 @@ mod tests {
 
         // Write some data
         let fp = [42u64; FINGERPRINT_WORDS];
-        dag.write(txn_id, Addr(0x8000), fp, Some("test".into())).unwrap();
+        dag.write(txn_id, Addr(0x8000), fp, Some("test".into()))
+            .unwrap();
 
         // Commit
         let version = dag.commit(txn_id).unwrap();

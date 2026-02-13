@@ -18,12 +18,11 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use crate::storage::{BindSpace, Substrate, SubstrateConfig, Addr, FINGERPRINT_WORDS};
-use crate::nars::TruthValue;
 use super::firefly_frame::{
-    FireflyFrame, Instruction, LanguagePrefix,
-    ExecutionContext, ConditionFlags,
+    ConditionFlags, ExecutionContext, FireflyFrame, Instruction, LanguagePrefix,
 };
+use crate::nars::TruthValue;
+use crate::storage::{Addr, BindSpace, FINGERPRINT_WORDS, Substrate, SubstrateConfig};
 
 // =============================================================================
 // REGISTER FILE
@@ -65,7 +64,8 @@ impl RegisterFile {
 
     /// Vector similarity search
     pub fn resonate(&self, query: &[u64; FINGERPRINT_WORDS], k: usize) -> Vec<(u16, f32)> {
-        self.substrate.resonate(query, k)
+        self.substrate
+            .resonate(query, k)
             .into_iter()
             .map(|(addr, sim)| (addr.0, sim))
             .collect()
@@ -255,7 +255,8 @@ impl Executor {
                 let b = self.registers.read(inst.src2);
                 match (a, b) {
                     (Some(a), Some(b)) => {
-                        let dist: u32 = a.iter()
+                        let dist: u32 = a
+                            .iter()
                             .zip(b.iter())
                             .map(|(x, y)| (x ^ y).count_ones())
                             .sum();
@@ -266,11 +267,11 @@ impl Executor {
                         self.flags.zero = dist == 0;
                         ExecResult::Ok(Some(result))
                     }
-                    _ => ExecResult::Error("HAMMING: operand not found".into())
+                    _ => ExecResult::Error("HAMMING: operand not found".into()),
                 }
             }
 
-            _ => ExecResult::Error(format!("Lance opcode {:02X} not implemented", inst.opcode))
+            _ => ExecResult::Error(format!("Lance opcode {:02X} not implemented", inst.opcode)),
         }
     }
 
@@ -281,7 +282,10 @@ impl Executor {
     fn exec_sql(&mut self, inst: &Instruction, _operand: &[u64; 2]) -> ExecResult {
         self.stats.sql_ops += 1;
         // SQL would integrate with DataFusion
-        ExecResult::Error(format!("SQL opcode {:02X} not yet implemented", inst.opcode))
+        ExecResult::Error(format!(
+            "SQL opcode {:02X} not yet implemented",
+            inst.opcode
+        ))
     }
 
     // =========================================================================
@@ -291,7 +295,10 @@ impl Executor {
     fn exec_cypher(&mut self, inst: &Instruction, _operand: &[u64; 2]) -> ExecResult {
         self.stats.cypher_ops += 1;
         // Cypher would integrate with graph traversal
-        ExecResult::Error(format!("Cypher opcode {:02X} not yet implemented", inst.opcode))
+        ExecResult::Error(format!(
+            "Cypher opcode {:02X} not yet implemented",
+            inst.opcode
+        ))
     }
 
     // =========================================================================
@@ -302,10 +309,7 @@ impl Executor {
         self.stats.nars_ops += 1;
 
         // Extract truth values from context or registers
-        let t1 = TruthValue::new(
-            ctx.truth.0 as f32 / 255.0,
-            ctx.truth.1 as f32 / 255.0,
-        );
+        let t1 = TruthValue::new(ctx.truth.0 as f32 / 255.0, ctx.truth.1 as f32 / 255.0);
 
         match inst.opcode {
             // DEDUCE: A→B, B→C ⊢ A→C
@@ -343,7 +347,7 @@ impl Executor {
                 ExecResult::Truth(result)
             }
 
-            _ => ExecResult::Error(format!("NARS opcode {:02X} not implemented", inst.opcode))
+            _ => ExecResult::Error(format!("NARS opcode {:02X} not implemented", inst.opcode)),
         }
     }
 
@@ -373,7 +377,7 @@ impl Executor {
                 ExecResult::Ok(None)
             }
 
-            _ => ExecResult::Error(format!("Causal opcode {:02X} not implemented", inst.opcode))
+            _ => ExecResult::Error(format!("Causal opcode {:02X} not implemented", inst.opcode)),
         }
     }
 
@@ -400,7 +404,7 @@ impl Executor {
                         self.registers.write(inst.dest, result);
                         ExecResult::Ok(Some(result))
                     }
-                    _ => ExecResult::Error("SUPERPOSE: operand not found".into())
+                    _ => ExecResult::Error("SUPERPOSE: operand not found".into()),
                 }
             }
 
@@ -428,11 +432,14 @@ impl Executor {
                         self.registers.write(inst.dest, result);
                         ExecResult::Ok(Some(result))
                     }
-                    _ => ExecResult::Error("INTERFERE: operand not found".into())
+                    _ => ExecResult::Error("INTERFERE: operand not found".into()),
                 }
             }
 
-            _ => ExecResult::Error(format!("Quantum opcode {:02X} not implemented", inst.opcode))
+            _ => ExecResult::Error(format!(
+                "Quantum opcode {:02X} not implemented",
+                inst.opcode
+            )),
         }
     }
 
@@ -457,7 +464,7 @@ impl Executor {
                         self.registers.write(inst.dest, result);
                         ExecResult::Ok(Some(result))
                     }
-                    _ => ExecResult::Error("BIND: operand not found".into())
+                    _ => ExecResult::Error("BIND: operand not found".into()),
                 }
             }
 
@@ -510,7 +517,7 @@ impl Executor {
                 }
             }
 
-            _ => ExecResult::Error(format!("Memory opcode {:02X} not implemented", inst.opcode))
+            _ => ExecResult::Error(format!("Memory opcode {:02X} not implemented", inst.opcode)),
         }
     }
 
@@ -531,11 +538,11 @@ impl Executor {
             // BRANCH: Conditional branch
             0x02 => {
                 let take_branch = match inst.flags.encode() & 0x0F {
-                    0x00 => true,                    // Always
-                    0x01 => self.flags.zero,         // BEQ (zero set)
-                    0x02 => !self.flags.zero,        // BNE (zero clear)
-                    0x03 => self.flags.negative,     // BMI (negative)
-                    0x04 => !self.flags.negative,    // BPL (positive)
+                    0x00 => true,                 // Always
+                    0x01 => self.flags.zero,      // BEQ (zero set)
+                    0x02 => !self.flags.zero,     // BNE (zero clear)
+                    0x03 => self.flags.negative,  // BMI (negative)
+                    0x04 => !self.flags.negative, // BPL (positive)
                     _ => false,
                 };
                 if take_branch {
@@ -564,7 +571,8 @@ impl Executor {
                 match (a, b) {
                     (Some(a), Some(b)) => {
                         // Compare by Hamming distance
-                        let dist: u32 = a.iter()
+                        let dist: u32 = a
+                            .iter()
                             .zip(b.iter())
                             .map(|(x, y)| (x ^ y).count_ones())
                             .sum();
@@ -572,11 +580,14 @@ impl Executor {
                         self.flags.negative = false; // Hamming is always positive
                         ExecResult::Ok(None)
                     }
-                    _ => ExecResult::Error("CMP: operand not found".into())
+                    _ => ExecResult::Error("CMP: operand not found".into()),
                 }
             }
 
-            _ => ExecResult::Error(format!("Control opcode {:02X} not implemented", inst.opcode))
+            _ => ExecResult::Error(format!(
+                "Control opcode {:02X} not implemented",
+                inst.opcode
+            )),
         }
     }
 
@@ -601,7 +612,7 @@ impl Executor {
                 ExecResult::Ok(None)
             }
 
-            _ => ExecResult::Error(format!("Trap {:02X} not implemented", inst.opcode))
+            _ => ExecResult::Error(format!("Trap {:02X} not implemented", inst.opcode)),
         }
     }
 
@@ -632,8 +643,8 @@ mod tests {
     use crate::fabric::firefly_frame::{FrameBuilder, FrameHeader};
 
     fn random_fp(seed: u64) -> [u64; FINGERPRINT_WORDS] {
-        use std::hash::{Hash, Hasher};
         use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
 
         let mut fp = [0u64; FINGERPRINT_WORDS];
         for i in 0..FINGERPRINT_WORDS {

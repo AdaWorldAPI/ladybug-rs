@@ -83,7 +83,10 @@ impl DictEntry {
             }
         }
 
-        Self { popcount, l0_sketch }
+        Self {
+            popcount,
+            l0_sketch,
+        }
     }
 }
 
@@ -124,7 +127,11 @@ impl FingerprintDict {
         }
 
         let count = occupied.len();
-        Self { entries, occupied, count }
+        Self {
+            entries,
+            occupied,
+            count,
+        }
     }
 
     /// Number of entries in dictionary
@@ -146,7 +153,8 @@ impl FingerprintDict {
     /// Get pre-computed popcount for address (O(1))
     #[inline(always)]
     pub fn popcount(&self, addr: u16) -> Option<u32> {
-        self.entries.get(addr as usize)
+        self.entries
+            .get(addr as usize)
             .and_then(|e| e.as_ref())
             .map(|e| e.popcount)
     }
@@ -154,7 +162,8 @@ impl FingerprintDict {
     /// Get L0 sketch for address (O(1))
     #[inline(always)]
     pub fn l0_sketch(&self, addr: u16) -> Option<&[u8; L0_SKETCH_BYTES]> {
-        self.entries.get(addr as usize)
+        self.entries
+            .get(addr as usize)
             .and_then(|e| e.as_ref())
             .map(|e| &e.l0_sketch)
     }
@@ -218,17 +227,14 @@ impl FingerprintDict {
     /// This is the "sweet spot" pre-filter: if query has popcount P,
     /// candidates must have popcount within [P - threshold, P + threshold]
     /// to possibly have Hamming distance < threshold.
-    pub fn filter_by_popcount(
-        &self,
-        query_popcount: u32,
-        max_hamming: u32,
-    ) -> Vec<u16> {
+    pub fn filter_by_popcount(&self, query_popcount: u32, max_hamming: u32) -> Vec<u16> {
         // Triangle inequality: |pop(a) - pop(b)| <= hamming(a, b)
         // So if |pop(a) - pop(query)| > max_hamming, skip
         let min_pop = query_popcount.saturating_sub(max_hamming);
         let max_pop = query_popcount.saturating_add(max_hamming);
 
-        self.occupied.iter()
+        self.occupied
+            .iter()
             .filter(|&&addr| {
                 if let Some(entry) = &self.entries[addr as usize] {
                     entry.popcount >= min_pop && entry.popcount <= max_pop
@@ -312,16 +318,18 @@ impl FingerprintDict {
             if let Some(node) = bind_space.read(Addr(raw)) {
                 addr_vals.push(raw);
 
-                let fp_bytes: Vec<u8> = node.fingerprint.iter()
+                let fp_bytes: Vec<u8> = node
+                    .fingerprint
+                    .iter()
                     .flat_map(|w| w.to_le_bytes())
                     .collect();
                 fp_vals.push(fp_bytes);
 
                 label_vals.push(node.label.clone());
 
-                let pop = self.popcount(raw).unwrap_or_else(|| {
-                    node.fingerprint.iter().map(|w| w.count_ones()).sum()
-                });
+                let pop = self
+                    .popcount(raw)
+                    .unwrap_or_else(|| node.fingerprint.iter().map(|w| w.count_ones()).sum());
                 pop_vals.push(pop);
 
                 let zone = match raw >> 8 {
@@ -338,10 +346,7 @@ impl FingerprintDict {
         }
 
         let addr_array: ArrayRef = Arc::new(UInt16Array::from(addr_vals));
-        let mut fp_builder = FixedSizeBinaryBuilder::with_capacity(
-            fp_vals.len(),
-            FP_BYTES as i32,
-        );
+        let mut fp_builder = FixedSizeBinaryBuilder::with_capacity(fp_vals.len(), FP_BYTES as i32);
         for fp in &fp_vals {
             fp_builder.append_value(fp)?;
         }
@@ -352,7 +357,10 @@ impl FingerprintDict {
             zone_vals.into_iter().map(Some).collect::<Vec<_>>(),
         ));
 
-        RecordBatch::try_new(schema, vec![addr_array, fp_array, label_array, pop_array, zone_array])
+        RecordBatch::try_new(
+            schema,
+            vec![addr_array, fp_array, label_array, pop_array, zone_array],
+        )
     }
 
     /// Convert all occupied entries to Arrow RecordBatch
@@ -423,7 +431,11 @@ impl Default for FingerprintDict {
 fn dict_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
         Field::new("address", DataType::UInt16, false),
-        Field::new("fingerprint", DataType::FixedSizeBinary(FP_BYTES as i32), false),
+        Field::new(
+            "fingerprint",
+            DataType::FixedSizeBinary(FP_BYTES as i32),
+            false,
+        ),
         Field::new("label", DataType::Utf8, true),
         Field::new("popcount", DataType::UInt32, false),
         Field::new("zone", DataType::Utf8, false),

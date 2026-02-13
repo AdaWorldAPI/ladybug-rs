@@ -7,11 +7,17 @@ pub struct Query {
 
 impl Query {
     pub fn sql(query: &str) -> Self {
-        Self { sql: Some(query.to_string()), cypher: None }
+        Self {
+            sql: Some(query.to_string()),
+            cypher: None,
+        }
     }
-    
+
     pub fn cypher(query: &str) -> Self {
-        Self { sql: None, cypher: Some(query.to_string()) }
+        Self {
+            sql: None,
+            cypher: Some(query.to_string()),
+        }
     }
 }
 

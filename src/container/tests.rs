@@ -1,15 +1,15 @@
 //! Comprehensive tests for the container module.
 
-use super::*;
+use super::cache::ContainerCache;
+use super::delta;
 use super::geometry::ContainerGeometry;
 use super::meta::{MetaView, MetaViewMut, SCHEMA_VERSION};
-use super::record::CogRecord;
-use super::cache::ContainerCache;
-use super::search::{belichtungsmesser, cascade_search, MexicanHat, hamming_early_exit};
-use super::semiring::*;
-use super::delta;
-use super::spine::SpineCache;
 use super::migrate;
+use super::record::CogRecord;
+use super::search::{MexicanHat, belichtungsmesser, cascade_search, hamming_early_exit};
+use super::semiring::*;
+use super::spine::SpineCache;
+use super::*;
 // Deprecated modules moved to .deprecated/ — see docs/BINDSPACE_UNIFICATION.md
 
 // ============================================================================
@@ -83,7 +83,9 @@ fn test_container_hamming() {
     let tolerance = 3 * SIGMA_APPROX; // 3σ
     assert!(
         (dist as i32 - expected as i32).unsigned_abs() < tolerance,
-        "distance {} not within 3σ of expected {}", dist, expected
+        "distance {} not within 3σ of expected {}",
+        dist,
+        expected
     );
 }
 
@@ -126,8 +128,10 @@ fn test_container_bundle() {
     let dist_a = bundled.hamming(&a);
     let dist_rand = bundled.hamming(&random);
     // Not guaranteed per-instance, but very likely
-    assert!(dist_a < dist_rand + 500,
-        "bundle should generally be closer to inputs than random");
+    assert!(
+        dist_a < dist_rand + 500,
+        "bundle should generally be closer to inputs than random"
+    );
 }
 
 #[test]
@@ -288,8 +292,12 @@ fn test_geometry_roundtrip() {
         assert_eq!(record.geometry(), geom, "geometry mismatch for {:?}", geom);
 
         let expected_content = geom.default_content_count();
-        assert_eq!(record.content.len(), expected_content,
-            "wrong content count for {:?}", geom);
+        assert_eq!(
+            record.content.len(),
+            expected_content,
+            "wrong content count for {:?}",
+            geom
+        );
     }
 }
 
@@ -363,9 +371,9 @@ fn test_metaview_inline_edges() {
 
     {
         let mut meta = MetaViewMut::new(&mut container.words);
-        meta.set_inline_edge(0, 0x01, 0x42);   // verb=1, target=0x42
-        meta.set_inline_edge(1, 0x05, 0xAB);   // verb=5, target=0xAB
-        meta.set_inline_edge(63, 0xFF, 0x01);   // last edge
+        meta.set_inline_edge(0, 0x01, 0x42); // verb=1, target=0x42
+        meta.set_inline_edge(1, 0x05, 0xAB); // verb=5, target=0xAB
+        meta.set_inline_edge(63, 0xFF, 0x01); // last edge
     }
 
     let view = MetaView::new(&container.words);
@@ -442,7 +450,10 @@ fn test_metaview_checksum() {
     }
 
     let view = MetaView::new(&container.words);
-    assert!(view.verify_checksum(), "checksum should verify after update");
+    assert!(
+        view.verify_checksum(),
+        "checksum should verify after update"
+    );
 }
 
 #[test]
@@ -572,7 +583,7 @@ fn test_chunked_hierarchical_search() {
     // Create chunks with known patterns
     let target = Container::random(42);
     record.append_chunk(Container::random(100)); // far
-    record.append_chunk(target.clone());          // exact match
+    record.append_chunk(target.clone()); // exact match
     record.append_chunk(Container::random(300)); // far
 
     // Use a large threshold: the summary (bundle of 3 chunks) will be far from target
@@ -736,8 +747,11 @@ fn test_belichtungsmesser_accuracy() {
     }
 
     let mean_error = total_error / n as f64;
-    assert!(mean_error < 0.05,
-        "mean relative error {:.4} exceeds 5%", mean_error);
+    assert!(
+        mean_error < 0.05,
+        "mean relative error {:.4} exceeds 5%",
+        mean_error
+    );
 }
 
 #[test]
@@ -761,7 +775,13 @@ fn test_hdr_cascade_finds_matches() {
     close.words[1] ^= 0x1; // flip 1 bit → 3 bits total
 
     let corpus: Vec<Container> = (0..100)
-        .map(|i| if i == 50 { close.clone() } else { Container::random(i + 1000) })
+        .map(|i| {
+            if i == 50 {
+                close.clone()
+            } else {
+                Container::random(i + 1000)
+            }
+        })
         .collect();
 
     let results = cascade_search(&query, &corpus, 200, 10);
@@ -781,7 +801,9 @@ fn test_hdr_cascade_brute_force_equivalence() {
     let cascade_results = cascade_search(&query, &corpus, threshold, 50);
 
     // Brute force
-    let mut brute: Vec<(usize, u32)> = corpus.iter().enumerate()
+    let mut brute: Vec<(usize, u32)> = corpus
+        .iter()
+        .enumerate()
         .map(|(i, c)| (i, query.hamming(c)))
         .filter(|&(_, d)| d <= threshold)
         .collect();
@@ -789,8 +811,14 @@ fn test_hdr_cascade_brute_force_equivalence() {
 
     // Cascade should find all brute-force results (may include extras from L4)
     for &(bi, bd) in &brute {
-        let found = cascade_results.iter().any(|r| r.index == bi && r.distance == bd);
-        assert!(found, "brute-force match (idx={}, dist={}) not found in cascade", bi, bd);
+        let found = cascade_results
+            .iter()
+            .any(|r| r.index == bi && r.distance == bd);
+        assert!(
+            found,
+            "brute-force match (idx={}, dist={}) not found in cascade",
+            bi, bd
+        );
     }
 }
 
@@ -803,7 +831,10 @@ fn test_mexican_hat() {
 
     // Distance at excite boundary → 0
     let r = hat.response(hat.excite);
-    assert!(r <= 0.0, "at excite boundary, response should be non-positive");
+    assert!(
+        r <= 0.0,
+        "at excite boundary, response should be non-positive"
+    );
 
     // Beyond inhibition → 0
     assert_eq!(hat.response(hat.inhibit + 100), 0.0);
@@ -889,11 +920,11 @@ fn test_semiring_boolean_bfs() {
     // 5-node graph: 0→1→2→3→4
     let contents: Vec<Container> = (0..5).map(|i| Container::random(i)).collect();
     let adjacency = vec![
-        vec![(1, 1.0)],       // 0 → 1
-        vec![(2, 1.0)],       // 1 → 2
-        vec![(3, 1.0)],       // 2 → 3
-        vec![(4, 1.0)],       // 3 → 4
-        vec![],                // 4 → nothing
+        vec![(1, 1.0)], // 0 → 1
+        vec![(2, 1.0)], // 1 → 2
+        vec![(3, 1.0)], // 2 → 3
+        vec![(4, 1.0)], // 3 → 4
+        vec![],         // 4 → nothing
     ];
 
     let semiring = BooleanBfs;
@@ -915,8 +946,8 @@ fn test_semiring_hamming_min_plus() {
 
     let adjacency = vec![
         vec![(1, 1.0), (2, 1.0)], // 0 → 1, 0 → 2
-        vec![(2, 1.0)],            // 1 → 2
-        vec![],                     // 2 → nothing
+        vec![(2, 1.0)],           // 1 → 2
+        vec![],                   // 2 → nothing
     ];
 
     let semiring = HammingMinPlus;
@@ -996,24 +1027,15 @@ fn test_xyz_trace_and_probe() {
     let trace = record.xyz_trace().unwrap();
 
     // Probe: given X and Y, recover Z
-    let recovered_z = CogRecord::xyz_probe(
-        &[&record.content[0], &record.content[1]],
-        &trace,
-    );
+    let recovered_z = CogRecord::xyz_probe(&[&record.content[0], &record.content[1]], &trace);
     assert_eq!(recovered_z, record.content[2]);
 
     // Probe: given X and Z, recover Y
-    let recovered_y = CogRecord::xyz_probe(
-        &[&record.content[0], &record.content[2]],
-        &trace,
-    );
+    let recovered_y = CogRecord::xyz_probe(&[&record.content[0], &record.content[2]], &trace);
     assert_eq!(recovered_y, record.content[1]);
 
     // Probe: given Y and Z, recover X
-    let recovered_x = CogRecord::xyz_probe(
-        &[&record.content[1], &record.content[2]],
-        &trace,
-    );
+    let recovered_x = CogRecord::xyz_probe(&[&record.content[1], &record.content[2]], &trace);
     assert_eq!(recovered_x, record.content[0]);
 }
 
@@ -1021,7 +1043,7 @@ fn test_xyz_trace_and_probe() {
 // 15. INSERT_LEAF: SPINE-GUIDED INSERTION
 // ============================================================================
 
-use super::insert::{insert_leaf, InsertResult, SPLIT_THRESHOLD};
+use super::insert::{InsertResult, SPLIT_THRESHOLD, insert_leaf};
 
 #[test]
 fn test_insert_path3_new_branch_into_empty_tree() {
@@ -1031,7 +1053,10 @@ fn test_insert_path3_new_branch_into_empty_tree() {
 
     let result = insert_leaf(&mut cache, &leaf, None, SPLIT_THRESHOLD).unwrap();
     match &result {
-        InsertResult::NewBranch { leaf_idx, spine_idx } => {
+        InsertResult::NewBranch {
+            leaf_idx,
+            spine_idx,
+        } => {
             assert!(cache.is_spine(*spine_idx));
             assert_eq!(cache.spine_children(*spine_idx), &[*leaf_idx]);
             assert_eq!(cache.read(*leaf_idx), &leaf);
@@ -1064,7 +1089,10 @@ fn test_insert_path1_sibling_under_existing_spine() {
 
     let result1 = insert_leaf(&mut cache, &similar, None, SPLIT_THRESHOLD).unwrap();
     match &result1 {
-        InsertResult::Sibling { leaf_idx, spine_idx } => {
+        InsertResult::Sibling {
+            leaf_idx,
+            spine_idx,
+        } => {
             assert_eq!(*spine_idx, spine0, "should go under the same spine");
             assert_eq!(cache.spine_children(spine0).len(), 2);
             assert_eq!(cache.read(*leaf_idx), &similar);
@@ -1236,7 +1264,10 @@ fn test_insert_hominid_scenario() {
     for seed_base in [100u64, 101, 102] {
         let mut leaf = australo.clone();
         for j in 0..50 {
-            leaf.set_bit((seed_base as usize * 7 + j) % CONTAINER_BITS, !leaf.get_bit((seed_base as usize * 7 + j) % CONTAINER_BITS));
+            leaf.set_bit(
+                (seed_base as usize * 7 + j) % CONTAINER_BITS,
+                !leaf.get_bit((seed_base as usize * 7 + j) % CONTAINER_BITS),
+            );
         }
         insert_leaf(&mut cache, &leaf, None, SPLIT_THRESHOLD).unwrap();
     }
@@ -1245,7 +1276,10 @@ fn test_insert_hominid_scenario() {
     for seed_base in [200u64, 201] {
         let mut leaf = neander.clone();
         for j in 0..50 {
-            leaf.set_bit((seed_base as usize * 13 + j) % CONTAINER_BITS, !leaf.get_bit((seed_base as usize * 13 + j) % CONTAINER_BITS));
+            leaf.set_bit(
+                (seed_base as usize * 13 + j) % CONTAINER_BITS,
+                !leaf.get_bit((seed_base as usize * 13 + j) % CONTAINER_BITS),
+            );
         }
         insert_leaf(&mut cache, &leaf, None, SPLIT_THRESHOLD).unwrap();
     }
@@ -1254,7 +1288,10 @@ fn test_insert_hominid_scenario() {
     for seed_base in [300u64, 301] {
         let mut leaf = sapiens.clone();
         for j in 0..50 {
-            leaf.set_bit((seed_base as usize * 17 + j) % CONTAINER_BITS, !leaf.get_bit((seed_base as usize * 17 + j) % CONTAINER_BITS));
+            leaf.set_bit(
+                (seed_base as usize * 17 + j) % CONTAINER_BITS,
+                !leaf.get_bit((seed_base as usize * 17 + j) % CONTAINER_BITS),
+            );
         }
         insert_leaf(&mut cache, &leaf, None, SPLIT_THRESHOLD).unwrap();
     }
@@ -1288,9 +1325,10 @@ fn test_insert_hominid_scenario() {
 // 16. PACKED DN: Hierarchical address
 // ============================================================================
 
-use super::adjacency::{PackedDn, InlineEdge, InlineEdgeView, InlineEdgeViewMut,
-                        EdgeDescriptor, CsrOverflowView, CsrOverflowViewMut,
-                        AdjacencyView};
+use super::adjacency::{
+    AdjacencyView, CsrOverflowView, CsrOverflowViewMut, EdgeDescriptor, InlineEdge, InlineEdgeView,
+    InlineEdgeViewMut, PackedDn,
+};
 
 #[test]
 fn test_packed_dn_basics() {
@@ -1373,7 +1411,10 @@ fn test_packed_dn_ancestors() {
 
 #[test]
 fn test_inline_edge_pack_unpack() {
-    let edge = InlineEdge { verb: 42, target_hint: 7 };
+    let edge = InlineEdge {
+        verb: 42,
+        target_hint: 7,
+    };
     let packed = edge.pack();
     let back = InlineEdge::unpack(packed);
     assert_eq!(back.verb, 42);
@@ -1387,9 +1428,27 @@ fn test_inline_edge_view_read_write() {
     // Write some edges
     {
         let mut view = InlineEdgeViewMut::new(&mut c.words);
-        view.set(0, InlineEdge { verb: 1, target_hint: 10 });
-        view.set(1, InlineEdge { verb: 2, target_hint: 20 });
-        view.set(63, InlineEdge { verb: 3, target_hint: 30 });
+        view.set(
+            0,
+            InlineEdge {
+                verb: 1,
+                target_hint: 10,
+            },
+        );
+        view.set(
+            1,
+            InlineEdge {
+                verb: 2,
+                target_hint: 20,
+            },
+        );
+        view.set(
+            63,
+            InlineEdge {
+                verb: 3,
+                target_hint: 30,
+            },
+        );
         assert_eq!(view.count(), 3);
     }
 
@@ -1414,9 +1473,15 @@ fn test_inline_edge_add_remove() {
     let mut view = InlineEdgeViewMut::new(&mut c.words);
 
     // Add edges
-    let slot0 = view.add(InlineEdge { verb: 1, target_hint: 10 });
+    let slot0 = view.add(InlineEdge {
+        verb: 1,
+        target_hint: 10,
+    });
     assert_eq!(slot0, Some(0));
-    let slot1 = view.add(InlineEdge { verb: 2, target_hint: 20 });
+    let slot1 = view.add(InlineEdge {
+        verb: 2,
+        target_hint: 20,
+    });
     assert_eq!(slot1, Some(1));
     assert_eq!(view.count(), 2);
 
@@ -1434,9 +1499,27 @@ fn test_inline_edge_iterator() {
     let mut c = Container::zero();
     {
         let mut view = InlineEdgeViewMut::new(&mut c.words);
-        view.set(0, InlineEdge { verb: 1, target_hint: 10 });
-        view.set(5, InlineEdge { verb: 2, target_hint: 20 });
-        view.set(10, InlineEdge { verb: 3, target_hint: 30 });
+        view.set(
+            0,
+            InlineEdge {
+                verb: 1,
+                target_hint: 10,
+            },
+        );
+        view.set(
+            5,
+            InlineEdge {
+                verb: 2,
+                target_hint: 20,
+            },
+        );
+        view.set(
+            10,
+            InlineEdge {
+                verb: 3,
+                target_hint: 30,
+            },
+        );
     }
 
     let view = InlineEdgeView::new(&c.words);
@@ -1492,9 +1575,18 @@ fn test_adjacency_view_total() {
     // Add 3 inline edges
     {
         let mut view = InlineEdgeViewMut::new(&mut c.words);
-        view.add(InlineEdge { verb: 1, target_hint: 10 });
-        view.add(InlineEdge { verb: 2, target_hint: 20 });
-        view.add(InlineEdge { verb: 3, target_hint: 30 });
+        view.add(InlineEdge {
+            verb: 1,
+            target_hint: 10,
+        });
+        view.add(InlineEdge {
+            verb: 2,
+            target_hint: 20,
+        });
+        view.add(InlineEdge {
+            verb: 3,
+            target_hint: 30,
+        });
     }
 
     // Add 2 overflow edges
@@ -1514,8 +1606,8 @@ fn test_adjacency_view_total() {
 // 19. CONTAINER GRAPH: DN-keyed graph operations
 // ============================================================================
 
-use super::graph::ContainerGraph;
 use super::dn_redis;
+use super::graph::ContainerGraph;
 
 #[test]
 fn test_container_graph_insert_get() {
@@ -1540,8 +1632,14 @@ fn test_container_graph_edges() {
     let dn_a = PackedDn::new(&[0]);
     let dn_b = PackedDn::new(&[1]);
 
-    graph.insert(dn_a, dn_redis::build_record(dn_a, &Container::random(1), ContainerGeometry::Cam));
-    graph.insert(dn_b, dn_redis::build_record(dn_b, &Container::random(2), ContainerGeometry::Cam));
+    graph.insert(
+        dn_a,
+        dn_redis::build_record(dn_a, &Container::random(1), ContainerGeometry::Cam),
+    );
+    graph.insert(
+        dn_b,
+        dn_redis::build_record(dn_b, &Container::random(2), ContainerGeometry::Cam),
+    );
 
     // Add edge from A to B (verb=5, target_hint=1)
     let slot = graph.add_edge(&dn_a, 5, 1);
@@ -1569,9 +1667,18 @@ fn test_container_graph_children_index() {
     let child_a = PackedDn::new(&[0, 1]);
     let child_b = PackedDn::new(&[0, 2]);
 
-    graph.insert(parent, dn_redis::build_record(parent, &Container::random(1), ContainerGeometry::Cam));
-    graph.insert(child_a, dn_redis::build_record(child_a, &Container::random(2), ContainerGeometry::Cam));
-    graph.insert(child_b, dn_redis::build_record(child_b, &Container::random(3), ContainerGeometry::Cam));
+    graph.insert(
+        parent,
+        dn_redis::build_record(parent, &Container::random(1), ContainerGeometry::Cam),
+    );
+    graph.insert(
+        child_a,
+        dn_redis::build_record(child_a, &Container::random(2), ContainerGeometry::Cam),
+    );
+    graph.insert(
+        child_b,
+        dn_redis::build_record(child_b, &Container::random(3), ContainerGeometry::Cam),
+    );
 
     let children = graph.children_of(&parent);
     assert_eq!(children.len(), 2);
@@ -1587,9 +1694,18 @@ fn test_container_graph_walk_to_root() {
     let mid = PackedDn::new(&[0, 1]);
     let leaf = PackedDn::new(&[0, 1, 3]);
 
-    graph.insert(root, dn_redis::build_record(root, &Container::random(1), ContainerGeometry::Cam));
-    graph.insert(mid, dn_redis::build_record(mid, &Container::random(2), ContainerGeometry::Cam));
-    graph.insert(leaf, dn_redis::build_record(leaf, &Container::random(3), ContainerGeometry::Cam));
+    graph.insert(
+        root,
+        dn_redis::build_record(root, &Container::random(1), ContainerGeometry::Cam),
+    );
+    graph.insert(
+        mid,
+        dn_redis::build_record(mid, &Container::random(2), ContainerGeometry::Cam),
+    );
+    graph.insert(
+        leaf,
+        dn_redis::build_record(leaf, &Container::random(3), ContainerGeometry::Cam),
+    );
 
     let path = graph.walk_to_root(leaf);
     assert_eq!(path.len(), 2); // mid, root
@@ -1629,10 +1745,22 @@ fn test_container_graph_subtree() {
     let b = PackedDn::new(&[0, 2]);
     let aa = PackedDn::new(&[0, 1, 0]);
 
-    graph.insert(root, dn_redis::build_record(root, &Container::random(1), ContainerGeometry::Cam));
-    graph.insert(a, dn_redis::build_record(a, &Container::random(2), ContainerGeometry::Cam));
-    graph.insert(b, dn_redis::build_record(b, &Container::random(3), ContainerGeometry::Cam));
-    graph.insert(aa, dn_redis::build_record(aa, &Container::random(4), ContainerGeometry::Cam));
+    graph.insert(
+        root,
+        dn_redis::build_record(root, &Container::random(1), ContainerGeometry::Cam),
+    );
+    graph.insert(
+        a,
+        dn_redis::build_record(a, &Container::random(2), ContainerGeometry::Cam),
+    );
+    graph.insert(
+        b,
+        dn_redis::build_record(b, &Container::random(3), ContainerGeometry::Cam),
+    );
+    graph.insert(
+        aa,
+        dn_redis::build_record(aa, &Container::random(4), ContainerGeometry::Cam),
+    );
 
     let subtree = graph.subtree(&root);
     assert_eq!(subtree.len(), 3); // a, b, aa (not root itself)
@@ -1659,8 +1787,14 @@ fn test_record_serialization_roundtrip() {
     // Add some edges
     {
         let mut view = InlineEdgeViewMut::new(&mut record.meta.words);
-        view.add(InlineEdge { verb: 5, target_hint: 10 });
-        view.add(InlineEdge { verb: 7, target_hint: 20 });
+        view.add(InlineEdge {
+            verb: 5,
+            target_hint: 10,
+        });
+        view.add(InlineEdge {
+            verb: 7,
+            target_hint: 20,
+        });
     }
 
     // Serialize
@@ -1686,10 +1820,7 @@ fn test_redis_pipeline_building() {
     let record = dn_redis::build_record(dn, &fp, ContainerGeometry::Cam);
 
     let mut pipeline = dn_redis::RedisPipeline::new();
-    pipeline
-        .set_dn(dn, &record)
-        .get_dn(dn)
-        .walk_to_root(dn);
+    pipeline.set_dn(dn, &record).get_dn(dn).walk_to_root(dn);
 
     // SET + GET + MGET(ancestors)
     assert_eq!(pipeline.len(), 3);
@@ -1699,8 +1830,8 @@ fn test_redis_pipeline_building() {
 // 21. TRAVERSAL: Semiring MxV on ContainerGraph
 // ============================================================================
 
-use std::collections::HashMap;
 use super::traversal::{self};
+use std::collections::HashMap;
 
 #[test]
 fn test_boolean_bfs_traversal() {
@@ -1711,9 +1842,18 @@ fn test_boolean_bfs_traversal() {
     let dn1 = PackedDn::new(&[0, 0]);
     let dn2 = PackedDn::new(&[0, 0, 0]);
 
-    graph.insert(dn0, dn_redis::build_record(dn0, &Container::random(1), ContainerGeometry::Cam));
-    graph.insert(dn1, dn_redis::build_record(dn1, &Container::random(2), ContainerGeometry::Cam));
-    graph.insert(dn2, dn_redis::build_record(dn2, &Container::random(3), ContainerGeometry::Cam));
+    graph.insert(
+        dn0,
+        dn_redis::build_record(dn0, &Container::random(1), ContainerGeometry::Cam),
+    );
+    graph.insert(
+        dn1,
+        dn_redis::build_record(dn1, &Container::random(2), ContainerGeometry::Cam),
+    );
+    graph.insert(
+        dn2,
+        dn_redis::build_record(dn2, &Container::random(3), ContainerGeometry::Cam),
+    );
 
     // Add edges: dn0 → dn1 (target_hint = 0, child component), dn1 → dn2
     graph.add_edge(&dn0, 1, 0); // verb=1, target_hint=0 → child(0) = dn1
@@ -1742,8 +1882,14 @@ fn test_hamming_min_plus_traversal() {
     let fp0 = Container::random(10);
     let fp1 = Container::random(20);
 
-    graph.insert(dn0, dn_redis::build_record(dn0, &fp0, ContainerGeometry::Cam));
-    graph.insert(dn1, dn_redis::build_record(dn1, &fp1, ContainerGeometry::Cam));
+    graph.insert(
+        dn0,
+        dn_redis::build_record(dn0, &fp0, ContainerGeometry::Cam),
+    );
+    graph.insert(
+        dn1,
+        dn_redis::build_record(dn1, &fp1, ContainerGeometry::Cam),
+    );
 
     graph.add_edge(&dn0, 1, 0);
 
@@ -1767,9 +1913,18 @@ fn test_multi_hop_traversal() {
     let dn1 = PackedDn::new(&[0, 0]);
     let dn2 = PackedDn::new(&[0, 0, 0]);
 
-    graph.insert(dn0, dn_redis::build_record(dn0, &Container::random(1), ContainerGeometry::Cam));
-    graph.insert(dn1, dn_redis::build_record(dn1, &Container::random(2), ContainerGeometry::Cam));
-    graph.insert(dn2, dn_redis::build_record(dn2, &Container::random(3), ContainerGeometry::Cam));
+    graph.insert(
+        dn0,
+        dn_redis::build_record(dn0, &Container::random(1), ContainerGeometry::Cam),
+    );
+    graph.insert(
+        dn1,
+        dn_redis::build_record(dn1, &Container::random(2), ContainerGeometry::Cam),
+    );
+    graph.insert(
+        dn2,
+        dn_redis::build_record(dn2, &Container::random(3), ContainerGeometry::Cam),
+    );
 
     graph.add_edge(&dn0, 1, 0);
     graph.add_edge(&dn1, 1, 0);
@@ -1781,7 +1936,8 @@ fn test_multi_hop_traversal() {
     // After 2+ hops, should reach dn2
     // (may or may not be in final_frontier depending on hop count)
     // At least we verify it doesn't panic and produces results
-    assert!(!final_frontier.is_empty() || true); // traversal completes
+    // traversal completes without panic — result may or may not be empty
+    let _ = &final_frontier;
 }
 
 // ============================================================================
@@ -1811,24 +1967,39 @@ fn test_hominidae_graph_scenario() {
     let sapiens = PackedDn::new(&[0, 1, 1]);
 
     // Insert all nodes
-    graph.insert(hominidae, dn_redis::build_record(
+    graph.insert(
         hominidae,
-        &Container::bundle(&[&australo_fp, &neander_fp, &sapiens_fp]),
-        ContainerGeometry::Cam,
-    ));
-    graph.insert(australo, dn_redis::build_record(australo, &australo_fp, ContainerGeometry::Cam));
-    graph.insert(homo, dn_redis::build_record(
+        dn_redis::build_record(
+            hominidae,
+            &Container::bundle(&[&australo_fp, &neander_fp, &sapiens_fp]),
+            ContainerGeometry::Cam,
+        ),
+    );
+    graph.insert(
+        australo,
+        dn_redis::build_record(australo, &australo_fp, ContainerGeometry::Cam),
+    );
+    graph.insert(
         homo,
-        &Container::bundle(&[&neander_fp, &sapiens_fp]),
-        ContainerGeometry::Cam,
-    ));
-    graph.insert(neander, dn_redis::build_record(neander, &neander_fp, ContainerGeometry::Cam));
-    graph.insert(sapiens, dn_redis::build_record(sapiens, &sapiens_fp, ContainerGeometry::Cam));
+        dn_redis::build_record(
+            homo,
+            &Container::bundle(&[&neander_fp, &sapiens_fp]),
+            ContainerGeometry::Cam,
+        ),
+    );
+    graph.insert(
+        neander,
+        dn_redis::build_record(neander, &neander_fp, ContainerGeometry::Cam),
+    );
+    graph.insert(
+        sapiens,
+        dn_redis::build_record(sapiens, &sapiens_fp, ContainerGeometry::Cam),
+    );
 
     // Add taxonomic edges (PART_OF = verb 1)
     graph.add_edge(&australo, 1, 0); // australo → hominidae (parent = /0)
-    graph.add_edge(&neander, 1, 1);  // neander → homo (parent = /0/1)
-    graph.add_edge(&sapiens, 1, 1);  // sapiens → homo
+    graph.add_edge(&neander, 1, 1); // neander → homo (parent = /0/1)
+    graph.add_edge(&sapiens, 1, 1); // sapiens → homo
 
     // Add cross-edges (RELATED_TO = verb 2)
     graph.add_edge(&neander, 2, 1); // neander related to sapiens

@@ -71,7 +71,9 @@ impl PhaseTag5D {
 
     /// π phase (|−⟩ state, fully anti-phase)
     pub fn pi() -> Self {
-        Self { bits: [u64::MAX, u64::MAX] }
+        Self {
+            bits: [u64::MAX, u64::MAX],
+        }
     }
 
     /// Create from seed (deterministic pseudo-random)
@@ -97,8 +99,7 @@ impl PhaseTag5D {
 
     /// Hamming distance to another phase
     pub fn hamming(&self, other: &PhaseTag5D) -> u32 {
-        (self.bits[0] ^ other.bits[0]).count_ones()
-            + (self.bits[1] ^ other.bits[1]).count_ones()
+        (self.bits[0] ^ other.bits[0]).count_ones() + (self.bits[1] ^ other.bits[1]).count_ones()
     }
 
     /// Cosine of phase difference: +1.0 = in-phase, -1.0 = anti-phase
@@ -182,11 +183,7 @@ impl Coord5D {
 
     /// Convert to linear index for 5×5×5×5×5 grid
     pub fn to_index(&self, size: usize) -> usize {
-        self.v * size.pow(4)
-            + self.w * size.pow(3)
-            + self.x * size.pow(2)
-            + self.y * size
-            + self.z
+        self.v * size.pow(4) + self.w * size.pow(3) + self.x * size.pow(2) + self.y * size + self.z
     }
 
     /// Convert from linear index
@@ -216,7 +213,10 @@ impl Coord5D {
             (self.x as isize - other.x as isize).unsigned_abs(),
             (self.y as isize - other.y as isize).unsigned_abs(),
             (self.z as isize - other.z as isize).unsigned_abs(),
-        ].into_iter().max().unwrap_or(0)
+        ]
+        .into_iter()
+        .max()
+        .unwrap_or(0)
     }
 }
 
@@ -361,9 +361,9 @@ impl Crystal5D {
     pub fn get_or_create(&mut self, coord: &Coord5D) -> &mut QuantumCell5D {
         let idx = coord.to_index(self.size);
         let resolution = self.resolution;
-        self.cells.entry(idx).or_insert_with(|| {
-            QuantumCell5D::from_fingerprint(resolution.empty())
-        })
+        self.cells
+            .entry(idx)
+            .or_insert_with(|| QuantumCell5D::from_fingerprint(resolution.empty()))
     }
 
     /// Get all 242 neighbors of a cell in 5D (quantum cells)
@@ -388,15 +388,23 @@ impl Crystal5D {
                             let nz = coord.z as i32 + dz;
 
                             // Bounds check
-                            if nv >= 0 && nv < self.size as i32
-                                && nw >= 0 && nw < self.size as i32
-                                && nx >= 0 && nx < self.size as i32
-                                && ny >= 0 && ny < self.size as i32
-                                && nz >= 0 && nz < self.size as i32
+                            if nv >= 0
+                                && nv < self.size as i32
+                                && nw >= 0
+                                && nw < self.size as i32
+                                && nx >= 0
+                                && nx < self.size as i32
+                                && ny >= 0
+                                && ny < self.size as i32
+                                && nz >= 0
+                                && nz < self.size as i32
                             {
                                 let neighbor_coord = Coord5D::new(
-                                    nv as usize, nw as usize, nx as usize,
-                                    ny as usize, nz as usize
+                                    nv as usize,
+                                    nw as usize,
+                                    nx as usize,
+                                    ny as usize,
+                                    nz as usize,
                                 );
                                 let cell = self.get(&neighbor_coord);
                                 result.push((neighbor_coord, cell));
@@ -469,18 +477,26 @@ impl Crystal5D {
                                 let ny = coord.y as i32 + dy;
                                 let nz = coord.z as i32 + dz;
 
-                                if nv < 0 || nv >= self.size as i32
-                                    || nw < 0 || nw >= self.size as i32
-                                    || nx < 0 || nx >= self.size as i32
-                                    || ny < 0 || ny >= self.size as i32
-                                    || nz < 0 || nz >= self.size as i32
+                                if nv < 0
+                                    || nv >= self.size as i32
+                                    || nw < 0
+                                    || nw >= self.size as i32
+                                    || nx < 0
+                                    || nx >= self.size as i32
+                                    || ny < 0
+                                    || ny >= self.size as i32
+                                    || nz < 0
+                                    || nz >= self.size as i32
                                 {
                                     continue;
                                 }
 
                                 let neighbor_coord = Coord5D::new(
-                                    nv as usize, nw as usize, nx as usize,
-                                    ny as usize, nz as usize
+                                    nv as usize,
+                                    nw as usize,
+                                    nx as usize,
+                                    ny as usize,
+                                    nz as usize,
                                 );
                                 let neighbor_idx = neighbor_coord.to_index(self.size);
 
@@ -525,13 +541,13 @@ impl Crystal5D {
                     // Constructive: reinforce by XORing with strongest neighbor
                     // (shift amplitude toward denser states)
                     if max_sim > 0.5 {
-                        if let Some(strongest) = self.cells.values()
-                            .max_by(|a, b| {
-                                current.amplitude.similarity(&a.amplitude)
-                                    .partial_cmp(&current.amplitude.similarity(&b.amplitude))
-                                    .unwrap_or(std::cmp::Ordering::Equal)
-                            })
-                        {
+                        if let Some(strongest) = self.cells.values().max_by(|a, b| {
+                            current
+                                .amplitude
+                                .similarity(&a.amplitude)
+                                .partial_cmp(&current.amplitude.similarity(&b.amplitude))
+                                .unwrap_or(std::cmp::Ordering::Equal)
+                        }) {
                             new_cell.amplitude = current.amplitude.xor(&strongest.amplitude);
                         }
                     }
@@ -540,7 +556,8 @@ impl Crystal5D {
                     // This is what creates the Mexican hat pattern!
                     let suppress_factor = (net.abs() * 0.3).min(0.5);
                     // Clear ~30% of bits when destructive interference is strong
-                    let words_to_clear = (new_cell.amplitude.nnz() as f64 * suppress_factor) as usize;
+                    let words_to_clear =
+                        (new_cell.amplitude.nnz() as f64 * suppress_factor) as usize;
                     // Simplified: create sparser fingerprint
                     // In full implementation, would selectively clear bits
                 }
@@ -583,7 +600,8 @@ impl Crystal5D {
             }
 
             // Find nearest eigenstate
-            let (best_idx, best_dist) = eigenstates.iter()
+            let (best_idx, best_dist) = eigenstates
+                .iter()
                 .enumerate()
                 .map(|(i, e)| (i, cell.amplitude.hamming(e)))
                 .min_by_key(|(_, d)| *d)
@@ -608,7 +626,12 @@ impl Crystal5D {
     }
 
     /// Inject with explicit phase
-    pub fn inject_with_phase(&mut self, coord: &Coord5D, pattern: SparseFingerprint, phase: PhaseTag5D) {
+    pub fn inject_with_phase(
+        &mut self,
+        coord: &Coord5D,
+        pattern: SparseFingerprint,
+        phase: PhaseTag5D,
+    ) {
         self.set_quantum(coord, QuantumCell5D::new(pattern, phase));
     }
 
@@ -643,7 +666,12 @@ impl Crystal5D {
 
     /// Create entangled pair at two coordinates
     /// Both have same amplitude but opposite phases (maximally entangled)
-    pub fn entangle_pair(&mut self, coord1: &Coord5D, coord2: &Coord5D, pattern: SparseFingerprint) {
+    pub fn entangle_pair(
+        &mut self,
+        coord1: &Coord5D,
+        coord2: &Coord5D,
+        pattern: SparseFingerprint,
+    ) {
         self.inject_with_phase(coord1, pattern.clone(), PhaseTag5D::zero());
         self.inject_with_phase(coord2, pattern, PhaseTag5D::pi());
     }
@@ -665,26 +693,34 @@ impl Crystal5D {
 
     /// Read the entire crystal state (for measurement/analysis)
     pub fn read_all(&self) -> Vec<(Coord5D, &SparseFingerprint)> {
-        self.cells.iter()
+        self.cells
+            .iter()
             .map(|(idx, cell)| (Coord5D::from_index(*idx, self.size), &cell.amplitude))
             .collect()
     }
 
     /// Read all quantum cells (with phase)
     pub fn read_all_quantum(&self) -> Vec<(Coord5D, &QuantumCell5D)> {
-        self.cells.iter()
+        self.cells
+            .iter()
             .map(|(idx, cell)| (Coord5D::from_index(*idx, self.size), cell))
             .collect()
     }
 
     /// Total bits set across all cells
     pub fn total_popcount(&self) -> u64 {
-        self.cells.values().map(|cell| cell.amplitude.popcount()).sum()
+        self.cells
+            .values()
+            .map(|cell| cell.amplitude.popcount())
+            .sum()
     }
 
     /// Memory usage in bytes
     pub fn memory_usage(&self) -> usize {
-        self.cells.values().map(|cell| cell.amplitude.memory_usage()).sum()
+        self.cells
+            .values()
+            .map(|cell| cell.amplitude.memory_usage())
+            .sum()
     }
 
     /// Statistics
@@ -755,22 +791,84 @@ impl Crystal5D {
                 for j in 0..samples.min(10) {
                     // Get two adjacent cells along this axis
                     let coord1 = match axis {
-                        0 => Coord5D::new(i, j % self.size, j % self.size, j % self.size, j % self.size),
-                        1 => Coord5D::new(j % self.size, i, j % self.size, j % self.size, j % self.size),
-                        2 => Coord5D::new(j % self.size, j % self.size, i, j % self.size, j % self.size),
-                        3 => Coord5D::new(j % self.size, j % self.size, j % self.size, i, j % self.size),
-                        _ => Coord5D::new(j % self.size, j % self.size, j % self.size, j % self.size, i),
+                        0 => Coord5D::new(
+                            i,
+                            j % self.size,
+                            j % self.size,
+                            j % self.size,
+                            j % self.size,
+                        ),
+                        1 => Coord5D::new(
+                            j % self.size,
+                            i,
+                            j % self.size,
+                            j % self.size,
+                            j % self.size,
+                        ),
+                        2 => Coord5D::new(
+                            j % self.size,
+                            j % self.size,
+                            i,
+                            j % self.size,
+                            j % self.size,
+                        ),
+                        3 => Coord5D::new(
+                            j % self.size,
+                            j % self.size,
+                            j % self.size,
+                            i,
+                            j % self.size,
+                        ),
+                        _ => Coord5D::new(
+                            j % self.size,
+                            j % self.size,
+                            j % self.size,
+                            j % self.size,
+                            i,
+                        ),
                     };
 
                     let coord2 = match axis {
-                        0 => Coord5D::new(i + 1, j % self.size, j % self.size, j % self.size, j % self.size),
-                        1 => Coord5D::new(j % self.size, i + 1, j % self.size, j % self.size, j % self.size),
-                        2 => Coord5D::new(j % self.size, j % self.size, i + 1, j % self.size, j % self.size),
-                        3 => Coord5D::new(j % self.size, j % self.size, j % self.size, i + 1, j % self.size),
-                        _ => Coord5D::new(j % self.size, j % self.size, j % self.size, j % self.size, i + 1),
+                        0 => Coord5D::new(
+                            i + 1,
+                            j % self.size,
+                            j % self.size,
+                            j % self.size,
+                            j % self.size,
+                        ),
+                        1 => Coord5D::new(
+                            j % self.size,
+                            i + 1,
+                            j % self.size,
+                            j % self.size,
+                            j % self.size,
+                        ),
+                        2 => Coord5D::new(
+                            j % self.size,
+                            j % self.size,
+                            i + 1,
+                            j % self.size,
+                            j % self.size,
+                        ),
+                        3 => Coord5D::new(
+                            j % self.size,
+                            j % self.size,
+                            j % self.size,
+                            i + 1,
+                            j % self.size,
+                        ),
+                        _ => Coord5D::new(
+                            j % self.size,
+                            j % self.size,
+                            j % self.size,
+                            j % self.size,
+                            i + 1,
+                        ),
                     };
 
-                    if let (Some(a), Some(b)) = (self.get_quantum(&coord1), self.get_quantum(&coord2)) {
+                    if let (Some(a), Some(b)) =
+                        (self.get_quantum(&coord1), self.get_quantum(&coord2))
+                    {
                         // SIGNED INTERFERENCE: similarity × cos(phase_diff)
                         // This is THE KEY for Bell violation!
                         // - Same phase: interference ≈ +1 (constructive)
@@ -800,7 +898,7 @@ impl Crystal5D {
 
         // Generalized CHSH for 5D
         s_accum = (e_01 - e_12 + e_23 + e_34 - e_40).abs()
-                + (correlations.iter().sum::<f32>() / 5.0).abs();
+            + (correlations.iter().sum::<f32>() / 5.0).abs();
 
         BellTest5DResult {
             s_value: s_accum,
@@ -959,7 +1057,11 @@ mod tests {
             pattern.set(0, 0xAAAA);
 
             // Alternating phases: even=zero, odd=pi
-            let phase = if i % 2 == 0 { PhaseTag5D::zero() } else { PhaseTag5D::pi() };
+            let phase = if i % 2 == 0 {
+                PhaseTag5D::zero()
+            } else {
+                PhaseTag5D::pi()
+            };
             crystal.inject_with_phase(&coord, pattern, phase);
         }
 
@@ -971,7 +1073,10 @@ mod tests {
 
         // Destructive interference may suppress some cells
         // This is expected quantum-like behavior!
-        println!("After destructive interference: {} active cells", crystal.stats().active_cells);
+        println!(
+            "After destructive interference: {} active cells",
+            crystal.stats().active_cells
+        );
     }
 
     #[test]
@@ -1245,21 +1350,24 @@ impl QuantumComparison {
 
     /// Compare arbitrary configurations
     pub fn compare(configs: &[QuantumConfig]) -> Self {
-        let metrics: Vec<_> = configs.iter().map(|c| {
-            let equivalent_qubits = c.equivalent_qubits();
-            let total_bits = c.total_bits() as f64;
-            let interference = c.interference_paths() as f64 * c.qubits_per_cell();
+        let metrics: Vec<_> = configs
+            .iter()
+            .map(|c| {
+                let equivalent_qubits = c.equivalent_qubits();
+                let total_bits = c.total_bits() as f64;
+                let interference = c.interference_paths() as f64 * c.qubits_per_cell();
 
-            QuantumMetrics {
-                config: c.clone(),
-                equivalent_qubits,
-                interference_complexity: interference,
-                dense_memory_gb: total_bits / 8.0 / 1e9,
-                sparse_memory_gb: total_bits / 8.0 / 1e9 / 100.0, // 1% density
-                exceeds_classical: equivalent_qubits > 50.0,
-                quantum_advantage: 2.0f64.powf(equivalent_qubits - 50.0),
-            }
-        }).collect();
+                QuantumMetrics {
+                    config: c.clone(),
+                    equivalent_qubits,
+                    interference_complexity: interference,
+                    dense_memory_gb: total_bits / 8.0 / 1e9,
+                    sparse_memory_gb: total_bits / 8.0 / 1e9 / 100.0, // 1% density
+                    exceeds_classical: equivalent_qubits > 50.0,
+                    quantum_advantage: 2.0f64.powf(equivalent_qubits - 50.0),
+                }
+            })
+            .collect();
 
         Self {
             configs: configs.to_vec(),
@@ -1289,11 +1397,25 @@ impl QuantumComparison {
         s.push_str("╚════════════════════════════╩═══════════════╩═══════════════════╩════════════════╩═══════════════╩═══════════════╝\n");
         s.push_str("\n");
         s.push_str("Quantum Thresholds:\n");
-        s.push_str(&format!("  • Random baseline (popcount similarity): {:.3}\n", thresholds::RANDOM_SIMILARITY));
-        s.push_str(&format!("  • Classical fidelity limit:              {:.3}\n", thresholds::CLASSICAL_FIDELITY_LIMIT));
-        s.push_str(&format!("  • CHSH classical bound (S):              {:.3}\n", thresholds::CHSH_CLASSICAL));
-        s.push_str(&format!("  • Tsirelson bound (S max):               {:.3}\n", thresholds::TSIRELSON));
-        s.push_str(&format!("  • Classical simulation limit:            ~50 qubits\n"));
+        s.push_str(&format!(
+            "  • Random baseline (popcount similarity): {:.3}\n",
+            thresholds::RANDOM_SIMILARITY
+        ));
+        s.push_str(&format!(
+            "  • Classical fidelity limit:              {:.3}\n",
+            thresholds::CLASSICAL_FIDELITY_LIMIT
+        ));
+        s.push_str(&format!(
+            "  • CHSH classical bound (S):              {:.3}\n",
+            thresholds::CHSH_CLASSICAL
+        ));
+        s.push_str(&format!(
+            "  • Tsirelson bound (S max):               {:.3}\n",
+            thresholds::TSIRELSON
+        ));
+        s.push_str(&format!(
+            "  • Classical simulation limit:            ~50 qubits\n"
+        ));
         s
     }
 }
@@ -1332,7 +1454,10 @@ impl Crystal5D {
         }
 
         // Measure at target
-        let output = self.get(&target).cloned().unwrap_or_else(|| self.resolution.empty());
+        let output = self
+            .get(&target)
+            .cloned()
+            .unwrap_or_else(|| self.resolution.empty());
 
         // Calculate fidelity: 1 - normalized_hamming
         let input_bits = pattern.popcount() as f64;
@@ -1426,8 +1551,11 @@ mod comparison_tests {
 
         // Should be close to 0.5 for truly random
         // Our pseudo-random might deviate slightly
-        assert!(baseline > 0.3 && baseline < 0.7,
-            "Baseline {} should be near 0.5", baseline);
+        assert!(
+            baseline > 0.3 && baseline < 0.7,
+            "Baseline {} should be near 0.5",
+            baseline
+        );
     }
 
     #[test]
@@ -1436,10 +1564,9 @@ mod comparison_tests {
 
         println!("\nUser's comparison:");
         for m in &comparison.metrics {
-            println!("  {}: {:.1} equivalent qubits, exceeds_classical={}",
-                m.config.label,
-                m.equivalent_qubits,
-                m.exceeds_classical
+            println!(
+                "  {}: {:.1} equivalent qubits, exceeds_classical={}",
+                m.config.label, m.equivalent_qubits, m.exceeds_classical
             );
         }
 
@@ -1577,7 +1704,7 @@ impl ChainSignedCell {
         let mut result = [0u8; 32];
         for i in 0..4 {
             let bytes = h.to_le_bytes();
-            result[i*8..(i+1)*8].copy_from_slice(&bytes);
+            result[i * 8..(i + 1) * 8].copy_from_slice(&bytes);
         }
         result
     }
@@ -1592,7 +1719,7 @@ impl ChainSignedCell {
         let mut result = [0u8; 32];
         for i in 0..4 {
             let bytes = h.to_le_bytes();
-            result[i*8..(i+1)*8].copy_from_slice(&bytes);
+            result[i * 8..(i + 1) * 8].copy_from_slice(&bytes);
         }
         result
     }
@@ -1671,7 +1798,11 @@ impl EntanglementProof {
         // For simplicity, assume they share genesis if roots match
         if a.merkle_root == b.merkle_root || a.prev_hash == b.prev_hash {
             Some(Self {
-                common_ancestor: if a.height < b.height { a.state_hash } else { b.state_hash },
+                common_ancestor: if a.height < b.height {
+                    a.state_hash
+                } else {
+                    b.state_hash
+                },
                 ancestor_height: a.height.min(b.height),
                 path_a: vec![a.state_hash, a.merkle_root],
                 path_b: vec![b.state_hash, b.merkle_root],
@@ -1818,9 +1949,7 @@ impl ChainSignedCrystal {
         self.crystal.set_quantum(coord, cell);
 
         // Update total work
-        self.total_work = self.strings.values()
-            .map(|s| s.total_work())
-            .sum();
+        self.total_work = self.strings.values().map(|s| s.total_work()).sum();
     }
 
     /// Signed interference step
@@ -1837,9 +1966,7 @@ impl ChainSignedCrystal {
             }
         }
 
-        self.total_work = self.strings.values()
-            .map(|s| s.total_work())
-            .sum();
+        self.total_work = self.strings.values().map(|s| s.total_work()).sum();
 
         changes
     }
@@ -1859,9 +1986,7 @@ impl ChainSignedCrystal {
         if self.strings.is_empty() {
             return 0.0;
         }
-        self.strings.values()
-            .map(|s| s.tension())
-            .sum::<f64>() / self.strings.len() as f64
+        self.strings.values().map(|s| s.tension()).sum::<f64>() / self.strings.len() as f64
     }
 
     /// Find entangled pairs
@@ -1870,7 +1995,7 @@ impl ChainSignedCrystal {
         let coords: Vec<_> = self.strings.keys().cloned().collect();
 
         for i in 0..coords.len() {
-            for j in (i+1)..coords.len() {
+            for j in (i + 1)..coords.len() {
                 let a = &self.strings[&coords[i]];
                 let b = &self.strings[&coords[j]];
 
@@ -2124,13 +2249,16 @@ pub mod prime_sweet_spots {
 
     /// All 5D sweet spots
     pub const ALL_5D: [PrimeDimension; 6] = [
-        PRIME_3_5D, PRIME_5_5D, PRIME_7_5D, PRIME_11_5D, PRIME_13_5D, PRIME_17_5D
+        PRIME_3_5D,
+        PRIME_5_5D,
+        PRIME_7_5D,
+        PRIME_11_5D,
+        PRIME_13_5D,
+        PRIME_17_5D,
     ];
 
     /// All 7D sweet spots
-    pub const ALL_7D: [PrimeDimension; 4] = [
-        PRIME_3_7D, PRIME_5_7D, PRIME_7_7D, PRIME_11_7D
-    ];
+    pub const ALL_7D: [PrimeDimension; 4] = [PRIME_3_7D, PRIME_5_7D, PRIME_7_7D, PRIME_11_7D];
 
     /// Get the recommended sweet spot for a given time budget (microseconds)
     pub fn recommended_for_budget(budget_us: u64, prefer_7d: bool) -> PrimeDimension {
@@ -2233,7 +2361,15 @@ pub struct Coord7D {
 
 impl Coord7D {
     pub fn new(a: usize, b: usize, c: usize, d: usize, e: usize, f: usize, g: usize) -> Self {
-        Self { a, b, c, d, e, f, g }
+        Self {
+            a,
+            b,
+            c,
+            d,
+            e,
+            f,
+            g,
+        }
     }
 
     /// Convert to linear index
@@ -2262,7 +2398,15 @@ impl Coord7D {
         remaining %= size.pow(2);
         let f = remaining / size;
         let g = remaining % size;
-        Self { a, b, c, d, e, f, g }
+        Self {
+            a,
+            b,
+            c,
+            d,
+            e,
+            f,
+            g,
+        }
     }
 }
 
@@ -2359,7 +2503,9 @@ impl Crystal7D {
         // Iterate through all populated cells
         for (&idx, cell_a) in self.cells.iter() {
             let coord = Coord7D::from_index(idx, self.size);
-            let coords = [coord.a, coord.b, coord.c, coord.d, coord.e, coord.f, coord.g];
+            let coords = [
+                coord.a, coord.b, coord.c, coord.d, coord.e, coord.f, coord.g,
+            ];
 
             // Check neighbor along each axis
             for axis in 0..7 {
@@ -2368,8 +2514,13 @@ impl Crystal7D {
                     let mut neighbor_coords = coords;
                     neighbor_coords[axis] += 1;
                     let neighbor_coord = Coord7D::new(
-                        neighbor_coords[0], neighbor_coords[1], neighbor_coords[2],
-                        neighbor_coords[3], neighbor_coords[4], neighbor_coords[5], neighbor_coords[6]
+                        neighbor_coords[0],
+                        neighbor_coords[1],
+                        neighbor_coords[2],
+                        neighbor_coords[3],
+                        neighbor_coords[4],
+                        neighbor_coords[5],
+                        neighbor_coords[6],
                     );
 
                     if let Some(cell_b) = self.get_quantum(&neighbor_coord) {
@@ -2407,12 +2558,12 @@ impl Crystal7D {
 
         // Test all pairs of axes
         for i in 0..7 {
-            for j in (i+1)..7 {
+            for j in (i + 1)..7 {
                 // E(a,b) is the correlation along axis pair (i,j)
                 // For entangled states, E = cos(θ_a - θ_b)
                 // Our correlations include both similarity and phase effects
 
-                let e_ab = correlations[i];   // E(a, b)
+                let e_ab = correlations[i]; // E(a, b)
                 let e_ab_prime = correlations[j]; // E(a, b')
                 let e_a_prime_b = correlations[(i + j) % 7]; // E(a', b)
                 let e_a_prime_b_prime = correlations[(i + j + 1) % 7]; // E(a', b')
@@ -2474,21 +2625,29 @@ impl Crystal7D {
                 // Generate base coordinate with all dimensions < size-1
                 let mut coords = [0usize; 7];
                 for d in 0..7 {
-                    seeded = seeded.wrapping_mul(0x9E3779B97F4A7C15).wrapping_add(d as u64);
+                    seeded = seeded
+                        .wrapping_mul(0x9E3779B97F4A7C15)
+                        .wrapping_add(d as u64);
                     coords[d] = (seeded as usize) % (self.size - 1);
                 }
 
                 // First cell of the pair
-                let coord1 = Coord7D::new(coords[0], coords[1], coords[2], coords[3], coords[4], coords[5], coords[6]);
+                let coord1 = Coord7D::new(
+                    coords[0], coords[1], coords[2], coords[3], coords[4], coords[5], coords[6],
+                );
 
                 // Second cell: adjacent along this axis
                 coords[axis] += 1;
-                let coord2 = Coord7D::new(coords[0], coords[1], coords[2], coords[3], coords[4], coords[5], coords[6]);
+                let coord2 = Coord7D::new(
+                    coords[0], coords[1], coords[2], coords[3], coords[4], coords[5], coords[6],
+                );
 
                 // Create shared fingerprint (entanglement = shared state)
                 let mut fp = self.resolution.empty();
                 for w in 0..fp.total_words().min(10) {
-                    seeded = seeded.wrapping_mul(0x5851F42D4C957F2D).wrapping_add(w as u64);
+                    seeded = seeded
+                        .wrapping_mul(0x5851F42D4C957F2D)
+                        .wrapping_add(w as u64);
                     fp.set(w, seeded);
                 }
 
@@ -2509,8 +2668,8 @@ impl Crystal7D {
 
 #[cfg(test)]
 mod prime_sweet_spot_tests {
-    use super::*;
     use super::prime_sweet_spots::*;
+    use super::*;
 
     #[test]
     fn test_prime_sweet_spots_values() {
@@ -2534,23 +2693,37 @@ mod prime_sweet_spot_tests {
         let rec_5d = recommended_for_budget(one_minute_us, false);
         let rec_7d = recommended_for_budget(one_minute_us, true);
 
-        println!("Recommended for 1 minute (5D): {}^5 = {} cells", rec_5d.prime, rec_5d.cells);
-        println!("Recommended for 1 minute (7D): {}^7 = {} cells", rec_7d.prime, rec_7d.cells);
+        println!(
+            "Recommended for 1 minute (5D): {}^5 = {} cells",
+            rec_5d.prime, rec_5d.cells
+        );
+        println!(
+            "Recommended for 1 minute (7D): {}^7 = {} cells",
+            rec_7d.prime, rec_7d.cells
+        );
 
         // Print all estimates
         println!("\n5D configurations:");
         for p in ALL_5D.iter() {
-            println!("  {}^5 = {} cells, est {} µs, fits: {}",
-                p.prime, p.cells, p.estimated_us, p.fits_1min);
+            println!(
+                "  {}^5 = {} cells, est {} µs, fits: {}",
+                p.prime, p.cells, p.estimated_us, p.fits_1min
+            );
         }
         println!("\n7D configurations:");
         for p in ALL_7D.iter() {
-            println!("  {}^7 = {} cells, est {} µs, fits: {}",
-                p.prime, p.cells, p.estimated_us, p.fits_1min);
+            println!(
+                "  {}^7 = {} cells, est {} µs, fits: {}",
+                p.prime, p.cells, p.estimated_us, p.fits_1min
+            );
         }
 
         // 7^7 should fit in 1 minute (with realistic estimates)
-        assert!(PRIME_7_7D.fits_1min, "7^7 should fit in 1 minute budget (est: {} µs)", PRIME_7_7D.estimated_us);
+        assert!(
+            PRIME_7_7D.fits_1min,
+            "7^7 should fit in 1 minute budget (est: {} µs)",
+            PRIME_7_7D.estimated_us
+        );
         // 7^5 should definitely fit
         assert!(PRIME_7_5D.fits_1min, "7^5 should fit in 1 minute budget");
     }
@@ -2605,7 +2778,10 @@ mod prime_sweet_spot_tests {
         // Populate with entangled states (1% density = ~8,235 cells)
         crystal.populate_entangled(0.01);
 
-        println!("Populated 7^7 crystal with {} active cells", crystal.active_cells());
+        println!(
+            "Populated 7^7 crystal with {} active cells",
+            crystal.active_cells()
+        );
 
         let result = crystal.bell_test(100);
 
@@ -2614,21 +2790,28 @@ mod prime_sweet_spot_tests {
         println!("  Is quantum (S > 2.0): {}", result.is_quantum);
         println!("  Is credible (S > 2.2): {}", result.is_credible);
         println!("  Samples: {}", result.samples);
-        println!("  Compute time: {} µs ({:.2} ms)",
+        println!(
+            "  Compute time: {} µs ({:.2} ms)",
             result.compute_time_us,
-            result.compute_time_us as f64 / 1000.0);
+            result.compute_time_us as f64 / 1000.0
+        );
         println!("  Axis correlations: {:?}", result.axis_correlations);
 
         // With proper entanglement, should violate Bell inequality
         // Note: This may not always succeed depending on the random population
         if result.samples > 0 {
-            println!("\n  → {} Bell inequality violation detected!",
-                if result.is_quantum { "QUANTUM" } else { "No" });
+            println!(
+                "\n  → {} Bell inequality violation detected!",
+                if result.is_quantum { "QUANTUM" } else { "No" }
+            );
         }
 
         // Verify compute time is reasonable (< 60 seconds)
-        assert!(result.compute_time_us < 60_000_000,
-            "Bell test took too long: {} µs", result.compute_time_us);
+        assert!(
+            result.compute_time_us < 60_000_000,
+            "Bell test took too long: {} µs",
+            result.compute_time_us
+        );
     }
 
     #[test]

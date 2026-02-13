@@ -16,10 +16,10 @@
 //!   7×7×7: 688KB    (fits L2 cache)
 //!   11×11×11: 2.7MB (fits L3 cache)
 
+use super::crystal4k::Crystal4K;
+use super::field::{FIELD_SIZE, QuorumField};
 use crate::core::Fingerprint;
 use crate::{FINGERPRINT_BITS, FINGERPRINT_U64};
-use super::field::{QuorumField, FIELD_SIZE};
-use super::crystal4k::Crystal4K;
 
 // =============================================================================
 // 1. PHASE TAG - 128-bit quantum phase
@@ -46,7 +46,9 @@ impl PhaseTag {
 
     /// π phase (|−⟩ state, fully anti-phase)
     pub fn pi() -> Self {
-        Self { bits: [u64::MAX, u64::MAX] }
+        Self {
+            bits: [u64::MAX, u64::MAX],
+        }
     }
 
     /// Random phase (uniform superposition of phases)
@@ -131,8 +133,7 @@ impl PhaseTag {
 
     /// Hamming distance to another phase
     pub fn hamming(&self, other: &PhaseTag) -> u32 {
-        (self.bits[0] ^ other.bits[0]).count_ones()
-            + (self.bits[1] ^ other.bits[1]).count_ones()
+        (self.bits[0] ^ other.bits[0]).count_ones() + (self.bits[1] ^ other.bits[1]).count_ones()
     }
 
     /// Popcount (number of set bits)
@@ -207,7 +208,11 @@ impl QuantumCell {
         let mut data = [0u64; FINGERPRINT_U64];
         for (i, word) in data.iter_mut().enumerate() {
             // Alternating bits pattern: 0xAAAA... gives ~50% density
-            *word = if i % 2 == 0 { 0xAAAAAAAAAAAAAAAA } else { 0x5555555555555555 };
+            *word = if i % 2 == 0 {
+                0xAAAAAAAAAAAAAAAA
+            } else {
+                0x5555555555555555
+            };
         }
         Self {
             amplitude: Fingerprint::from_raw(data),
@@ -313,12 +318,14 @@ impl<const N: usize> QuantumField<N> {
     pub fn random() -> Self {
         let n_cells = N * N * N;
         Self {
-            cells: (0..n_cells).map(|i| {
-                // Deterministic "random" from index
-                let fp = Fingerprint::from_content(&format!("qf_random_{}", i));
-                let phase = PhaseTag::from_seed(i as u64);
-                QuantumCell::from_fp_phase(fp, phase)
-            }).collect(),
+            cells: (0..n_cells)
+                .map(|i| {
+                    // Deterministic "random" from index
+                    let fp = Fingerprint::from_content(&format!("qf_random_{}", i));
+                    let phase = PhaseTag::from_seed(i as u64);
+                    QuantumCell::from_fp_phase(fp, phase)
+                })
+                .collect(),
             generation: 0,
         }
     }
@@ -1035,10 +1042,10 @@ impl<const N: usize> EntangledPair<N> {
         let n_cells = QuantumField::<N>::num_cells();
         let sample_count = samples.min(n_cells);
 
-        let mut e_ab = 0.0f32;  // Alice-Bob correlation
-        let mut e_ab_prime = 0.0f32;  // Alice-Bob' correlation
-        let mut e_a_prime_b = 0.0f32;  // Alice'-Bob correlation
-        let mut e_a_prime_b_prime = 0.0f32;  // Alice'-Bob' correlation
+        let mut e_ab = 0.0f32; // Alice-Bob correlation
+        let mut e_ab_prime = 0.0f32; // Alice-Bob' correlation
+        let mut e_a_prime_b = 0.0f32; // Alice'-Bob correlation
+        let mut e_a_prime_b_prime = 0.0f32; // Alice'-Bob' correlation
 
         for i in 0..sample_count {
             let alice_cell = self.alice.get_flat(i);
@@ -1051,9 +1058,7 @@ impl<const N: usize> EntangledPair<N> {
             let b_prime = bob_cell.amplitude.permute(23);
 
             // Correlation: +1 if similar, -1 if dissimilar
-            let corr = |x: &Fingerprint, y: &Fingerprint| -> f32 {
-                2.0 * x.similarity(y) - 1.0
-            };
+            let corr = |x: &Fingerprint, y: &Fingerprint| -> f32 { 2.0 * x.similarity(y) - 1.0 };
 
             e_ab += corr(&a, &b);
             e_ab_prime += corr(&a, &b_prime);
@@ -1283,7 +1288,11 @@ mod tests {
     fn test_phase_cos_zero_to_zero() {
         let zero = PhaseTag::zero();
         let cos = zero.cos_angle_to(&zero);
-        assert!((cos - 1.0).abs() < 0.001, "cos(0) should be 1.0, got {}", cos);
+        assert!(
+            (cos - 1.0).abs() < 0.001,
+            "cos(0) should be 1.0, got {}",
+            cos
+        );
     }
 
     #[test]
@@ -1291,7 +1300,11 @@ mod tests {
         let zero = PhaseTag::zero();
         let pi = PhaseTag::pi();
         let cos = zero.cos_angle_to(&pi);
-        assert!((cos - (-1.0)).abs() < 0.001, "cos(π) should be -1.0, got {}", cos);
+        assert!(
+            (cos - (-1.0)).abs() < 0.001,
+            "cos(π) should be -1.0, got {}",
+            cos
+        );
     }
 
     #[test]
@@ -1318,8 +1331,11 @@ mod tests {
     fn test_phase_from_angle_half() {
         let half = PhaseTag::from_angle(0.5);
         let popcount = half.popcount();
-        assert!(popcount >= 60 && popcount <= 68,
-            "from_angle(0.5) should have ~64 bits set, got {}", popcount);
+        assert!(
+            popcount >= 60 && popcount <= 68,
+            "from_angle(0.5) should have ~64 bits set, got {}",
+            popcount
+        );
 
         let cos = half.cos_angle_to(&PhaseTag::zero());
         assert!(cos.abs() < 0.2, "cos(π/2) should be ~0, got {}", cos);
@@ -1343,8 +1359,11 @@ mod tests {
     fn test_cell_hadamard_magnitude() {
         let h = QuantumCell::hadamard();
         let mag = h.magnitude();
-        assert!(mag > 0.45 && mag < 0.55,
-            "Hadamard magnitude should be ~0.5, got {}", mag);
+        assert!(
+            mag > 0.45 && mag < 0.55,
+            "Hadamard magnitude should be ~0.5, got {}",
+            mag
+        );
     }
 
     #[test]
@@ -1357,32 +1376,33 @@ mod tests {
     fn test_cell_signed_amplitude_positive() {
         let mut cell = QuantumCell::hadamard();
         cell.phase = PhaseTag::zero();
-        assert!(cell.signed_amplitude() > 0.0,
-            "Zero phase should give positive signed amplitude");
+        assert!(
+            cell.signed_amplitude() > 0.0,
+            "Zero phase should give positive signed amplitude"
+        );
     }
 
     #[test]
     fn test_cell_signed_amplitude_negative() {
         let mut cell = QuantumCell::hadamard();
         cell.phase = PhaseTag::pi();
-        assert!(cell.signed_amplitude() < 0.0,
-            "π phase should give negative signed amplitude");
+        assert!(
+            cell.signed_amplitude() < 0.0,
+            "π phase should give negative signed amplitude"
+        );
     }
 
     #[test]
     fn test_cell_interference_same_phase() {
-        let cell1 = QuantumCell::from_fp_phase(
-            Fingerprint::from_content("test"),
-            PhaseTag::zero(),
-        );
-        let cell2 = QuantumCell::from_fp_phase(
-            Fingerprint::from_content("test"),
-            PhaseTag::zero(),
-        );
+        let cell1 = QuantumCell::from_fp_phase(Fingerprint::from_content("test"), PhaseTag::zero());
+        let cell2 = QuantumCell::from_fp_phase(Fingerprint::from_content("test"), PhaseTag::zero());
 
         let interference = cell1.interference_to(&cell2);
-        assert!(interference > 0.0,
-            "Same phase should give positive interference, got {}", interference);
+        assert!(
+            interference > 0.0,
+            "Same phase should give positive interference, got {}",
+            interference
+        );
     }
 
     #[test]
@@ -1392,8 +1412,11 @@ mod tests {
         let cell2 = QuantumCell::from_fp_phase(fp, PhaseTag::pi());
 
         let interference = cell1.interference_to(&cell2);
-        assert!(interference < 0.0,
-            "Opposite phase should give negative interference, got {}", interference);
+        assert!(
+            interference < 0.0,
+            "Opposite phase should give negative interference, got {}",
+            interference
+        );
     }
 
     #[test]
@@ -1426,7 +1449,11 @@ mod tests {
         let _changes = field.interfere();
         // All cells should still be at low amplitude (near zero or zero)
         let total = field.total_amplitude();
-        assert!(total < 10.0, "Zero field should remain near zero, got {}", total);
+        assert!(
+            total < 10.0,
+            "Zero field should remain near zero, got {}",
+            total
+        );
     }
 
     #[test]
@@ -1469,8 +1496,14 @@ mod tests {
 
         // Note: On this substrate, we check that the algorithm runs
         // and produces valid output, even if amplification is modest
-        assert!(peak_cell.probability() >= 0.0, "Should have valid probability");
-        assert!(peak_pos.0 < 5 && peak_pos.1 < 5 && peak_pos.2 < 5, "Valid position");
+        assert!(
+            peak_cell.probability() >= 0.0,
+            "Should have valid probability"
+        );
+        assert!(
+            peak_pos.0 < 5 && peak_pos.1 < 5 && peak_pos.2 < 5,
+            "Valid position"
+        );
     }
 
     #[test]
@@ -1504,9 +1537,12 @@ mod tests {
 
         // With opposing phases, amplitude should decrease (destructive)
         // or at least not increase significantly
-        assert!(amp_after <= amp_before * 1.2,
+        assert!(
+            amp_after <= amp_before * 1.2,
             "Destructive interference should not increase amplitude much: {} -> {}",
-            amp_before, amp_after);
+            amp_before,
+            amp_after
+        );
     }
 
     #[test]
@@ -1518,7 +1554,12 @@ mod tests {
         for x in 0..5 {
             for y in 0..5 {
                 for z in 0..5 {
-                    field.set(x, y, z, QuantumCell::from_fp_phase(fp.clone(), PhaseTag::zero()));
+                    field.set(
+                        x,
+                        y,
+                        z,
+                        QuantumCell::from_fp_phase(fp.clone(), PhaseTag::zero()),
+                    );
                 }
             }
         }
@@ -1547,8 +1588,10 @@ mod tests {
 
         // Results should be similar (not identical due to cutoff)
         let diff = field1.total_amplitude() - field2.total_amplitude();
-        assert!(diff.abs() < field1.total_amplitude() * 0.5,
-            "Sparse and dense should give similar results");
+        assert!(
+            diff.abs() < field1.total_amplitude() * 0.5,
+            "Sparse and dense should give similar results"
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -1596,7 +1639,11 @@ mod tests {
 
         // Should approximately restore (within permutation noise)
         let sim = original_sig.similarity(&restored_sig);
-        assert!(sim > 0.3, "QFT/IQFT roundtrip should partially preserve: {}", sim);
+        assert!(
+            sim > 0.3,
+            "QFT/IQFT roundtrip should partially preserve: {}",
+            sim
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -1612,7 +1659,11 @@ mod tests {
             let (_alice, _bob_pred, corr) = pair.measure_correlated(i, 0, 0);
 
             // For |Φ+⟩, Alice and Bob should be correlated
-            assert!(corr > 0.5, "Bell state should have high correlation: {}", corr);
+            assert!(
+                corr > 0.5,
+                "Bell state should have high correlation: {}",
+                corr
+            );
         }
     }
 
@@ -1634,8 +1685,11 @@ mod tests {
         // Classical state should satisfy |S| ≤ 2
         // (Note: due to finite statistics and our approximation,
         //  we use a relaxed bound)
-        assert!(result.s_value.abs() < 3.0,
-            "Classical state should roughly satisfy Bell bound: S={}", result.s_value);
+        assert!(
+            result.s_value.abs() < 3.0,
+            "Classical state should roughly satisfy Bell bound: S={}",
+            result.s_value
+        );
     }
 
     #[test]
@@ -1656,12 +1710,17 @@ mod tests {
         let result = pair.teleport(&source, (0, 0, 0));
 
         // Fidelity should be high for Bell state
-        assert!(result.fidelity > 0.5,
-            "Teleportation fidelity should be reasonable: {}", result.fidelity);
+        assert!(
+            result.fidelity > 0.5,
+            "Teleportation fidelity should be reasonable: {}",
+            result.fidelity
+        );
 
         // Corrections should be generated
-        assert!(result.corrections.popcount() > 0 || result.corrections.popcount() == 0,
-            "Corrections should be valid");
+        assert!(
+            result.corrections.popcount() > 0 || result.corrections.popcount() == 0,
+            "Corrections should be valid"
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -1698,7 +1757,10 @@ mod tests {
         let crystal = field.to_crystal4k();
 
         // 7×7×7 should also produce valid Crystal4K
-        assert!(crystal.popcount() > 0, "7×7×7 should project to non-zero crystal");
+        assert!(
+            crystal.popcount() > 0,
+            "7×7×7 should project to non-zero crystal"
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -1716,7 +1778,11 @@ mod tests {
     fn test_coherence_hadamard() {
         let field: QuantumField<5> = QuantumField::hadamard();
         let coherence = field.coherence();
-        assert!(coherence > 0.9, "Hadamard field should be coherent: {}", coherence);
+        assert!(
+            coherence > 0.9,
+            "Hadamard field should be coherent: {}",
+            coherence
+        );
     }
 
     #[test]
@@ -1745,8 +1811,11 @@ mod tests {
 
         // Should complete in reasonable time (< 500ms for debug build)
         // Release build will be much faster
-        assert!(elapsed.as_millis() < 500,
-            "7×7×7 interference took too long: {:?}", elapsed);
+        assert!(
+            elapsed.as_millis() < 500,
+            "7×7×7 interference took too long: {:?}",
+            elapsed
+        );
     }
 
     #[test]

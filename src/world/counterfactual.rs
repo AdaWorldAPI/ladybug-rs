@@ -50,7 +50,7 @@ pub struct Intervention {
 pub fn intervene(world: &Fingerprint, intervention: &Intervention) -> CounterfactualWorld {
     // Unbind original, bind counterfactual
     let new_state = world
-        .bind(&intervention.original)       // Unbind: cancels original via XOR
+        .bind(&intervention.original) // Unbind: cancels original via XOR
         .bind(&intervention.counterfactual); // Bind: installs replacement
 
     let divergence = world.hamming(&new_state) as f32 / TOTAL_BITS as f32;
@@ -73,10 +73,7 @@ pub fn worlds_differ(w1: &CounterfactualWorld, w2: &CounterfactualWorld) -> f32 
 ///
 /// Each intervention is applied sequentially, so later interventions
 /// operate on the already-modified world.
-pub fn multi_intervene(
-    world: &Fingerprint,
-    interventions: &[Intervention],
-) -> CounterfactualWorld {
+pub fn multi_intervene(world: &Fingerprint, interventions: &[Intervention]) -> CounterfactualWorld {
     let mut current = world.clone();
     for intervention in interventions {
         let cf = intervene(&current, intervention);
@@ -110,8 +107,16 @@ pub struct Counterfactual {
 #[derive(Clone, Debug)]
 pub enum Change {
     Remove(String),
-    UpdateTruth { id: String, frequency: f32, confidence: f32 },
-    AddEdge { from: String, to: String, edge_type: String },
+    UpdateTruth {
+        id: String,
+        frequency: f32,
+        confidence: f32,
+    },
+    AddEdge {
+        from: String,
+        to: String,
+        edge_type: String,
+    },
 }
 
 #[cfg(test)]
@@ -133,8 +138,11 @@ mod tests {
         let cf_world = intervene(&world, &intervention);
 
         // Counterfactual world should differ from original
-        assert!(cf_world.divergence > 0.3,
-            "Counterfactual should diverge >30% from baseline: {:.3}", cf_world.divergence);
+        assert!(
+            cf_world.divergence > 0.3,
+            "Counterfactual should diverge >30% from baseline: {:.3}",
+            cf_world.divergence
+        );
     }
 
     #[test]
@@ -155,8 +163,11 @@ mod tests {
         // The intervened variable should be recoverable from new world
         // world' = base ⊗ cf_var, so world' ⊗ cf_var = base
         let recovered = cf_world.state.bind(&cf_var);
-        assert_eq!(recovered.as_raw(), base.as_raw(),
-            "Should recover base world after unbinding counterfactual");
+        assert_eq!(
+            recovered.as_raw(),
+            base.as_raw(),
+            "Should recover base world after unbinding counterfactual"
+        );
     }
 
     #[test]
@@ -173,8 +184,10 @@ mod tests {
         };
 
         let cf = intervene(&world, &identity);
-        assert_eq!(cf.divergence, 0.0,
-            "Identity intervention should produce zero divergence");
+        assert_eq!(
+            cf.divergence, 0.0,
+            "Identity intervention should produce zero divergence"
+        );
         assert_eq!(cf.state.as_raw(), world.as_raw());
     }
 
@@ -199,7 +212,11 @@ mod tests {
         let w2 = intervene(&world, &i2);
 
         let diff = worlds_differ(&w1, &w2);
-        assert!(diff > 0.3, "Different interventions should produce different worlds: {:.3}", diff);
+        assert!(
+            diff > 0.3,
+            "Different interventions should produce different worlds: {:.3}",
+            diff
+        );
     }
 
     #[test]
@@ -223,6 +240,10 @@ mod tests {
         ];
 
         let cf = multi_intervene(&world, &interventions);
-        assert!(cf.divergence > 0.3, "Multi-intervention should diverge: {:.3}", cf.divergence);
+        assert!(
+            cf.divergence > 0.3,
+            "Multi-intervention should diverge: {:.3}",
+            cf.divergence
+        );
     }
 }

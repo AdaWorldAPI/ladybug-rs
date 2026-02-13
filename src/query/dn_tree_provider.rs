@@ -26,8 +26,8 @@ use datafusion::execution::context::TaskContext;
 use datafusion::logical_expr::TableType;
 use datafusion::physical_expr::EquivalenceProperties;
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties,
-    RecordBatchStream, SendableRecordBatchStream, Partitioning,
+    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties, RecordBatchStream,
+    SendableRecordBatchStream,
     execution_plan::{Boundedness, EmissionType},
 };
 use datafusion::prelude::*;
@@ -119,7 +119,8 @@ impl TableProvider for DnTreeTableProvider {
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let projected_schema = match projection {
             Some(proj) => {
-                let fields: Vec<Arc<Field>> = proj.iter()
+                let fields: Vec<Arc<Field>> = proj
+                    .iter()
                     .map(|&i| Arc::new(self.schema.field(i).clone()))
                     .collect();
                 Arc::new(Schema::new(fields))
@@ -241,11 +242,10 @@ impl ExecutionPlan for DnTreeScan {
 
         // Handle empty projection (e.g. SELECT COUNT(*))
         if self.projected_schema.fields().is_empty() {
-            let options = arrow::record_batch::RecordBatchOptions::new()
-                .with_row_count(Some(row_count));
-            let batch = RecordBatch::try_new_with_options(
-                self.projected_schema.clone(), vec![], &options,
-            )?;
+            let options =
+                arrow::record_batch::RecordBatchOptions::new().with_row_count(Some(row_count));
+            let batch =
+                RecordBatch::try_new_with_options(self.projected_schema.clone(), vec![], &options)?;
             return Ok(Box::pin(DnTreeStream {
                 schema: self.projected_schema.clone(),
                 batch: Some(batch),
@@ -261,14 +261,12 @@ impl ExecutionPlan for DnTreeScan {
 
         // Fixed-size binary for meta and content
         let meta_array: ArrayRef = Arc::new(
-            FixedSizeBinaryArray::try_from_iter(
-                meta_values.iter().map(|v| v.as_slice())
-            ).map_err(|e| DataFusionError::Execution(format!("meta array: {e}")))?
+            FixedSizeBinaryArray::try_from_iter(meta_values.iter().map(|v| v.as_slice()))
+                .map_err(|e| DataFusionError::Execution(format!("meta array: {e}")))?,
         );
         let content_array: ArrayRef = Arc::new(
-            FixedSizeBinaryArray::try_from_iter(
-                content_values.iter().map(|v| v.as_slice())
-            ).map_err(|e| DataFusionError::Execution(format!("content array: {e}")))?
+            FixedSizeBinaryArray::try_from_iter(content_values.iter().map(|v| v.as_slice()))
+                .map_err(|e| DataFusionError::Execution(format!("content array: {e}")))?,
         );
 
         let label_array: ArrayRef = Arc::new(StringArray::from(label_values));
@@ -313,10 +311,7 @@ struct DnTreeStream {
 impl Stream for DnTreeStream {
     type Item = Result<RecordBatch>;
 
-    fn poll_next(
-        mut self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-    ) -> Poll<Option<Self::Item>> {
+    fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         Poll::Ready(self.batch.take().map(Ok))
     }
 }
@@ -390,7 +385,10 @@ mod tests {
         let ctx = SessionContext::new();
         ctx.register_table("dn_tree", provider).unwrap();
 
-        let df = ctx.sql("SELECT COUNT(*) as cnt FROM dn_tree").await.unwrap();
+        let df = ctx
+            .sql("SELECT COUNT(*) as cnt FROM dn_tree")
+            .await
+            .unwrap();
         let batches = df.collect().await.unwrap();
         assert_eq!(batches.len(), 1);
 

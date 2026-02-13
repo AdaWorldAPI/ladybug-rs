@@ -10,7 +10,7 @@
 //! - Einhorn & Hogarth (1978): Dialectical inquiry improves decision quality
 //! - Berry-Esseen (1941/42): Noise floor at d=16384 distinguishes real from random
 
-use crate::search::hdr_cascade::{hamming_distance, WORDS};
+use crate::search::hdr_cascade::{WORDS, hamming_distance};
 
 const TOTAL_BITS: f32 = 16384.0;
 

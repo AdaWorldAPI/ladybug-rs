@@ -32,8 +32,8 @@ use datafusion::execution::context::TaskContext;
 use datafusion::logical_expr::TableType;
 use datafusion::physical_expr::EquivalenceProperties;
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties,
-    RecordBatchStream, SendableRecordBatchStream, Partitioning,
+    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties, RecordBatchStream,
+    SendableRecordBatchStream,
     execution_plan::{Boundedness, EmissionType},
 };
 use datafusion::prelude::*;
@@ -42,7 +42,7 @@ use parking_lot::RwLock;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::storage::bind_space::{Addr, BindSpace, BindNode, FINGERPRINT_WORDS};
+use crate::storage::bind_space::{Addr, BindNode, BindSpace, FINGERPRINT_WORDS};
 
 // =============================================================================
 // CONSTANTS
@@ -59,7 +59,11 @@ const FP_BYTES: usize = FINGERPRINT_WORDS * 8;
 fn bindspace_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
         Field::new("address", DataType::UInt16, false),
-        Field::new("fingerprint", DataType::FixedSizeBinary(FP_BYTES as i32), false),
+        Field::new(
+            "fingerprint",
+            DataType::FixedSizeBinary(FP_BYTES as i32),
+            false,
+        ),
         Field::new("label", DataType::Utf8, true),
         Field::new("qidx", DataType::UInt8, false),
         Field::new("access_count", DataType::UInt32, false),
@@ -165,10 +169,7 @@ impl BindSpaceScan {
     ) -> Self {
         let projected_schema = match &projection {
             Some(indices) => {
-                let fields: Vec<_> = indices
-                    .iter()
-                    .map(|&i| schema.field(i).clone())
-                    .collect();
+                let fields: Vec<_> = indices.iter().map(|&i| schema.field(i).clone()).collect();
                 Arc::new(Schema::new(fields))
             }
             None => schema.clone(),
@@ -322,10 +323,7 @@ fn bind_space_to_batch(
     // Handle empty case early - compute projected schema first
     let projected_schema = match projection {
         Some(indices) => {
-            let fields: Vec<_> = indices
-                .iter()
-                .map(|&i| schema.field(i).clone())
-                .collect();
+            let fields: Vec<_> = indices.iter().map(|&i| schema.field(i).clone()).collect();
             Arc::new(Schema::new(fields))
         }
         None => schema.clone(),
@@ -341,7 +339,9 @@ fn bind_space_to_batch(
     // Build FixedSizeBinaryArray for fingerprints
     let mut fp_builder = FixedSizeBinaryBuilder::with_capacity(fingerprints.len(), FP_BYTES as i32);
     for fp in &fingerprints {
-        fp_builder.append_value(fp).map_err(|e| DataFusionError::ArrowError(Box::new(e), None))?;
+        fp_builder
+            .append_value(fp)
+            .map_err(|e| DataFusionError::ArrowError(Box::new(e), None))?;
     }
     let fp_array = fp_builder.finish();
 
@@ -492,12 +492,19 @@ mod tests {
         // Test that query executes successfully
         // BindSpace::new() pre-initializes surface nodes, so it's not truly empty
         // Query node zone which should be empty
-        let df = ctx.sql("SELECT * FROM test WHERE zone = 'node'").await.unwrap();
+        let df = ctx
+            .sql("SELECT * FROM test WHERE zone = 'node'")
+            .await
+            .unwrap();
         let batches = df.collect().await.unwrap();
 
         // Node zone should be empty
         let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
-        assert_eq!(total_rows, 0, "Expected 0 rows in node zone, got {}", total_rows);
+        assert_eq!(
+            total_rows, 0,
+            "Expected 0 rows in node zone, got {}",
+            total_rows
+        );
     }
 
     #[tokio::test]
@@ -517,10 +524,17 @@ mod tests {
         ctx.register_table("bindspace", Arc::new(provider)).unwrap();
 
         // Query only node zone (where our inserts go) to avoid counting surface nodes
-        let df = ctx.sql("SELECT COUNT(*) as cnt FROM bindspace WHERE zone = 'node'").await.unwrap();
+        let df = ctx
+            .sql("SELECT COUNT(*) as cnt FROM bindspace WHERE zone = 'node'")
+            .await
+            .unwrap();
         let batches = df.collect().await.unwrap();
 
-        let cnt = batches[0].column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+        let cnt = batches[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
         assert_eq!(cnt.value(0), 2);
     }
 
@@ -539,12 +553,19 @@ mod tests {
         ctx.register_table("bindspace", Arc::new(provider)).unwrap();
 
         // Select label column filtered by our specific label
-        let df = ctx.sql("SELECT label FROM bindspace WHERE label = 'projection_test'").await.unwrap();
+        let df = ctx
+            .sql("SELECT label FROM bindspace WHERE label = 'projection_test'")
+            .await
+            .unwrap();
         let batches = df.collect().await.unwrap();
 
         assert_eq!(batches[0].num_rows(), 1);
         assert_eq!(batches[0].num_columns(), 1);
-        let labels = batches[0].column(0).as_any().downcast_ref::<StringArray>().unwrap();
+        let labels = batches[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
         assert_eq!(labels.value(0), "projection_test");
     }
 

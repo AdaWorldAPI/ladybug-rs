@@ -39,7 +39,9 @@ impl PhaseTag11D {
     }
 
     pub fn pi() -> Self {
-        Self { bits: [u64::MAX, u64::MAX] }
+        Self {
+            bits: [u64::MAX, u64::MAX],
+        }
     }
 
     pub fn from_seed(seed: u64) -> Self {
@@ -62,8 +64,7 @@ impl PhaseTag11D {
     }
 
     pub fn hamming(&self, other: &PhaseTag11D) -> u32 {
-        (self.bits[0] ^ other.bits[0]).count_ones()
-            + (self.bits[1] ^ other.bits[1]).count_ones()
+        (self.bits[0] ^ other.bits[0]).count_ones() + (self.bits[1] ^ other.bits[1]).count_ones()
     }
 
     pub fn cos_angle_to(&self, other: &PhaseTag11D) -> f32 {
@@ -133,10 +134,21 @@ impl Coord11D {
     }
 
     pub fn from_components(
-        x0: usize, x1: usize, x2: usize, x3: usize, x4: usize,
-        x5: usize, x6: usize, x7: usize, x8: usize, x9: usize, x10: usize
+        x0: usize,
+        x1: usize,
+        x2: usize,
+        x3: usize,
+        x4: usize,
+        x5: usize,
+        x6: usize,
+        x7: usize,
+        x8: usize,
+        x9: usize,
+        x10: usize,
     ) -> Self {
-        Self { axes: [x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10] }
+        Self {
+            axes: [x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10],
+        }
     }
 
     pub fn to_index(&self, size: usize) -> usize {
@@ -159,14 +171,16 @@ impl Coord11D {
     }
 
     pub fn manhattan(&self, other: &Coord11D) -> usize {
-        self.axes.iter()
+        self.axes
+            .iter()
             .zip(other.axes.iter())
             .map(|(a, b)| (*a as isize - *b as isize).unsigned_abs())
             .sum()
     }
 
     pub fn chebyshev(&self, other: &Coord11D) -> usize {
-        self.axes.iter()
+        self.axes
+            .iter()
             .zip(other.axes.iter())
             .map(|(a, b)| (*a as isize - *b as isize).unsigned_abs())
             .max()
@@ -309,9 +323,7 @@ impl Crystal11D {
             let b = &cell_b.amplitude;
             let b_prime = cell_b.amplitude.permute(13);
 
-            let corr = |x: &Fingerprint, y: &Fingerprint| -> f32 {
-                2.0 * x.similarity(y) - 1.0
-            };
+            let corr = |x: &Fingerprint, y: &Fingerprint| -> f32 { 2.0 * x.similarity(y) - 1.0 };
 
             e_ab += corr(a, b);
             e_ab_prime += corr(a, &b_prime);
@@ -456,6 +468,9 @@ mod tests {
         crystal.populate_entangled(0.1);
 
         let result = crystal.bell_test(50);
-        println!("11D Bell test: S = {:.3}, quantum = {}", result.s_value, result.is_quantum);
+        println!(
+            "11D Bell test: S = {:.3}, quantum = {}",
+            result.s_value, result.is_quantum
+        );
     }
 }

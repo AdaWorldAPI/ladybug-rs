@@ -10,7 +10,7 @@
 //! Level 4: Voyager deep field (stack weak signals) → finds faint matches
 //! ```
 
-use super::{Container, CONTAINER_WORDS, CONTAINER_BITS};
+use super::{CONTAINER_BITS, CONTAINER_WORDS, Container};
 
 // ============================================================================
 // BELICHTUNGSMESSER (Exposure Meter)
@@ -40,10 +40,14 @@ pub fn belichtung_stats(a: &Container, b: &Container) -> (u32, u32) {
     }
     let sum: u32 = samples.iter().sum();
     let mean = sum / 7;
-    let var: u32 = samples.iter().map(|&s| {
-        let diff = s as i32 - mean as i32;
-        (diff * diff) as u32
-    }).sum::<u32>() / 7;
+    let var: u32 = samples
+        .iter()
+        .map(|&s| {
+            let diff = s as i32 - mean as i32;
+            (diff * diff) as u32
+        })
+        .sum::<u32>()
+        / 7;
     // sd * 100 for integer precision
     let sd100 = ((var as f64).sqrt() * 100.0) as u32;
     (mean, sd100)
@@ -102,8 +106,8 @@ impl MexicanHat {
     /// Default hat tuned for 8K containers: ~1σ excitation, ~2σ inhibition.
     pub fn default_8k() -> Self {
         Self {
-            excite: 45,    // ≈ 1σ
-            inhibit: 90,   // ≈ 2σ
+            excite: 45,  // ≈ 1σ
+            inhibit: 90, // ≈ 2σ
             inhibit_strength: 0.3,
         }
     }
@@ -115,8 +119,7 @@ impl MexicanHat {
             1.0 - (distance as f32 / self.excite as f32)
         } else if distance < self.inhibit {
             // Inhibition: negative response
-            let t = (distance - self.excite) as f32
-                / (self.inhibit - self.excite) as f32;
+            let t = (distance - self.excite) as f32 / (self.inhibit - self.excite) as f32;
             -self.inhibit_strength * (1.0 - t)
         } else {
             0.0

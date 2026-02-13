@@ -200,7 +200,10 @@ mod tests {
         let strong = TruthValue::new(0.9, 0.9);
         let challenges = critique(&strong);
         let survived = challenges.iter().filter(|c| c.survives).count();
-        assert!(survived >= 3, "Strong belief should survive most challenges, got {survived}");
+        assert!(
+            survived >= 3,
+            "Strong belief should survive most challenges, got {survived}"
+        );
     }
 
     #[test]
@@ -208,7 +211,10 @@ mod tests {
         let weak = TruthValue::new(0.5, 0.2);
         let challenges = critique(&weak);
         let survived = challenges.iter().filter(|c| c.survives).count();
-        assert!(survived <= 3, "Weak belief should be challenged, survived {survived}");
+        assert!(
+            survived <= 3,
+            "Weak belief should be challenged, survived {survived}"
+        );
     }
 
     #[test]
@@ -227,11 +233,17 @@ mod tests {
     fn test_weather_challenge() {
         let inflated = TruthValue::new(0.9, 0.1); // High freq, low confidence → pressure
         let c = weather(&inflated);
-        assert!(!c.survives, "Pressure-inflated belief should fail weather challenge");
+        assert!(
+            !c.survives,
+            "Pressure-inflated belief should fail weather challenge"
+        );
 
         let genuine = TruthValue::new(0.9, 0.9); // High freq, high confidence → genuine
         let c2 = weather(&genuine);
-        assert!(c2.survives, "Genuine belief should survive weather challenge");
+        assert!(
+            c2.survives,
+            "Genuine belief should survive weather challenge"
+        );
     }
 
     #[test]
@@ -242,7 +254,10 @@ mod tests {
         let s1 = schedule.update(&confident);
         let s2 = schedule.update(&confident);
         let s3 = schedule.update(&confident);
-        assert!(s3 > s2 && s2 > s1, "Skepticism should increase with consecutive confidence");
+        assert!(
+            s3 > s2 && s2 > s1,
+            "Skepticism should increase with consecutive confidence"
+        );
 
         let uncertain = TruthValue::new(0.5, 0.3);
         let s4 = schedule.update(&uncertain);

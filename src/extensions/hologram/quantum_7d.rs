@@ -42,7 +42,9 @@ impl PhaseTag7D {
     }
 
     pub fn pi() -> Self {
-        Self { bits: [u64::MAX, u64::MAX] }
+        Self {
+            bits: [u64::MAX, u64::MAX],
+        }
     }
 
     pub fn from_seed(seed: u64) -> Self {
@@ -65,8 +67,7 @@ impl PhaseTag7D {
     }
 
     pub fn hamming(&self, other: &PhaseTag7D) -> u32 {
-        (self.bits[0] ^ other.bits[0]).count_ones()
-            + (self.bits[1] ^ other.bits[1]).count_ones()
+        (self.bits[0] ^ other.bits[0]).count_ones() + (self.bits[1] ^ other.bits[1]).count_ones()
     }
 
     pub fn cos_angle_to(&self, other: &PhaseTag7D) -> f32 {
@@ -138,7 +139,15 @@ pub struct Coord7D {
 
 impl Coord7D {
     pub fn new(a: usize, b: usize, c: usize, d: usize, e: usize, f: usize, g: usize) -> Self {
-        Self { a, b, c, d, e, f, g }
+        Self {
+            a,
+            b,
+            c,
+            d,
+            e,
+            f,
+            g,
+        }
     }
 
     pub fn to_index(&self, size: usize) -> usize {
@@ -159,7 +168,15 @@ impl Coord7D {
         let c = (idx / size.pow(4)) % size;
         let b = (idx / size.pow(5)) % size;
         let a = idx / size.pow(6);
-        Self { a, b, c, d, e, f, g }
+        Self {
+            a,
+            b,
+            c,
+            d,
+            e,
+            f,
+            g,
+        }
     }
 
     pub fn manhattan(&self, other: &Coord7D) -> usize {
@@ -181,7 +198,10 @@ impl Coord7D {
             (self.e as isize - other.e as isize).unsigned_abs(),
             (self.f as isize - other.f as isize).unsigned_abs(),
             (self.g as isize - other.g as isize).unsigned_abs(),
-        ].into_iter().max().unwrap_or(0)
+        ]
+        .into_iter()
+        .max()
+        .unwrap_or(0)
     }
 
     /// Number of neighbors in 7D (3^7 - 1 = 2186)
@@ -299,8 +319,14 @@ impl Crystal7D {
                         for de in -1isize..=1 {
                             for df in -1isize..=1 {
                                 for dg in -1isize..=1 {
-                                    if da == 0 && db == 0 && dc == 0 && dd == 0
-                                        && de == 0 && df == 0 && dg == 0 {
+                                    if da == 0
+                                        && db == 0
+                                        && dc == 0
+                                        && dd == 0
+                                        && de == 0
+                                        && df == 0
+                                        && dg == 0
+                                    {
                                         continue;
                                     }
 
@@ -312,14 +338,29 @@ impl Crystal7D {
                                     let nf = coord.f as isize + df;
                                     let ng = coord.g as isize + dg;
 
-                                    if na >= 0 && na < size && nb >= 0 && nb < size
-                                        && nc >= 0 && nc < size && nd >= 0 && nd < size
-                                        && ne >= 0 && ne < size && nf >= 0 && nf < size
-                                        && ng >= 0 && ng < size
+                                    if na >= 0
+                                        && na < size
+                                        && nb >= 0
+                                        && nb < size
+                                        && nc >= 0
+                                        && nc < size
+                                        && nd >= 0
+                                        && nd < size
+                                        && ne >= 0
+                                        && ne < size
+                                        && nf >= 0
+                                        && nf < size
+                                        && ng >= 0
+                                        && ng < size
                                     {
                                         let neighbor_coord = Coord7D::new(
-                                            na as usize, nb as usize, nc as usize,
-                                            nd as usize, ne as usize, nf as usize, ng as usize
+                                            na as usize,
+                                            nb as usize,
+                                            nc as usize,
+                                            nd as usize,
+                                            ne as usize,
+                                            nf as usize,
+                                            ng as usize,
                                         );
                                         if let Some(neighbor) = self.get_quantum(&neighbor_coord) {
                                             total_interference += center.interference_to(neighbor);
@@ -381,9 +422,7 @@ impl Crystal7D {
             let b = &cell_b.amplitude;
             let b_prime = cell_b.amplitude.permute(23);
 
-            let corr = |x: &Fingerprint, y: &Fingerprint| -> f32 {
-                2.0 * x.similarity(y) - 1.0
-            };
+            let corr = |x: &Fingerprint, y: &Fingerprint| -> f32 { 2.0 * x.similarity(y) - 1.0 };
 
             e_ab += corr(a, b);
             e_ab_prime += corr(a, &b_prime);
@@ -501,9 +540,8 @@ pub mod prime_sweet_spots {
     pub const PRIME_17: PrimeDimension7D = PrimeDimension7D::new(17);
 
     /// All 7D configurations
-    pub const ALL: [PrimeDimension7D; 6] = [
-        PRIME_3, PRIME_5, PRIME_7, PRIME_11, PRIME_13, PRIME_17
-    ];
+    pub const ALL: [PrimeDimension7D; 6] =
+        [PRIME_3, PRIME_5, PRIME_7, PRIME_11, PRIME_13, PRIME_17];
 
     /// Time slots within 17 minutes
     pub fn time_slots_17min() -> Vec<(&'static str, PrimeDimension7D)> {
@@ -564,6 +602,9 @@ mod tests {
         crystal.populate_entangled(0.1);
 
         let result = crystal.bell_test(100);
-        println!("7D Bell test: S = {:.3}, quantum = {}", result.s_value, result.is_quantum);
+        println!(
+            "7D Bell test: S = {:.3}, quantum = {}",
+            result.s_value, result.is_quantum
+        );
     }
 }

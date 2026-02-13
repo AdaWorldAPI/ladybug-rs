@@ -18,14 +18,14 @@
 //! Each algorithm composes the primitives from quantum_crystal.rs
 //! to solve computational problems on the native Hamming-space substrate.
 
-use crate::core::Fingerprint;
-use crate::FINGERPRINT_BITS;
-use super::field::{QuorumField, FIELD_SIZE};
 use super::crystal4k::Crystal4K;
+use super::field::{FIELD_SIZE, QuorumField};
 use super::quantum_crystal::{
-    qft_axis, inverse_qft_axis, quantum_walk_step, phase_kickback,
-    entangle_cells, adiabatic_evolve, Axis, Face,
+    Axis, Face, adiabatic_evolve, entangle_cells, inverse_qft_axis, phase_kickback, qft_axis,
+    quantum_walk_step,
 };
+use crate::FINGERPRINT_BITS;
+use crate::core::Fingerprint;
 
 // =============================================================================
 // 1. GROVER'S SEARCH
@@ -720,7 +720,7 @@ impl Vqe {
             for x in 0..FIELD_SIZE {
                 for y in 0..FIELD_SIZE {
                     for z in 0..FIELD_SIZE {
-                        let pos_key = Fingerprint::from_content(&format!("{}_{}_{}",x,y,z));
+                        let pos_key = Fingerprint::from_content(&format!("{}_{}_{}", x, y, z));
                         field.set(x, y, z, &seed.bind(&pos_key));
                     }
                 }
@@ -836,11 +836,7 @@ impl QuantumCounting {
     /// Estimate count of cells matching predicate.
     ///
     /// Uses Grover iterations with QFT-based analysis.
-    pub fn count<F>(
-        predicate: F,
-        field: &mut QuorumField,
-        grover_iterations: usize,
-    ) -> CountResult
+    pub fn count<F>(predicate: F, field: &mut QuorumField, grover_iterations: usize) -> CountResult
     where
         F: Fn(&Fingerprint) -> bool,
     {
@@ -1030,11 +1026,7 @@ impl Hhl {
     /// A is encoded in field dynamics (settle operation).
     /// b is the input fingerprint.
     /// x is the solution.
-    pub fn solve(
-        field: &mut QuorumField,
-        b: &Fingerprint,
-        cutoff: f32,
-    ) -> HhlResult {
+    pub fn solve(field: &mut QuorumField, b: &Fingerprint, cutoff: f32) -> HhlResult {
         // Inject b at (0,0,0)
         field.set(0, 0, 0, b);
 
@@ -1152,9 +1144,11 @@ impl BosonSampler {
         // Calculate bunching ratio
         // Bosons bunch: variance should be higher than Poisson
         let mean_pc = total_popcount as f32 / output_positions.len() as f32;
-        let variance: f32 = distribution.iter()
+        let variance: f32 = distribution
+            .iter()
             .map(|(_, pc)| (*pc as f32 - mean_pc).powi(2))
-            .sum::<f32>() / output_positions.len() as f32;
+            .sum::<f32>()
+            / output_positions.len() as f32;
 
         // Bunching ratio = variance / mean (>1 means bunching)
         let bunching_ratio = if mean_pc > 0.0 {
@@ -1297,11 +1291,7 @@ impl TrotterSimulator {
     }
 
     /// First-order Trotter evolution.
-    pub fn evolve_first_order(
-        &self,
-        field: &mut QuorumField,
-        total_time: f32,
-    ) -> SimulationResult {
+    pub fn evolve_first_order(&self, field: &mut QuorumField, total_time: f32) -> SimulationResult {
         let n_steps = (total_time / self.dt).ceil() as usize;
         let mut energy_history = Vec::with_capacity(n_steps);
 
@@ -1428,9 +1418,7 @@ impl QuantumNeuralNet {
 
         for _ in 0..n_layers {
             // Default: zero rotation keys, nearest-neighbor entanglement
-            let rotation_keys: Vec<Fingerprint> = (0..125)
-                .map(|_| Fingerprint::zero())
-                .collect();
+            let rotation_keys: Vec<Fingerprint> = (0..125).map(|_| Fingerprint::zero()).collect();
 
             let entangle_pairs = Self::default_entangle_pairs();
 
@@ -1619,7 +1607,11 @@ mod tests {
 
         // Grover on crystal substrate: check similarity is reasonable
         // The quantum walk diffuses information, so we check relative improvement
-        assert!(result.similarity > 0.4, "Grover should find something similar to target, got {}", result.similarity);
+        assert!(
+            result.similarity > 0.4,
+            "Grover should find something similar to target, got {}",
+            result.similarity
+        );
     }
 
     #[test]
@@ -1632,7 +1624,12 @@ mod tests {
             for y in 0..FIELD_SIZE {
                 for z in 0..FIELD_SIZE {
                     if (x, y, z) != (2, 2, 2) {
-                        field.set(x, y, z, &Fingerprint::from_content(&format!("{}{}{}",x,y,z)));
+                        field.set(
+                            x,
+                            y,
+                            z,
+                            &Fingerprint::from_content(&format!("{}{}{}", x, y, z)),
+                        );
                     }
                 }
             }
@@ -1663,9 +1660,15 @@ mod tests {
         // On a 5x5x5 lattice, period detection is approximate
         // Period 2 should be detected, but also period 1 or period 4 are mathematically related
         // (period 4 = N-1 = 5-1 which could alias with period 1 complement)
-        assert!(result.estimated_period == 2 || result.estimated_period == 1,
-            "Should detect period 2 or its harmonic, got {}", result.estimated_period);
-        assert!(result.confidence >= 0.0, "Confidence should be non-negative");
+        assert!(
+            result.estimated_period == 2 || result.estimated_period == 1,
+            "Should detect period 2 or its harmonic, got {}",
+            result.estimated_period
+        );
+        assert!(
+            result.confidence >= 0.0,
+            "Confidence should be non-negative"
+        );
     }
 
     #[test]
@@ -1706,7 +1709,11 @@ mod tests {
             OracleClass::Balanced => (), // Can occur due to QFT interference
             OracleClass::Unknown(c) => {
                 // Verify confidence is in valid range
-                assert!(c >= 0.0 && c <= 1.0, "Confidence should be in [0, 1], got {}", c);
+                assert!(
+                    c >= 0.0 && c <= 1.0,
+                    "Confidence should be in [0, 1], got {}",
+                    c
+                );
             }
         }
     }
@@ -1749,7 +1756,10 @@ mod tests {
 
         // Should have some similarity to hidden (not exact due to approximation)
         let sim = recovered.similarity(&hidden);
-        assert!(sim > 0.3, "Recovered string should be somewhat similar to hidden");
+        assert!(
+            sim > 0.3,
+            "Recovered string should be somewhat similar to hidden"
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -1792,8 +1802,11 @@ mod tests {
         // - confidence measures consistency of the bundled period
 
         // The algorithm should run without errors
-        assert!(result.confidence >= 0.0 && result.confidence <= 1.0,
-            "Confidence should be in [0, 1], got {}", result.confidence);
+        assert!(
+            result.confidence >= 0.0 && result.confidence <= 1.0,
+            "Confidence should be in [0, 1], got {}",
+            result.confidence
+        );
 
         // matched_pairs can be 0 or positive depending on f function behavior
         // This is a valid outcome - the test validates the algorithm runs correctly
@@ -1822,12 +1835,17 @@ mod tests {
         let result = qaoa.optimize(&mut field);
 
         // QAOA on crystal substrate: verify it runs and produces valid output
-        assert!(result.best_similarity >= 0.0 && result.best_similarity <= 1.0,
-            "Similarity should be in valid range, got {}", result.best_similarity);
+        assert!(
+            result.best_similarity >= 0.0 && result.best_similarity <= 1.0,
+            "Similarity should be in valid range, got {}",
+            result.best_similarity
+        );
         assert!(result.layers_used == 3);
         // field_energy is average similarity, should be non-negative if not NaN
-        assert!(!result.field_energy.is_nan(),
-            "Field energy should not be NaN");
+        assert!(
+            !result.field_energy.is_nan(),
+            "Field energy should not be NaN"
+        );
     }
 
     #[test]
@@ -1839,7 +1857,12 @@ mod tests {
         for x in 0..FIELD_SIZE {
             for y in 0..FIELD_SIZE {
                 for z in 0..FIELD_SIZE {
-                    field1.set(x, y, z, &Fingerprint::from_content(&format!("cell_{}_{}_{}", x, y, z)));
+                    field1.set(
+                        x,
+                        y,
+                        z,
+                        &Fingerprint::from_content(&format!("cell_{}_{}_{}", x, y, z)),
+                    );
                 }
             }
         }
@@ -1888,8 +1911,10 @@ mod tests {
         let random_energy = vqe.compute_energy(&field);
         let result = vqe.find_ground_state(&field);
 
-        assert!(result.energy <= random_energy + 0.1,
-            "VQE energy should be ≤ random energy");
+        assert!(
+            result.energy <= random_energy + 0.1,
+            "VQE energy should be ≤ random energy"
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -1910,7 +1935,12 @@ mod tests {
                         field.set(x, y, z, &marker);
                         count += 1;
                     } else {
-                        field.set(x, y, z, &Fingerprint::from_content(&format!("{}{}{}",x,y,z)));
+                        field.set(
+                            x,
+                            y,
+                            z,
+                            &Fingerprint::from_content(&format!("{}{}{}", x, y, z)),
+                        );
                     }
                 }
             }
@@ -1921,8 +1951,11 @@ mod tests {
 
         assert_eq!(result.actual_count, 30);
         // Estimated should be in ballpark (within 50%)
-        assert!(result.estimated_count > 10 && result.estimated_count < 70,
-            "Estimate {} should be reasonable", result.estimated_count);
+        assert!(
+            result.estimated_count > 10 && result.estimated_count < 70,
+            "Estimate {} should be reasonable",
+            result.estimated_count
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -1942,7 +1975,10 @@ mod tests {
         let transformed = qsvt.transform(&crystal);
 
         // Transform should produce valid output
-        assert!(transformed.popcount() > 0, "Transform should produce non-zero output");
+        assert!(
+            transformed.popcount() > 0,
+            "Transform should produce non-zero output"
+        );
 
         // The transformation preserves some structural properties
         // On crystal substrate, exact identity isn't achievable due to bit-level operations
@@ -1951,8 +1987,11 @@ mod tests {
 
         // Check that popcount is in reasonable range (within 50% of original)
         let ratio = transformed_pop as f32 / original_pop.max(1) as f32;
-        assert!(ratio > 0.2 && ratio < 5.0,
-            "Transform should preserve approximate magnitude, got ratio {}", ratio);
+        assert!(
+            ratio > 0.2 && ratio < 5.0,
+            "Transform should preserve approximate magnitude, got ratio {}",
+            ratio
+        );
     }
 
     #[test]
@@ -1983,7 +2022,10 @@ mod tests {
         let result = Hhl::solve(&mut field, &b, 0.1);
 
         // Should produce some solution
-        assert!(result.solution.popcount() > 0, "Should produce non-zero solution");
+        assert!(
+            result.solution.popcount() > 0,
+            "Should produce non-zero solution"
+        );
         assert!(result.condition_number >= 0.0);
     }
 
@@ -1998,7 +2040,12 @@ mod tests {
         for x in 0..FIELD_SIZE {
             for y in 0..FIELD_SIZE {
                 for z in 0..FIELD_SIZE {
-                    field.set(x, y, z, &Fingerprint::from_content(&format!("bg_{}_{}_{}",x,y,z)));
+                    field.set(
+                        x,
+                        y,
+                        z,
+                        &Fingerprint::from_content(&format!("bg_{}_{}_{}", x, y, z)),
+                    );
                 }
             }
         }
@@ -2009,10 +2056,20 @@ mod tests {
         let result = sampler.sample(&boson, &mut field, 3);
 
         // Verify the algorithm runs and produces valid structure
-        assert!(!result.output_distribution.is_empty(), "Should have output distribution");
-        assert_eq!(result.output_distribution.len(), 25, "Should have 5x5=25 output positions");
+        assert!(
+            !result.output_distribution.is_empty(),
+            "Should have output distribution"
+        );
+        assert_eq!(
+            result.output_distribution.len(),
+            25,
+            "Should have 5x5=25 output positions"
+        );
         // Bunching ratio should be a valid number
-        assert!(!result.bunching_ratio.is_nan(), "Bunching ratio should not be NaN");
+        assert!(
+            !result.bunching_ratio.is_nan(),
+            "Bunching ratio should not be NaN"
+        );
     }
 
     #[test]
@@ -2024,7 +2081,7 @@ mod tests {
         for x in 0..FIELD_SIZE {
             for y in 0..FIELD_SIZE {
                 for z in 0..FIELD_SIZE {
-                    let bg = Fingerprint::from_content(&format!("background_{}_{}_{}",x,y,z));
+                    let bg = Fingerprint::from_content(&format!("background_{}_{}_{}", x, y, z));
                     field1.set(x, y, z, &bg);
                     field2.set(x, y, z, &bg);
                 }
@@ -2071,11 +2128,7 @@ mod tests {
         let term1 = Fingerprint::from_content("H1");
         let term2 = Fingerprint::from_content("H2");
 
-        let simulator = TrotterSimulator::new(
-            vec![term1, term2],
-            vec![1.0, 0.5],
-            0.1,
-        );
+        let simulator = TrotterSimulator::new(vec![term1, term2], vec![1.0, 0.5], 0.1);
 
         let field = QuorumField::default_threshold();
         let mut field1 = field.clone();
@@ -2114,7 +2167,7 @@ mod tests {
         for x in 0..FIELD_SIZE {
             for y in 0..FIELD_SIZE {
                 for z in 0..FIELD_SIZE {
-                    let key = Fingerprint::from_content(&format!("{}{}{}",x,y,z));
+                    let key = Fingerprint::from_content(&format!("{}{}{}", x, y, z));
                     input.set(x, y, z, &pattern.bind(&key));
                 }
             }
@@ -2128,8 +2181,10 @@ mod tests {
         assert!(!losses.is_empty());
         // Loss should not increase dramatically
         if losses.len() > 1 {
-            assert!(losses[losses.len()-1] <= losses[0] * 1.5,
-                "Training should not drastically increase loss");
+            assert!(
+                losses[losses.len() - 1] <= losses[0] * 1.5,
+                "Training should not drastically increase loss"
+            );
         }
     }
 

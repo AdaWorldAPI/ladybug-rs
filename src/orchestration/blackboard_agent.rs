@@ -11,13 +11,12 @@
 //! Agent at 0x0C:10 → Blackboard at 0x0E:10
 //! ```
 
-use serde::{Deserialize, Serialize};
+use super::handover::FlowState;
 use crate::cognitive::ThinkingStyle;
 use crate::storage::bind_space::{
-    Addr, BindSpace, FINGERPRINT_WORDS,
-    PREFIX_BLACKBOARD, PREFIX_AGENTS,
+    Addr, BindSpace, FINGERPRINT_WORDS, PREFIX_AGENTS, PREFIX_BLACKBOARD,
 };
-use super::handover::FlowState;
+use serde::{Deserialize, Serialize};
 
 /// Agent awareness state — what the agent knows about itself and its context
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -188,7 +187,7 @@ impl AgentBlackboard {
     /// Encodes awareness + knowledge into a fingerprint that enables
     /// similarity search between agent states.
     pub fn state_fingerprint(&self) -> [u64; FINGERPRINT_WORDS] {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
 
         let state = format!(
             "{}:{}:{}:{}:{}:{:?}:{}",
@@ -260,7 +259,9 @@ impl BlackboardRegistry {
 
     /// Get mutable blackboard by agent slot
     pub fn get_mut(&mut self, agent_slot: u8) -> Option<&mut AgentBlackboard> {
-        self.blackboards.iter_mut().find(|b| b.agent_slot == agent_slot)
+        self.blackboards
+            .iter_mut()
+            .find(|b| b.agent_slot == agent_slot)
     }
 
     /// Bind all blackboard states into BindSpace

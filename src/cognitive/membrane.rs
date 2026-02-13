@@ -21,8 +21,8 @@
 //! - encode(): τ/σ/q → [u64; 256]
 //! - decode(): [u64; 256] → τ/σ/q (approximate, qualia is one-way hash)
 
-use sha2::{Sha256, Digest};
 use crate::core::{DIM, DIM_U64, Fingerprint};
+use sha2::{Digest, Sha256};
 
 // =============================================================================
 // REGION BOUNDARIES
@@ -384,8 +384,8 @@ impl Membrane {
 // GLOBAL MEMBRANE
 // =============================================================================
 
-use std::sync::Mutex;
 use std::sync::LazyLock;
+use std::sync::Mutex;
 
 /// Global membrane instance with default seed
 static GLOBAL_MEMBRANE: LazyLock<Mutex<Membrane>> =
@@ -424,7 +424,12 @@ mod tests {
         let decoded = membrane.decode(&encoded);
 
         // Tau and sigma should be approximately preserved
-        assert!((decoded.tau - params.tau).abs() < 0.3, "tau: {} vs {}", decoded.tau, params.tau);
+        assert!(
+            (decoded.tau - params.tau).abs() < 0.3,
+            "tau: {} vs {}",
+            decoded.tau,
+            params.tau
+        );
         assert!(
             (decoded.sigma - params.sigma).abs() < 0.3,
             "sigma: {} vs {}",
@@ -447,7 +452,11 @@ mod tests {
 
         // Same qualia should be identical
         let sim_same = membrane.similarity_qualia(&fp1, &fp2);
-        assert!((sim_same - 1.0).abs() < 0.001, "same qualia sim: {}", sim_same);
+        assert!(
+            (sim_same - 1.0).abs() < 0.001,
+            "same qualia sim: {}",
+            sim_same
+        );
 
         // Different qualia should have ~0.5 similarity (random)
         let sim_diff = membrane.similarity_qualia(&fp1, &fp3);
@@ -557,15 +566,37 @@ mod tests {
         let future_bits = count_tau_bits(&fp_future);
 
         eprintln!("TAU_BITS = {}", TAU_BITS);
-        eprintln!("Past (tau=-0.8): {} bits ({:.1}%)", past_bits, 100.0 * past_bits as f32 / TAU_BITS as f32);
-        eprintln!("Present (tau=0): {} bits ({:.1}%)", present_bits, 100.0 * present_bits as f32 / TAU_BITS as f32);
-        eprintln!("Future (tau=0.8): {} bits ({:.1}%)", future_bits, 100.0 * future_bits as f32 / TAU_BITS as f32);
+        eprintln!(
+            "Past (tau=-0.8): {} bits ({:.1}%)",
+            past_bits,
+            100.0 * past_bits as f32 / TAU_BITS as f32
+        );
+        eprintln!(
+            "Present (tau=0): {} bits ({:.1}%)",
+            present_bits,
+            100.0 * present_bits as f32 / TAU_BITS as f32
+        );
+        eprintln!(
+            "Future (tau=0.8): {} bits ({:.1}%)",
+            future_bits,
+            100.0 * future_bits as f32 / TAU_BITS as f32
+        );
 
         // With threshold encoding:
         // tau=-0.8 → ~10% bits set
         // tau=0 → ~50% bits set
         // tau=0.8 → ~90% bits set
-        assert!(past_bits < present_bits, "past {} should < present {}", past_bits, present_bits);
-        assert!(present_bits < future_bits, "present {} should < future {}", present_bits, future_bits);
+        assert!(
+            past_bits < present_bits,
+            "past {} should < present {}",
+            past_bits,
+            present_bits
+        );
+        assert!(
+            present_bits < future_bits,
+            "present {} should < future {}",
+            present_bits,
+            future_bits
+        );
     }
 }

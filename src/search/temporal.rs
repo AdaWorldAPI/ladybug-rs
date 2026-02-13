@@ -7,7 +7,7 @@
 //! - Cohen (1988): Effect size d = (μ₁ - μ₂)/σ_pooled
 //! - Plate (2003): Permutation for temporal position binding
 
-use crate::search::hdr_cascade::{hamming_distance, WORDS};
+use crate::search::hdr_cascade::{WORDS, hamming_distance};
 
 /// Temporal effect size between two fingerprint series.
 #[derive(Debug, Clone)]
@@ -48,7 +48,9 @@ pub fn granger_effect(
 
     for lag in 1..=max_lag {
         let n = min_len - lag;
-        if n == 0 { continue; }
+        if n == 0 {
+            continue;
+        }
 
         // Cross-series distances: d(A_t, B_{t+lag})
         let cross: Vec<f32> = (0..n)
@@ -65,17 +67,29 @@ pub fn granger_effect(
 
         let cross_var = if n > 1 {
             cross.iter().map(|d| (d - cross_mean).powi(2)).sum::<f32>() / (n - 1) as f32
-        } else { 1.0 };
+        } else {
+            1.0
+        };
         let auto_var = if n > 1 {
             auto.iter().map(|d| (d - auto_mean).powi(2)).sum::<f32>() / (n - 1) as f32
-        } else { 1.0 };
+        } else {
+            1.0
+        };
 
         let pooled_sigma = ((cross_var + auto_var) / 2.0).sqrt();
 
         // Granger signal: if cross_mean < auto_mean, A predicts B better than B predicts itself
         let signal = auto_mean - cross_mean;
-        let effect_d = if pooled_sigma > 0.0 { signal / pooled_sigma } else { 0.0 };
-        let std_error = if n > 1 { pooled_sigma / (n as f32).sqrt() } else { f32::MAX };
+        let effect_d = if pooled_sigma > 0.0 {
+            signal / pooled_sigma
+        } else {
+            0.0
+        };
+        let std_error = if n > 1 {
+            pooled_sigma / (n as f32).sqrt()
+        } else {
+            f32::MAX
+        };
 
         if signal > best_signal {
             best_signal = signal;
@@ -96,17 +110,15 @@ pub fn granger_effect(
 /// Compute temporal autocorrelation profile for a single series.
 ///
 /// Returns (lag, mean_distance) pairs showing how quickly the series decorrelates.
-pub fn autocorrelation_profile(
-    series: &[[u64; WORDS]],
-    max_lag: usize,
-) -> Vec<(usize, f32)> {
+pub fn autocorrelation_profile(series: &[[u64; WORDS]], max_lag: usize) -> Vec<(usize, f32)> {
     let max_lag = max_lag.min(series.len() / 2);
     (1..=max_lag)
         .map(|lag| {
             let n = series.len() - lag;
             let mean_dist: f32 = (0..n)
                 .map(|t| hamming_distance(&series[t], &series[t + lag]) as f32)
-                .sum::<f32>() / n as f32;
+                .sum::<f32>()
+                / n as f32;
             (lag, mean_dist)
         })
         .collect()
@@ -122,7 +134,9 @@ mod tests {
         for _ in 0..n {
             let mut fp = [0u64; WORDS];
             for w in fp.iter_mut() {
-                state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                state = state
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
                 *w = state;
             }
             series.push(fp);

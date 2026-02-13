@@ -49,8 +49,8 @@
 //! Query: edge ⊗ verb ⊗ B = A  (recover source in O(1)!)
 //! ```
 
-use std::collections::HashMap;
 use crate::core::Fingerprint;
+use std::collections::HashMap;
 
 // =============================================================================
 // CONSTANTS
@@ -60,10 +60,10 @@ use crate::core::Fingerprint;
 pub(crate) const WORDS: usize = 256;
 
 /// Bits per fingerprint
-const BITS: usize = WORDS * 64;  // 16384
+const BITS: usize = WORDS * 64; // 16384
 
 /// Default Mexican hat excitation threshold
-const DEFAULT_EXCITE: u32 = 2000;  // ~20% different
+const DEFAULT_EXCITE: u32 = 2000; // ~20% different
 
 /// Default Mexican hat inhibition threshold  
 const DEFAULT_INHIBIT: u32 = 5000; // ~50% different
@@ -153,7 +153,7 @@ pub fn sketch_8bit_sum(sketch: &[u8; WORDS]) -> u32 {
 mod simd {
     use super::*;
     use std::arch::x86_64::*;
-    
+
     /// AVX-512 accelerated Hamming distance
     #[target_feature(enable = "avx512f,avx512vpopcntdq")]
     pub unsafe fn hamming_distance_avx512(a: &[u64; WORDS], b: &[u64; WORDS]) -> u32 {
@@ -184,7 +184,7 @@ mod simd {
             (sum as u32) + rem
         }
     }
-    
+
     /// Batch process 8 candidates against 1 query
     #[target_feature(enable = "avx512f,avx512vpopcntdq")]
     pub unsafe fn batch_hamming_8(
@@ -199,7 +199,8 @@ mod simd {
                 let vq = _mm512_loadu_si512(query.as_ptr().add(offset) as *const __m512i);
 
                 for j in 0..8 {
-                    let vc = _mm512_loadu_si512(candidates[j].as_ptr().add(offset) as *const __m512i);
+                    let vc =
+                        _mm512_loadu_si512(candidates[j].as_ptr().add(offset) as *const __m512i);
                     let xor = _mm512_xor_si512(vq, vc);
                     let pop = _mm512_popcnt_epi64(xor);
                     totals[j] = _mm512_add_epi64(totals[j], pop);
@@ -231,7 +232,7 @@ mod simd {
 // =============================================================================
 
 /// Mexican hat response curve
-/// 
+///
 /// - distance < excite: positive response (match)
 /// - excite <= distance < inhibit: negative response (suppress)
 /// - distance >= inhibit: zero response (ignore)
@@ -264,7 +265,7 @@ impl MexicanHat {
             inhibit_strength: 0.5,
         }
     }
-    
+
     /// Create from similarity thresholds (0.0 to 1.0)
     pub fn from_similarity(excite_sim: f32, inhibit_sim: f32) -> Self {
         Self {
@@ -273,7 +274,7 @@ impl MexicanHat {
             inhibit_strength: 0.5,
         }
     }
-    
+
     /// Compute response for a given distance
     #[inline]
     pub fn response(&self, distance: u32) -> f32 {
@@ -289,13 +290,13 @@ impl MexicanHat {
             0.0
         }
     }
-    
+
     /// Check if distance is in excitation zone
     #[inline]
     pub fn is_excited(&self, distance: u32) -> bool {
         distance < self.excite
     }
-    
+
     /// Check if distance is in inhibition zone
     #[inline]
     pub fn is_inhibited(&self, distance: u32) -> bool {
@@ -335,11 +336,11 @@ impl RollingWindow {
             count: 0,
         }
     }
-    
+
     /// Add a distance to the window
     pub fn push(&mut self, distance: u32) {
         let d = distance as u64;
-        
+
         if self.count >= self.size {
             // Remove old value
             let old = self.distances[self.pos] as u64;
@@ -348,16 +349,16 @@ impl RollingWindow {
         } else {
             self.count += 1;
         }
-        
+
         // Add new value
         self.distances[self.pos] = distance;
         self.sum += d;
         self.sum_sq += d * d;
-        
+
         // Advance position
         self.pos = (self.pos + 1) % self.size;
     }
-    
+
     /// Get mean distance
     #[inline]
     pub fn mean(&self) -> f32 {
@@ -366,7 +367,7 @@ impl RollingWindow {
         }
         self.sum as f32 / self.count as f32
     }
-    
+
     /// Get standard deviation
     #[inline]
     pub fn stddev(&self) -> f32 {
@@ -378,13 +379,13 @@ impl RollingWindow {
         let variance = (self.sum_sq as f32 / n) - (mean * mean);
         variance.max(0.0).sqrt()
     }
-    
+
     /// Get mean and stddev together (μ, σ)
     #[inline]
     pub fn stats(&self) -> (f32, f32) {
         (self.mean(), self.stddev())
     }
-    
+
     /// Get coefficient of variation (σ/μ)
     #[inline]
     pub fn cv(&self) -> f32 {
@@ -394,13 +395,13 @@ impl RollingWindow {
         }
         self.stddev() / mu
     }
-    
+
     /// Is the window showing coherent (clustered) pattern?
     /// Low σ = coherent, high σ = dispersed
     pub fn is_coherent(&self, threshold: f32) -> bool {
         self.cv() < threshold
     }
-    
+
     /// Clear the window
     pub fn clear(&mut self) {
         self.distances.fill(0);
@@ -422,20 +423,20 @@ pub struct HdrIndex {
 
     /// Level 1: 4-bit sketches (how much per chunk?)
     sketches_4bit: Vec<[u8; 128]>,
-    
+
     /// Level 2: 8-bit sketches (precise per chunk)
     sketches_8bit: Vec<[u8; WORDS]>,
-    
+
     /// Full fingerprints for final verification
     fingerprints: Vec<[u64; WORDS]>,
-    
+
     /// Optional bucket index by sketch prefix
     buckets: Option<HashMap<u64, Vec<usize>>>,
-    
+
     /// Cascade thresholds
-    threshold_l0: u32,  // 1-bit: max differing chunks
-    threshold_l1: u32,  // 4-bit: max approximate distance
-    threshold_l2: u32,  // 8-bit: max precise distance
+    threshold_l0: u32, // 1-bit: max differing chunks
+    threshold_l1: u32, // 4-bit: max approximate distance
+    threshold_l2: u32, // 8-bit: max precise distance
 }
 
 impl HdrIndex {
@@ -447,9 +448,9 @@ impl HdrIndex {
             sketches_8bit: Vec::new(),
             fingerprints: Vec::new(),
             buckets: None,
-            threshold_l0: 256,   // All 256 chunks can differ (1-bit sketch)
-            threshold_l1: 2000,  // ~16K distance at 4-bit resolution
-            threshold_l2: 5000,  // ~30% different at 8-bit
+            threshold_l0: 256,  // All 256 chunks can differ (1-bit sketch)
+            threshold_l1: 2000, // ~16K distance at 4-bit resolution
+            threshold_l2: 5000, // ~30% different at 8-bit
         }
     }
 
@@ -466,41 +467,41 @@ impl HdrIndex {
             threshold_l2: 5000,
         }
     }
-    
+
     /// Set cascade thresholds
     pub fn set_thresholds(&mut self, l0: u32, l1: u32, l2: u32) {
         self.threshold_l0 = l0;
         self.threshold_l1 = l1;
         self.threshold_l2 = l2;
     }
-    
+
     /// Add a fingerprint to the index
     pub fn add(&mut self, fp: &[u64; WORDS]) {
         // Compute sketches against zero (for storage)
         // Actual comparison recomputes sketches
         self.fingerprints.push(*fp);
-        
+
         // Precompute self-sketches not useful; skip for now
         self.sketches_1bit.push([0u8; 32]);
         self.sketches_4bit.push([0u8; 128]);
         self.sketches_8bit.push([0u8; WORDS]);
     }
-    
+
     /// Number of entries
     pub fn len(&self) -> usize {
         self.fingerprints.len()
     }
-    
+
     /// Is empty?
     pub fn is_empty(&self) -> bool {
         self.fingerprints.is_empty()
     }
-    
+
     /// Search with HDR cascade
     /// Returns (index, distance) pairs sorted by distance
     pub fn search(&self, query: &[u64; WORDS], k: usize) -> Vec<(usize, u32)> {
         let mut candidates: Vec<(usize, u32)> = Vec::with_capacity(k * 2);
-        
+
         for (idx, fp) in self.fingerprints.iter().enumerate() {
             // Level 0: 1-bit filter
             let s1 = sketch_1bit(query, fp);
@@ -508,67 +509,61 @@ impl HdrIndex {
             if d1 > self.threshold_l0 {
                 continue;
             }
-            
+
             // Level 1: 4-bit filter
             let s4 = sketch_4bit(query, fp);
             let d4 = sketch_4bit_sum(&s4);
             if d4 > self.threshold_l1 {
                 continue;
             }
-            
+
             // Level 2: 8-bit filter
             let s8 = sketch_8bit(query, fp);
             let d8 = sketch_8bit_sum(&s8);
             if d8 > self.threshold_l2 {
                 continue;
             }
-            
+
             // Level 3: exact distance (already computed as d8 for 8-bit)
             // For full precision, use exact hamming
             let exact = hamming_distance(query, fp);
             candidates.push((idx, exact));
         }
-        
+
         // Sort by distance and take top k
         candidates.sort_by_key(|&(_, d)| d);
         candidates.truncate(k);
         candidates
     }
-    
+
     /// Search with Mexican hat discrimination
     pub fn search_mexican_hat(
-        &self, 
-        query: &[u64; WORDS], 
+        &self,
+        query: &[u64; WORDS],
         k: usize,
         hat: &MexicanHat,
     ) -> Vec<(usize, f32)> {
         let mut results: Vec<(usize, f32)> = Vec::new();
-        
+
         for (idx, fp) in self.fingerprints.iter().enumerate() {
             let dist = hamming_distance(query, fp);
             let response = hat.response(dist);
-            
+
             // Only keep positive responses
             if response > 0.0 {
                 results.push((idx, response));
             }
         }
-        
+
         // Sort by response (highest first)
         results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
         results.truncate(k);
         results
     }
-    
+
     /// Batch search - process multiple queries efficiently
-    pub fn batch_search(
-        &self,
-        queries: &[[u64; WORDS]],
-        k: usize,
-    ) -> Vec<Vec<(usize, u32)>> {
-        queries.iter()
-            .map(|q| self.search(q, k))
-            .collect()
+    pub fn batch_search(&self, queries: &[[u64; WORDS]], k: usize) -> Vec<Vec<(usize, u32)>> {
+        queries.iter().map(|q| self.search(q, k)).collect()
     }
 }
 
@@ -583,7 +578,7 @@ impl Default for HdrIndex {
 // =============================================================================
 
 /// Bound query for O(1) retrieval
-/// 
+///
 /// When you know the binding structure, you can COMPUTE results
 /// instead of searching for them.
 pub struct BoundRetrieval {
@@ -607,7 +602,7 @@ impl BoundRetrieval {
             verb: *verb,
         }
     }
-    
+
     /// Add an edge: A --[verb]--> B
     pub fn add_edge(&mut self, source: &[u64; WORDS], target: &[u64; WORDS]) {
         // Compute edge = source ⊗ verb ⊗ target
@@ -615,62 +610,58 @@ impl BoundRetrieval {
         for i in 0..WORDS {
             edge[i] = source[i] ^ self.verb[i] ^ target[i];
         }
-        
+
         self.edges.push(edge);
         self.sources.push(*source);
         self.targets.push(*target);
     }
-    
+
     /// Retrieve target given source: edge ⊗ verb ⊗ source = target
     /// This is O(1) per edge, not a search!
     pub fn get_targets(&self, source: &[u64; WORDS], threshold: u32) -> Vec<(usize, u32)> {
         let mut results = Vec::new();
-        
+
         for (idx, edge) in self.edges.iter().enumerate() {
             // Compute: edge ⊗ verb ⊗ source = target (if this edge is from source)
             let mut candidate = [0u64; WORDS];
             for i in 0..WORDS {
                 candidate[i] = edge[i] ^ self.verb[i] ^ source[i];
             }
-            
+
             // Check if candidate matches stored target
             let dist = hamming_distance(&candidate, &self.targets[idx]);
             if dist < threshold {
                 results.push((idx, dist));
             }
         }
-        
+
         results
     }
-    
+
     /// Retrieve source given target: edge ⊗ verb ⊗ target = source
     pub fn get_sources(&self, target: &[u64; WORDS], threshold: u32) -> Vec<(usize, u32)> {
         let mut results = Vec::new();
-        
+
         for (idx, edge) in self.edges.iter().enumerate() {
             // Compute: edge ⊗ verb ⊗ target = source (if this edge goes to target)
             let mut candidate = [0u64; WORDS];
             for i in 0..WORDS {
                 candidate[i] = edge[i] ^ self.verb[i] ^ target[i];
             }
-            
+
             // Check if candidate matches stored source
             let dist = hamming_distance(&candidate, &self.sources[idx]);
             if dist < threshold {
                 results.push((idx, dist));
             }
         }
-        
+
         results
     }
-    
+
     /// Direct unbind: given edge and one endpoint, recover the other
     /// This is TRUE O(1) - no iteration!
-    pub fn unbind(
-        edge: &[u64; WORDS],
-        verb: &[u64; WORDS],
-        known: &[u64; WORDS],
-    ) -> [u64; WORDS] {
+    pub fn unbind(edge: &[u64; WORDS], verb: &[u64; WORDS], known: &[u64; WORDS]) -> [u64; WORDS] {
         let mut result = [0u64; WORDS];
         for i in 0..WORDS {
             result[i] = edge[i] ^ verb[i] ^ known[i];
@@ -715,7 +706,7 @@ impl AlienSearch {
             window: RollingWindow::new(100),
         }
     }
-    
+
     /// Create with capacity
     pub fn with_capacity(n: usize) -> Self {
         Self {
@@ -724,55 +715,58 @@ impl AlienSearch {
             window: RollingWindow::new(100),
         }
     }
-    
+
     /// Set Mexican hat parameters
     pub fn set_mexican_hat(&mut self, excite: u32, inhibit: u32) {
         self.hat = MexicanHat::new(excite, inhibit);
     }
-    
+
     /// Add fingerprint to index
     pub fn add(&mut self, fp: &[u64; WORDS]) {
         self.index.add(fp);
     }
-    
+
     /// Add multiple fingerprints
     pub fn add_batch(&mut self, fps: &[[u64; WORDS]]) {
         for fp in fps {
             self.index.add(fp);
         }
     }
-    
+
     /// Number of indexed fingerprints
     pub fn len(&self) -> usize {
         self.index.len()
     }
-    
+
     /// Search - returns results that look like float vector search
-    /// 
+    ///
     /// This is THE alien magic API. User sees similarity scores.
     /// Underneath it's HDR cascade + Mexican hat + rolling σ.
     pub fn search(&mut self, query: &[u64; WORDS], k: usize) -> Vec<SearchResult> {
         let raw_results = self.index.search(query, k);
-        
-        raw_results.into_iter().map(|(idx, dist)| {
-            // Update rolling window
-            self.window.push(dist);
-            
-            // Convert to similarity (like cosine similarity)
-            let similarity = 1.0 - (dist as f32 / BITS as f32);
-            
-            // Mexican hat response
-            let response = self.hat.response(dist);
-            
-            SearchResult {
-                index: idx,
-                distance: dist,
-                similarity,
-                response,
-            }
-        }).collect()
+
+        raw_results
+            .into_iter()
+            .map(|(idx, dist)| {
+                // Update rolling window
+                self.window.push(dist);
+
+                // Convert to similarity (like cosine similarity)
+                let similarity = 1.0 - (dist as f32 / BITS as f32);
+
+                // Mexican hat response
+                let response = self.hat.response(dist);
+
+                SearchResult {
+                    index: idx,
+                    distance: dist,
+                    similarity,
+                    response,
+                }
+            })
+            .collect()
     }
-    
+
     /// Search returning only similarity scores (float-like API)
     pub fn search_similarity(&mut self, query: &[u64; WORDS], k: usize) -> Vec<(usize, f32)> {
         self.search(query, k)
@@ -780,7 +774,7 @@ impl AlienSearch {
             .map(|r| (r.index, r.similarity))
             .collect()
     }
-    
+
     /// Search with Mexican hat discrimination
     pub fn search_discriminate(&mut self, query: &[u64; WORDS], k: usize) -> Vec<(usize, f32)> {
         self.search(query, k)
@@ -789,12 +783,12 @@ impl AlienSearch {
             .map(|r| (r.index, r.response))
             .collect()
     }
-    
+
     /// Get coherence stats for recent searches
     pub fn coherence(&self) -> (f32, f32) {
         self.window.stats()
     }
-    
+
     /// Is recent search pattern coherent?
     pub fn is_coherent(&self) -> bool {
         self.window.is_coherent(0.3)
@@ -815,19 +809,19 @@ impl Default for AlienSearch {
 pub trait FingerprintSearch {
     /// Convert to words for search operations
     fn to_words(&self) -> [u64; WORDS];
-    
+
     /// Create from words
     fn from_words(words: &[u64; WORDS]) -> Self;
-    
+
     /// Compute Hamming distance to another fingerprint
     fn hamming(&self, other: &Self) -> u32;
-    
+
     /// Compute similarity (0.0 to 1.0)
     fn similarity(&self, other: &Self) -> f32;
-    
+
     /// Mexican hat response
     fn resonance(&self, other: &Self, hat: &MexicanHat) -> f32;
-    
+
     /// Unbind (A⊗B⊗B=A)
     fn unbind(&self, key: &Self) -> Self;
 }
@@ -839,38 +833,38 @@ impl FingerprintSearch for Fingerprint {
         for i in 0..WORDS {
             let start = i * 8;
             if start + 8 <= bytes.len() {
-                words[i] = u64::from_le_bytes(bytes[start..start+8].try_into().unwrap());
+                words[i] = u64::from_le_bytes(bytes[start..start + 8].try_into().unwrap());
             }
         }
         words
     }
-    
+
     fn from_words(words: &[u64; WORDS]) -> Self {
         use crate::FINGERPRINT_U64;
         // FINGERPRINT_U64 = FINGERPRINT_WORDS = 256, direct conversion
-        let mut bytes = vec![0u8; FINGERPRINT_U64 * 8];  // 2048 bytes
+        let mut bytes = vec![0u8; FINGERPRINT_U64 * 8]; // 2048 bytes
         for (i, &word) in words.iter().enumerate() {
-            bytes[i*8..(i+1)*8].copy_from_slice(&word.to_le_bytes());
+            bytes[i * 8..(i + 1) * 8].copy_from_slice(&word.to_le_bytes());
         }
         Fingerprint::from_bytes(&bytes).expect("valid fingerprint bytes")
     }
-    
+
     fn hamming(&self, other: &Self) -> u32 {
         let a = self.to_words();
         let b = other.to_words();
         hamming_distance(&a, &b)
     }
-    
+
     fn similarity(&self, other: &Self) -> f32 {
         let dist = self.hamming(other);
         1.0 - (dist as f32 / BITS as f32)
     }
-    
+
     fn resonance(&self, other: &Self, hat: &MexicanHat) -> f32 {
         let dist = self.hamming(other);
         hat.response(dist)
     }
-    
+
     fn unbind(&self, key: &Self) -> Self {
         // XOR is self-inverse: A⊗B⊗B = A
         self.bind(key)
@@ -884,7 +878,7 @@ impl FingerprintSearch for Fingerprint {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     fn random_fingerprint() -> [u64; WORDS] {
         let mut fp = [0u64; WORDS];
         for i in 0..WORDS {
@@ -892,125 +886,125 @@ mod tests {
         }
         fp
     }
-    
+
     #[test]
     fn test_hamming_distance() {
         let a = [0u64; WORDS];
         let b = [0u64; WORDS];
         assert_eq!(hamming_distance(&a, &b), 0);
-        
+
         let mut c = [0u64; WORDS];
-        c[0] = 0xFFFFFFFFFFFFFFFF;  // 64 bits set
+        c[0] = 0xFFFFFFFFFFFFFFFF; // 64 bits set
         assert_eq!(hamming_distance(&a, &c), 64);
     }
-    
+
     #[test]
     fn test_mexican_hat() {
         let hat = MexicanHat::new(2000, 5000);
-        
+
         // Center: strong positive
         assert!(hat.response(0) > 0.9);
         assert!(hat.response(1000) > 0.0);
-        
+
         // Ring: negative
         assert!(hat.response(3000) < 0.0);
-        
+
         // Far: zero
         assert_eq!(hat.response(6000), 0.0);
     }
-    
+
     #[test]
     fn test_rolling_window() {
         let mut window = RollingWindow::new(5);
-        
+
         // Add some values
         for d in [100, 110, 105, 108, 103] {
             window.push(d);
         }
-        
+
         let (mu, sigma) = window.stats();
         assert!((mu - 105.2).abs() < 1.0);
-        assert!(sigma > 0.0 && sigma < 10.0);  // Low variance
+        assert!(sigma > 0.0 && sigma < 10.0); // Low variance
     }
-    
+
     #[test]
     fn test_hdr_index() {
         let mut index = HdrIndex::with_capacity(100);
-        
+
         // Add random fingerprints
         let fps: Vec<_> = (0..100).map(|_| random_fingerprint()).collect();
         for fp in &fps {
             index.add(fp);
         }
-        
+
         // Search should find the exact fingerprint
         let results = index.search(&fps[42], 5);
         assert!(!results.is_empty());
-        assert_eq!(results[0].0, 42);  // Should find itself
-        assert_eq!(results[0].1, 0);   // Distance 0
+        assert_eq!(results[0].0, 42); // Should find itself
+        assert_eq!(results[0].1, 0); // Distance 0
     }
-    
+
     #[test]
     fn test_bound_retrieval() {
         let verb = random_fingerprint();
         let source = random_fingerprint();
         let target = random_fingerprint();
-        
+
         // Compute edge
         let mut edge = [0u64; WORDS];
         for i in 0..WORDS {
             edge[i] = source[i] ^ verb[i] ^ target[i];
         }
-        
+
         // Unbind to recover target
         let recovered = BoundRetrieval::unbind(&edge, &verb, &source);
         assert_eq!(hamming_distance(&recovered, &target), 0);
-        
+
         // Unbind to recover source
         let recovered = BoundRetrieval::unbind(&edge, &verb, &target);
         assert_eq!(hamming_distance(&recovered, &source), 0);
     }
-    
+
     #[test]
     fn test_alien_search_api() {
         let mut search = AlienSearch::with_capacity(100);
-        
+
         // Add fingerprints
         let fps: Vec<_> = (0..100).map(|_| random_fingerprint()).collect();
         search.add_batch(&fps);
-        
+
         // Search returns similarity scores (like float vectors!)
         let results = search.search_similarity(&fps[0], 5);
         assert!(!results.is_empty());
-        assert!(results[0].1 > 0.99);  // High similarity to self
+        assert!(results[0].1 > 0.99); // High similarity to self
     }
-    
+
     #[test]
     fn test_sketch_cascade() {
         let a = random_fingerprint();
         let b = random_fingerprint();
-        
+
         // 1-bit sketch
         let s1 = sketch_1bit(&a, &b);
         let d1 = sketch_1bit_sum(&s1);
-        
+
         // Most chunks should differ for random fingerprints
         assert!(d1 > WORDS as u32 / 2);
-        
+
         // 4-bit sketch
         let s4 = sketch_4bit(&a, &b);
         let d4 = sketch_4bit_sum(&s4);
-        
+
         // 8-bit sketch
         let s8 = sketch_8bit(&a, &b);
         let d8 = sketch_8bit_sum(&s8);
-        
+
         // Exact
         let exact = hamming_distance(&a, &b);
-        
+
         // d8 should equal exact (8-bit captures full per-chunk count)
         assert_eq!(d8, exact);
-        
+
         // d4 should be close but slightly under (saturated at 15)
         assert!(d4 <= exact);
     }
@@ -1092,7 +1086,7 @@ impl QualityTracker {
     pub fn calculate_sweet_spot(&self, mean: u8, sd: u8) -> u16 {
         // Base threshold from mean (how different the samples are)
         let base = match mean {
-            0..=1 => self.base_threshold / 2,      // Very similar
+            0..=1 => self.base_threshold / 2,       // Very similar
             2..=3 => (self.base_threshold * 3) / 4, // Somewhat similar
             4..=5 => self.base_threshold,           // Mixed signals
             6..=7 => (self.base_threshold * 3) / 2, // Very different
@@ -1108,7 +1102,9 @@ impl QualityTracker {
 
     /// Infer trajectory and pre-adjust threshold
     pub fn infer_trajectory(&mut self) -> i16 {
-        if self.sd_idx < 4 { return 0; }
+        if self.sd_idx < 4 {
+            return 0;
+        }
 
         let h = &self.sd_history;
         // Linear slope over last 4 readings
@@ -1163,11 +1159,7 @@ impl RubiconSearch {
 
     /// Search with Rubicon crossings and adaptive thresholds
     /// Returns (index, distance, quality) tuples
-    pub fn search_adaptive(
-        &mut self,
-        query: &[u64; WORDS],
-        k: usize,
-    ) -> Vec<(usize, u32)> {
+    pub fn search_adaptive(&mut self, query: &[u64; WORDS], k: usize) -> Vec<(usize, u32)> {
         let mut results = Vec::with_capacity(k * 2);
         let fps = &self.index.fingerprints;
 
@@ -1261,7 +1253,9 @@ impl RubiconSearch {
         stack_size: usize,
     ) -> Option<VoyagerResult> {
         let fps = &self.index.fingerprints;
-        if fps.is_empty() { return None; }
+        if fps.is_empty() {
+            return None;
+        }
 
         // Gather weak candidates at the edge of detection
         let mut weak_candidates = Vec::with_capacity(stack_size);
@@ -1274,11 +1268,15 @@ impl RubiconSearch {
             // In the noise zone but potentially stackable
             if dist >= radius_min && dist <= radius_max {
                 weak_candidates.push(*fp);
-                if weak_candidates.len() >= stack_size { break; }
+                if weak_candidates.len() >= stack_size {
+                    break;
+                }
             }
         }
 
-        if weak_candidates.len() < 3 { return None; }
+        if weak_candidates.len() < 3 {
+            return None;
+        }
 
         // Stack exposures using orthogonal superposition
         let star = superposition_clean(query, &weak_candidates)?;
@@ -1335,13 +1333,16 @@ pub fn superposition_clean(
     query: &[u64; WORDS],
     weak_candidates: &[[u64; WORDS]],
 ) -> Option<[u64; WORDS]> {
-    if weak_candidates.len() < 3 { return None; }
+    if weak_candidates.len() < 3 {
+        return None;
+    }
 
     let n = weak_candidates.len();
     let threshold = n / 2; // Majority vote
 
     // XOR each candidate with query to get the "difference signal"
-    let deltas: Vec<_> = weak_candidates.iter()
+    let deltas: Vec<_> = weak_candidates
+        .iter()
         .map(|c| {
             let mut delta = [0u64; WORDS];
             for i in 0..WORDS {
@@ -1363,9 +1364,7 @@ pub fn superposition_clean(
             let mask = 1u64 << bit;
 
             // Count votes for this bit
-            let votes: usize = deltas.iter()
-                .filter(|d| d[word] & mask != 0)
-                .count();
+            let votes: usize = deltas.iter().filter(|d| d[word] & mask != 0).count();
 
             // Majority vote
             if votes > threshold {
@@ -1519,9 +1518,12 @@ mod belichtung_tests {
 
         // Cleaned should be much closer to target (the consistent signal)
         // than to base (the query)
-        assert!(dist_to_target < dist_to_base,
+        assert!(
+            dist_to_target < dist_to_base,
             "Cleaned should be closer to target. To target: {}, to base: {}",
-            dist_to_target, dist_to_base);
+            dist_to_target,
+            dist_to_base
+        );
     }
 
     #[test]

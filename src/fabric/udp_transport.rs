@@ -48,8 +48,8 @@ use std::io;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
+use super::executor::{ExecResult, Executor};
 use super::firefly_frame::FireflyFrame;
-use super::executor::{Executor, ExecResult};
 
 /// Size of FireflyFrame in u64 words
 const FRAME_WORDS: usize = FireflyFrame::WORDS;
@@ -121,7 +121,10 @@ impl FramePacket {
         // Check version
         let version = data[2];
         if version != FRAME_VERSION {
-            return Err(DecodeError::VersionMismatch { expected: FRAME_VERSION, got: version });
+            return Err(DecodeError::VersionMismatch {
+                expected: FRAME_VERSION,
+                got: version,
+            });
         }
 
         let ack_requested = data[3] & 0x01 != 0;
@@ -133,8 +136,7 @@ impl FramePacket {
         for (i, chunk) in frame_bytes.chunks_exact(8).enumerate() {
             if i < FRAME_WORDS {
                 words[i] = u64::from_le_bytes([
-                    chunk[0], chunk[1], chunk[2], chunk[3],
-                    chunk[4], chunk[5], chunk[6], chunk[7],
+                    chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6], chunk[7],
                 ]);
             }
         }
@@ -166,8 +168,9 @@ impl std::fmt::Display for DecodeError {
         match self {
             DecodeError::TooShort => write!(f, "packet too short"),
             DecodeError::BadMagic => write!(f, "bad magic bytes"),
-            DecodeError::VersionMismatch { expected, got } =>
-                write!(f, "version mismatch: expected {}, got {}", expected, got),
+            DecodeError::VersionMismatch { expected, got } => {
+                write!(f, "version mismatch: expected {}, got {}", expected, got)
+            }
             DecodeError::FrameError(e) => write!(f, "frame decode error: {}", e),
         }
     }
@@ -217,7 +220,8 @@ impl UdpSender {
         self.sequence = self.sequence.wrapping_add(1);
 
         let data = packet.encode();
-        let dest_addr: SocketAddr = dest.parse()
+        let dest_addr: SocketAddr = dest
+            .parse()
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
 
         match self.socket.send_to(&data, dest_addr) {
@@ -313,11 +317,10 @@ impl UdpReceiver {
         self.stats.bytes_received += size as u64;
         self.stats.frames_received += 1;
 
-        FramePacket::decode(&self.buffer[..size], from)
-            .map_err(|e| {
-                self.stats.decode_errors += 1;
-                io::Error::new(io::ErrorKind::InvalidData, e.to_string())
-            })
+        FramePacket::decode(&self.buffer[..size], from).map_err(|e| {
+            self.stats.decode_errors += 1;
+            io::Error::new(io::ErrorKind::InvalidData, e.to_string())
+        })
     }
 
     /// Run executor loop - receive frames and execute
@@ -431,7 +434,10 @@ pub mod async_transport {
     impl AsyncSender {
         pub async fn new(bind_addr: &str) -> io::Result<Self> {
             let socket = UdpSocket::bind(bind_addr).await?;
-            Ok(Self { socket, sequence: 0 })
+            Ok(Self {
+                socket,
+                sequence: 0,
+            })
         }
 
         pub async fn send_frame(&mut self, frame: &FireflyFrame, dest: &str) -> io::Result<()> {
@@ -445,7 +451,8 @@ pub mod async_transport {
             self.sequence = self.sequence.wrapping_add(1);
 
             let data = packet.encode();
-            let dest_addr: SocketAddr = dest.parse()
+            let dest_addr: SocketAddr = dest
+                .parse()
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
 
             self.socket.send_to(&data, dest_addr).await?;
@@ -460,7 +467,10 @@ pub mod async_transport {
     }
 
     impl AsyncReceiver {
-        pub async fn new(bind_addr: &str, buffer_size: usize) -> io::Result<(Self, mpsc::Receiver<FramePacket>)> {
+        pub async fn new(
+            bind_addr: &str,
+            buffer_size: usize,
+        ) -> io::Result<(Self, mpsc::Receiver<FramePacket>)> {
             let socket = UdpSocket::bind(bind_addr).await?;
             let (tx, rx) = mpsc::channel(buffer_size);
             Ok((Self { socket, tx }, rx))

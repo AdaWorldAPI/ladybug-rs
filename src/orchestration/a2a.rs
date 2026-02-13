@@ -20,10 +20,8 @@
 //! Agent B (0x0C:05) ◄── decode message ◄── XOR unbind from channel ◄─────┘
 //! ```
 
+use crate::storage::bind_space::{Addr, BindSpace, FINGERPRINT_WORDS, PREFIX_A2A};
 use serde::{Deserialize, Serialize};
-use crate::storage::bind_space::{
-    Addr, BindSpace, FINGERPRINT_WORDS, PREFIX_A2A,
-};
 
 /// Message kind for A2A communication
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -90,12 +88,11 @@ impl A2AMessage {
 
     /// Encode message metadata into a fingerprint for channel storage
     pub fn to_fingerprint(&self) -> [u64; FINGERPRINT_WORDS] {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
 
         let serialized = format!(
             "{}:{}:{}:{:?}:{}",
-            self.id, self.sender_slot, self.receiver_slot,
-            self.kind, self.payload
+            self.id, self.sender_slot, self.receiver_slot, self.kind, self.payload
         );
 
         let mut hasher = Sha256::new();
@@ -172,7 +169,9 @@ impl A2AChannel {
 fn compute_channel(sender: u8, receiver: u8) -> u8 {
     // XOR sender and receiver, then mix with rotation to reduce collisions
     let mixed = sender ^ receiver;
-    let rotated = sender.wrapping_mul(17).wrapping_add(receiver.wrapping_mul(31));
+    let rotated = sender
+        .wrapping_mul(17)
+        .wrapping_add(receiver.wrapping_mul(31));
     mixed ^ rotated
 }
 
@@ -224,7 +223,9 @@ impl A2AProtocol {
             space.write_at(addr, composed);
 
             // Update channel resonance from the new superposition
-            if let Some(channel) = self.channels.iter_mut()
+            if let Some(channel) = self
+                .channels
+                .iter_mut()
                 .find(|c| c.channel_slot == channel_slot)
             {
                 channel.superposition_depth += 1;
@@ -235,7 +236,9 @@ impl A2AProtocol {
             space.write_at(addr, fp);
 
             // First message — resonance is the message's own density
-            if let Some(channel) = self.channels.iter_mut()
+            if let Some(channel) = self
+                .channels
+                .iter_mut()
                 .find(|c| c.channel_slot == channel_slot)
             {
                 channel.superposition_depth = 1;
@@ -245,10 +248,7 @@ impl A2AProtocol {
         }
 
         if let Some(node) = space.read_mut(addr) {
-            node.label = Some(format!(
-                "a2a:{}->{}",
-                msg.sender_slot, msg.receiver_slot
-            ));
+            node.label = Some(format!("a2a:{}->{}", msg.sender_slot, msg.receiver_slot));
         }
 
         self.pending_messages.push(msg);
@@ -257,7 +257,12 @@ impl A2AProtocol {
 
     /// Read the current XOR superposition field for a channel.
     /// This is the accumulated resonance of all messages in the channel.
-    pub fn read_field(&self, space: &BindSpace, sender: u8, receiver: u8) -> Option<[u64; FINGERPRINT_WORDS]> {
+    pub fn read_field(
+        &self,
+        space: &BindSpace,
+        sender: u8,
+        receiver: u8,
+    ) -> Option<[u64; FINGERPRINT_WORDS]> {
         let channel_slot = compute_channel(sender, receiver);
         let addr = Addr::new(PREFIX_A2A, channel_slot);
         space.read(addr).map(|n| n.fingerprint)
@@ -267,7 +272,8 @@ impl A2AProtocol {
     /// Measures awareness density — how much information the channel carries.
     pub fn field_resonance(&self, sender: u8, receiver: u8) -> f32 {
         let channel_slot = compute_channel(sender, receiver);
-        self.channels.iter()
+        self.channels
+            .iter()
             .find(|c| c.channel_slot == channel_slot)
             .map(|c| c.field_resonance)
             .unwrap_or(0.0)
@@ -277,7 +283,8 @@ impl A2AProtocol {
     /// have been XOR-composed into the field.
     pub fn superposition_depth(&self, sender: u8, receiver: u8) -> u32 {
         let channel_slot = compute_channel(sender, receiver);
-        self.channels.iter()
+        self.channels
+            .iter()
             .find(|c| c.channel_slot == channel_slot)
             .map(|c| c.superposition_depth)
             .unwrap_or(0)
@@ -412,7 +419,11 @@ mod tests {
 
         // Field resonance should be non-zero
         let resonance = protocol.field_resonance(0, 1);
-        assert!(resonance > 0.0, "Field resonance should be positive: {}", resonance);
+        assert!(
+            resonance > 0.0,
+            "Field resonance should be positive: {}",
+            resonance
+        );
     }
 
     #[test]
@@ -420,17 +431,27 @@ mod tests {
         // When two messages are XOR-composed, knowing one lets you extract the other
         let msg_a = A2AMessage {
             id: "a".to_string(),
-            sender_slot: 0, receiver_slot: 1,
-            kind: MessageKind::Knowledge, payload: "alpha".to_string(),
-            fingerprint: None, timestamp: 1, status: DeliveryStatus::Pending,
-            thinking_style_hint: None, resonance_weight: 1.0,
+            sender_slot: 0,
+            receiver_slot: 1,
+            kind: MessageKind::Knowledge,
+            payload: "alpha".to_string(),
+            fingerprint: None,
+            timestamp: 1,
+            status: DeliveryStatus::Pending,
+            thinking_style_hint: None,
+            resonance_weight: 1.0,
         };
         let msg_b = A2AMessage {
             id: "b".to_string(),
-            sender_slot: 0, receiver_slot: 1,
-            kind: MessageKind::Knowledge, payload: "beta".to_string(),
-            fingerprint: None, timestamp: 2, status: DeliveryStatus::Pending,
-            thinking_style_hint: None, resonance_weight: 1.0,
+            sender_slot: 0,
+            receiver_slot: 1,
+            kind: MessageKind::Knowledge,
+            payload: "beta".to_string(),
+            fingerprint: None,
+            timestamp: 2,
+            status: DeliveryStatus::Pending,
+            thinking_style_hint: None,
+            resonance_weight: 1.0,
         };
 
         let fp_a = msg_a.to_fingerprint();
@@ -460,22 +481,38 @@ mod tests {
         let _ch2 = protocol.open_channel(2, 3);
 
         let msg1 = A2AMessage {
-            id: "m1".to_string(), sender_slot: 0, receiver_slot: 1,
-            kind: MessageKind::Status, payload: "hi".to_string(),
-            fingerprint: None, timestamp: 1, status: DeliveryStatus::Pending,
-            thinking_style_hint: None, resonance_weight: 1.0,
+            id: "m1".to_string(),
+            sender_slot: 0,
+            receiver_slot: 1,
+            kind: MessageKind::Status,
+            payload: "hi".to_string(),
+            fingerprint: None,
+            timestamp: 1,
+            status: DeliveryStatus::Pending,
+            thinking_style_hint: None,
+            resonance_weight: 1.0,
         };
         let msg2 = A2AMessage {
-            id: "m2".to_string(), sender_slot: 2, receiver_slot: 3,
-            kind: MessageKind::Status, payload: "hello".to_string(),
-            fingerprint: None, timestamp: 2, status: DeliveryStatus::Pending,
-            thinking_style_hint: None, resonance_weight: 1.0,
+            id: "m2".to_string(),
+            sender_slot: 2,
+            receiver_slot: 3,
+            kind: MessageKind::Status,
+            payload: "hello".to_string(),
+            fingerprint: None,
+            timestamp: 2,
+            status: DeliveryStatus::Pending,
+            thinking_style_hint: None,
+            resonance_weight: 1.0,
         };
 
         protocol.send(msg1, &mut space);
         protocol.send(msg2, &mut space);
 
         let awareness = protocol.total_awareness();
-        assert!(awareness > 0.0, "Total awareness should be positive: {}", awareness);
+        assert!(
+            awareness > 0.0,
+            "Total awareness should be positive: {}",
+            awareness
+        );
     }
 }
