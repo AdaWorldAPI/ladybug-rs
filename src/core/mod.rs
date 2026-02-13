@@ -2,7 +2,7 @@
 
 mod fingerprint;
 pub mod simd;
-mod vsa;
+pub mod vsa;
 mod buffer;
 mod scent;
 

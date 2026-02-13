@@ -1,0 +1,93 @@
+# =============================================================================
+# LadybugDB — Integration Proof Suite
+# =============================================================================
+# Runs the mathematical proof tests that verify ladybug-rs architectural
+# claims against the published literature (Berry-Esseen, NARS, Pearl, etc.)
+#
+# Three test suites:
+#   proof_foundation       — 13 proofs (F-1 through F-7c)
+#   proof_reasoning_ladder — 8 proofs  (RL-1 through RL-8)
+#   proof_tactics          — 12 proofs (T-01 through T-34)
+#
+# Total: 33 proofs verifying cognitive substrate invariants.
+# =============================================================================
+
+name: Proof Suite
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'tests/proof_*.rs'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'tests/proof_*.rs'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  proof-foundation:
+    name: Foundation Proofs (F-1 through F-7)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run foundation proofs
+        run: cargo test --test proof_foundation -- --test-threads=1 -v
+
+  proof-reasoning-ladder:
+    name: Reasoning Ladder Proofs (RL-1 through RL-8)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run reasoning ladder proofs
+        run: cargo test --test proof_reasoning_ladder -- --test-threads=1 -v
+
+  proof-tactics:
+    name: Tactics Proofs (T-01 through T-34)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run tactics proofs
+        run: cargo test --test proof_tactics -- --test-threads=1 -v
+
+  proof-summary:
+    name: Proof Summary
+    needs: [proof-foundation, proof-reasoning-ladder, proof-tactics]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check results
+        run: |
+          echo "============================================"
+          echo "  LADYBUG-RS PROOF SUITE RESULTS"
+          echo "============================================"
+          echo ""
+          echo "  Foundation:       ${{ needs.proof-foundation.result }}"
+          echo "  Reasoning Ladder: ${{ needs.proof-reasoning-ladder.result }}"
+          echo "  Tactics:          ${{ needs.proof-tactics.result }}"
+          echo ""
+          if [ "${{ needs.proof-foundation.result }}" = "success" ] && \
+             [ "${{ needs.proof-reasoning-ladder.result }}" = "success" ] && \
+             [ "${{ needs.proof-tactics.result }}" = "success" ]; then
+            echo "  ALL PROOF SUITES PASSED"
+          else
+            echo "  SOME PROOF SUITES FAILED"
+            exit 1
+          fi
+          echo "============================================"
