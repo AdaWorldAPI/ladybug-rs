@@ -26,15 +26,13 @@
 //! ```
 
 use arrow::array::*;
-use arrow::datatypes::DataType;
 use arrow::record_batch::RecordBatch;
 use datafusion::prelude::*;
 use datafusion::execution::context::SessionContext;
-use datafusion::logical_expr::{ScalarUDF, Signature, TypeSignature, Volatility};
 use std::sync::Arc;
 
 use crate::core::DIM;
-use crate::{Error, Result};
+use crate::Result;
 
 // =============================================================================
 // HAMMING OPERATIONS (Pure functions for UDFs)
@@ -708,7 +706,8 @@ impl QueryBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+    use arrow::datatypes::DataType;
+
     #[test]
     fn test_hamming_distance() {
         let a = vec![0xFF, 0x00, 0xFF, 0x00];

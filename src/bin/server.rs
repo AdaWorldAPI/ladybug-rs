@@ -445,6 +445,7 @@ struct DbState {
     /// Indexed fingerprints with metadata
     fingerprints: Vec<(String, Fingerprint, HashMap<String, String>)>,
     /// Key-value store (simple fallback)
+    #[allow(dead_code)]
     kv: HashMap<String, String>,
     /// Full CogRedis interface (DN commands, CAM ops, etc.)
     cog_redis: CogRedis,
@@ -858,7 +859,7 @@ fn handle_hamming(body: &str, format: ResponseFormat) -> Vec<u8> {
     }
 }
 
-fn handle_similarity(body: &str, state: &SharedState, format: ResponseFormat) -> Vec<u8> {
+fn handle_similarity(body: &str, _state: &SharedState, format: ResponseFormat) -> Vec<u8> {
     handle_hamming(body, format)
 }
 

@@ -47,7 +47,6 @@ use std::time::{Duration, Instant};
 
 use super::bind_space::{Addr, BindNode, BindSpace, FINGERPRINT_WORDS};
 use super::temporal::Version;
-use super::snapshots::{DeltaBlock, SnapshotId};
 
 // =============================================================================
 // ZERO-COPY XOR OPERATIONS
@@ -62,7 +61,7 @@ pub fn xor_slices_inplace(dest: &mut [u8], src: &[u8]) {
 
     // Process 8 bytes at a time for auto-vectorization
     let chunks = len / 8;
-    let remainder = len % 8;
+    let _remainder = len % 8;
 
     // Safe transmute for aligned u64 XOR
     for i in 0..chunks {
@@ -297,7 +296,7 @@ impl EpochGuard {
     }
 
     /// Begin a read operation, returning epoch ticket
-    pub fn begin_read(&self) -> EpochTicket {
+    pub fn begin_read(&self) -> EpochTicket<'_> {
         let epoch = self.epoch.load(Ordering::SeqCst);
         let slot = (epoch % 2) as usize;
         self.reader_counts[slot].fetch_add(1, Ordering::SeqCst);

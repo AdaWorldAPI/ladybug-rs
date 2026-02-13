@@ -69,10 +69,10 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use crate::core::Fingerprint;
-use crate::search::cognitive::{QualiaVector, CognitiveAtom, CognitiveSearch, SpoTriple};
+use crate::search::cognitive::{QualiaVector, CognitiveAtom, CognitiveSearch};
 use crate::search::causal::CausalSearch;
 use crate::learning::cognitive_frameworks::TruthValue;
-use crate::learning::cam_ops::{OpCategory, OpDictionary, OpResult, LanceOp, SqlOp, HammingOp};
+use crate::learning::cam_ops::{OpCategory, LanceOp, SqlOp, HammingOp};
 use super::bind_space::{BindSpace, BindNode, Addr, FINGERPRINT_WORDS, dn_path_to_addr};
 
 // =============================================================================
@@ -1107,20 +1107,20 @@ impl CogRedis {
     pub fn store_cause(&mut self, state: CogAddr, action: CogAddr, outcome: CogAddr, strength: f32) {
         let s = self.get(state);
         let a = self.get(action);
-        let o = self.get(outcome);
-        
-        if let (Some(sv), Some(av), Some(ov)) = (s, a, o) {
+        let outcome_val = self.get(outcome);
+
+        if let (Some(sv), Some(av), Some(ov)) = (s, a, outcome_val) {
             self.causal.store_intervention(&sv.fingerprint, &av.fingerprint, &ov.fingerprint, strength);
         }
     }
-    
+
     /// Store counterfactual for what-if reasoning
     pub fn store_would(&mut self, state: CogAddr, alt_action: CogAddr, alt_outcome: CogAddr, strength: f32) {
         let s = self.get(state);
         let a = self.get(alt_action);
-        let o = self.get(alt_outcome);
-        
-        if let (Some(sv), Some(av), Some(ov)) = (s, a, o) {
+        let outcome_val = self.get(alt_outcome);
+
+        if let (Some(sv), Some(av), Some(ov)) = (s, a, outcome_val) {
             self.causal.store_counterfactual(&sv.fingerprint, &av.fingerprint, &ov.fingerprint, strength);
         }
     }
@@ -1573,7 +1573,7 @@ impl CogRedis {
     }
 
     /// Execute Meta operations (0xD00-0xDFF)
-    fn execute_meta_op(&mut self, slot: u8, args: &[Fingerprint]) -> CamResult {
+    fn execute_meta_op(&mut self, slot: u8, _args: &[Fingerprint]) -> CamResult {
         match slot {
             // Reflect (0x00)
             0x00 => {
@@ -1836,7 +1836,7 @@ impl CogRedis {
     }
 
     fn cmd_keys(&self, args: &[&str]) -> RedisResult {
-        let pattern = args.first().copied().unwrap_or("*");
+        let _pattern = args.first().copied().unwrap_or("*");
         let stats = self.bind_space.stats();
 
         // Return count for now (full pattern matching would require label index)
@@ -2282,11 +2282,11 @@ impl CogRedis {
 
     /// DAG.BEGIN [STRATEGY merge|reject|last] - Start ACID transaction
     fn cmd_dag_begin(&mut self, args: &[&str]) -> RedisResult {
-        use super::xor_dag::{ConflictStrategy, XorDag, XorDagConfig};
-        use std::sync::{Arc, RwLock};
+        use super::xor_dag::ConflictStrategy;
+        
 
         // Parse strategy if provided
-        let strategy = if args.len() >= 2 && args[0].to_uppercase() == "STRATEGY" {
+        let _strategy = if args.len() >= 2 && args[0].to_uppercase() == "STRATEGY" {
             match args[1].to_lowercase().as_str() {
                 "merge" | "xor" => ConflictStrategy::XorMerge,
                 "reject" => ConflictStrategy::Reject,
@@ -2641,7 +2641,7 @@ fn words_to_fp(words: &[u64; 256]) -> Fingerprint {
 // PRODUCTION-HARDENED COGREDIS
 // =============================================================================
 
-use super::hardening::{HardeningConfig, HardenedBindSpace, QueryContext, QueryTimeoutError};
+use super::hardening::{HardeningConfig, HardenedBindSpace, QueryContext};
 
 /// Production-hardened CogRedis with memory limits, TTL, WAL, and timeouts
 ///
@@ -2805,8 +2805,8 @@ impl HardenedCogRedis {
 
         for entry in entries {
             match entry {
-                super::hardening::WalEntry::Write { addr, fingerprint, label } => {
-                    let bind_addr = Addr::from(addr);
+                super::hardening::WalEntry::Write { addr, fingerprint, label: _ } => {
+                    let _bind_addr = Addr::from(addr);
                     self.inner.bind_space_mut().write(fingerprint);
                     // Note: label recovery would require bind_space modification
                 }

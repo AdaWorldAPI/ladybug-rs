@@ -19,10 +19,10 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
-use std::sync::{Arc, RwLock, Mutex};
+use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use super::bind_space::{Addr, BindNode, FINGERPRINT_WORDS, PREFIX_FLUID_START, PREFIX_FLUID_END, PREFIX_NODE_START};
+use super::bind_space::{Addr, FINGERPRINT_WORDS, PREFIX_FLUID_START, PREFIX_FLUID_END, PREFIX_NODE_START};
 
 // =============================================================================
 // CONFIGURATION

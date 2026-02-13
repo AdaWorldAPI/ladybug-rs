@@ -157,9 +157,9 @@ impl VsaTriangle {
             return Fingerprint::zero();
         }
         
-        let w0 = c0.activation / total;
-        let w1 = c1.activation / total;
-        let w2 = c2.activation / total;
+        let _w0 = c0.activation / total;
+        let _w1 = c1.activation / total;
+        let _w2 = c2.activation / total;
         
         // Weighted bundle (majority vote with weights)
         let fps = vec![

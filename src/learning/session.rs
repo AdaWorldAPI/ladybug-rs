@@ -5,7 +5,7 @@ use std::time::{Instant, Duration};
 
 use crate::core::Fingerprint;
 use crate::cognitive::{ThinkingStyle, GateState, evaluate_gate};
-use crate::learning::moment::{Moment, MomentType, MomentBuilder, Qualia};
+use crate::learning::moment::{Moment, MomentBuilder, Qualia};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum SessionPhase {

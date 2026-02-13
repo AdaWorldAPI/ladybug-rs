@@ -155,7 +155,7 @@ fn calculate_sd_scalar(values: &[f32]) -> f32 {
 /// AVX2 SIMD SD calculation
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-unsafe fn calculate_sd_avx2(values: &[f32]) -> f32 {
+unsafe fn calculate_sd_avx2(values: &[f32]) -> f32 { unsafe {
     use std::arch::x86_64::*;
     
     let n = values.len();
@@ -205,7 +205,7 @@ unsafe fn calculate_sd_avx2(values: &[f32]) -> f32 {
     }
     
     (variance / n_f32).sqrt()
-}
+}}
 
 // =============================================================================
 // GATE EVALUATION

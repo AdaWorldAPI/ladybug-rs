@@ -11,7 +11,6 @@
 
 use std::collections::HashMap;
 use super::Container;
-use super::record::CogRecord;
 use super::adjacency::{PackedDn, InlineEdgeView};
 use super::graph::ContainerGraph;
 use super::search::belichtungsmesser;

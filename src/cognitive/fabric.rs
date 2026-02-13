@@ -42,11 +42,10 @@
 //! └─────────────────────────────────────────────────────────────────────┘
 //! ```
 
-use std::time::Instant;
-use crate::core::{Fingerprint, VsaOps};
+use crate::core::Fingerprint;
 use super::style::{ThinkingStyle, FieldModulation};
-use super::quad_triangle::{QuadTriangle, TriangleId, CognitiveProfiles};
-use super::seven_layer::{SevenLayerNode, LayerId, ConsciousnessSnapshot, process_layers_wave, snapshot_consciousness};
+use super::quad_triangle::{QuadTriangle, CognitiveProfiles};
+use super::seven_layer::{SevenLayerNode, ConsciousnessSnapshot, process_layers_wave, snapshot_consciousness};
 use super::collapse_gate::{GateState, CollapseDecision, evaluate_gate};
 
 // =============================================================================

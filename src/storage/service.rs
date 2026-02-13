@@ -39,13 +39,12 @@
 //! - **Time Travel**: Version-based snapshots
 //! - **Compaction**: Background merge of small files
 
-use std::collections::{HashMap, VecDeque, BTreeMap};
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, AtomicUsize, AtomicBool, Ordering};
 use std::sync::{Arc, RwLock, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use std::path::{Path, PathBuf};
-use std::fs::{self, File};
-use std::io::{self, Read, Write, BufReader, BufWriter};
+use std::fs::{self};
 use std::thread::{self, JoinHandle};
 
 // ============================================================================
@@ -158,7 +157,7 @@ impl Default for BufferPoolConfig {
 
 /// A page in the buffer pool
 #[derive(Debug)]
-struct BufferPage {
+pub struct BufferPage {
     /// Page ID (addr << 16 | page_num)
     id: u64,
     /// Data (aligned to page size)

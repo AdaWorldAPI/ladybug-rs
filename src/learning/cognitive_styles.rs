@@ -36,7 +36,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 
 // ============================================================================
 // Core Types
@@ -209,7 +209,7 @@ impl CognitiveStyle {
 
         fp1.iter()
             .zip(fp2.iter())
-            .map(|(a, b)| ((*a as i16 - *b as i16).abs() as u32))
+            .map(|(a, b)| (*a as i16 - *b as i16).abs() as u32)
             .sum()
     }
 

@@ -32,9 +32,8 @@ use std::time::{Duration, Instant};
 
 use super::bind_space::FINGERPRINT_WORDS;
 use super::temporal::{
-    TemporalStore, TemporalEntry, TemporalError,
-    Version, TxnId, IsolationLevel,
-    WhatIfBranch,
+    TemporalStore, TemporalEntry,
+    Version, IsolationLevel,
 };
 
 // =============================================================================

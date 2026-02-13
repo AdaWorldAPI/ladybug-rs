@@ -2,7 +2,7 @@
 
 use std::ops::Range;
 
-use super::{Container, CONTAINER_WORDS};
+use super::Container;
 use super::geometry::ContainerGeometry;
 use super::meta::{MetaView, MetaViewMut, W_REPR_BASE};
 

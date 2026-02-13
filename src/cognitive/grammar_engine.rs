@@ -43,8 +43,7 @@ use std::time::Instant;
 use crate::core::{Fingerprint, VsaOps};
 use crate::cognitive::{
     ThinkingStyle,
-    QuadTriangle, CognitiveProfiles,
-    GateState, CollapseDecision, evaluate_gate,
+    QuadTriangle, CognitiveProfiles, CollapseDecision, evaluate_gate,
     SevenLayerNode, LayerId, process_layers_wave, snapshot_consciousness, ConsciousnessSnapshot,
 };
 use crate::fabric::{MRNA, Subsystem, ButterflyDetector, Butterfly};
@@ -220,7 +219,7 @@ impl GrammarCognitiveEngine {
         
         // Process through 7-layer stack
         self.state.cycle += 1;
-        let layer_results = process_layers_wave(
+        let _layer_results = process_layers_wave(
             &mut self.state.consciousness,
             &grammar_fp,
             self.state.cycle
@@ -252,7 +251,7 @@ impl GrammarCognitiveEngine {
     /// Evaluate collapse for current candidates
     pub fn evaluate_collapse(&mut self, candidate_scores: &[f32]) -> CollapseDecision {
         // Get style-modulated thresholds
-        let modulation = self.state.style.field_modulation();
+        let _modulation = self.state.style.field_modulation();
         
         // Evaluate gate
         let decision = evaluate_gate(candidate_scores, true);
@@ -511,7 +510,8 @@ pub fn deserialize_state(bytes: &[u8]) -> Option<GrammarCognitiveEngine> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+    use crate::cognitive::GateState;
+
     #[test]
     fn test_engine_creation() {
         let engine = GrammarCognitiveEngine::new();

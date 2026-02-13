@@ -17,12 +17,11 @@
 use std::collections::HashMap;
 use super::Container;
 use super::record::CogRecord;
-use super::meta::{MetaView, MetaViewMut};
+use super::meta::MetaViewMut;
 use super::adjacency::{
     PackedDn, InlineEdge, InlineEdgeView, InlineEdgeViewMut,
     AdjacencyView, CsrOverflowView, EdgeDescriptor, CsrOverflowViewMut,
 };
-use super::geometry::ContainerGeometry;
 use super::search::belichtungsmesser;
 
 // ============================================================================

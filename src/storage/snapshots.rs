@@ -34,7 +34,7 @@
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, RwLock, Mutex};
+use std::sync::{RwLock, Mutex};
 use std::time::{Duration, Instant};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};

@@ -45,13 +45,10 @@
 //! JUDGE         → Is this true? (NARS truth value)
 //! ```
 
-use std::collections::HashMap;
-use crate::core::Fingerprint;
 use crate::search::hdr_cascade::{HdrIndex, MexicanHat, RollingWindow, hamming_distance};
-use crate::search::causal::{CausalSearch, QueryMode, CausalResult};
+use crate::search::causal::CausalSearch;
 use crate::learning::cognitive_frameworks::{
-    TruthValue, NarsInference, NarsCopula,
-    QualiaChannel, QualiaState,
+    TruthValue, NarsInference,
 };
 
 // =============================================================================
@@ -947,18 +944,18 @@ mod tests {
     fn test_spo_unbind() {
         let s = random_fp();
         let p = random_fp();
-        let o = random_fp();
-        
-        let triple = SpoTriple::new(s, p, o);
-        
+        let obj = random_fp();
+
+        let triple = SpoTriple::new(s, p, obj);
+
         // Unbind should recover original components
         let recovered_s = triple.unbind_subject();
         let recovered_p = triple.unbind_predicate();
         let recovered_o = triple.unbind_object();
-        
+
         assert_eq!(hamming_distance(&recovered_s, &s), 0);
         assert_eq!(hamming_distance(&recovered_p, &p), 0);
-        assert_eq!(hamming_distance(&recovered_o, &o), 0);
+        assert_eq!(hamming_distance(&recovered_o, &obj), 0);
     }
     
     #[test]

@@ -19,7 +19,6 @@ use std::time::{Duration, Instant};
 
 use crate::storage::{
     BindSpace, Addr, Substrate, SubstrateConfig, FINGERPRINT_WORDS,
-    CogAddr,
 };
 use crate::query::cypher::{CypherParser, CypherQuery, PatternElement};
 

@@ -25,7 +25,7 @@
 //! ```
 
 use std::time::{Instant, Duration};
-use crate::core::{Fingerprint, VsaOps};
+use crate::core::Fingerprint;
 
 // =============================================================================
 // LAYER IDENTIFIERS

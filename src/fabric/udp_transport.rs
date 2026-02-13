@@ -46,7 +46,6 @@
 
 use std::io;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use super::firefly_frame::FireflyFrame;
@@ -417,7 +416,7 @@ impl LaneRouter {
 // ASYNC TRANSPORT (optional, requires tokio)
 // =============================================================================
 
-#[cfg(feature = "async")]
+#[cfg(feature = "flight")]
 pub mod async_transport {
     use super::*;
     use tokio::net::UdpSocket;

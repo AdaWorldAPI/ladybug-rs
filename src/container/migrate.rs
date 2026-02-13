@@ -1,6 +1,6 @@
 //! Migration: 16K Fingerprint → 2×8K CogRecord.
 
-use super::{Container, CONTAINER_WORDS};
+use super::CONTAINER_WORDS;
 use super::geometry::ContainerGeometry;
 use super::meta::MetaViewMut;
 use super::record::CogRecord;

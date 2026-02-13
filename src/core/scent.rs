@@ -512,7 +512,7 @@ fn timestamp() -> u64 {
 
 #[cfg(target_arch = "x86_64")]
 mod simd {
-    use super::*;
+    
     
     /// SIMD-optimized scent scan (AVX2)
     /// Compares query against 256 scents, returns matching chunk IDs

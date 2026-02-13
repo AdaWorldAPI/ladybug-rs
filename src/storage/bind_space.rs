@@ -44,7 +44,6 @@
 //! Just shift, mask, array index. Even works on embedded/WASM.
 
 use std::collections::HashMap;
-use std::time::Instant;
 
 use crate::container::{Container, CONTAINER_WORDS, MetaView, MetaViewMut};
 use crate::container::adjacency::PackedDn;

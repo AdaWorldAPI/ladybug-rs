@@ -1,6 +1,5 @@
 //! Blackboard — Persistent session state for agent handoffs
 
-use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 use crate::cognitive::GateState;
 use crate::learning::session::{SessionState, IceCakedDecision};

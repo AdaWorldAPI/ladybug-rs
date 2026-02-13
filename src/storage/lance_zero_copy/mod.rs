@@ -1562,8 +1562,7 @@ impl ZeroCopyBubbler {
 // Buffer pool, copy-on-write, efficient serialization, CSR edges
 
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
-use std::io::{Read as IoRead, Write as IoWrite};
+use std::hash::Hash;
 
 /// Magic bytes for file format identification
 pub const MAGIC_BYTES: [u8; 8] = *b"LADYBUG\x00";

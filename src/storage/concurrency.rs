@@ -23,7 +23,7 @@
 //! - Caller can retry with fresh read
 //! ```
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, AtomicUsize, AtomicBool, Ordering};
 use std::sync::{Arc, RwLock, Mutex, Condvar};
 use std::thread::{self, JoinHandle};
@@ -122,7 +122,7 @@ impl MemoryPool {
     }
 
     /// Try to allocate memory
-    pub fn try_allocate(&self, bytes: usize) -> Result<MemoryGuard, MemoryError> {
+    pub fn try_allocate(&self, bytes: usize) -> Result<MemoryGuard<'_>, MemoryError> {
         // Check single allocation limit
         if bytes > self.config.max_allocation {
             return Err(MemoryError::AllocationTooLarge {
@@ -181,7 +181,7 @@ impl MemoryPool {
     }
 
     /// Allocate with backpressure (blocks if over threshold)
-    pub fn allocate(&self, bytes: usize, timeout: Duration) -> Result<MemoryGuard, MemoryError> {
+    pub fn allocate(&self, bytes: usize, timeout: Duration) -> Result<MemoryGuard<'_>, MemoryError> {
         // Fast path: try immediate allocation
         match self.try_allocate(bytes) {
             Ok(guard) => return Ok(guard),
