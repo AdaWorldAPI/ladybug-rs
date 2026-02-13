@@ -11,6 +11,9 @@
 #   proof_level_a_gaps     — 6 proofs  (A.1.4 through A.6.2)
 #
 # Total: 39 proofs verifying cognitive substrate invariants.
+#
+# Rust version: pinned to 1.93.0 to match Dockerfile build environment.
+# RUSTFLAGS: -D warnings with targeted -A for noise lints in evolving codebase.
 # =============================================================================
 
 name: Proof Suite
@@ -23,6 +26,7 @@ on:
       - 'tests/proof_*.rs'
       - 'Cargo.toml'
       - 'Cargo.lock'
+      - '.github/workflows/proof.yml'
   pull_request:
     branches: [main]
     paths:
@@ -34,52 +38,112 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: "-D warnings"
+  # Allow specific lints that are noise in a 115K-line evolving codebase.
+  # Actual logic errors still fail. Remove allows as cleanup progresses.
+  RUSTFLAGS: "-D warnings -A unused-imports -A dead-code -A private-interfaces -A mismatched-lifetime-syntaxes"
 
 jobs:
-  proof-foundation:
-    name: Foundation Proofs (F-1 through F-7)
+  # ---------------------------------------------------------------------------
+  # Quick check: does it compile at all?
+  # ---------------------------------------------------------------------------
+  compile-check:
+    name: Compile Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.0"
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo check
+        run: cargo check --lib --tests
+
+  # ---------------------------------------------------------------------------
+  # Foundation Proofs (Berry-Esseen, XOR algebra, NARS truth values)
+  # ---------------------------------------------------------------------------
+  proof-foundation:
+    name: Foundation Proofs (F-1 through F-7)
+    needs: compile-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.0"
       - uses: Swatinem/rust-cache@v2
       - name: Run foundation proofs
         run: cargo test --test proof_foundation -- --test-threads=1 -v
 
+  # ---------------------------------------------------------------------------
+  # Reasoning Ladder Proofs (Sun et al. 2025 tier verification)
+  # ---------------------------------------------------------------------------
   proof-reasoning-ladder:
     name: Reasoning Ladder Proofs (RL-1 through RL-8)
+    needs: compile-check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.0"
       - uses: Swatinem/rust-cache@v2
       - name: Run reasoning ladder proofs
         run: cargo test --test proof_reasoning_ladder -- --test-threads=1 -v
 
+  # ---------------------------------------------------------------------------
+  # Tactics Proofs (34 cognitive tactics structural verification)
+  # ---------------------------------------------------------------------------
   proof-tactics:
     name: Tactics Proofs (T-01 through T-34)
+    needs: compile-check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.0"
       - uses: Swatinem/rust-cache@v2
       - name: Run tactics proofs
         run: cargo test --test proof_tactics -- --test-threads=1 -v
 
+  # ---------------------------------------------------------------------------
+  # Level A Gap Proofs (hardening / race condition coverage)
+  # ---------------------------------------------------------------------------
   proof-level-a-gaps:
     name: Level A Gap Proofs (A.1.4 through A.6.2)
+    needs: compile-check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.0"
       - uses: Swatinem/rust-cache@v2
       - name: Run level A gap proofs
         run: cargo test --test proof_level_a_gaps -- --test-threads=1
 
+  # ---------------------------------------------------------------------------
+  # Full unit test suite (all 884 #[test] in src/)
+  # ---------------------------------------------------------------------------
+  unit-tests:
+    name: Unit Tests (all modules)
+    needs: compile-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.0"
+      - uses: Swatinem/rust-cache@v2
+      - name: Run all unit tests
+        run: cargo test --lib -- --test-threads=4
+
+  # ---------------------------------------------------------------------------
+  # Summary
+  # ---------------------------------------------------------------------------
   proof-summary:
     name: Proof Summary
-    needs: [proof-foundation, proof-reasoning-ladder, proof-tactics, proof-level-a-gaps]
+    needs: [compile-check, proof-foundation, proof-reasoning-ladder, proof-tactics, proof-level-a-gaps, unit-tests]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -89,18 +153,29 @@ jobs:
           echo "  LADYBUG-RS PROOF SUITE RESULTS"
           echo "============================================"
           echo ""
+          echo "  Compile:          ${{ needs.compile-check.result }}"
           echo "  Foundation:       ${{ needs.proof-foundation.result }}"
           echo "  Reasoning Ladder: ${{ needs.proof-reasoning-ladder.result }}"
           echo "  Tactics:          ${{ needs.proof-tactics.result }}"
           echo "  Level A Gaps:     ${{ needs.proof-level-a-gaps.result }}"
+          echo "  Unit Tests:       ${{ needs.unit-tests.result }}"
           echo ""
-          if [ "${{ needs.proof-foundation.result }}" = "success" ] && \
-             [ "${{ needs.proof-reasoning-ladder.result }}" = "success" ] && \
-             [ "${{ needs.proof-tactics.result }}" = "success" ] && \
-             [ "${{ needs.proof-level-a-gaps.result }}" = "success" ]; then
-            echo "  ALL PROOF SUITES PASSED"
+          PASS=true
+          for result in \
+            "${{ needs.compile-check.result }}" \
+            "${{ needs.proof-foundation.result }}" \
+            "${{ needs.proof-reasoning-ladder.result }}" \
+            "${{ needs.proof-tactics.result }}" \
+            "${{ needs.proof-level-a-gaps.result }}" \
+            "${{ needs.unit-tests.result }}"; do
+            if [ "$result" != "success" ]; then
+              PASS=false
+            fi
+          done
+          if [ "$PASS" = true ]; then
+            echo "  ✅ ALL PROOF SUITES PASSED"
           else
-            echo "  SOME PROOF SUITES FAILED"
+            echo "  ❌ SOME PROOF SUITES FAILED"
             exit 1
           fi
           echo "============================================"
