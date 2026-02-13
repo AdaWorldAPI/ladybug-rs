@@ -40,7 +40,11 @@ env:
   CARGO_TERM_COLOR: always
   # Allow specific lints that are noise in a 115K-line evolving codebase.
   # Actual logic errors still fail. Remove allows as cleanup progresses.
-  RUSTFLAGS: "-D warnings -A unused-imports -A dead-code -A private-interfaces -A mismatched-lifetime-syntaxes"
+  # Categories: unused-* (imports, vars, mut, assignments, parens),
+  # edition 2024 (unsafe-op-in-unsafe-fn, mismatched-lifetime-syntaxes),
+  # visibility (private-interfaces), and minor (dead-code, unexpected-cfgs,
+  # ambiguous-glob-reexports, overlapping-range-endpoints, confusable-idents).
+  RUSTFLAGS: "-D warnings -A unused -A dead-code -A private-interfaces -A mismatched-lifetime-syntaxes -A unsafe-op-in-unsafe-fn -A unexpected-cfgs -A ambiguous-glob-reexports -A overlapping-range-endpoints -A confusable-idents"
 
 jobs:
   # ---------------------------------------------------------------------------
