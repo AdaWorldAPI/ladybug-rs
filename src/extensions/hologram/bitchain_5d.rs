@@ -487,7 +487,7 @@ impl BitchainBellResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::quantum_5d::resolution;
+    use crate::storage::lance_zero_copy::resolution;
 
     #[test]
     fn test_bitchain_5x5_creation() {
