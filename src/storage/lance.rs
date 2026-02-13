@@ -804,7 +804,9 @@ fn create_fixed_size_list_f32(
     values: &[Option<Vec<f32>>],
     size: usize,
 ) -> Result<FixedSizeListArray> {
-    let mut builder = FixedSizeListBuilder::new(Float32Builder::new(), size as i32);
+    let inner_field = Field::new("item", DataType::Float32, false);
+    let mut builder = FixedSizeListBuilder::new(Float32Builder::new(), size as i32)
+        .with_field(Arc::new(inner_field));
 
     for val in values {
         if let Some(v) = val {
