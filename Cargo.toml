@@ -1,3 +1,6 @@
+[workspace]
+members = [".", "crates/ladybug-contract"]
+
 [package]
 name = "ladybug"
 version = "0.3.0"
@@ -62,6 +65,8 @@ full = [
 # =============================================================================
 
 [dependencies]
+ladybug-contract = { path = "crates/ladybug-contract" }
+
 # -----------------------------------------------------------------------------
 # Storage: LanceDB + Arrow ecosystem
 # Lance 2.0.0 released on crates.io (Feb 5, 2026).
