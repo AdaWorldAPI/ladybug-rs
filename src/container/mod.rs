@@ -25,11 +25,6 @@ pub mod adjacency;
 pub mod graph;
 pub mod dn_redis;
 pub mod traversal;
-pub mod dn_spine_cache;
-pub mod plasticity;
-pub mod addr_bridge;
-pub mod cog_redis_bridge;
-pub mod csr_bridge;
 pub mod migrate;
 #[cfg(test)]
 pub mod tests;
@@ -281,6 +276,40 @@ impl Container {
             words[i] = u64::from_le_bytes(chunk.try_into().unwrap());
         }
         Self { words }
+    }
+
+    /// Zero-cost transmute: borrow a `&[u64; 128]` as `&Container`.
+    ///
+    /// Container is `#[repr(C, align(64))]` with a single field `words: [u64; 128]`.
+    /// The memory layout is identical to `[u64; 128]`.
+    ///
+    /// # Safety requirement
+    ///
+    /// The caller must ensure `words` is 64-byte aligned (e.g. from another Container).
+    /// For data from `BindNode.fingerprint` (only 8-byte aligned), use
+    /// `BindNode::meta_container()` / `content_container()` which return owned copies.
+    #[inline(always)]
+    pub fn view(words: &[u64; CONTAINER_WORDS]) -> &Container {
+        debug_assert!(
+            words.as_ptr() as usize % 64 == 0,
+            "Container::view requires 64-byte aligned input"
+        );
+        // SAFETY: Container is #[repr(C)] with single field `words: [u64; 128]`.
+        // Caller guarantees 64-byte alignment.
+        unsafe { &*(words.as_ptr() as *const Container) }
+    }
+
+    /// Mutable zero-cost transmute: borrow a `&mut [u64; 128]` as `&mut Container`.
+    ///
+    /// Same alignment requirement as `view()`.
+    #[inline(always)]
+    pub fn view_mut(words: &mut [u64; CONTAINER_WORDS]) -> &mut Container {
+        debug_assert!(
+            words.as_ptr() as usize % 64 == 0,
+            "Container::view_mut requires 64-byte aligned input"
+        );
+        // SAFETY: Same layout guarantee as view(). Caller guarantees alignment.
+        unsafe { &mut *(words.as_mut_ptr() as *mut Container) }
     }
 }
 

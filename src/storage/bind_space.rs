@@ -43,7 +43,11 @@
 //! Works on ANY CPU: No AVX-512, no SIMD, no special instructions.
 //! Just shift, mask, array index. Even works on embedded/WASM.
 
+use std::collections::HashMap;
 use std::time::Instant;
+
+use crate::container::{Container, CONTAINER_WORDS, MetaView, MetaViewMut};
+use crate::container::adjacency::PackedDn;
 
 // =============================================================================
 // ADDRESS CONSTANTS (8-bit prefix : 8-bit slot)
@@ -339,6 +343,8 @@ pub struct BindNode {
     pub rung: u8,
     /// Sigma encoding (reasoning depth Σ)
     pub sigma: u8,
+    /// Whether this node is a spine (cluster centroid) in the DN tree.
+    pub is_spine: bool,
 }
 
 impl BindNode {
@@ -353,6 +359,7 @@ impl BindNode {
             depth: 0,
             rung: 0,
             sigma: 0,
+            is_spine: false,
         }
     }
 
@@ -382,9 +389,67 @@ impl BindNode {
         self
     }
 
+    pub fn with_spine(mut self, is_spine: bool) -> Self {
+        self.is_spine = is_spine;
+        self
+    }
+
     #[inline(always)]
     pub fn touch(&mut self) {
         self.access_count = self.access_count.saturating_add(1);
+    }
+
+    // =========================================================================
+    // ZERO-COPY CONTAINER VIEWS (Phase 2 — BindSpace Unification)
+    // =========================================================================
+
+    /// Container copy of the first 128 words (meta half).
+    /// Interpretation: structured metadata (NARS, edges, rung, graph metrics, qualia).
+    #[inline]
+    pub fn meta_container(&self) -> Container {
+        let mut c = Container::zero();
+        c.words.copy_from_slice(&self.fingerprint[..CONTAINER_WORDS]);
+        c
+    }
+
+    /// Container copy of the second 128 words (content half).
+    /// Interpretation: semantic content fingerprint for search / Hamming distance.
+    #[inline]
+    pub fn content_container(&self) -> Container {
+        let mut c = Container::zero();
+        c.words.copy_from_slice(&self.fingerprint[CONTAINER_WORDS..]);
+        c
+    }
+
+    /// Direct reference to meta words (first 128 words) for MetaView.
+    #[inline(always)]
+    pub fn meta_words(&self) -> &[u64; CONTAINER_WORDS] {
+        <&[u64; CONTAINER_WORDS]>::try_from(&self.fingerprint[..CONTAINER_WORDS]).unwrap()
+    }
+
+    /// Direct reference to content words (second 128 words).
+    #[inline(always)]
+    pub fn content_words(&self) -> &[u64; CONTAINER_WORDS] {
+        <&[u64; CONTAINER_WORDS]>::try_from(&self.fingerprint[CONTAINER_WORDS..]).unwrap()
+    }
+
+    /// Mutable reference to meta words (first 128 words) for MetaViewMut.
+    #[inline(always)]
+    pub fn meta_words_mut(&mut self) -> &mut [u64; CONTAINER_WORDS] {
+        <&mut [u64; CONTAINER_WORDS]>::try_from(&mut self.fingerprint[..CONTAINER_WORDS]).unwrap()
+    }
+
+    /// Mutable reference to content words (second 128 words).
+    #[inline(always)]
+    pub fn content_words_mut(&mut self) -> &mut [u64; CONTAINER_WORDS] {
+        <&mut [u64; CONTAINER_WORDS]>::try_from(&mut self.fingerprint[CONTAINER_WORDS..]).unwrap()
+    }
+
+    /// NARS truth values from meta W4-7 (through MetaView).
+    #[inline]
+    pub fn nars(&self) -> (f32, f32) {
+        let meta = MetaView::new(self.meta_words());
+        (meta.nars_frequency(), meta.nars_confidence())
     }
 }
 
@@ -560,11 +625,133 @@ impl BindEdge {
 }
 
 // =============================================================================
+// DN INDEX - Bidirectional PackedDn ↔ Addr mapping (Phase 3)
+// =============================================================================
+
+/// Bidirectional DN ↔ Addr index. Pure addressing — no data storage.
+///
+/// Tree structure is IMPLICIT in the PackedDn address:
+/// - Parent: `dn.parent()` → O(1) bit masking (chop last component)
+/// - Depth:  `dn.depth()`  → count non-zero components
+/// - Sibling enumeration: `children(parent_addr)`
+///
+/// DnIndex stores NO fingerprints, NO containers, NO edges.
+/// It is an address book, nothing more. All data lives in BindSpace.
+pub struct DnIndex {
+    dn_to_addr: HashMap<PackedDn, Addr>,
+    addr_to_dn: Vec<Option<PackedDn>>,       // indexed by Addr.0, 65536 entries
+    children:   HashMap<u16, Vec<Addr>>,      // parent addr.0 → [child_addrs]
+}
+
+impl DnIndex {
+    pub fn new() -> Self {
+        Self {
+            dn_to_addr: HashMap::new(),
+            addr_to_dn: vec![None; TOTAL_ADDRESSES],
+            children: HashMap::new(),
+        }
+    }
+
+    /// Register a DN ↔ Addr mapping and update the parent's children list.
+    pub fn register(&mut self, dn: PackedDn, addr: Addr) {
+        self.dn_to_addr.insert(dn, addr);
+        self.addr_to_dn[addr.0 as usize] = Some(dn);
+
+        // Automatically maintain children index using PackedDn::parent()
+        if let Some(parent_dn) = dn.parent() {
+            if let Some(&parent_addr) = self.dn_to_addr.get(&parent_dn) {
+                let children = self.children.entry(parent_addr.0).or_default();
+                if !children.contains(&addr) {
+                    children.push(addr);
+                }
+            }
+        }
+    }
+
+    /// Look up Addr for a given PackedDn.
+    pub fn addr_for(&self, dn: PackedDn) -> Option<Addr> {
+        self.dn_to_addr.get(&dn).copied()
+    }
+
+    /// Look up PackedDn for a given Addr.
+    pub fn dn_for(&self, addr: Addr) -> Option<PackedDn> {
+        self.addr_to_dn.get(addr.0 as usize).and_then(|o| *o)
+    }
+
+    /// Children of addr (for downward tree traversal).
+    /// Upward traversal doesn't need this — use PackedDn::parent().
+    pub fn children(&self, addr: Addr) -> &[Addr] {
+        self.children.get(&addr.0).map(|v| v.as_slice()).unwrap_or(&[])
+    }
+
+    /// Number of registered DN paths.
+    pub fn len(&self) -> usize {
+        self.dn_to_addr.len()
+    }
+
+    /// Whether the index is empty.
+    pub fn is_empty(&self) -> bool {
+        self.dn_to_addr.is_empty()
+    }
+
+    /// Iterate all registered (PackedDn, Addr) pairs.
+    pub fn iter(&self) -> impl Iterator<Item = (PackedDn, Addr)> + '_ {
+        self.dn_to_addr.iter().map(|(&dn, &addr)| (dn, addr))
+    }
+}
+
+// =============================================================================
+// DIRTY BITSET - 65536-bit tracking (Phase 4)
+// =============================================================================
+
+/// Compact 65536-bit set using 1024 u64 words.
+struct DirtyBits {
+    bits: Vec<u64>,
+}
+
+impl DirtyBits {
+    fn new() -> Self {
+        Self {
+            bits: vec![0u64; TOTAL_ADDRESSES / 64],
+        }
+    }
+
+    #[inline(always)]
+    fn set(&mut self, idx: u16) {
+        let word = idx as usize / 64;
+        let bit = idx as usize % 64;
+        self.bits[word] |= 1u64 << bit;
+    }
+
+    #[inline(always)]
+    fn get(&self, idx: u16) -> bool {
+        let word = idx as usize / 64;
+        let bit = idx as usize % 64;
+        self.bits[word] & (1u64 << bit) != 0
+    }
+
+    fn clear(&mut self) {
+        for w in self.bits.iter_mut() {
+            *w = 0;
+        }
+    }
+
+    /// Iterate all set bit indices.
+    fn iter_ones(&self) -> impl Iterator<Item = u16> + '_ {
+        self.bits.iter().enumerate().flat_map(|(wi, &word)| {
+            let base = (wi * 64) as u16;
+            (0..64u16).filter(move |&bit| word & (1u64 << bit) != 0)
+                      .map(move |bit| base + bit)
+        })
+    }
+}
+
+// =============================================================================
 // BIND SPACE - The Universal DTO (Array-based storage)
 // =============================================================================
 
 /// The Universal Bind Space
-/// 
+///
 /// Pure array indexing. No HashMap. No SIMD required.
 /// Works on any CPU.
 pub struct BindSpace {
@@ -619,6 +806,16 @@ pub struct BindSpace {
 
     /// Next node slot (prefix, slot)
     next_node: (u8, u8),
+
+    // =========================================================================
+    // UNIFICATION: DnIndex + dirty tracking (Phases 3-4)
+    // =========================================================================
+
+    /// Bidirectional PackedDn ↔ Addr index for DN tree navigation.
+    pub dn_index: DnIndex,
+
+    /// Dirty bit per address — tracks modifications since last flush.
+    dirty: DirtyBits,
 }
 
 impl BindSpace {
@@ -672,6 +869,8 @@ impl BindSpace {
             context: ChunkContext::Concepts,
             next_fluid: (PREFIX_FLUID_START, 0),
             next_node: (PREFIX_NODE_START, 0),
+            dn_index: DnIndex::new(),
+            dirty: DirtyBits::new(),
         };
 
         space.init_surfaces();
@@ -929,12 +1128,12 @@ impl BindSpace {
     }
     
     /// Write to node space
-    /// 
+    ///
     /// This is what SET, CREATE, INSERT all become.
     pub fn write(&mut self, fingerprint: [u64; FINGERPRINT_WORDS]) -> Addr {
         let (prefix, slot) = self.next_node;
         let addr = Addr::new(prefix, slot);
-        
+
         // Advance next slot
         self.next_node = if slot == 255 {
             if prefix == PREFIX_NODE_END {
@@ -945,13 +1144,14 @@ impl BindSpace {
         } else {
             (prefix, slot + 1)
         };
-        
+
         // Write to chunk
         let chunk = (prefix - PREFIX_NODE_START) as usize;
         if let Some(c) = self.nodes.get_mut(chunk) {
             c[slot as usize] = Some(BindNode::new(fingerprint));
+            self.dirty.set(addr.0);
         }
-        
+
         addr
     }
     
@@ -979,6 +1179,7 @@ impl BindSpace {
             if let Some(c) = self.surfaces.get_mut(prefix as usize) {
                 let node = BindNode::new(fingerprint);
                 c[slot] = Some(node);
+                self.dirty.set(addr.0);
                 return true;
             }
             return false;
@@ -990,12 +1191,14 @@ impl BindSpace {
             let chunk = (prefix - PREFIX_FLUID_START) as usize;
             if let Some(c) = self.fluid.get_mut(chunk) {
                 c[slot] = Some(node);
+                self.dirty.set(addr.0);
                 return true;
             }
         } else if prefix >= PREFIX_NODE_START {
             let chunk = (prefix - PREFIX_NODE_START) as usize;
             if let Some(c) = self.nodes.get_mut(chunk) {
                 c[slot] = Some(node);
+                self.dirty.set(addr.0);
                 return true;
             }
         }
@@ -1221,7 +1424,9 @@ impl BindSpace {
         fingerprint: [u64; FINGERPRINT_WORDS],
         rung: u8,
     ) -> Addr {
-        let segments: Vec<&str> = path.split(':').collect();
+        // Strip bindspace:// scheme if present
+        let bare = path.strip_prefix("bindspace://").unwrap_or(path);
+        let segments: Vec<&str> = bare.split(':').collect();
         let mut current_parent: Option<Addr> = None;
         let mut current_path = String::new();
 
@@ -1245,7 +1450,7 @@ impl BindSpace {
                 // Write at computed address
                 self.write_at(addr, fp);
                 if let Some(node) = self.read_mut(addr) {
-                    node.label = Some(current_path.clone());
+                    node.label = Some(format!("bindspace://{}", current_path));
                     node.parent = current_parent;
                     node.depth = i as u8;
                     node.rung = rung;
@@ -1258,6 +1463,10 @@ impl BindSpace {
                     }
                 }
             }
+
+            // Register in DnIndex for bidirectional PackedDn ↔ Addr lookup
+            let packed = PackedDn::from_path(&current_path);
+            self.dn_index.register(packed, addr);
 
             current_parent = Some(addr);
         }
@@ -1340,21 +1549,133 @@ impl BindSpace {
         let surface_count: usize = self.surfaces.iter()
             .map(|s| s.iter().filter(|x| x.is_some()).count())
             .sum();
-        
+
         let fluid_count: usize = self.fluid.iter()
             .map(|c| c.iter().filter(|x| x.is_some()).count())
             .sum();
-            
+
         let node_count: usize = self.nodes.iter()
             .map(|c| c.iter().filter(|x| x.is_some()).count())
             .sum();
-        
+
         BindSpaceStats {
             surface_count,
             fluid_count,
             node_count,
             edge_count: self.edges.len(),
             context: self.context,
+        }
+    }
+
+    // =========================================================================
+    // FLUENT API — Zero-copy content/meta access (Phase 2)
+    // =========================================================================
+
+    /// Content Container (search fingerprint, words 128-255).
+    /// Returns owned `Container` for Hamming distance, similarity, etc.
+    #[inline]
+    pub fn content(&self, addr: Addr) -> Option<Container> {
+        self.read(addr).map(|n| n.content_container())
+    }
+
+    /// Meta view (NARS, edges, rung, etc., words 0-127).
+    /// Returns `MetaView` for structured metadata access.
+    #[inline]
+    pub fn meta(&self, addr: Addr) -> Option<MetaView<'_>> {
+        self.read(addr).map(|n| MetaView::new(n.meta_words()))
+    }
+
+    /// Resolve a `bindspace://` URI (or bare colon path) to an address.
+    pub fn resolve(&self, uri: &str) -> Option<Addr> {
+        let packed = PackedDn::from_path(uri);
+        self.dn_index.addr_for(packed)
+    }
+
+    // =========================================================================
+    // DIRTY TRACKING (Phase 4)
+    // =========================================================================
+
+    /// Mark address as dirty (modified since last flush).
+    #[inline]
+    pub fn mark_dirty(&mut self, addr: Addr) {
+        self.dirty.set(addr.0);
+    }
+
+    /// Get all dirty addresses since last clear.
+    pub fn dirty_addrs(&self) -> impl Iterator<Item = Addr> + '_ {
+        self.dirty.iter_ones().map(Addr)
+    }
+
+    /// Clear all dirty bits.
+    pub fn clear_dirty(&mut self) {
+        self.dirty.clear();
+    }
+
+    // =========================================================================
+    // SUBSTRATE METHODS (Phase 2 — BindSpace self-contained API)
+    // =========================================================================
+
+    /// Iterate all occupied node addresses with their BindNodes.
+    pub fn nodes_iter(&self) -> impl Iterator<Item = (Addr, &BindNode)> + '_ {
+        let surfaces = self.surfaces.iter().enumerate().flat_map(|(pi, chunk)| {
+            chunk.iter().enumerate().filter_map(move |(si, slot)| {
+                slot.as_ref().map(|node| (Addr::new(pi as u8, si as u8), node))
+            })
+        });
+        let fluid = self.fluid.iter().enumerate().flat_map(|(ci, chunk)| {
+            let prefix = PREFIX_FLUID_START + ci as u8;
+            chunk.iter().enumerate().filter_map(move |(si, slot)| {
+                slot.as_ref().map(|node| (Addr::new(prefix, si as u8), node))
+            })
+        });
+        let nodes = self.nodes.iter().enumerate().flat_map(|(ci, chunk)| {
+            let prefix = PREFIX_NODE_START + ci as u8;
+            chunk.iter().enumerate().filter_map(move |(si, slot)| {
+                slot.as_ref().map(|node| (Addr::new(prefix, si as u8), node))
+            })
+        });
+        surfaces.chain(fluid).chain(nodes)
+    }
+
+    /// XOR-fold all occupied fingerprints into a single 256-word digest.
+    /// Useful for integrity checks and snapshot comparison.
+    pub fn hash_all(&self) -> [u64; FINGERPRINT_WORDS] {
+        let mut acc = [0u64; FINGERPRINT_WORDS];
+        for (_, node) in self.nodes_iter() {
+            for (i, word) in node.fingerprint.iter().enumerate() {
+                acc[i] ^= word;
+            }
+        }
+        acc
+    }
+
+    /// NARS revision: update truth value at address with new evidence.
+    /// Reads old values, computes revised truth, writes back.
+    pub fn nars_revise(&mut self, addr: Addr, evidence_freq: f32, evidence_conf: f32) {
+        if let Some(node) = self.read_mut(addr) {
+            // Read old values through immutable MetaView
+            let old_freq = {
+                let view = MetaView::new(node.meta_words());
+                view.nars_frequency()
+            };
+            let old_conf = {
+                let view = MetaView::new(node.meta_words());
+                view.nars_confidence()
+            };
+
+            // NARS revision: weighted average by confidence
+            let total_conf = old_conf + evidence_conf;
+            if total_conf > 0.0 {
+                let w1 = old_conf / total_conf;
+                let w2 = evidence_conf / total_conf;
+                let new_freq = w1 * old_freq + w2 * evidence_freq;
+                let new_conf = total_conf.min(0.99);
+
+                let mut meta_mut = MetaViewMut::new(node.meta_words_mut());
+                meta_mut.set_nars_frequency(new_freq);
+                meta_mut.set_nars_confidence(new_conf);
+            }
+            self.dirty.set(addr.0);
         }
     }
 }
