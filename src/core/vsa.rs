@@ -194,10 +194,69 @@ pub fn analogy(
     cleanup(&predicted, codebook, 0.5)
 }
 
+/// Fusion quality metric for bind operations.
+///
+/// Measures the quality of `bind(A, B)` by checking that unbinding recovers
+/// both parents exactly (XOR is self-inverse, so this should be exact).
+///
+/// Returns `(recovery_a, recovery_b)` as normalized Hamming distances.
+/// Both should be 0.0 for exact recovery.
+///
+/// # Science
+/// - Plate (2003): Holographic Reduced Representations — bind/unbind algebra
+/// - Kanerva (2009): Hyperdimensional Computing — XOR self-inverse property
+pub fn fusion_quality(
+    a: &Fingerprint,
+    b: &Fingerprint,
+) -> (f32, f32) {
+    let fused = a.bind(b);
+    let recovered_a = fused.unbind(b);
+    let recovered_b = fused.unbind(a);
+
+    let dist_a = a.hamming(&recovered_a) as f32 / (FINGERPRINT_U64 as f32 * 64.0);
+    let dist_b = b.hamming(&recovered_b) as f32 / (FINGERPRINT_U64 as f32 * 64.0);
+
+    (dist_a, dist_b)
+}
+
+/// Multi-way fusion quality: bind N items and verify all are recoverable.
+///
+/// For XOR-based VSA: `bind(a, bind(b, c))` → unbind with `bind(b, c)` recovers `a`.
+/// Returns the maximum recovery distance across all items.
+pub fn multi_fusion_quality(items: &[Fingerprint]) -> f32 {
+    if items.len() < 2 {
+        return 0.0;
+    }
+
+    // Compute total binding: items[0] ⊗ items[1] ⊗ ... ⊗ items[n-1]
+    let mut total = items[0].clone();
+    for item in &items[1..] {
+        total = total.bind(item);
+    }
+
+    // For each item, unbind all others and check recovery
+    let total_bits = FINGERPRINT_U64 as f32 * 64.0;
+    let mut max_dist = 0.0f32;
+
+    for i in 0..items.len() {
+        // key = XOR of all items except items[i]
+        // total XOR key = items[i] (because XOR is self-inverse)
+        let key = items.iter().enumerate()
+            .filter(|(j, _)| *j != i)
+            .fold(Fingerprint::zero(), |acc, (_, item)| acc.bind(item));
+
+        let recovered = total.unbind(&key);
+        let dist = items[i].hamming(&recovered) as f32 / total_bits;
+        max_dist = max_dist.max(dist);
+    }
+
+    max_dist
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_bundle_preserves_similarity() {
         let cat1 = Fingerprint::from_content("cat instance 1");
@@ -230,5 +289,47 @@ mod tests {
         // But we can decode first word
         let decoded_first = seq.unbind(&Fingerprint::zero().permute(0));
         // (This is a simplified test - real decoding needs iterative cleanup)
+    }
+
+    #[test]
+    fn test_fusion_quality_exact_recovery() {
+        let a = Fingerprint::from_content("concept A");
+        let b = Fingerprint::from_content("concept B");
+        let (dist_a, dist_b) = fusion_quality(&a, &b);
+        // XOR is exactly self-inverse — distances must be 0
+        assert_eq!(dist_a, 0.0, "Recovery of A should be exact");
+        assert_eq!(dist_b, 0.0, "Recovery of B should be exact");
+    }
+
+    #[test]
+    fn test_fusion_quality_multiple_pairs() {
+        // Test across many random pairs
+        for i in 0..100 {
+            let a = Fingerprint::from_content(&format!("pair_{}_a", i));
+            let b = Fingerprint::from_content(&format!("pair_{}_b", i));
+            let (dist_a, dist_b) = fusion_quality(&a, &b);
+            assert_eq!(dist_a, 0.0);
+            assert_eq!(dist_b, 0.0);
+        }
+    }
+
+    #[test]
+    fn test_multi_fusion_quality() {
+        let items: Vec<Fingerprint> = (0..5)
+            .map(|i| Fingerprint::from_content(&format!("item_{}", i)))
+            .collect();
+        let max_dist = multi_fusion_quality(&items);
+        // XOR multi-bind is exactly recoverable
+        assert_eq!(max_dist, 0.0, "Multi-way bind should be exactly recoverable");
+    }
+
+    #[test]
+    fn test_bind_unbind_roundtrip_algebraic() {
+        // Prove: A ⊗ B ⊗ B = A (exact, algebraic identity)
+        let a = Fingerprint::from_content("original");
+        let b = Fingerprint::from_content("key");
+        let roundtrip = a.bind(&b).bind(&b);
+        assert_eq!(a.hamming(&roundtrip), 0,
+            "XOR self-inverse must be EXACT, zero Hamming distance");
     }
 }

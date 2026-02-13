@@ -64,6 +64,7 @@ pub mod handover;
 pub mod meta_orchestrator;
 pub mod semantic_kernel;
 pub mod kernel_extensions;
+pub mod debate;
 
 pub use agent_card::{
     AgentCard, AgentCapability, AgentRole, AgentGoal,

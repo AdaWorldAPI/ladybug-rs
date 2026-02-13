@@ -7,6 +7,8 @@ mod truth;
 mod inference;
 mod evidence;
 mod context;
+pub mod adversarial;
+pub mod contradiction;
 
 pub use truth::TruthValue;
 pub use inference::{InferenceRule, Deduction, Induction, Abduction, Analogy};
