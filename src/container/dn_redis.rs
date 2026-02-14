@@ -111,7 +111,7 @@ impl RedisPipeline {
 
     /// Add a SET for a DN with its CogRecord serialized as bytes.
     pub fn set_dn(&mut self, dn: PackedDn, record: &CogRecord) -> &mut Self {
-        let bytes = record.to_bytes();
+        let bytes = cog_record_to_bytes(record);
         self.commands.push(RedisCommand::Set(dn_key(dn), bytes));
         self
     }
@@ -161,47 +161,57 @@ impl RedisPipeline {
 // SERIALIZATION: CogRecord <-> bytes for Redis storage
 // ============================================================================
 
-impl CogRecord {
-    /// Serialize to bytes: meta (1024 bytes) + content containers (1024 each).
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let total = (1 + self.content.len()) * super::CONTAINER_BYTES;
-        let mut buf = Vec::with_capacity(total);
+/// Serialize a CogRecord to bytes: meta (1024 bytes) + content (1024 bytes).
+pub fn cog_record_to_bytes(record: &CogRecord) -> Vec<u8> {
+    let total = 2 * super::CONTAINER_BYTES;
+    let mut buf = Vec::with_capacity(total);
 
-        // Meta container first
-        for &word in &self.meta.words {
-            buf.extend_from_slice(&word.to_le_bytes());
-        }
-
-        // Content containers
-        for container in &self.content {
-            for &word in &container.words {
-                buf.extend_from_slice(&word.to_le_bytes());
-            }
-        }
-
-        buf
+    // Meta container first
+    for &word in &record.meta.words {
+        buf.extend_from_slice(&word.to_le_bytes());
     }
 
-    /// Deserialize from bytes.
-    pub fn from_bytes(data: &[u8]) -> Option<Self> {
-        if data.len() < super::CONTAINER_BYTES {
-            return None;
-        }
+    // Content container
+    for &word in &record.content.words {
+        buf.extend_from_slice(&word.to_le_bytes());
+    }
 
-        // Parse meta
-        let meta = parse_container(&data[..super::CONTAINER_BYTES])?;
+    buf
+}
 
-        // Parse content containers
-        let mut content = Vec::new();
-        let mut offset = super::CONTAINER_BYTES;
-        while offset + super::CONTAINER_BYTES <= data.len() {
-            content.push(parse_container(
-                &data[offset..offset + super::CONTAINER_BYTES],
-            )?);
-            offset += super::CONTAINER_BYTES;
-        }
+/// Deserialize a CogRecord from bytes.
+pub fn cog_record_from_bytes(data: &[u8]) -> Option<CogRecord> {
+    if data.len() < 2 * super::CONTAINER_BYTES {
+        return None;
+    }
 
-        Some(CogRecord { meta, content })
+    // Parse meta
+    let meta = parse_container(&data[..super::CONTAINER_BYTES])?;
+
+    // Parse content
+    let content = parse_container(
+        &data[super::CONTAINER_BYTES..2 * super::CONTAINER_BYTES],
+    )?;
+
+    Some(CogRecord { meta, content })
+}
+
+/// Extension trait to add serialization methods to CogRecord.
+pub trait CogRecordSerde {
+    /// Serialize to bytes: meta (1024 bytes) + content (1024 bytes).
+    fn to_bytes(&self) -> Vec<u8>;
+
+    /// Deserialize from a byte slice (variable-length, for Redis storage).
+    fn from_bytes_slice(data: &[u8]) -> Option<CogRecord>;
+}
+
+impl CogRecordSerde for CogRecord {
+    fn to_bytes(&self) -> Vec<u8> {
+        cog_record_to_bytes(self)
+    }
+
+    fn from_bytes_slice(data: &[u8]) -> Option<CogRecord> {
+        cog_record_from_bytes(data)
     }
 }
 
@@ -231,7 +241,7 @@ pub fn build_record(
     geometry: ContainerGeometry,
 ) -> CogRecord {
     let mut record = CogRecord::new(geometry);
-    record.content[0] = fingerprint.clone();
+    record.content = fingerprint.clone();
 
     {
         let mut meta = MetaViewMut::new(&mut record.meta.words);

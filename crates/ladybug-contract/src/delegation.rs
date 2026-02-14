@@ -40,9 +40,7 @@ mod cogrecord_serde {
     pub fn serialize<S: Serializer>(record: &CogRecord, serializer: S) -> Result<S::Ok, S::Error> {
         let mut s = serializer.serialize_struct("CogRecord", 2)?;
         s.serialize_field("meta", &record.meta.words.as_slice())?;
-        let content_words: Vec<&[u64]> =
-            record.content.iter().map(|c| c.words.as_slice()).collect();
-        s.serialize_field("content", &content_words)?;
+        s.serialize_field("content", &record.content.words.as_slice())?;
         s.end()
     }
 
@@ -50,7 +48,7 @@ mod cogrecord_serde {
         #[derive(Deserialize)]
         struct Raw {
             meta: Vec<u64>,
-            content: Vec<Vec<u64>>,
+            content: Vec<u64>,
         }
 
         let raw = Raw::deserialize(deserializer)?;
@@ -60,17 +58,10 @@ mod cogrecord_serde {
             meta.words[i] = w;
         }
 
-        let content = raw
-            .content
-            .iter()
-            .map(|words| {
-                let mut c = Container::zero();
-                for (i, &w) in words.iter().take(CONTAINER_WORDS).enumerate() {
-                    c.words[i] = w;
-                }
-                c
-            })
-            .collect();
+        let mut content = Container::zero();
+        for (i, &w) in raw.content.iter().take(CONTAINER_WORDS).enumerate() {
+            content.words[i] = w;
+        }
 
         Ok(CogRecord { meta, content })
     }

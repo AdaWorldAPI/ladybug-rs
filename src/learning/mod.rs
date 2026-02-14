@@ -27,6 +27,7 @@
 
 pub mod blackboard;
 pub mod cam_ops;
+pub mod causal_bridge;
 pub mod causal_ops;
 pub mod cognitive_frameworks;
 pub mod cognitive_styles;
@@ -105,6 +106,7 @@ pub use resonance::{
 pub use session::{LearningSession, SessionPhase, SessionState};
 
 // NEW: Causal RL integration (wired to search module)
+pub use causal_bridge::{CausalBridge, GrammarCausalEdge};
 pub use causal_ops::{CausalEdgeType, CausalEngine, CausalOp, GraphEdge};
 pub use rl_ops::{ActionExplanation, AlternativeAction, CausalChainLink, CausalRlAgent, RlOp};
 

@@ -237,7 +237,7 @@ impl From<&V1UnifiedStep> for CogRecord {
             "reasoning": step.reasoning,
         });
         let bytes = serde_json::to_vec(&json).unwrap_or_default();
-        record.content[0] = content_from_bytes(&bytes);
+        record.content = content_from_bytes(&bytes);
 
         record
     }
@@ -281,7 +281,7 @@ impl From<&V1DataEnvelope> for CogRecord {
             // serde envelope until container format is upgraded).
         }
         let bytes = serde_json::to_vec(&envelope.data).unwrap_or_default();
-        record.content[0] = content_from_bytes(&bytes);
+        record.content = content_from_bytes(&bytes);
         record
     }
 }
@@ -337,7 +337,7 @@ impl From<&V1LadybugEnvelope> for CogRecord {
             }
         }
         let bytes = serde_json::to_vec(&envelope.content).unwrap_or_default();
-        record.content[0] = content_from_bytes(&bytes);
+        record.content = content_from_bytes(&bytes);
         record
     }
 }
