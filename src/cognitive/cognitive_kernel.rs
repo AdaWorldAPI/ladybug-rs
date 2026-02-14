@@ -30,7 +30,7 @@
 //! └──────────────────────────────────────────────────────────────────────┘
 //! ```
 
-use crate::cognitive::layer_stack::{ConsciousnessSnapshot, LayerId, LayerNode, LayerResult, NUM_LAYERS};
+use crate::cognitive::layer_stack::{ConsciousnessSnapshot, LayerId, LayerResult, NUM_LAYERS};
 use crate::cognitive::metacog::MetaCognition;
 use crate::cognitive::satisfaction_gate::LayerSatisfaction;
 use crate::cognitive::sieve::SocraticSieve;

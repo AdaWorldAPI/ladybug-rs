@@ -114,7 +114,7 @@ impl Container {
             return items[0].clone();
         }
         let threshold = items.len() / 2;
-        let even = items.len() % 2 == 0;
+        let even = items.len().is_multiple_of(2);
         let mut result = Container::zero();
         for word in 0..CONTAINER_WORDS {
             let mut out = 0u64;
@@ -236,7 +236,7 @@ impl Container {
     #[inline(always)]
     pub fn view(words: &[u64; CONTAINER_WORDS]) -> &Container {
         debug_assert!(
-            words.as_ptr() as usize % 64 == 0,
+            (words.as_ptr() as usize).is_multiple_of(64),
             "Container::view requires 64-byte aligned input"
         );
         unsafe { &*(words.as_ptr() as *const Container) }
@@ -249,7 +249,7 @@ impl Container {
     #[inline(always)]
     pub fn view_mut(words: &mut [u64; CONTAINER_WORDS]) -> &mut Container {
         debug_assert!(
-            words.as_ptr() as usize % 64 == 0,
+            (words.as_ptr() as usize).is_multiple_of(64),
             "Container::view_mut requires 64-byte aligned input"
         );
         unsafe { &mut *(words.as_mut_ptr() as *mut Container) }

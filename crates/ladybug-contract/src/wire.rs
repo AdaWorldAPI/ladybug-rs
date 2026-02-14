@@ -355,8 +355,8 @@ impl CogPacket {
     /// Get all 10 satisfaction scores as an array.
     pub fn satisfaction_array(&self) -> [f32; 10] {
         let mut scores = [0.0f32; 10];
-        for i in 0..10 {
-            scores[i] = self.satisfaction(i as u8);
+        for (i, score) in scores.iter_mut().enumerate() {
+            *score = self.satisfaction(i as u8);
         }
         scores
     }
@@ -578,7 +578,7 @@ impl CogPacket {
 
         // Determine number of containers from header
         let payload_count = ((header[7] >> 24) & 0xFF) as usize;
-        let payload_count = payload_count.max(1).min(2);
+        let payload_count = payload_count.clamp(1, 2);
         let expected_bytes = HEADER_BYTES + payload_count * CONTAINER_BYTES;
 
         if data.len() < expected_bytes {
@@ -691,7 +691,7 @@ impl CogPacket {
             _ => (0x0Fu8, wire_ops::EXECUTE),
         };
 
-        let source_addr = ((prefix as u16) << 8) | 0x00;
+        let source_addr = (prefix as u16) << 8;
         let target_addr = ((prefix as u16) << 8) | 0x01;
 
         // Content hash expanded to container via SplitMix64

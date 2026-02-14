@@ -203,7 +203,7 @@ impl SocraticSieve {
         if sources.is_empty() {
             return TruthValue::unknown();
         }
-        let mut merged = sources[0].clone();
+        let mut merged = sources[0];
         for source in &sources[1..] {
             merged = merged.revision(source);
         }

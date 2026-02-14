@@ -129,6 +129,6 @@ pub mod types {
 
     /// Check if a type ID is an edge type.
     pub fn is_edge(t: u16) -> bool {
-        t >= EDGE_START && t <= EDGE_END
+        (EDGE_START..=EDGE_END).contains(&t)
     }
 }
