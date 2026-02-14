@@ -35,3 +35,6 @@ pub use enricher::EnrichmentEngine;
 pub use enrichment::StepEnrichment;
 pub use spectator::UnifiedSpectator;
 pub use types::{DataEnvelope, EnvelopeMetadata, StepStatus, UnifiedExecution, UnifiedStep};
+
+// Re-export from the contract crate (substrate types)
+pub use ladybug_contract as kernel;

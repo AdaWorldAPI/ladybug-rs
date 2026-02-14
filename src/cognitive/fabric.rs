@@ -2,8 +2,9 @@
 //!
 //! Combines all cognitive components into unified resonance substrate:
 //! - 4 QuadTriangles (Processing/Content/Gestalt/Crystallization)
-//! - 7-Layer Consciousness Stack
-//! - 12 Thinking Styles
+//! - 10-Layer Cognitive Stack (L1:Recognition → L10:Crystallization)
+//! - Satisfaction Gate (Maslow hierarchy for layer activation)
+//! - 12 Thinking Styles (resonance-gated self-selection)
 //! - Collapse Gate (FLOW/HOLD/BLOCK)
 //!
 //! ```text
@@ -11,43 +12,40 @@
 //! │                    COGNITIVE FABRIC ARCHITECTURE                    │
 //! │                                                                     │
 //! │  ┌───────────────────────────────────────────────────────────────┐ │
-//! │  │                    THINKING STYLE (12)                        │ │
-//! │  │   Modulates: threshold, fan-out, exploration, speed           │ │
+//! │  │  THINKING STYLE (12) — resonance-gated self-selection         │ │
+//! │  │  Modulates: threshold, fan-out, exploration, speed            │ │
 //! │  └───────────────────────────────────────────────────────────────┘ │
 //! │                              │                                      │
 //! │                              ▼                                      │
 //! │  ┌───────────────────────────────────────────────────────────────┐ │
 //! │  │                    QUAD-TRIANGLE (4×3×10K)                    │ │
-//! │  │                                                               │ │
 //! │  │   Processing ─────┬───── Content                              │ │
-//! │  │        │          │          │                                │ │
 //! │  │        └────── Gestalt ──────┘                                │ │
-//! │  │                   │                                           │ │
-//! │  │            Crystallization                                    │ │
+//! │  │                Crystallization                                │ │
 //! │  └───────────────────────────────────────────────────────────────┘ │
 //! │                              │                                      │
 //! │                              ▼                                      │
 //! │  ┌───────────────────────────────────────────────────────────────┐ │
-//! │  │                 7-LAYER CONSCIOUSNESS                         │ │
-//! │  │   L7:Meta ← L6:Exec ← L5:Work ← L4:Epis ← L3:Sem ← L2:Pat ← L1│ │
+//! │  │  10-LAYER COGNITIVE STACK + SATISFACTION GATE                  │ │
+//! │  │  L1-L5: one mind | L6-L10: many minds refining                │ │
 //! │  └───────────────────────────────────────────────────────────────┘ │
 //! │                              │                                      │
 //! │                              ▼                                      │
 //! │  ┌───────────────────────────────────────────────────────────────┐ │
 //! │  │                    COLLAPSE GATE                              │ │
-//! │  │              SD < 0.15 → FLOW (commit)                        │ │
-//! │  │         0.15 ≤ SD ≤ 0.35 → HOLD (ruminate)                    │ │
-//! │  │              SD > 0.35 → BLOCK (clarify)                      │ │
+//! │  │   SD < 0.15 → FLOW | 0.15-0.35 → HOLD | > 0.35 → BLOCK      │ │
 //! │  └───────────────────────────────────────────────────────────────┘ │
 //! └─────────────────────────────────────────────────────────────────────┘
 //! ```
 
 use super::collapse_gate::{CollapseDecision, GateState, evaluate_gate};
-use super::quad_triangle::{CognitiveProfiles, QuadTriangle};
-use super::seven_layer::{
-    ConsciousnessSnapshot, SevenLayerNode, process_layers_wave, snapshot_consciousness,
+use super::layer_stack::{
+    ConsciousnessSnapshot, LayerNode, process_layers_wave, snapshot_consciousness,
 };
+use super::quad_triangle::{CognitiveProfiles, QuadTriangle};
+use super::satisfaction_gate::LayerSatisfaction;
 use super::style::{FieldModulation, ThinkingStyle};
+use super::two_stroke;
 use crate::core::Fingerprint;
 
 // =============================================================================
@@ -66,7 +64,7 @@ pub struct CognitiveState {
     /// Quad-triangle state
     pub triangles: QuadTriangle,
 
-    /// 7-layer consciousness
+    /// 10-layer consciousness snapshot
     pub consciousness: ConsciousnessSnapshot,
 
     /// Last collapse decision
@@ -80,6 +78,9 @@ pub struct CognitiveState {
 
     /// Emergence signal
     pub emergence: f32,
+
+    /// Satisfaction gate state
+    pub satisfaction: LayerSatisfaction,
 }
 
 // =============================================================================
@@ -94,8 +95,14 @@ pub struct CognitiveFabric {
     /// Quad-triangle state
     triangles: QuadTriangle,
 
-    /// 7-layer node
-    node: SevenLayerNode,
+    /// 10-layer node
+    node: LayerNode,
+
+    /// Satisfaction gate (Maslow hierarchy)
+    satisfaction: LayerSatisfaction,
+
+    /// Previous cycle scores (for 2-stroke async reads)
+    prev_scores: [f32; super::layer_stack::NUM_LAYERS],
 
     /// Processing cycle counter
     cycle: u64,
@@ -105,6 +112,12 @@ pub struct CognitiveFabric {
 
     /// Active resonances (above threshold)
     active_resonances: Vec<(Fingerprint, f32)>,
+
+    /// Precomputed style fingerprints for resonance-gated selection
+    style_fingerprints: Vec<two_stroke::StyleFingerprint>,
+
+    /// Precomputed rule fingerprints for resonance-gated inference
+    rule_fingerprints: Vec<two_stroke::RuleFingerprint>,
 }
 
 impl CognitiveFabric {
@@ -113,10 +126,14 @@ impl CognitiveFabric {
         Self {
             style: ThinkingStyle::Analytical,
             triangles: QuadTriangle::neutral(),
-            node: SevenLayerNode::new(path),
+            node: LayerNode::new(path),
+            satisfaction: LayerSatisfaction::new(),
+            prev_scores: [0.5; super::layer_stack::NUM_LAYERS],
             cycle: 0,
             collapse_history: Vec::new(),
             active_resonances: Vec::new(),
+            style_fingerprints: two_stroke::build_style_fingerprints(),
+            rule_fingerprints: two_stroke::build_rule_fingerprints(),
         }
     }
 
@@ -139,10 +156,14 @@ impl CognitiveFabric {
         Self {
             style,
             triangles,
-            node: SevenLayerNode::new(path),
+            node: LayerNode::new(path),
+            satisfaction: LayerSatisfaction::new(),
+            prev_scores: [0.5; super::layer_stack::NUM_LAYERS],
             cycle: 0,
             collapse_history: Vec::new(),
             active_resonances: Vec::new(),
+            style_fingerprints: two_stroke::build_style_fingerprints(),
+            rule_fingerprints: two_stroke::build_rule_fingerprints(),
         }
     }
 
@@ -179,22 +200,34 @@ impl CognitiveFabric {
         self.style.field_modulation()
     }
 
-    /// Process input through full cognitive stack
+    /// Process input through full cognitive stack.
+    ///
+    /// Uses 2-stroke engine: all layers fire against previous-cycle state.
+    /// Satisfaction gate modulates effective thresholds (Maslow hierarchy).
+    /// Style can self-select via resonance if auto_style is enabled.
     pub fn process(&mut self, input: &Fingerprint) -> CognitiveState {
         self.cycle += 1;
         let modulation = self.modulation();
 
-        // 1. Process through 7-layer stack
+        // 1. Process through 10-layer stack (wave mode for determinism)
         let _results = process_layers_wave(&mut self.node, input, self.cycle);
         let consciousness = snapshot_consciousness(&self.node, self.cycle);
 
-        // 2. Update triangles based on layer activations
+        // 2. Update satisfaction scores from layer activations
+        for layer in super::layer_stack::LayerId::ALL {
+            let marker = self.node.marker(layer);
+            let new_score = self.prev_scores[layer.index()] * 0.7 + marker.value * 0.3;
+            self.satisfaction.update(layer, new_score);
+        }
+        self.prev_scores = two_stroke::snapshot_scores(&self.satisfaction);
+
+        // 3. Update triangles based on layer activations
         self.update_triangles_from_layers(&consciousness);
 
-        // 3. Compute active resonances (filtered by style threshold)
+        // 4. Compute active resonances (filtered by style threshold)
         self.update_active_resonances(input, modulation.resonance_threshold);
 
-        // 4. Evaluate collapse gate if we have candidates
+        // 5. Evaluate collapse gate if we have candidates
         let last_collapse = if self.active_resonances.len() >= 2 {
             let scores: Vec<f32> = self
                 .active_resonances
@@ -214,12 +247,12 @@ impl CognitiveFabric {
             None
         };
 
-        // 5. Compute global coherence
+        // 6. Compute global coherence
         let triangle_coherence = self.triangles.coherence();
         let layer_coherence = consciousness.coherence;
         let coherence = (triangle_coherence + layer_coherence) / 2.0;
 
-        // 6. Compute emergence
+        // 7. Compute emergence
         let emergence = consciousness.emergence * (1.0 - coherence * 0.3);
 
         CognitiveState {
@@ -231,23 +264,44 @@ impl CognitiveFabric {
             cycle: self.cycle,
             coherence,
             emergence,
+            satisfaction: self.satisfaction.clone(),
         }
     }
 
-    /// Update triangles based on layer activations
+    /// Get selected inference rules by resonance with current gestalt.
+    ///
+    /// Replaces hardcoded `apply_rule("deduction", ...)` with implicit
+    /// resonance-gated selection. The gestalt superposition resonates
+    /// with rule fingerprints; rules that cross threshold fire.
+    pub fn select_inference_rules(&self, gestalt: &Fingerprint) -> Vec<&'static str> {
+        let modulation = self.modulation();
+        two_stroke::select_rules_by_resonance(gestalt, &self.rule_fingerprints, &modulation)
+    }
+
+    /// Get current satisfaction gate state
+    pub fn satisfaction(&self) -> &LayerSatisfaction {
+        &self.satisfaction
+    }
+
+    /// Update triangles based on layer activations.
+    ///
+    /// 10-layer mapping:
+    ///   Processing:  L2(Resonance) → Analytical, L1(Recognition) → Intuitive, L5(Execution) → Procedural
+    ///   Content:     L3(Appraisal) → Abstract, L1(Recognition) → Concrete, L4(Routing) → Relational
+    ///   Gestalt:     L7(Contingency) → Coherence, L2(Resonance) → Novelty, L5(Execution) → Resonance
+    ///   Crystal:     L9(Validation) feeds Crystallization triangle via L10 activation
     fn update_triangles_from_layers(&mut self, snapshot: &ConsciousnessSnapshot) {
-        // Map layer activations to triangle nudges
         let layers = &snapshot.layers;
 
-        // Processing triangle: L2 (Pattern) → Analytical, L1 (Sensory) → Intuitive, L6 (Exec) → Procedural
+        // Processing: Resonance(1) → Analytical, Recognition(0) → Intuitive, Execution(4) → Procedural
         let proc_target = QuadTriangle::with_activations(
-            [layers[1].value, layers[0].value, layers[5].value],
+            [layers[1].value, layers[0].value, layers[4].value],
             self.triangles.content.activations(),
             self.triangles.gestalt.activations(),
             self.triangles.crystallization.activations(),
         );
 
-        // Content triangle: L3 (Semantic) → Abstract, L1 (Sensory) → Concrete, L4 (Episodic) → Relational
+        // Content: Appraisal(2) → Abstract, Recognition(0) → Concrete, Routing(3) → Relational
         let cont_target = QuadTriangle::with_activations(
             self.triangles.processing.activations(),
             [layers[2].value, layers[0].value, layers[3].value],
@@ -255,12 +309,20 @@ impl CognitiveFabric {
             self.triangles.crystallization.activations(),
         );
 
-        // Gestalt triangle: L7 (Meta) → Coherence, L2 (Pattern) → Novelty, L5 (Working) → Resonance
+        // Gestalt: Contingency(6) → Coherence, Resonance(1) → Novelty, Execution(4) → Resonance
         let gest_target = QuadTriangle::with_activations(
             self.triangles.processing.activations(),
             self.triangles.content.activations(),
             [layers[6].value, layers[1].value, layers[4].value],
             self.triangles.crystallization.activations(),
+        );
+
+        // Crystallization: Validation(8) → Immutable, Integration(7) → Hot, Crystallization(9) → Experimental
+        let crys_target = QuadTriangle::with_activations(
+            self.triangles.processing.activations(),
+            self.triangles.content.activations(),
+            self.triangles.gestalt.activations(),
+            [layers[8].value, layers[7].value, layers[9].value],
         );
 
         // Nudge toward targets
@@ -273,6 +335,9 @@ impl CognitiveFabric {
         self.triangles
             .gestalt
             .nudge_toward(&gest_target.gestalt, 0.1);
+        self.triangles
+            .crystallization
+            .nudge_toward(&crys_target.crystallization, 0.1);
     }
 
     /// Update active resonances above threshold
@@ -338,7 +403,9 @@ impl CognitiveFabric {
     /// Reset to neutral state
     pub fn reset(&mut self) {
         self.triangles = QuadTriangle::neutral();
-        self.node = SevenLayerNode::new(&self.node.path);
+        self.node = LayerNode::new(&self.node.path);
+        self.satisfaction = LayerSatisfaction::new();
+        self.prev_scores = [0.5; super::layer_stack::NUM_LAYERS];
         self.cycle = 0;
         self.collapse_history.clear();
         self.active_resonances.clear();

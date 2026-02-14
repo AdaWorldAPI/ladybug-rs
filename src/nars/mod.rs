@@ -7,7 +7,7 @@ pub mod adversarial;
 mod context;
 pub mod contradiction;
 mod evidence;
-mod inference;
+pub mod inference;
 mod truth;
 
 pub use context::{

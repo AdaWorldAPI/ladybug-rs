@@ -2,8 +2,8 @@
 //!
 //! Unified integration of:
 //! - 4 QuadTriangles (10K-bit VSA corners)
-//! - 7-Layer Consciousness Stack
-//! - 12 Thinking Styles
+//! - 10-Layer Cognitive Stack (L1:Recognition → L10:Crystallization)
+//! - 12 Thinking Styles (resonance-gated self-selection)
 //! - Collapse Gate (SIMD SD)
 //! - mRNA Cross-Pollination
 //!
@@ -15,7 +15,7 @@
 //! │      │                                                                  │
 //! │      ▼                                                                  │
 //! │   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐                │
-//! │   │   GRAMMAR   │───►│  QUAD-TRI   │───►│   7-LAYER   │                │
+//! │   │   GRAMMAR   │───►│  QUAD-TRI   │───►│  10-LAYER   │                │
 //! │   │   PARSER    │    │  RESONANCE  │    │    STACK    │                │
 //! │   └─────────────┘    └─────────────┘    └─────────────┘                │
 //! │          │                  │                  │                        │
@@ -40,8 +40,8 @@
 //! ```
 
 use crate::cognitive::{
-    CognitiveProfiles, CollapseDecision, ConsciousnessSnapshot, LayerId, QuadTriangle,
-    SevenLayerNode, ThinkingStyle, evaluate_gate, process_layers_wave, snapshot_consciousness,
+    CognitiveProfiles, CollapseDecision, ConsciousnessSnapshot, LayerId, LayerNode, QuadTriangle,
+    ThinkingStyle, evaluate_gate, process_layers_wave, snapshot_consciousness,
 };
 use crate::core::{Fingerprint, VsaOps};
 use crate::fabric::{Butterfly, ButterflyDetector, MRNA, Subsystem};
@@ -104,7 +104,7 @@ fn role_name(role: &GrammarRole) -> &'static str {
 // COGNITIVE STATE
 // =============================================================================
 
-/// Current cognitive state
+/// Current cognitive state (grammar engine's local state)
 #[derive(Clone)]
 pub struct CognitiveState {
     /// Active thinking style
@@ -113,8 +113,8 @@ pub struct CognitiveState {
     /// Quad-triangle cognitive texture
     pub quad_triangle: QuadTriangle,
 
-    /// 7-layer consciousness node
-    pub consciousness: SevenLayerNode,
+    /// 10-layer consciousness node
+    pub consciousness: LayerNode,
 
     /// Processing cycle
     pub cycle: u64,
@@ -128,7 +128,7 @@ impl Default for CognitiveState {
         Self {
             style: ThinkingStyle::Analytical,
             quad_triangle: QuadTriangle::neutral(),
-            consciousness: SevenLayerNode::new("cognitive_state"),
+            consciousness: LayerNode::new("cognitive_state"),
             cycle: 0,
             last_snapshot: None,
         }
@@ -214,7 +214,7 @@ impl GrammarCognitiveEngine {
         let butterfly: Option<Butterfly> = None;
         let _ = resonances.len(); // suppress warning
 
-        // Process through 7-layer stack
+        // Process through 10-layer stack
         self.state.cycle += 1;
         let _layer_results =
             process_layers_wave(&mut self.state.consciousness, &grammar_fp, self.state.cycle);
