@@ -20,6 +20,7 @@ WORKDIR /build
 FROM chef AS planner
 COPY Cargo.toml Cargo.lock* ./
 COPY src/ src/
+COPY crates/ crates/
 RUN cargo chef prepare --recipe-path recipe.json
 
 # --- Stage 2: Compile dependencies (CACHED unless Cargo.toml/lock change) ----
