@@ -55,10 +55,10 @@ use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
 use crate::cognitive::collapse_gate::{CollapseDecision, GateState, calculate_sd, evaluate_gate};
-use crate::cognitive::quad_triangle::{CognitiveProfiles, QuadTriangle};
-use crate::cognitive::seven_layer::{
-    ConsciousnessSnapshot, SevenLayerNode, process_layers_wave, snapshot_consciousness,
+use crate::cognitive::layer_stack::{
+    ConsciousnessSnapshot, LayerNode, process_layers_wave, snapshot_consciousness,
 };
+use crate::cognitive::quad_triangle::{CognitiveProfiles, QuadTriangle};
 use crate::cognitive::style::ThinkingStyle;
 use crate::core::{Fingerprint, VsaOps};
 use crate::fabric::Subsystem;
@@ -75,8 +75,8 @@ pub struct CognitiveState {
     /// Quad-triangle cognitive texture
     pub quad_triangle: QuadTriangle,
 
-    /// 7-layer consciousness markers
-    pub consciousness: SevenLayerNode,
+    /// 10-layer consciousness markers
+    pub consciousness: LayerNode,
 
     /// Current thinking style
     pub thinking_style: ThinkingStyle,
@@ -96,7 +96,7 @@ impl CognitiveState {
     pub fn new(path: &str) -> Self {
         Self {
             quad_triangle: QuadTriangle::neutral(),
-            consciousness: SevenLayerNode::new(path),
+            consciousness: LayerNode::new(path),
             thinking_style: ThinkingStyle::Analytical,
             last_collapse: None,
             cycle: 0,

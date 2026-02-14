@@ -105,6 +105,30 @@ pub struct V1EnvelopeMetadata {
     pub epoch: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+
+    // --- 10-Layer Cognitive Awareness (backward-compatible, all optional) ---
+
+    /// Dominant cognitive layer that produced this output (0-9 → L1-L10).
+    /// Used for cross-agent routing: savant agents operate at L1-L5,
+    /// orchestrator agents at L6-L10.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub dominant_layer: Option<u8>,
+
+    /// 10-layer activation snapshot: [f32; 10] serialized as JSON array.
+    /// Encodes the satisfaction state at the time of output, enabling
+    /// cross-agent awareness through shared metadata.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub layer_activations: Option<Vec<f32>>,
+
+    /// NARS frequency component (0.0-1.0) from L9 validation.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub nars_frequency: Option<f64>,
+
+    /// Calibration error (Brier score) from MetaCognition.
+    /// Lower = better calibrated. Consumers can use this to weight
+    /// evidence from this source during L8 Integration.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub calibration_error: Option<f64>,
 }
 
 // ============================================================================
@@ -130,6 +154,24 @@ pub struct V1LadybugMetadata {
     pub epoch: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+
+    // --- 10-Layer Cognitive Awareness ---
+
+    /// Dominant cognitive layer (0-9 → L1-L10).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub dominant_layer: Option<u8>,
+
+    /// 10-layer activation snapshot.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub layer_activations: Option<Vec<f32>>,
+
+    /// NARS frequency from L9 validation.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub nars_frequency: Option<f64>,
+
+    /// Calibration error (Brier score).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub calibration_error: Option<f64>,
 }
 
 // ============================================================================
@@ -235,6 +277,13 @@ impl From<&V1DataEnvelope> for CogRecord {
             let mut m = record.meta_view_mut();
             m.set_dn_addr(hash_step_id(&envelope.metadata.source_step));
             m.set_nars_confidence(envelope.metadata.confidence as f32);
+            if let Some(freq) = envelope.metadata.nars_frequency {
+                m.set_nars_frequency(freq as f32);
+            }
+            // Layer activations are carried in the JSON metadata, not
+            // packed into container words (container layer markers are
+            // 5-byte 7-layer format; the 10-layer data travels in the
+            // serde envelope until container format is upgraded).
         }
         let bytes = serde_json::to_vec(&envelope.data).unwrap_or_default();
         record.content[0] = content_from_bytes(&bytes);
@@ -245,6 +294,25 @@ impl From<&V1DataEnvelope> for CogRecord {
 impl From<&CogRecord> for V1DataEnvelope {
     fn from(record: &CogRecord) -> V1DataEnvelope {
         let m = record.meta_view();
+
+        // Extract layer markers from container (7-layer format in W12-W15).
+        // We extract the available 7 layers and pad with zeros for L8-L10.
+        // Full 10-layer data travels in the JSON envelope when available.
+        let mut layer_activations = Vec::with_capacity(10);
+        let mut dominant: Option<(u8, f32)> = None;
+        for i in 0..7 {
+            let marker = m.layer_marker(i);
+            let activation = marker.0 as f32 / 255.0;
+            layer_activations.push(activation);
+            if dominant.is_none() || activation > dominant.unwrap().1 {
+                dominant = Some((i as u8, activation));
+            }
+        }
+        // Pad L8-L10 with zero (not yet stored in container metadata)
+        for _ in 7..10 {
+            layer_activations.push(0.0);
+        }
+
         V1DataEnvelope {
             data: Value::Null,
             metadata: V1EnvelopeMetadata {
@@ -252,6 +320,10 @@ impl From<&CogRecord> for V1DataEnvelope {
                 confidence: m.nars_confidence() as f64,
                 epoch: 0,
                 version: None,
+                dominant_layer: dominant.map(|(i, _)| i),
+                layer_activations: Some(layer_activations),
+                nars_frequency: Some(m.nars_frequency() as f64),
+                calibration_error: None, // Not stored in container metadata
             },
         }
     }
@@ -297,6 +369,17 @@ impl From<&CogRecord> for V1LadybugEnvelope {
                 },
                 epoch: None,
                 version: None,
+                dominant_layer: None,
+                layer_activations: None,
+                nars_frequency: {
+                    let f = m.nars_frequency();
+                    if f > 0.0 {
+                        Some(f as f64)
+                    } else {
+                        None
+                    }
+                },
+                calibration_error: None,
             },
         }
     }
