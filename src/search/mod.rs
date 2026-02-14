@@ -48,6 +48,7 @@
 //! ```
 
 pub mod causal;
+pub mod certificate;
 pub mod cognitive;
 pub mod distribution;
 pub mod hdr_cascade;
@@ -113,6 +114,8 @@ pub use causal::{
     // Unified API
     QueryMode,
 };
+
+pub use certificate::{CausalCertificate, EffectClass};
 
 pub use cognitive::{
     // Cognitive atom
