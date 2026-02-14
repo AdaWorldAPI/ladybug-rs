@@ -17,20 +17,15 @@ use crate::record::CogRecord;
 // V1 StepStatus
 // ============================================================================
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum V1StepStatus {
+    #[default]
     Pending,
     Running,
     Completed,
     Failed,
     Skipped,
-}
-
-impl Default for V1StepStatus {
-    fn default() -> Self {
-        Self::Pending
-    }
 }
 
 // ============================================================================
@@ -309,9 +304,7 @@ impl From<&CogRecord> for V1DataEnvelope {
             }
         }
         // Pad L8-L10 with zero (not yet stored in container metadata)
-        for _ in 7..10 {
-            layer_activations.push(0.0);
-        }
+        layer_activations.extend(std::iter::repeat_n(0.0, 3));
 
         V1DataEnvelope {
             data: Value::Null,

@@ -1,11 +1,12 @@
 //! Container geometry — how content containers are interpreted.
 
 /// How the content containers of a [`CogRecord`] are arranged and interpreted.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 #[repr(u8)]
 pub enum ContainerGeometry {
     /// 1 content container: flat 8K CAM fingerprint (default, most common).
     /// Total record: 2 × 1 KB = 2 KB.
+    #[default]
     Cam = 0,
 
     /// 3 content containers: X (what) + Y (where) + Z (how), holographic.
@@ -59,11 +60,5 @@ impl ContainerGeometry {
             5 => Some(ContainerGeometry::Tree),
             _ => None,
         }
-    }
-}
-
-impl Default for ContainerGeometry {
-    fn default() -> Self {
-        ContainerGeometry::Cam
     }
 }
