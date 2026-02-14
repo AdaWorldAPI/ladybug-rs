@@ -29,6 +29,7 @@
 //! | [`delegation`] | `DelegationRequest` / `DelegationResponse` |
 //! | [`wire`] | Binary wire protocol: `CogPacket` (8+8/4096 command packets, no JSON) |
 //! | [`legacy`] | V1 JSON backward compatibility (external wire format only) |
+//! | [`schema`] | Unified 2×8192 CogRecord schema constants and field descriptors |
 
 pub mod container;
 pub mod geometry;
@@ -47,6 +48,7 @@ pub mod temporal;
 pub mod delegation;
 pub mod legacy;
 pub mod wire;
+pub mod schema;
 
 // === Convenience re-exports ===
 pub use container::{Container, CONTAINER_BITS, CONTAINER_BYTES, CONTAINER_WORDS};
