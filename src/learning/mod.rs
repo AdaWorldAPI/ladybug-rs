@@ -35,6 +35,7 @@ pub mod moment;
 pub mod quantum_ops;
 pub mod resonance;
 pub mod rl_ops;
+pub mod scm;
 pub mod session;
 
 pub use blackboard::{Blackboard, Decision, IceCakedLayer};
