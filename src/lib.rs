@@ -95,11 +95,12 @@
 )]
 
 // === Core modules ===
+pub mod chess; // Chess position fingerprinting (16K-bit → RESONATE)
 pub mod cognitive;
 pub mod container;
 pub mod core;
 pub mod fabric;
-pub mod grammar; // NEW: Grammar Triangle
+pub mod grammar; // Grammar Triangle
 pub mod graph;
 pub mod learning;
 pub mod nars;
@@ -137,6 +138,9 @@ pub mod orchestration;
 
 // Core types
 pub use crate::core::{DIM, DIM_U64, Embedding, Fingerprint, VsaOps};
+
+// Chess position fingerprinting
+pub use crate::chess::{ChessFingerprint, ChessPosition, GamePhase};
 
 // Cognitive types
 pub use crate::cognitive::{Belief, Concept, ThinkingStyle, Thought};

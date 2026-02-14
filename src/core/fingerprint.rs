@@ -95,6 +95,12 @@ impl Fingerprint {
         &self.data
     }
 
+    /// Get mutable raw data (for direct word-level writes, e.g., chess fingerprint encoding)
+    #[inline]
+    pub fn as_raw_mut(&mut self) -> &mut [u64; FINGERPRINT_U64] {
+        &mut self.data
+    }
+
     /// Get as byte slice
     pub fn as_bytes(&self) -> &[u8] {
         unsafe { std::slice::from_raw_parts(self.data.as_ptr() as *const u8, FINGERPRINT_U64 * 8) }
