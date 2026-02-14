@@ -649,6 +649,25 @@ fn route(
         ("POST", "/api/v1/lance/add") => handle_lance_add(body, state, format),
         ("POST", "/api/v1/lance/search") => handle_lance_search(body, state, format),
 
+        // =====================================================================
+        // UNIFIED SURFACE — CrewAI + n8n proxied through one gateway
+        // =====================================================================
+
+        // CrewAI endpoints → proxy to crewai-rust service
+        ("POST", "/api/v1/crew/execute") => handle_proxy("crew", "/execute", body, format),
+        ("POST", "/api/v1/crew/kickoff") => handle_proxy("crew", "/execute", body, format),
+        ("GET", "/api/v1/crew/health") => handle_proxy_get("crew", "/health", format),
+        ("GET", "/api/v1/crew/modules") => handle_proxy_get("crew", "/modules", format),
+
+        // n8n endpoints → proxy to n8n-rs service
+        ("GET", "/api/v1/workflows") => handle_proxy_get("n8n", "/api/v1/workflows", format),
+        ("POST", "/api/v1/workflows") => handle_proxy("n8n", "/api/v1/workflows", body, format),
+        ("POST", "/api/v1/executions") => handle_proxy("n8n", "/api/v1/executions", body, format),
+        ("GET", "/api/v1/executions") => handle_proxy_get("n8n", "/api/v1/executions", format),
+
+        // Unified command surface — Redis-like protocol for all 3 engines
+        ("POST", "/cmd") => handle_unified_command(body, state, format),
+
         _ => http_error(404, "not_found", "Unknown endpoint", format),
     }
 }
@@ -2783,6 +2802,470 @@ fn base64_decode(s: &str) -> std::result::Result<Vec<u8>, String> {
 }
 
 // =============================================================================
+// UNIFIED SURFACE — ONE DOCKER, ONE PORT, THREE ENGINES
+// =============================================================================
+//
+// Service discovery via environment variables:
+//   CREWAI_URL  = http://127.0.0.1:8090 (internal crewai-rust)
+//   N8N_URL     = http://127.0.0.1:8091 (internal n8n-rs)
+//
+// Redis-like command namespaces:
+//   DN.*   / CAM.*  / DAG.*  → ladybug (existing CogRedis)
+//   CREW.* / AGENT.*         → crewai-rust
+//   WF.*   / EXEC.*          → n8n-rs
+//   SQL    <query>           → DataFusion 51 (ladybug)
+//   CYPHER <query>           → Cypher (ladybug graph)
+//
+
+fn service_url(service: &str) -> String {
+    match service {
+        "crew" => env::var("CREWAI_URL").unwrap_or_else(|_| "http://127.0.0.1:8090".to_string()),
+        "n8n" => env::var("N8N_URL").unwrap_or_else(|_| "http://127.0.0.1:8091".to_string()),
+        _ => "http://127.0.0.1:8080".to_string(),
+    }
+}
+
+/// Proxy a POST request to an internal service.
+fn handle_proxy(service: &str, path: &str, body: &str, format: ResponseFormat) -> Vec<u8> {
+    let url = format!("{}{}", service_url(service), path);
+    // Use a blocking HTTP client (std::net::TcpStream) for simplicity
+    match proxy_post(&url, body) {
+        Ok(response_body) => match format {
+            ResponseFormat::Json => http_json(200, &response_body),
+            ResponseFormat::Arrow => {
+                // Wrap proxied JSON response in Arrow string column
+                let schema = Arc::new(Schema::new(vec![
+                    Field::new("service", DataType::Utf8, false),
+                    Field::new("response", DataType::Utf8, false),
+                ]));
+                let batch = RecordBatch::try_new(
+                    schema,
+                    vec![
+                        Arc::new(StringArray::from(vec![service])) as ArrayRef,
+                        Arc::new(StringArray::from(vec![response_body.as_str()])) as ArrayRef,
+                    ],
+                )
+                .unwrap();
+                http_arrow(200, &batch)
+            }
+        },
+        Err(e) => http_json(502, &format!(r#"{{"error":"proxy_error","service":"{}","detail":"{}"}}"#, service, e)),
+    }
+}
+
+/// Proxy a GET request to an internal service.
+fn handle_proxy_get(service: &str, path: &str, format: ResponseFormat) -> Vec<u8> {
+    let url = format!("{}{}", service_url(service), path);
+    match proxy_get(&url) {
+        Ok(response_body) => match format {
+            ResponseFormat::Json => http_json(200, &response_body),
+            ResponseFormat::Arrow => {
+                let schema = Arc::new(Schema::new(vec![
+                    Field::new("service", DataType::Utf8, false),
+                    Field::new("response", DataType::Utf8, false),
+                ]));
+                let batch = RecordBatch::try_new(
+                    schema,
+                    vec![
+                        Arc::new(StringArray::from(vec![service])) as ArrayRef,
+                        Arc::new(StringArray::from(vec![response_body.as_str()])) as ArrayRef,
+                    ],
+                )
+                .unwrap();
+                http_arrow(200, &batch)
+            }
+        },
+        Err(e) => http_json(502, &format!(r#"{{"error":"proxy_error","service":"{}","detail":"{}"}}"#, service, e)),
+    }
+}
+
+/// Unified command surface — Redis/DataFusion-like syntax dispatching to all 3 engines.
+///
+/// Command format: `NAMESPACE.COMMAND [args...]` or `SQL <query>` or `CYPHER <query>`
+///
+/// Namespaces:
+///   DN / CAM / DAG  → ladybug CogRedis (existing)
+///   CREW            → crewai-rust (agent execution)
+///   WF / EXEC       → n8n-rs (workflow orchestration)
+///   SQL             → DataFusion SQL engine
+///   CYPHER          → Graph query
+///   RESONATE        → Cross-engine semantic search
+///   PING            → Health check all services
+fn handle_unified_command(body: &str, state: &SharedState, format: ResponseFormat) -> Vec<u8> {
+    let cmd = body.trim();
+    if cmd.is_empty() {
+        return http_json(400, r#"{"error":"empty_command"}"#);
+    }
+
+    let upper = cmd.to_uppercase();
+    let first_word = upper.split_whitespace().next().unwrap_or("");
+
+    // Determine which engine handles this command
+    if first_word.starts_with("DN.") || first_word.starts_with("CAM.") || first_word.starts_with("DAG.") {
+        // Route to ladybug CogRedis (existing)
+        handle_redis_command(cmd, state)
+    } else if first_word == "SQL" {
+        // Strip "SQL " prefix, route to DataFusion
+        let query = cmd.get(4..).unwrap_or("").trim();
+        handle_sql(query, state, format)
+    } else if first_word == "CYPHER" {
+        let query = cmd.get(7..).unwrap_or("").trim();
+        handle_cypher(query, format)
+    } else if first_word.starts_with("CREW.") || first_word.starts_with("AGENT.") {
+        handle_crew_command(cmd, format)
+    } else if first_word.starts_with("WF.") || first_word.starts_with("EXEC.") {
+        handle_n8n_command(cmd, format)
+    } else if first_word == "RESONATE" {
+        // Cross-engine semantic search: search ladybug, optionally dispatch to crew for reasoning
+        let query = cmd.get(9..).unwrap_or("").trim();
+        handle_resonate_unified(query, state, format)
+    } else if first_word == "PING" {
+        handle_ping_all(state, format)
+    } else if first_word == "HELP" {
+        handle_help_command(format)
+    } else {
+        // Try as Redis command (GET, SET, etc.)
+        handle_redis_command(cmd, state)
+    }
+}
+
+/// Handle CREW.* commands by proxying to crewai-rust.
+///
+/// Commands:
+///   CREW.EXECUTE {"description":"...", "agent":"...", ...}
+///   CREW.KICKOFF {"name":"crew_name", "agents":[...], "tasks":[...]}
+///   CREW.STATUS
+///   AGENT.LIST
+fn handle_crew_command(cmd: &str, format: ResponseFormat) -> Vec<u8> {
+    let upper = cmd.to_uppercase();
+    let first_word = upper.split_whitespace().next().unwrap_or("");
+    let rest = cmd.get(first_word.len()..).unwrap_or("").trim();
+
+    match first_word {
+        "CREW.EXECUTE" | "CREW.KICKOFF" => {
+            handle_proxy("crew", "/execute", rest, format)
+        }
+        "CREW.STATUS" | "CREW.HEALTH" => {
+            handle_proxy_get("crew", "/health", format)
+        }
+        "AGENT.LIST" | "CREW.MODULES" => {
+            handle_proxy_get("crew", "/modules", format)
+        }
+        _ => http_json(400, &format!(
+            r#"{{"error":"unknown_crew_command","command":"{}","help":"CREW.EXECUTE, CREW.KICKOFF, CREW.STATUS, AGENT.LIST"}}"#,
+            first_word
+        )),
+    }
+}
+
+/// Handle WF.* / EXEC.* commands by proxying to n8n-rs.
+///
+/// Commands:
+///   WF.LIST
+///   WF.CREATE {"name":"...", "nodes":[...]}
+///   WF.EXECUTE <workflow_id>
+///   EXEC.LIST
+///   EXEC.STATUS <execution_id>
+fn handle_n8n_command(cmd: &str, format: ResponseFormat) -> Vec<u8> {
+    let upper = cmd.to_uppercase();
+    let first_word = upper.split_whitespace().next().unwrap_or("");
+    let rest = cmd.get(first_word.len()..).unwrap_or("").trim();
+
+    match first_word {
+        "WF.LIST" => {
+            handle_proxy_get("n8n", "/api/v1/workflows", format)
+        }
+        "WF.CREATE" => {
+            handle_proxy("n8n", "/api/v1/workflows", rest, format)
+        }
+        "WF.EXECUTE" => {
+            let body = format!(r#"{{"workflow_id":"{}"}}"#, rest.trim_matches('"'));
+            handle_proxy("n8n", "/api/v1/executions", &body, format)
+        }
+        "EXEC.LIST" => {
+            handle_proxy_get("n8n", "/api/v1/executions", format)
+        }
+        "EXEC.STATUS" => {
+            let path = format!("/api/v1/executions/{}", rest.trim_matches('"'));
+            handle_proxy_get("n8n", &path, format)
+        }
+        _ => http_json(400, &format!(
+            r#"{{"error":"unknown_n8n_command","command":"{}","help":"WF.LIST, WF.CREATE, WF.EXECUTE, EXEC.LIST, EXEC.STATUS"}}"#,
+            first_word
+        )),
+    }
+}
+
+/// Cross-engine semantic search: query ladybug for similar fingerprints,
+/// optionally dispatch to CrewAI for deeper reasoning.
+fn handle_resonate_unified(query: &str, state: &SharedState, format: ResponseFormat) -> Vec<u8> {
+    // 1. Create fingerprint from query text
+    let fp = Fingerprint::from_content(query);
+
+    // 2. Search ladybug's indexed fingerprints
+    let db = state.read().unwrap();
+    let k = 5;
+    let mut results: Vec<(usize, u32, &str)> = db
+        .fingerprints
+        .iter()
+        .enumerate()
+        .map(|(i, (id, stored_fp, _meta))| {
+            let dist = hamming_distance(&fp, stored_fp);
+            (i, dist, id.as_str())
+        })
+        .collect();
+    results.sort_by_key(|r| r.1);
+    results.truncate(k);
+
+    let ids: Vec<&str> = results.iter().map(|r| r.2).collect();
+    let distances: Vec<u32> = results.iter().map(|r| r.1).collect();
+
+    match format {
+        ResponseFormat::Arrow => {
+            let schema = Arc::new(Schema::new(vec![
+                Field::new("query", DataType::Utf8, false),
+                Field::new("id", DataType::Utf8, false),
+                Field::new("distance", DataType::UInt32, false),
+            ]));
+            let n = ids.len();
+            let batch = RecordBatch::try_new(
+                schema,
+                vec![
+                    Arc::new(StringArray::from(vec![query; n])) as ArrayRef,
+                    Arc::new(StringArray::from(ids.clone())) as ArrayRef,
+                    Arc::new(UInt32Array::from(distances.clone())) as ArrayRef,
+                ],
+            )
+            .unwrap();
+            http_arrow(200, &batch)
+        }
+        ResponseFormat::Json => {
+            let hits: Vec<String> = ids
+                .iter()
+                .zip(distances.iter())
+                .map(|(id, d)| format!(r#"{{"id":"{}","distance":{}}}"#, id, d))
+                .collect();
+            http_json(200, &format!(
+                r#"{{"query":"{}","engine":"ladybug","results":[{}]}}"#,
+                query.replace('"', "\\\""),
+                hits.join(",")
+            ))
+        }
+    }
+}
+
+/// PING — health check all services.
+fn handle_ping_all(state: &SharedState, format: ResponseFormat) -> Vec<u8> {
+    let db = state.read().unwrap();
+    let lb_health = db.service.health_check();
+    let lb_ok = true;
+
+    // Check crewai health
+    let crew_ok = proxy_get(&format!("{}/health", service_url("crew"))).is_ok();
+    // Check n8n health
+    let n8n_ok = proxy_get(&format!("{}/api/v1/capabilities", service_url("n8n"))).is_ok();
+
+    match format {
+        ResponseFormat::Arrow => {
+            let schema = Arc::new(Schema::new(vec![
+                Field::new("service", DataType::Utf8, false),
+                Field::new("status", DataType::Boolean, false),
+            ]));
+            let batch = RecordBatch::try_new(
+                schema,
+                vec![
+                    Arc::new(StringArray::from(vec!["ladybug", "crewai", "n8n"])) as ArrayRef,
+                    Arc::new(BooleanArray::from(vec![lb_ok, crew_ok, n8n_ok])) as ArrayRef,
+                ],
+            )
+            .unwrap();
+            http_arrow(200, &batch)
+        }
+        ResponseFormat::Json => {
+            http_json(200, &format!(
+                r#"{{"ladybug":{{"ok":{},"cpu":"{}","version":"{}"}},"crewai":{{"ok":{}}},"n8n":{{"ok":{}}}}}"#,
+                lb_ok, lb_health.cpu_features, VERSION, crew_ok, n8n_ok
+            ))
+        }
+    }
+}
+
+/// HELP — list all available commands across all engines.
+fn handle_help_command(format: ResponseFormat) -> Vec<u8> {
+    let help = r#"{
+  "unified_surface": "LadybugDB Unified Gateway",
+  "namespaces": {
+    "ladybug": {
+      "DN.SET": "DN.SET <addr> <hex_fingerprint> — Store a CogRecord",
+      "DN.GET": "DN.GET <addr> — Retrieve a CogRecord",
+      "CAM.SEARCH": "CAM.SEARCH <hex_fingerprint> <k> — Top-K Hamming search",
+      "DAG.ADD": "DAG.ADD <src_addr> <dst_addr> <label> — Add graph edge",
+      "DAG.NEIGHBORS": "DAG.NEIGHBORS <addr> — List neighbors",
+      "SQL": "SQL <query> — DataFusion SQL query",
+      "CYPHER": "CYPHER <query> — Graph traversal query"
+    },
+    "crewai": {
+      "CREW.EXECUTE": "CREW.EXECUTE {json} — Execute a crew task",
+      "CREW.KICKOFF": "CREW.KICKOFF {json} — Start a full crew run",
+      "CREW.STATUS": "CREW.STATUS — Check crewai service health",
+      "AGENT.LIST": "AGENT.LIST — List available agent modules"
+    },
+    "n8n": {
+      "WF.LIST": "WF.LIST — List all workflows",
+      "WF.CREATE": "WF.CREATE {json} — Create a workflow",
+      "WF.EXECUTE": "WF.EXECUTE <id> — Execute a workflow",
+      "EXEC.LIST": "EXEC.LIST — List all executions",
+      "EXEC.STATUS": "EXEC.STATUS <id> — Get execution status"
+    },
+    "cross_engine": {
+      "RESONATE": "RESONATE <query> — Semantic search across all engines",
+      "PING": "PING — Health check all services",
+      "HELP": "HELP — This help message"
+    }
+  },
+  "endpoints": {
+    "POST /cmd": "Unified command (Redis-like syntax)",
+    "POST /redis": "Raw Redis protocol (ladybug only)",
+    "POST /sql": "DataFusion SQL",
+    "POST /cypher": "Cypher graph queries",
+    "POST /api/v1/crew/execute": "CrewAI proxy",
+    "GET  /api/v1/workflows": "n8n proxy"
+  }
+}"#;
+
+    match format {
+        ResponseFormat::Json => http_json(200, help),
+        ResponseFormat::Arrow => {
+            let schema = Arc::new(Schema::new(vec![
+                Field::new("help", DataType::Utf8, false),
+            ]));
+            let batch = RecordBatch::try_new(
+                schema,
+                vec![Arc::new(StringArray::from(vec![help])) as ArrayRef],
+            )
+            .unwrap();
+            http_arrow(200, &batch)
+        }
+    }
+}
+
+// =============================================================================
+// HTTP PROXY HELPERS
+// =============================================================================
+
+/// Simple blocking HTTP POST proxy using std::net::TcpStream.
+fn proxy_post(url: &str, body: &str) -> Result<String, String> {
+    let (host, port, path) = parse_url(url)?;
+    let addr = format!("{}:{}", host, port);
+
+    let mut stream = std::net::TcpStream::connect_timeout(
+        &addr.parse().map_err(|e: std::net::AddrParseError| e.to_string())?,
+        std::time::Duration::from_secs(5),
+    )
+    .map_err(|e| format!("connect({}): {}", addr, e))?;
+
+    let request = format!(
+        "POST {} HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        path, host, body.len(), body
+    );
+
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|e| e.to_string())?;
+    stream.flush().map_err(|e| e.to_string())?;
+
+    read_http_response(&mut stream)
+}
+
+/// Simple blocking HTTP GET proxy.
+fn proxy_get(url: &str) -> Result<String, String> {
+    let (host, port, path) = parse_url(url)?;
+    let addr = format!("{}:{}", host, port);
+
+    let mut stream = std::net::TcpStream::connect_timeout(
+        &addr.parse().map_err(|e: std::net::AddrParseError| e.to_string())?,
+        std::time::Duration::from_secs(5),
+    )
+    .map_err(|e| format!("connect({}): {}", addr, e))?;
+
+    let request = format!(
+        "GET {} HTTP/1.1\r\nHost: {}\r\nAccept: application/json\r\nConnection: close\r\n\r\n",
+        path, host
+    );
+
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|e| e.to_string())?;
+    stream.flush().map_err(|e| e.to_string())?;
+
+    read_http_response(&mut stream)
+}
+
+/// Parse URL into (host, port, path).
+fn parse_url(url: &str) -> Result<(String, u16, String), String> {
+    let without_scheme = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+        .unwrap_or(url);
+
+    let (host_port, path) = match without_scheme.find('/') {
+        Some(i) => (&without_scheme[..i], &without_scheme[i..]),
+        None => (without_scheme, "/"),
+    };
+
+    let (host, port) = match host_port.rfind(':') {
+        Some(i) => (
+            &host_port[..i],
+            host_port[i + 1..].parse::<u16>().unwrap_or(80),
+        ),
+        None => (host_port, 80),
+    };
+
+    Ok((host.to_string(), port, path.to_string()))
+}
+
+/// Read an HTTP response body (skip headers, read body).
+fn read_http_response(stream: &mut TcpStream) -> Result<String, String> {
+    let mut reader = BufReader::new(stream.try_clone().map_err(|e| e.to_string())?);
+    let mut response = String::new();
+
+    // Read status line
+    let mut status_line = String::new();
+    reader
+        .read_line(&mut status_line)
+        .map_err(|e| e.to_string())?;
+
+    // Read headers, track content-length
+    let mut content_length: usize = 0;
+    loop {
+        let mut line = String::new();
+        reader.read_line(&mut line).map_err(|e| e.to_string())?;
+        if line.trim().is_empty() {
+            break;
+        }
+        if let Some((key, val)) = line.split_once(':') {
+            if key.trim().eq_ignore_ascii_case("content-length") {
+                content_length = val.trim().parse().unwrap_or(0);
+            }
+        }
+    }
+
+    // Read body
+    if content_length > 0 {
+        let mut body = vec![0u8; content_length];
+        std::io::Read::read_exact(&mut reader, &mut body).map_err(|e| e.to_string())?;
+        response = String::from_utf8_lossy(&body).to_string();
+    } else {
+        // Read until connection closes (chunked or unknown length)
+        let mut buf = String::new();
+        let _ = std::io::Read::read_to_string(&mut reader, &mut buf);
+        response = buf;
+    }
+
+    Ok(response)
+}
+
+// =============================================================================
 // MAIN
 // =============================================================================
 
@@ -2821,6 +3304,14 @@ fn main() {
         "║    UDP   → Bitpacked Hamming ({}B hdr + {}B fp = {}B)     ║",
         UDP_HEADER_SIZE, UDP_FP_PADDED, UDP_MAX_DATAGRAM
     );
+    println!("╠═══════════════════════════════════════════════════════════════╣");
+    println!("║  Unified Surface:                                               ║");
+    println!("║    POST /cmd     → Redis/DataFusion command gateway             ║");
+    println!("║    DN.* CAM.*    → ladybug (fingerprint/NARS/graph)            ║");
+    println!("║    CREW.* AGENT.*→ crewai-rust ({})     ║", service_url("crew"));
+    println!("║    WF.* EXEC.*   → n8n-rs ({})     ║", service_url("n8n"));
+    println!("║    SQL / CYPHER  → DataFusion / Graph query                    ║");
+    println!("║    RESONATE      → Cross-engine semantic search                ║");
     println!("╚═══════════════════════════════════════════════════════════════╝");
 
     let addr: SocketAddr = format!("{}:{}", config.host, config.port)

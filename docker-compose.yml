@@ -198,6 +198,52 @@ services:
         reservations:
           memory: 1G
 
+  # ---------------------------------------------------------------------------
+  # Unified — ONE Docker, ONE Port, THREE Engines (Railway-ready)
+  # ---------------------------------------------------------------------------
+  # Usage:
+  #   docker-compose --profile unified up --build
+  #   curl -X POST http://localhost:8080/cmd -d "PING"
+  #   curl -X POST http://localhost:8080/cmd -d "HELP"
+  #   curl -X POST http://localhost:8080/cmd -d 'CREW.STATUS'
+  #   curl -X POST http://localhost:8080/cmd -d 'WF.LIST'
+  #   curl -X POST http://localhost:8080/cmd -d 'SQL SELECT 1'
+  # ---------------------------------------------------------------------------
+  ladybug-unified:
+    build:
+      context: .
+      dockerfile: Dockerfile.unified
+    container_name: ladybug-unified
+    profiles:
+      - unified
+    ports:
+      - "8080:8080"
+    environment:
+      - LADYBUG_HOST=0.0.0.0
+      - LADYBUG_PORT=8080
+      - CREWAI_PORT=8090
+      - N8N_PORT=8091
+      - CREWAI_URL=http://127.0.0.1:8090
+      - N8N_URL=http://127.0.0.1:8091
+      - LADYBUG_DATA_DIR=/data
+      - RUST_LOG=info
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - XAI_API_KEY=${XAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
+
 volumes:
   cargo-cache:
   target-cache:

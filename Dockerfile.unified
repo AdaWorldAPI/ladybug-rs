@@ -1,0 +1,155 @@
+# =============================================================================
+# LadybugDB Unified — All Three Engines, One Docker, One Port
+# =============================================================================
+#
+# Builds ladybug-rs (gateway + fingerprint engine) + crewai-rust (AI agents) +
+# n8n-rs (workflow orchestration) into a single container.
+#
+# ladybug-rs serves as the unified gateway on port 8080 with Redis/DataFusion-
+# like command surface. CrewAI and n8n run as internal services on 8090/8091.
+#
+# BUILD:
+#   docker build -f Dockerfile.unified -t ladybugdb:unified .
+#
+# RUN:
+#   docker run -p 8080:8080 \
+#     -e OPENAI_API_KEY=sk-... \
+#     -e XAI_API_KEY=xai-... \
+#     ladybugdb:unified
+#
+# COMMANDS (via POST /cmd):
+#   DN.SET, DN.GET, CAM.SEARCH    → ladybug (fingerprint/graph)
+#   SQL <query>                    → DataFusion engine
+#   CREW.EXECUTE, AGENT.LIST      → crewai-rust (AI agents)
+#   WF.LIST, WF.EXECUTE           → n8n-rs (workflows)
+#   RESONATE <query>              → Cross-engine search
+#   PING                          → Health check all services
+#   HELP                          → List all commands
+# =============================================================================
+
+# =============================================================================
+# STAGE 1: Build ladybug-rs
+# =============================================================================
+FROM rust:1.83-slim-bookworm AS builder-ladybug
+
+RUN apt-get update && apt-get install -y \
+    pkg-config libssl-dev cmake git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build/ladybug
+COPY . .
+
+ARG LB_FEATURES="simd,parallel,codebook,hologram,quantum"
+
+# Build with CPU auto-detect
+RUN RUSTFLAGS="-C link-arg=-s" \
+    cargo build --release --bin ladybug-server --features "$LB_FEATURES" && \
+    cp target/release/ladybug-server /usr/local/bin/ladybug-server
+
+# =============================================================================
+# STAGE 2: Build crewai-rust
+# =============================================================================
+FROM rust:1.83-slim-bookworm AS builder-crewai
+
+RUN apt-get update && apt-get install -y \
+    pkg-config libssl-dev cmake git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build/crewai
+RUN git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust .
+
+RUN RUSTFLAGS="-C link-arg=-s" \
+    cargo build --release --bin crewai-server && \
+    cp target/release/crewai-server /usr/local/bin/crewai-server
+
+# =============================================================================
+# STAGE 3: Build n8n-rs
+# =============================================================================
+FROM rust:1.83-slim-bookworm AS builder-n8n
+
+RUN apt-get update && apt-get install -y \
+    pkg-config libssl-dev cmake protobuf-compiler git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build/n8n
+RUN git clone --depth 1 https://github.com/AdaWorldAPI/n8n-rs .
+
+WORKDIR /build/n8n/n8n-rust
+RUN RUSTFLAGS="-C link-arg=-s" \
+    cargo build --release --bin n8n-server && \
+    cp target/release/n8n-server /usr/local/bin/n8n-server
+
+# =============================================================================
+# STAGE 4: Runtime — All Three Engines
+# =============================================================================
+FROM debian:bookworm-slim AS runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl procps \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -m -s /bin/bash ladybug \
+    && mkdir -p /data && chown ladybug:ladybug /data
+
+# Copy all three binaries
+COPY --from=builder-ladybug /usr/local/bin/ladybug-server /usr/local/bin/
+COPY --from=builder-crewai /usr/local/bin/crewai-server /usr/local/bin/
+COPY --from=builder-n8n /usr/local/bin/n8n-server /usr/local/bin/
+
+# Unified entrypoint — starts all 3 services, exposes one port
+COPY <<'ENTRY' /usr/local/bin/ladybug-unified
+#!/bin/sh
+set -e
+
+echo "╔═══════════════════════════════════════════════════════════════╗"
+echo "║          LadybugDB Unified — 3 Engines, 1 Port              ║"
+echo "╠═══════════════════════════════════════════════════════════════╣"
+echo "║  Gateway:  0.0.0.0:${LADYBUG_PORT:-8080}  (ladybug-rs)      ║"
+echo "║  CrewAI:   127.0.0.1:${CREWAI_PORT:-8090} (internal)        ║"
+echo "║  n8n-rs:   127.0.0.1:${N8N_PORT:-8091}    (internal)        ║"
+echo "║                                                              ║"
+echo "║  POST /cmd  → Unified Redis/DataFusion command surface       ║"
+echo "║  HELP       → List all available commands                    ║"
+echo "╚═══════════════════════════════════════════════════════════════╝"
+
+# Start crewai-rust (internal, port 8090)
+PORT=${CREWAI_PORT:-8090} crewai-server &
+CREWAI_PID=$!
+echo "[unified] crewai-rust started (PID=$CREWAI_PID, port=${CREWAI_PORT:-8090})"
+
+# Start n8n-rs (internal, port 8091)
+N8N_REST_ADDR="0.0.0.0:${N8N_PORT:-8091}" n8n-server &
+N8N_PID=$!
+echo "[unified] n8n-rs started (PID=$N8N_PID, port=${N8N_PORT:-8091})"
+
+# Wait briefly for internal services to start
+sleep 1
+
+# Export service URLs for the gateway
+export CREWAI_URL="http://127.0.0.1:${CREWAI_PORT:-8090}"
+export N8N_URL="http://127.0.0.1:${N8N_PORT:-8091}"
+
+# Start ladybug-rs gateway (foreground, external port)
+exec ladybug-server "$@"
+ENTRY
+RUN chmod +x /usr/local/bin/ladybug-unified
+
+USER ladybug
+WORKDIR /home/ladybug
+
+# Gateway port (only one exposed)
+ENV LADYBUG_HOST=0.0.0.0
+ENV LADYBUG_PORT=8080
+ENV LADYBUG_DATA_DIR=/data
+# Internal service ports
+ENV CREWAI_PORT=8090
+ENV N8N_PORT=8091
+# Service discovery
+ENV CREWAI_URL=http://127.0.0.1:8090
+ENV N8N_URL=http://127.0.0.1:8091
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:${LADYBUG_PORT}/health || exit 1
+
+ENTRYPOINT ["ladybug-unified"]
