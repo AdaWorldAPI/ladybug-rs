@@ -235,7 +235,7 @@ impl Container {
     /// Caller must guarantee 64-byte alignment.
     #[inline(always)]
     pub fn view(words: &[u64; CONTAINER_WORDS]) -> &Container {
-        debug_assert!(
+        assert!(
             (words.as_ptr() as usize).is_multiple_of(64),
             "Container::view requires 64-byte aligned input"
         );
@@ -248,7 +248,7 @@ impl Container {
     /// Caller must guarantee 64-byte alignment.
     #[inline(always)]
     pub fn view_mut(words: &mut [u64; CONTAINER_WORDS]) -> &mut Container {
-        debug_assert!(
+        assert!(
             (words.as_ptr() as usize).is_multiple_of(64),
             "Container::view_mut requires 64-byte aligned input"
         );
