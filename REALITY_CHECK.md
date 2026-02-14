@@ -29,6 +29,60 @@ a fundamentally wrong premise (like a "benchmark" that solves itself).
 
 ---
 
+## DOCS vs CODE vs SCIENCE: The Cross-Reference
+
+Four design docs claim a mathematical chain from fingerprints to provable
+causal learning. Here is what's actually backed by code, what's backed by
+real CLAM science, and what's aspirational.
+
+### THEORETICAL_FOUNDATIONS.md — Layer-by-Layer Verification
+
+| Layer | Doc Claim | Code | CLAM Science |
+|-------|-----------|------|--------------|
+| L0: Hamming fingerprints | 16K-bit SIMD distance | **REAL** `core/simd.rs` AVX-512, 65M/sec | N/A (ladybug original) |
+| L1: HDR cascade | INT1/4/8/32 stacked | **REAL** `hdr_cascade.rs:75-186` all 4 levels SIMD | **ladybug > CLAM** (no CLAM equivalent) |
+| L2: Distribution curves | Normal(mu,sigma) via CLT | **REAL** `distribution.rs:16-188` ClusterDistribution | CLAM: radius/span bounds (scalar only) |
+| L3: Effect size | Cohen's d calibrated | **REAL** `distribution.rs:147` `scientific.rs:79` | CLAM: LFD bounds connectivity (LFD **NOT in code**) |
+| L4: Granger signal | Temporal causality | **REAL** `temporal.rs:26-108` full impl | No CLAM equivalent (ladybug original) |
+| L5: do-calculus | Pearl adjustment formula | **PARTIAL** `causal.rs` has ABBA/Rung 1-3, `CausalCertificate` **MISSING** | CLAM tree = d-separation (not wired) |
+| L6: Provable learning | Squires-Uhler GSP | **MISSING** not implemented, not referenced | Crown jewel. **NOT YET EARNED.** |
+
+### CLAM_HARDENING.md — What CLAM Proves vs What's Implemented
+
+| Ladybug Intuition | CLAM Formal Proof | Code Status |
+|---|---|---|
+| "Scent filters 99.997%" | LFD measures actual pruning ratio | `scent.rs` 648 lines, **LFD: MISSING** |
+| "HDR cascade: 90%/level" | d_min/d_max guaranteed bounds | **HDR: REAL.** d_min/d_max bounds not computed |
+| "XOR-fold preserves locality" | Bipolar split: optimal partitioning | `spine.rs` 203 lines, **abd-clam NOT a dependency** |
+| "Mexican hat excite/inhibit" | Cluster radius/span | **REAL** `hdr_cascade.rs:232-305` CRP. **ladybug > CLAM** |
+| "Full fps at leaf" | panCAKES: XOR-diff compression | `storage/compressed.rs` **MISSING** |
+| "Hierarchical scent index" | CLAM tree: O(k*2^LFD*log n) | LFD missing, complexity not bounded |
+| "INT4 calibrates INT32" | No CLAM equivalent | **REAL.** Ladybug's unique contribution |
+
+### What CLAM_HARDENING.md Proposes That Doesn't Exist
+
+| Proposed File | Purpose | Status |
+|---|---|---|
+| `src/core/clam_index.rs` | CLAM tree over fingerprints | **MISSING** |
+| `src/search/cakes.rs` | CAKES search algorithms | **MISSING** |
+| `src/storage/compressed.rs` | panCAKES XOR-diff storage | **MISSING** |
+| `abd-clam` in Cargo.toml | CLAM dependency | **NOT PRESENT** |
+
+### 34 Tactics — Module Existence vs Pipeline Connection
+
+| Category | Files Exist | Real Compute | Wired Into Pipeline |
+|---|---|---|---|
+| Phase 1 (Cement) | 4/4 | 3/4 | 1/4 |
+| Phase 2 (Pearl stack) | 4/4 | 3/4 | 0/4 |
+| Phase 3 (Debate/metacog) | 4/4 | 4/4 | 0/4 |
+| Phase 4 (Cognitive) | 4/4 | 4/4 | 0/4 |
+| Remaining 18 | 15/18 | ~12/18 | 0/18 |
+| **Total** | **31/34** | **26/34** | **1/34** |
+
+31 modules exist. 26 have real computation. 1 is actually called by a pipeline.
+
+---
+
 ## ISSUE #1: THE TWO-CONTAINER SCHIZOPHRENIA (CRITICAL)
 
 There are **two** `pub struct Container` types:
@@ -123,30 +177,10 @@ Every crew "executes" but produces fake placeholder strings.
 
 ### THE FIX
 
-1. **Wire LLM::call() to OpenAICompletion::acall()** — The provider exists! Just connect it:
-   ```rust
-   // src/llm/mod.rs — replace the stub with routing
-   pub async fn call(&self, messages: &[Message]) -> Result<String> {
-       match self.provider() {
-           Provider::OpenAI => OpenAICompletion::new(&self.model).acall(messages).await,
-           Provider::Anthropic => AnthropicCompletion::new(&self.model).acall(messages).await,
-           _ => Err(anyhow!("Provider not implemented: {:?}", self.provider())),
-       }
-   }
-   ```
-
-2. **Wire task.execute_sync() to actually call the agent**:
-   - Remove the placeholder return at `src/task.rs:320-322`
-   - Ensure agent_executor is always configured
-
+1. **Wire LLM::call() to OpenAICompletion::acall()** — The provider exists! Just connect it
+2. **Wire task.execute_sync() to actually call the agent** — Remove placeholder at `src/task.rs:320-322`
 3. **Delete wire_bridge.rs or actually call it** from server routes
-
 4. **Delete the 8 todo!() evaluation stubs** — they give false confidence
-
-### PRIORITY
-
-This is the highest-leverage fix across all three repos. One afternoon of work
-turns crewai-rust from a shell into a working agent framework.
 
 ---
 
@@ -170,28 +204,8 @@ Nobody passes CausalityFlow into CausalSearch. The pipes are plumbed but not con
 
 ### THE FIX
 
-One function that bridges Grammar → CausalSearch:
-
-```rust
-// src/cognitive/causal_bridge.rs (new, ~100 lines)
-pub fn process_causal_statement(
-    text: &str,
-    parser: &UnifiedParser,
-    engine: &mut CausalEngine,
-) -> Result<TruthValue> {
-    let flow = parser.extract_causality(text)?;
-    let mode = match flow.rung {
-        1 => QueryMode::Correlate,
-        2 => QueryMode::Intervene,
-        3 => QueryMode::Counterfact,
-        _ => QueryMode::Correlate,
-    };
-    let result = engine.query(mode, &flow.subject_fp, &flow.object_fp)?;
-    Ok(result.truth_value)
-}
-```
-
-This is where the CLadder benchmark should actually run —
+One function that bridges Grammar → CausalSearch (~100 lines).
+This is also where the CLadder benchmark should actually run —
 through real ladybug-rs causal infrastructure, not a self-solving Python script.
 
 ---
@@ -205,7 +219,6 @@ The Python benchmark from a previous session:
 4. Claims "ladybug-rs beats GPT-4"
 
 **ladybug-rs never touches the data.** The benchmark is a closed loop.
-It proves "can I reimplement Pearl's math in Python" — yes, obviously, 91.8%.
 
 ### THE FIX
 
@@ -213,15 +226,9 @@ Either:
 - (A) Route CLadder through actual ladybug-rs: parse graphs → CausalEngine → ABBA → answer
 - (B) Be honest: call it "algebraic baseline" not "ladybug-rs benchmark"
 
-Option A is the paper-worthy result. Option B is the honest fallback.
-
 ---
 
 ## ISSUE #5: DUPLICATE / DEAD CODE IN ladybug-rs (MEDIUM)
-
-### Duplicate Container (detailed above)
-- `src/container/mod.rs` — 358 lines duplicating contract crate
-- Delete and re-export
 
 ### Dead functions with todo!()
 | Location | What |
@@ -232,16 +239,12 @@ Option A is the paper-worthy result. Option B is the honest fallback.
 
 ### Global `#[allow(dead_code)]`
 - `src/lib.rs:56` — suppresses all dead code warnings for entire crate
-- Hides real dead code behind a blanket allow
-
-### Unused DbState field
-- `src/bin/server.rs:475` — `kv: HashMap<String, String>` never read
 
 ### THE FIX
 
 1. Remove `#[allow(dead_code)]` from lib.rs
 2. Run `cargo clippy` — fix or delete everything that surfaces
-3. Delete the 3 `todo!()` stubs (they're in `#[allow(dead_code)]` functions anyway)
+3. Delete the 3 `todo!()` stubs
 4. Delete `src/container/mod.rs` Container type, re-export from contract
 
 ---
@@ -250,21 +253,11 @@ Option A is the paper-worthy result. Option B is the honest fallback.
 
 `crates/ladybug-contract/src/container.rs:239-241, 251-253`:
 
-```rust
-pub fn view(words: &[u64; CONTAINER_WORDS]) -> &Container {
-    debug_assert!(
-        (words.as_ptr() as usize).is_multiple_of(64),  // ONLY IN DEBUG
-    );
-    unsafe { &*(words.as_ptr() as *const Container) }
-}
-```
-
 In release builds, alignment is NOT checked. Misaligned access = UB.
 
 ### THE FIX
 
 Change `debug_assert!` to `assert!` on lines 239 and 251.
-Or add `#[cfg(debug_assertions)]` with a runtime check in release.
 
 ---
 
@@ -291,10 +284,139 @@ Replace with meaningful assertion on the expected approval state.
 
 ### THE FIX
 
-Add integration tests that mock HTTP endpoints and verify:
-- Correct URL construction
-- Correct payload serialization
-- Error handling on 4xx/5xx responses
+Add integration tests that mock HTTP endpoints and verify correct behavior.
+
+---
+
+## ISSUE #9: CLAM IS REFERENCED BUT NOT INTEGRATED (HIGH)
+
+CLAM_HARDENING.md proposes 4 phases of CLAM integration. None have started.
+
+### Current state
+- `abd-clam` is **NOT** in Cargo.toml
+- `src/core/clam_index.rs` does **NOT** exist
+- `src/search/cakes.rs` does **NOT** exist
+- `src/storage/compressed.rs` does **NOT** exist
+- **LFD** (Local Fractal Dimension) is **NOT** computed anywhere
+- **d_min/d_max** triangle inequality bounds are **NOT** computed
+- **panCAKES** compression is **NOT** implemented
+- **CHAODA** anomaly detection is **NOT** implemented
+
+### What IS implemented from the CLAM roadmap
+- Berry-Esseen noise floor: **REAL** `distribution.rs:40` (`BERRY_ESSEEN_NOISE_FLOOR = 0.004`)
+- ClusterDistribution with CRP percentiles: **REAL** `distribution.rs:16-188`
+- Mexican hat from CRP: **REAL** `hdr_cascade.rs:232-305`
+- Cohen's d between clusters: **REAL** `distribution.rs:147`
+- INT4-calibrated HDR cascade: **REAL** all 4 levels with SIMD
+
+### THE FIX (from CLAM_HARDENING.md, verified against code)
+
+**Phase 1: Validate** (prove CLAM matches ladybug's performance)
+1. Add `abd-clam` dependency to Cargo.toml
+2. Build CLAM tree from existing fingerprint corpus
+3. Benchmark CAKES KnnBranch vs HDR cascade on same queries
+4. Compute LFD to validate the "99.997% pruning" claim with a measurement
+5. Compare d_min/d_max bounds vs scent L1 filtering
+
+**Phase 2: Integrate** (replace heuristics with proofs)
+1. Create `src/core/clam_index.rs` — CLAM tree alongside ScentIndex
+2. Create `src/search/cakes.rs` — CAKES search algorithms adapted for ladybug
+3. Add LFD reporting to diagnostics
+4. Add d_min/d_max to HDR cascade as formal validation layer
+
+**Phase 3: Compress** (panCAKES for storage)
+1. Create `src/storage/compressed.rs` — CompressedFingerprint with XOR-diff encoding
+2. Wire into ArrowZeroCopy (store diffs in Arrow buffers)
+3. Benchmark compression ratio on real data
+4. Implement compressive search (Hamming on diffs without decompression)
+
+**Phase 4: Detect** (CHAODA anomalies)
+1. Implement anomaly scoring on CLAM tree
+2. Wire into cognitive module (detect outlier thoughts)
+
+### What NOT to change
+- **Keep SIMD** — ladybug's AVX-512 VPOPCNTDQ path is more specialized than CLAM's `distances` crate
+- **Keep BindSpace** — CLAM has no O(1) content-addressable lookup
+- **Keep XOR retrieval** — CLAM has no A⊗verb⊗B=A; this is VSA-specific
+- **Keep Arrow/Lance** — CLAM uses `Vec<(Id, I)>` in memory; we keep zero-copy columnar storage
+- **Keep COW immutability** — CLAM's tree is mutable; we freeze after build
+
+---
+
+## ISSUE #10: CAUSAL CERTIFICATE — THE MISSING CROWN JEWEL (HIGH)
+
+THEORETICAL_FOUNDATIONS.md builds the mathematical chain:
+```
+HDR cascade → Normal(μ,σ) → Cohen's d → Granger signal → do-calculus → GSP theorem
+```
+
+Layers 0-4 are implemented. Layer 5 is partial. Layer 6 is missing entirely.
+
+### What exists
+- `CausalEdge` in `causal.rs:131` — stores fingerprints and metadata
+- `CausalTrace` in `causal.rs:169` — traces causal chains backward
+- `CausalResult` in `causal.rs:649` — query result struct
+- Granger causality in `temporal.rs:26-108` — full implementation
+- Cohen's d in `distribution.rs:147` — real computation
+- ClusterDistribution in `distribution.rs:16-188` — CRP percentiles
+
+### What's missing
+- `CausalCertificate` struct — the thing that makes causal claims auditable
+- GSP/GRaSP algorithm — the thing that makes causal structure provably learnable
+- Fisher information / η efficiency — cited in docs, not computed
+- Strong faithfulness verification — claimed, not checked in code
+- LFD → bounded in-degree → tractability guarantee — LFD not computed
+
+### THE FIX
+
+```rust
+// In src/search/causal.rs — add the certificate struct
+pub struct CausalCertificate {
+    pub effect_size: f64,          // Cohen's d (from distribution.rs)
+    pub granger_signal: f64,       // From temporal.rs
+    pub granger_ci: (f64, f64),    // Confidence interval
+    pub direction_p_value: f64,    // A→B vs B→A
+    pub approximation_error: f64,  // Berry-Esseen bound
+    pub required_n: usize,         // Min cluster size for reliability
+    pub n_source: usize,
+    pub n_target: usize,
+    pub certified: bool,           // All conditions met?
+}
+```
+
+Wire it: `ClusterDistribution::cohens_d()` → `temporal::granger_effect()` →
+`CausalCertificate::certify()`. The primitives exist. The wiring doesn't.
+
+---
+
+## ISSUE #11: 31 COGNITIVE PRIMITIVES, 1 PIPELINE (MEDIUM)
+
+The 34 Tactics docs reference 34 modules. 31 exist. 26 have real computation.
+**1 is wired into an actual calling pipeline.**
+
+The rest are standalone `pub fn` that nothing invokes:
+
+| Module | Lines | Real Code | Called By |
+|---|---|---|---|
+| `cognitive/recursive.rs` | 262 | Yes | Nothing |
+| `cognitive/metacog.rs` | 219 | Yes | Nothing |
+| `nars/adversarial.rs` | 281 | Yes | Nothing |
+| `nars/contradiction.rs` | 159 | Yes | Nothing |
+| `orchestration/debate.rs` | 361 | Yes | Nothing |
+| `search/temporal.rs` | 187 | Yes | Nothing |
+| `search/distribution.rs` | 366 | Yes | Nothing |
+| `fabric/shadow.rs` | 245 | Yes | Nothing |
+| `world/counterfactual.rs` | 249 | Yes | Nothing |
+
+These are real functions with real computation — they just aren't called.
+
+### THE FIX
+
+Wire them into the cognitive kernel (`src/cognitive/cognitive_kernel.rs`):
+1. CognitiveKernel already imports both Container and Fingerprint
+2. It's the natural orchestration point for routing queries through
+   debate → adversarial → metacog → causal → certificate
+3. One `fn process_query()` that calls the primitives in sequence
 
 ---
 
@@ -333,8 +455,10 @@ Redis value = 2 KB blob (identical to CogRecord)
 2. **No heap allocation**: `[Container; 2]` lives on the stack
 3. **DN tree = Redis = Storage**: exact same 2 KB blob everywhere
 4. **Spine = XOR of content containers**: `spine = records.iter().fold(Container::zero(), |s, r| s.xor(&r.content))`
-5. **SIMD on full record**: 2 × 16 AVX-512 iterations = 32 iterations per record
+5. **SIMD on full record**: 2 x 16 AVX-512 iterations = 32 iterations per record
 6. **One lookup per node**: GET dn_addr → 2 KB → you have meta + content + edges + NARS
+7. **CLAM tree over CogRecords**: one tree indexes both metadata and content
+8. **panCAKES compression on content container**: XOR-diff from cluster center, 5-70x ratio
 
 ### Migration Path
 
@@ -353,30 +477,94 @@ Redis value = 2 KB blob (identical to CogRecord)
 
 ---
 
-## PRIORITY ORDER
+## CONSOLIDATED PRIORITY ORDER
 
 ```
-Week 1: Foundation
-  [1] Delete duplicate Container (Issue #1, step 1)
-  [2] Fix unsafe debug_assert → assert (Issue #6)
-  [3] Remove #[allow(dead_code)], delete actual dead code (Issue #5)
-  [4] Fix n8n tautology test (Issue #7)
+Week 1: Foundation — Kill the Lies
+  [1]  Delete duplicate Container (Issue #1, step 1)
+  [2]  Fix unsafe debug_assert → assert (Issue #6)
+  [3]  Remove #[allow(dead_code)], delete actual dead code (Issue #5)
+  [4]  Fix n8n tautology test (Issue #7)
 
 Week 2: crewai-rust Resurrection
-  [5] Wire LLM::call() to OpenAI provider (Issue #2)
-  [6] Wire task.execute_sync() to real execution (Issue #2)
-  [7] Delete dead wire_bridge or call it (Issue #2)
+  [5]  Wire LLM::call() to OpenAI provider (Issue #2)
+  [6]  Wire task.execute_sync() to real execution (Issue #2)
+  [7]  Delete dead wire_bridge or call it (Issue #2)
 
 Week 3: The Holy Grail — 8192+8192
-  [8] CogRecord = [Container; 2] (Issue #1, steps 2-5)
-  [9] Update storage to fixed 2 KB records (steps 6-8)
+  [8]  CogRecord = [Container; 2] (Issue #1, steps 2-5)
+  [9]  Update storage to fixed 2 KB records (steps 6-8)
   [10] Fingerprint = CogRecord alias (step 9)
 
 Week 4: Connect the Pipes
   [11] Bridge Grammar → CausalSearch (Issue #3)
   [12] Build real CLadder benchmark through ladybug-rs (Issue #4)
   [13] Add n8n executor tests (Issue #8)
+
+Week 5: CLAM Phase 1 — Validate
+  [14] Add abd-clam dependency (Issue #9)
+  [15] Build CLAM tree from fingerprint corpus
+  [16] Compute LFD — measure actual pruning ratio
+  [17] Benchmark CAKES KnnBranch vs HDR cascade
+
+Week 6: CLAM Phase 2 — Integrate + CausalCertificate
+  [18] Create clam_index.rs, cakes.rs (Issue #9)
+  [19] Add d_min/d_max bounds to HDR cascade
+  [20] Implement CausalCertificate (Issue #10)
+  [21] Wire primitives into cognitive kernel (Issue #11)
+
+Week 7: CLAM Phase 3 — Compress
+  [22] Create compressed.rs — panCAKES XOR-diff encoding
+  [23] Wire into ArrowZeroCopy
+  [24] Benchmark compression ratio
+
+Week 8: CLAM Phase 4 — Detect + Polish
+  [25] CHAODA anomaly scoring on CLAM tree
+  [26] Wire into cognitive module
+  [27] Full integration tests across all three repos
 ```
+
+---
+
+## WHAT'S ACTUALLY EARNED vs ASPIRATIONAL
+
+### EARNED (implemented with real computation)
+- HDR cascade with 4 SIMD levels (ladybug's unique contribution)
+- ClusterDistribution with CRP percentiles and Berry-Esseen noise floor
+- Mexican hat from calibrated CRP (exceeds CLAM's scalar radius)
+- Cohen's d between clusters
+- Granger temporal causality
+- 31 cognitive primitive modules with real computation
+- 686 passing tests
+- INT4 calibrating INT32 (no competitor has this)
+
+### NOT YET EARNED (doc claims that aren't backed by code)
+- "Provably learnable causal structure" (no GSP, no LFD, no CausalCertificate)
+- abd-clam integration (not even a dependency)
+- Pipeline connectivity (26 primitives exist, 1 is called)
+- CLadder benchmark validation (self-solving, doesn't use ladybug)
+- panCAKES compression (doc only)
+- CHAODA anomaly detection (doc only)
+- Fisher information η efficiency (cited, not computed)
+
+### THE SYNTHESIS
+
+CLAM doesn't replace ladybug — it PROVES ladybug works. And in two critical
+areas, ladybug EXCEEDS what CLAM provides:
+
+| Who Wins | Why |
+|----------|-----|
+| **ladybug** | HDR-stacked CRP gives full distance distribution at INT4 cost. CLAM's single radius is worst-case only. |
+| **ladybug** | INT4 calibrating INT32 has no CLAM equivalent. The coarse measurement calibrates the fine one — Belichtungsmesser principle. |
+| **CLAM** | LFD gives provable complexity bounds. ladybug claims pruning ratios but can't prove them without LFD. |
+| **CLAM** | Bipolar split is provably optimal partitioning. Scent XOR-fold is heuristic. |
+| **CLAM** | panCAKES gives 5-70x compression with in-place search. ladybug stores full 2 KB per record. |
+| **CLAM** | CHAODA gives anomaly detection on the same tree. ladybug has no anomaly detection. |
+
+The primitives are real. The theory is sound. The bridge between them —
+where CRP → Cohen's d → Granger → CausalCertificate → GSP becomes one
+`fn prove_causal_edge()` — is the missing 20% that turns "impressive library"
+into "scientific breakthrough."
 
 ---
 
@@ -388,13 +576,16 @@ Week 4: Connect the Pipes
 | **Code Quality** | 7/10 | Clean Rust, good SIMD, but global allow(dead_code) hides problems |
 | **Test Quality** | 6/10 | 686 tests pass but some are vacuous; crewai tests are mostly trivial |
 | **Integration** | 3/10 | Three repos barely talk to each other; wire bridges are dead code |
+| **CLAM Science** | 4/10 | Berry-Esseen + CRP + Cohen's d implemented. LFD/GSP/panCAKES missing. |
 | **Honesty** | 4/10 | Self-solving benchmarks, placeholder outputs claimed as execution |
 | **Production Ready** | 2/10 | ladybug-rs core maybe; crewai-rust no; n8n-rs close |
 
-### The gap between "looks impressive" and "actually works" is ~4 weeks of focused work.
+### The gap between "looks impressive" and "actually works" is ~8 weeks of focused work.
 
-The 8192+8192 change is the architectural unlock. Everything else follows from
-having one canonical 2 KB record type that IS the fingerprint, IS the DN tree node,
-IS the Redis value, IS the search vector, IS the storage unit.
+The 8192+8192 change is the architectural unlock (weeks 1-3).
+CLAM integration is the scientific unlock (weeks 5-8).
+Everything else follows from having one canonical 2 KB record type
+that IS the fingerprint, IS the DN tree node, IS the Redis value,
+IS the search vector, IS the CLAM tree leaf, IS the storage unit.
 
 One type. One size. One truth.
