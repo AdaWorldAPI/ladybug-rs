@@ -27,7 +27,14 @@
 //! ```
 
 pub mod fingerprint;
+pub mod populate;
 pub mod position;
 
 pub use fingerprint::ChessFingerprint;
+pub use populate::{
+    encode_position, encode_move, encode_move_sequence,
+    encode_anchored_sequence, encode_opening, encode_all_openings,
+    find_similar_openings, find_similar_lines,
+    OpeningEntry, OpeningFingerprints, PopulationStats,
+};
 pub use position::{ChessPosition, GamePhase, PieceType, Color};
