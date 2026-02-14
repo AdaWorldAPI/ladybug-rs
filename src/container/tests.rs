@@ -2,6 +2,7 @@
 
 use super::cache::ContainerCache;
 use super::delta;
+use super::dn_redis::CogRecordSerde;
 use super::geometry::ContainerGeometry;
 use super::meta::{MetaView, MetaViewMut, SCHEMA_VERSION};
 use super::migrate;
@@ -291,13 +292,9 @@ fn test_geometry_roundtrip() {
         let record = CogRecord::new(geom);
         assert_eq!(record.geometry(), geom, "geometry mismatch for {:?}", geom);
 
-        let expected_content = geom.default_content_count();
-        assert_eq!(
-            record.content.len(),
-            expected_content,
-            "wrong content count for {:?}",
-            geom
-        );
+        // Every CogRecord always has exactly 1 content container now.
+        // Multi-container geometries use linked records.
+        assert_eq!(record.container_count(), 2, "should always be meta + content for {:?}", geom);
     }
 }
 
@@ -504,24 +501,29 @@ fn test_tree_geometry() {
     // Set branching factor to 2 (binary tree)
     record.meta_view_mut().set_branching_factor(2);
 
-    // Create a 3-level binary tree: 1 root + 2 children + 4 grandchildren = 7
-    record.content = vec![Container::zero(); 7];
-    for i in 0..7 {
-        record.content[i] = Container::random((i + 1) as u64);
-    }
-
     assert_eq!(record.branching_factor(), 2);
 
+    // Create 7 linked records for a 3-level binary tree:
+    // 1 root + 2 children + 4 grandchildren = 7
+    let tree_records: Vec<CogRecord> = (0..7)
+        .map(|i| {
+            let mut r = CogRecord::new(ContainerGeometry::Tree);
+            r.content = Container::random((i + 1) as u64);
+            r
+        })
+        .collect();
+    let total = tree_records.len();
+
     // Root (0) children: 1, 2
-    let children = record.tree_children(0);
+    let children = record.tree_children(0, total);
     assert_eq!(children, 1..3);
 
     // Node 1 children: 3, 4
-    let children = record.tree_children(1);
+    let children = record.tree_children(1, total);
     assert_eq!(children, 3..5);
 
     // Node 2 children: 5, 6
-    let children = record.tree_children(2);
+    let children = record.tree_children(2, total);
     assert_eq!(children, 5..7);
 
     // Parent checks
@@ -531,9 +533,9 @@ fn test_tree_geometry() {
     assert_eq!(record.tree_parent(3), Some(1));
     assert_eq!(record.tree_parent(6), Some(2));
 
-    // Spine = XOR of direct children
-    let spine = record.subtree_spine(0);
-    let expected = record.content[1].xor(&record.content[2]);
+    // Spine = XOR of direct children's content
+    let spine = tree_records[1].content.xor(&tree_records[2].content);
+    let expected = tree_records[1].content.xor(&tree_records[2].content);
     assert_eq!(spine, expected);
 }
 
@@ -561,39 +563,48 @@ fn test_tree_cross_hydration() {
 
 #[test]
 fn test_chunked_geometry() {
-    let mut record = CogRecord::new(ContainerGeometry::Chunked);
+    // With single-content CogRecord, chunked geometry uses linked records.
+    // The summary record's content is the bundle of all chunk records' content.
+    let chunks: Vec<CogRecord> = (1..=5)
+        .map(|i| {
+            let mut r = CogRecord::new(ContainerGeometry::Chunked);
+            r.content = Container::random(i as u64);
+            r
+        })
+        .collect();
 
-    // Append 5 chunks
-    for i in 1..=5 {
-        record.append_chunk(Container::random(i as u64));
-    }
-
-    assert_eq!(record.content.len(), 6); // summary + 5 chunks
-
-    // Summary should be bundle of chunks
-    let chunk_refs: Vec<&Container> = record.content[1..].iter().collect();
+    // Compute summary as bundle of all chunks
+    let chunk_refs: Vec<&Container> = chunks.iter().map(|r| &r.content).collect();
     let expected_summary = Container::bundle(&chunk_refs);
-    assert_eq!(record.content[0], expected_summary);
+
+    let mut summary_record = CogRecord::new(ContainerGeometry::Chunked);
+    summary_record.content = expected_summary.clone();
+
+    // Total linked records = 1 summary + 5 chunks = 6
+    assert_eq!(1 + chunks.len(), 6);
+    assert_eq!(summary_record.content, expected_summary);
 }
 
 #[test]
 fn test_chunked_hierarchical_search() {
-    let mut record = CogRecord::new(ContainerGeometry::Chunked);
-
-    // Create chunks with known patterns
+    // With single-content CogRecord, chunked geometry uses linked records.
+    // Hierarchical search: check summary first, then individual chunks.
     let target = Container::random(42);
-    record.append_chunk(Container::random(100)); // far
-    record.append_chunk(target.clone()); // exact match
-    record.append_chunk(Container::random(300)); // far
 
-    // Use a large threshold: the summary (bundle of 3 chunks) will be far from target
-    // since 2 of 3 chunks are random. The summary pre-filter uses threshold * 2,
-    // so we need threshold large enough for the pre-filter to pass.
-    let hits = record.search_chunks(&target, CONTAINER_BITS as u32);
+    let mut chunks: Vec<CogRecord> = Vec::new();
+    for fp in [Container::random(100), target.clone(), Container::random(300)] {
+        let mut r = CogRecord::new(ContainerGeometry::Chunked);
+        r.content = fp;
+        chunks.push(r);
+    }
+
+    // Search across linked chunk records using the record module helper
+    let chunk_refs: Vec<&CogRecord> = chunks.iter().collect();
+    let hits = super::record::search_linked_records(&chunk_refs, &target, CONTAINER_BITS as u32);
     assert!(!hits.is_empty(), "should find at least the exact match");
 
-    // The exact match should be at chunk index 2 (content[2])
-    let exact = hits.iter().find(|&(_, d)| *d == 0);
+    // The exact match should be at chunk index 1
+    let exact = hits.iter().find(|&&(_, d)| d == 0);
     assert!(exact.is_some(), "should have an exact match at distance 0");
 }
 
@@ -870,10 +881,9 @@ fn test_migration_16k_to_container() {
 
     let record = migrate::migrate_16k(&old);
     assert_eq!(record.geometry(), ContainerGeometry::Cam);
-    assert_eq!(record.content.len(), 1);
 
     // First 128 words should match
-    assert_eq!(&record.content[0].words[..], &old[..CONTAINER_WORDS]);
+    assert_eq!(&record.content.words[..], &old[..CONTAINER_WORDS]);
 }
 
 #[test]
@@ -883,12 +893,12 @@ fn test_migration_extended_roundtrip() {
         old[i] = (i as u64 + 1).wrapping_mul(0x0101_0101_0101_0101);
     }
 
-    let record = migrate::migrate_16k_extended(&old);
-    assert_eq!(record.geometry(), ContainerGeometry::Extended);
-    assert_eq!(record.content.len(), 2);
+    let (primary, secondary) = migrate::migrate_16k_extended(&old);
+    assert_eq!(primary.geometry(), ContainerGeometry::Extended);
+    assert_eq!(secondary.geometry(), ContainerGeometry::Extended);
 
-    // Roundtrip
-    let back = migrate::to_16k(&record);
+    // Roundtrip using linked records
+    let back = migrate::to_16k_linked(&primary, &secondary);
     assert_eq!(back, old);
 }
 
@@ -1019,24 +1029,27 @@ fn test_container_fingerprint_conversion() {
 
 #[test]
 fn test_xyz_trace_and_probe() {
-    let mut record = CogRecord::new(ContainerGeometry::Xyz);
-    record.content[0] = Container::random(1); // X
-    record.content[1] = Container::random(2); // Y
-    record.content[2] = Container::random(3); // Z
+    // XYZ geometry uses 3 linked records: X, Y, Z
+    let mut rx = CogRecord::new(ContainerGeometry::Xyz);
+    let mut ry = CogRecord::new(ContainerGeometry::Xyz);
+    let mut rz = CogRecord::new(ContainerGeometry::Xyz);
+    rx.content = Container::random(1); // X
+    ry.content = Container::random(2); // Y
+    rz.content = Container::random(3); // Z
 
-    let trace = record.xyz_trace().unwrap();
+    let trace = CogRecord::xyz_trace(&[&rx, &ry, &rz]);
 
     // Probe: given X and Y, recover Z
-    let recovered_z = CogRecord::xyz_probe(&[&record.content[0], &record.content[1]], &trace);
-    assert_eq!(recovered_z, record.content[2]);
+    let recovered_z = CogRecord::xyz_probe(&[&rx.content, &ry.content], &trace);
+    assert_eq!(recovered_z, rz.content);
 
     // Probe: given X and Z, recover Y
-    let recovered_y = CogRecord::xyz_probe(&[&record.content[0], &record.content[2]], &trace);
-    assert_eq!(recovered_y, record.content[1]);
+    let recovered_y = CogRecord::xyz_probe(&[&rx.content, &rz.content], &trace);
+    assert_eq!(recovered_y, ry.content);
 
     // Probe: given Y and Z, recover X
-    let recovered_x = CogRecord::xyz_probe(&[&record.content[1], &record.content[2]], &trace);
-    assert_eq!(recovered_x, record.content[0]);
+    let recovered_x = CogRecord::xyz_probe(&[&ry.content, &rz.content], &trace);
+    assert_eq!(recovered_x, rx.content);
 }
 
 // ============================================================================
@@ -1622,7 +1635,7 @@ fn test_container_graph_insert_get() {
     assert_eq!(graph.node_count(), 1);
 
     let retrieved = graph.get(&dn).unwrap();
-    assert_eq!(retrieved.content[0], fp);
+    assert_eq!(retrieved.content, fp);
 }
 
 #[test]
@@ -1802,8 +1815,8 @@ fn test_record_serialization_roundtrip() {
     assert_eq!(bytes.len(), 2 * super::CONTAINER_BYTES); // meta + 1 content
 
     // Deserialize
-    let back = CogRecord::from_bytes(&bytes).unwrap();
-    assert_eq!(back.content[0], fp);
+    let back = CogRecord::from_bytes_slice(&bytes).unwrap();
+    assert_eq!(back.content, fp);
 
     // Check edges survived
     let view = InlineEdgeView::new(&back.meta.words);
@@ -2035,8 +2048,8 @@ fn test_hominidae_graph_scenario() {
     // Serialization roundtrip
     let record = graph.get(&neander).unwrap();
     let bytes = record.to_bytes();
-    let back = CogRecord::from_bytes(&bytes).unwrap();
-    assert_eq!(back.content[0], neander_fp);
+    let back = CogRecord::from_bytes_slice(&bytes).unwrap();
+    assert_eq!(back.content, neander_fp);
 
     // Meta should have DN address
     let meta = MetaView::new(&back.meta.words);

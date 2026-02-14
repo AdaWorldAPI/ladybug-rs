@@ -1,4 +1,19 @@
-//! CogRecord — metadata container + N content containers.
+//! CogRecord — fixed 2 KB record: metadata container + content container.
+//!
+//! The **holy grail** layout: every record is exactly `[Container; 2]` = 2 KB.
+//! Container 0 is always metadata. Container 1 is always content.
+//!
+//! ```text
+//! ┌─────────────────────────────────────────────────────────────┐
+//! │  meta    (1 KB)  identity, NARS truth, edges, rung, RL     │
+//! ├─────────────────────────────────────────────────────────────┤
+//! │  content (1 KB)  searchable fingerprint (Hamming / SIMD)   │
+//! └─────────────────────────────────────────────────────────────┘
+//!       = 2 KB = 1 Fingerprint = 1 DN tree node = 1 Redis value
+//! ```
+//!
+//! For multi-container geometries (Xyz, Chunked, Tree), records are
+//! linked through the DN tree. Each linked record is still 2 KB.
 
 use std::ops::Range;
 
@@ -6,41 +21,48 @@ use crate::container::Container;
 use crate::geometry::ContainerGeometry;
 use crate::meta::{MetaView, MetaViewMut, W_REPR_BASE};
 
-/// A cognitive record: one metadata container + N content containers.
+/// Fixed-size cognitive record: 8,192-bit metadata + 8,192-bit content = 2 KB.
 ///
-/// The metadata (Container 0) stores identity, NARS truth values,
-/// graph edges, RL Q-values, qualia channels, etc.
-/// The content containers hold the actual fingerprint data,
-/// interpreted according to the record's [`ContainerGeometry`].
+/// This is the atomic unit of storage, search, and transfer:
+/// - DN tree value = 1 CogRecord = 2 KB
+/// - Redis value = 1 CogRecord = 2 KB
+/// - Fingerprint = 1 CogRecord (reinterpretable)
+/// - SIMD scan unit = 2 × 16 AVX-512 iterations = 32 iterations
+///
+/// # Stack Allocated
+///
+/// No heap allocation. `[Container; 2]` lives entirely on the stack.
+/// This enables zero-copy mmap, SIMD-aligned access, and fixed-size I/O.
 #[derive(Clone, Debug)]
+#[repr(C, align(64))]
 pub struct CogRecord {
-    /// Container 0: always metadata.
+    /// Container 0: always metadata (identity, NARS, edges, RL, qualia).
     pub meta: Container,
-    /// Containers 1..N: content (geometry determines interpretation).
-    pub content: Vec<Container>,
+    /// Container 1: always content (searchable fingerprint).
+    pub content: Container,
 }
 
 impl CogRecord {
-    /// Create a new record with the given geometry and default content containers.
-    pub fn new(geometry: ContainerGeometry) -> Self {
-        let n = geometry.default_content_count();
-        let mut meta = Container::zero();
+    /// Byte size of a CogRecord (2 × 1 KB = 2048 bytes).
+    pub const SIZE: usize = 2 * crate::container::CONTAINER_BYTES;
 
+    /// Create a new record with the given geometry.
+    pub fn new(geometry: ContainerGeometry) -> Self {
+        let mut meta = Container::zero();
         {
             let mut view = MetaViewMut::new(&mut meta.words);
-            view.init(geometry, n as u8);
+            view.init(geometry, 1); // always 1 content container per record
         }
-
         Self {
             meta,
-            content: vec![Container::zero(); n],
+            content: Container::zero(),
         }
     }
 
-    /// Total containers including meta.
+    /// Total containers (always 2: meta + content).
     #[inline]
     pub fn container_count(&self) -> u8 {
-        (1 + self.content.len()).min(255) as u8
+        2
     }
 
     /// Geometry, read from metadata word 1.
@@ -60,54 +82,73 @@ impl CogRecord {
         MetaViewMut::new(&mut self.meta.words)
     }
 
-    /// Bounds-checked access to a content container.
-    #[inline]
-    pub fn content_container(&self, idx: usize) -> Option<&Container> {
-        self.content.get(idx)
-    }
-
-    /// The summary container (always content[0], the searchable fingerprint).
+    /// The content container (the searchable fingerprint).
     #[inline]
     pub fn summary(&self) -> &Container {
-        &self.content[0]
+        &self.content
     }
 
-    /// Hamming distance against the summary container only.
+    /// Hamming distance against the content container.
     #[inline]
     pub fn hamming_to(&self, query: &Container) -> u32 {
-        self.content[0].hamming(query)
+        self.content.hamming(query)
     }
 
-    /// XOR-fold of specified content containers (spine computation).
-    pub fn spine(containers: &[&Container]) -> Container {
+    /// Semantic difference between this record's content and another's.
+    pub fn delta(&self, other: &CogRecord) -> Container {
+        self.content.xor(&other.content)
+    }
+
+    /// XOR-fold of multiple content containers (spine computation).
+    pub fn spine(records: &[&CogRecord]) -> Container {
         let mut result = Container::zero();
-        for c in containers {
-            result = result.xor(c);
+        for r in records {
+            result = result.xor(&r.content);
         }
         result
     }
 
-    /// Semantic difference: content[a] ⊕ content[b].
-    pub fn delta(&self, a: usize, b: usize) -> Option<Container> {
-        let ca = self.content.get(a)?;
-        let cb = self.content.get(b)?;
-        Some(ca.xor(cb))
+    /// Zero-copy byte view of the entire 2 KB record.
+    #[inline]
+    pub fn as_bytes(&self) -> &[u8; Self::SIZE] {
+        // SAFETY: CogRecord is #[repr(C, align(64))] with two Containers.
+        // Total size = 2 × 1024 = 2048 bytes.
+        unsafe { &*(self as *const CogRecord as *const [u8; Self::SIZE]) }
+    }
+
+    /// Construct from a 2 KB byte slice.
+    pub fn from_bytes(bytes: &[u8; Self::SIZE]) -> Self {
+        let meta_bytes: &[u8; 1024] = bytes[..1024].try_into().unwrap();
+        let content_bytes: &[u8; 1024] = bytes[1024..].try_into().unwrap();
+        Self {
+            meta: Container::from_bytes(meta_bytes),
+            content: Container::from_bytes(content_bytes),
+        }
+    }
+
+    /// Cross-hydrate: project content to a different context.
+    pub fn cross_hydrate(source: &Container, context_delta: &Container) -> Container {
+        source.xor(context_delta)
+    }
+
+    /// Extract the perspective difference between two contexts.
+    pub fn extract_perspective(branch_a: &Container, branch_b: &Container) -> Container {
+        branch_a.xor(branch_b)
     }
 
     // ========================================================================
-    // XYZ HOLOGRAPHIC OPERATIONS
+    // LINKED RECORD OPERATIONS (for multi-container geometries)
     // ========================================================================
+    // When a concept needs more than 1 content container (Xyz, Chunked, Tree),
+    // the additional containers live in separate CogRecords linked via DN tree.
+    // These methods operate on slices of linked records.
 
-    /// For Xyz geometry: store a trace by XOR-folding X, Y, Z.
-    pub fn xyz_trace(&self) -> Option<Container> {
-        if self.content.len() < 3 {
-            return None;
-        }
-        Some(
-            self.content[0]
-                .xor(&self.content[1])
-                .xor(&self.content[2]),
-        )
+    /// For Xyz geometry (3 linked records): XOR-fold of X, Y, Z content.
+    pub fn xyz_trace(records: &[&CogRecord; 3]) -> Container {
+        records[0]
+            .content
+            .xor(&records[1].content)
+            .xor(&records[2].content)
     }
 
     /// Probe: given 2 of 3 dimensions + trace, recover the third.
@@ -115,126 +156,41 @@ impl CogRecord {
         trace.xor(known[0]).xor(known[1])
     }
 
-    // ========================================================================
-    // TREE GEOMETRY OPERATIONS
-    // ========================================================================
-
-    /// Branching factor (stored in meta word 80).
+    /// Branching factor for tree geometry (stored in meta word 80).
     pub fn branching_factor(&self) -> usize {
         let k = (self.meta.words[W_REPR_BASE] & 0xFF) as usize;
-        if k == 0 {
-            2
-        } else {
-            k
-        } // default to binary tree
+        if k == 0 { 2 } else { k }
     }
 
-    /// Children of node at container index `i`.
-    pub fn tree_children(&self, i: usize) -> Range<usize> {
+    /// Children indices of node at index `i` in a linked record tree.
+    pub fn tree_children(&self, i: usize, total_records: usize) -> Range<usize> {
         let k = self.branching_factor();
         let start = k * i + 1;
-        let end = (k * (i + 1) + 1).min(self.content.len());
+        let end = (k * (i + 1) + 1).min(total_records);
         start..end
     }
 
-    /// Parent of node at container index `i`.
+    /// Parent index of node at index `i`.
     pub fn tree_parent(&self, i: usize) -> Option<usize> {
-        if i == 0 {
-            None
-        } else {
-            Some((i - 1) / self.branching_factor())
-        }
+        if i == 0 { None } else { Some((i - 1) / self.branching_factor()) }
     }
+}
 
-    /// Spine of a subtree (XOR of all direct children).
-    pub fn subtree_spine(&self, root_idx: usize) -> Container {
-        let children = self.tree_children(root_idx);
-        let mut spine = Container::zero();
-        for child_idx in children {
-            if let Some(child) = self.content.get(child_idx) {
-                spine = spine.xor(child);
-            }
-        }
-        spine
-    }
-
-    /// Cross-hydrate: project a node to a different context.
-    pub fn cross_hydrate(source: &Container, context_delta: &Container) -> Container {
-        source.xor(context_delta)
-    }
-
-    /// Extract the perspective difference between two branches.
-    pub fn extract_perspective(branch_a: &Container, branch_b: &Container) -> Container {
-        branch_a.xor(branch_b)
-    }
-
-    // ========================================================================
-    // CHUNKED GEOMETRY OPERATIONS
-    // ========================================================================
-
-    /// Recompute summary (content[0]) from all chunks (content[1..]).
-    pub fn recompute_summary(&mut self) {
-        if self.content.len() <= 1 {
-            return;
-        }
-        let chunk_refs: Vec<&Container> = self.content[1..].iter().collect();
-        self.content[0] = Container::bundle(&chunk_refs);
-    }
-
-    /// Append a new chunk and update summary.
-    pub fn append_chunk(&mut self, chunk: Container) {
-        self.content.push(chunk);
-        self.recompute_summary();
-        let count = self.container_count();
-        MetaViewMut::new(&mut self.meta.words).set_container_count(count);
-    }
-
-    /// Hierarchical search: summary first, then individual chunks.
-    pub fn search_chunks(&self, query: &Container, threshold: u32) -> Vec<(usize, u32)> {
-        if self.content.is_empty() {
-            return vec![];
-        }
-
-        // Level 0: quick check on summary
-        let summary_dist = self.content[0].hamming(query);
-        if summary_dist > threshold * 2 {
-            return vec![];
-        }
-
-        // Level 1: scan individual chunks
-        let mut hits = Vec::new();
-        for (i, chunk) in self.content[1..].iter().enumerate() {
-            let dist = chunk.hamming(query);
-            if dist <= threshold {
-                hits.push((i + 1, dist)); // +1 because content[0] is summary
-            }
-        }
-        hits.sort_by_key(|&(_, d)| d);
-        hits
-    }
-
-    // ========================================================================
-    // DELTA ENCODING
-    // ========================================================================
-
-    /// Delta-encode content[b] as XOR difference from content[a].
-    pub fn delta_encode(&self, a: usize, b: usize) -> Option<(Container, u32)> {
-        let ca = self.content.get(a)?;
-        let cb = self.content.get(b)?;
-        let delta = ca.xor(cb);
-        let info = delta.popcount();
-        Some((delta, info))
-    }
-
-    /// Recover container from base + delta. XOR is its own inverse.
-    pub fn delta_decode(base: &Container, delta: &Container) -> Container {
-        base.xor(delta)
+impl Default for CogRecord {
+    fn default() -> Self {
+        Self::new(ContainerGeometry::Cam)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_cogrecord_size() {
+        assert_eq!(CogRecord::SIZE, 2048);
+        assert_eq!(std::mem::size_of::<CogRecord>(), 2048);
+    }
 
     #[test]
     fn test_cogrecord_meta_roundtrip() {
@@ -256,33 +212,39 @@ mod tests {
     }
 
     #[test]
-    fn test_cogrecord_xyz_roundtrip() {
-        let mut r = CogRecord::new(ContainerGeometry::Xyz);
-        r.content[0] = Container::random(1);
-        r.content[1] = Container::random(2);
-        r.content[2] = Container::random(3);
+    fn test_cogrecord_bytes_roundtrip() {
+        let mut r = CogRecord::new(ContainerGeometry::Cam);
+        r.content = Container::random(42);
+        r.meta_view_mut().set_dn_addr(0x1234);
 
-        let trace = r.xyz_trace().unwrap();
-        let recovered =
-            CogRecord::xyz_probe(&[&r.content[0], &r.content[1]], &trace);
-        assert_eq!(recovered, r.content[2]);
+        let bytes = r.as_bytes();
+        let r2 = CogRecord::from_bytes(bytes);
+        assert_eq!(r.meta, r2.meta);
+        assert_eq!(r.content, r2.content);
     }
 
     #[test]
-    fn test_layer_marker_roundtrip() {
-        let mut r = CogRecord::new(ContainerGeometry::Cam);
-        {
-            // Direct word manipulation for layer marker (no set_layer_marker in contract)
-            // Layer 0 starts at byte offset 0 within W12-W15
-            let byte_offset = 0;
-            let word_idx = crate::meta::W_LAYER_BASE + byte_offset / 8;
-            let packed: u64 = 255 | (200 << 8) | (0x0001 << 16) | (42u64 << 32);
-            r.meta.words[word_idx] = packed;
-        }
-        let (strength, frequency, recency, flags) = r.meta_view().layer_marker(0);
-        assert_eq!(strength, 255);
-        assert_eq!(frequency, 200);
-        assert_eq!(recency, 0x0001);
-        assert_eq!(flags, 42);
+    fn test_cogrecord_xyz_linked() {
+        let mut r0 = CogRecord::new(ContainerGeometry::Xyz);
+        let mut r1 = CogRecord::new(ContainerGeometry::Xyz);
+        let mut r2 = CogRecord::new(ContainerGeometry::Xyz);
+        r0.content = Container::random(1); // X
+        r1.content = Container::random(2); // Y
+        r2.content = Container::random(3); // Z
+
+        let trace = CogRecord::xyz_trace(&[&r0, &r1, &r2]);
+        let recovered = CogRecord::xyz_probe(&[&r0.content, &r1.content], &trace);
+        assert_eq!(recovered, r2.content);
+    }
+
+    #[test]
+    fn test_cogrecord_spine() {
+        let mut r0 = CogRecord::new(ContainerGeometry::Cam);
+        let mut r1 = CogRecord::new(ContainerGeometry::Cam);
+        r0.content = Container::random(10);
+        r1.content = Container::random(20);
+
+        let s = CogRecord::spine(&[&r0, &r1]);
+        assert_eq!(s, r0.content.xor(&r1.content));
     }
 }

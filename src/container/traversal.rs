@@ -341,10 +341,7 @@ pub fn container_mxv<S: DnSemiring>(
             Some(r) => r,
             None => continue,
         };
-        let src_fp = match src_record.content.first() {
-            Some(fp) => fp,
-            None => continue,
-        };
+        let src_fp = &src_record.content;
 
         // Edges are INLINE in Container 0 — no separate graph lookup
         let edge_view = InlineEdgeView::new(&src_record.meta.words);

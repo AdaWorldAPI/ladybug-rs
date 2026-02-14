@@ -186,9 +186,9 @@ impl ContainerGraph {
     // FINGERPRINT OPERATIONS: Content containers
     // ========================================================================
 
-    /// Get the primary fingerprint (content container 0) of a node.
+    /// Get the primary fingerprint (content container) of a node.
     pub fn fingerprint(&self, dn: &PackedDn) -> Option<&Container> {
-        self.records.get(dn).and_then(|r| r.content.first())
+        self.records.get(dn).map(|r| &r.content)
     }
 
     /// Hamming distance between two nodes' fingerprints.
@@ -232,12 +232,7 @@ impl ContainerGraph {
         let mut results: Vec<(PackedDn, u32)> = self
             .records
             .iter()
-            .filter_map(|(dn, record)| {
-                record
-                    .content
-                    .first()
-                    .map(|fp| (*dn, belichtungsmesser(fp, query)))
-            })
+            .map(|(dn, record)| (*dn, belichtungsmesser(&record.content, query)))
             .collect();
 
         results.sort_by_key(|(_, d)| *d);
