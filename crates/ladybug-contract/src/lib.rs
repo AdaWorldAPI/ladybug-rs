@@ -27,7 +27,8 @@
 //! | [`layers`] | 7-layer consciousness marker constants |
 //! | [`temporal`] | `Version`, `VersionDiff`, temporal error types |
 //! | [`delegation`] | `DelegationRequest` / `DelegationResponse` |
-//! | [`legacy`] | V1 JSON backward compatibility (existing wire format) |
+//! | [`wire`] | Binary wire protocol: `CogPacket` (8+8/4096 command packets, no JSON) |
+//! | [`legacy`] | V1 JSON backward compatibility (external wire format only) |
 
 pub mod container;
 pub mod geometry;
@@ -45,6 +46,7 @@ pub mod temporal;
 
 pub mod delegation;
 pub mod legacy;
+pub mod wire;
 
 // === Convenience re-exports ===
 pub use container::{Container, CONTAINER_BITS, CONTAINER_BYTES, CONTAINER_WORDS};
@@ -58,3 +60,4 @@ pub use legacy::{
     V1DataEnvelope, V1EnvelopeMetadata, V1LadybugEnvelope, V1LadybugMetadata,
     V1StepDelegationRequest, V1StepDelegationResponse, V1StepStatus, V1UnifiedStep,
 };
+pub use wire::{CogPacket, WireError, COG_MAGIC, WIRE_VERSION};

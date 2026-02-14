@@ -446,6 +446,10 @@ mod tests {
                 confidence: 1.0,
                 epoch: 12345,
                 version: None,
+                dominant_layer: None,
+                layer_activations: None,
+                nars_frequency: None,
+                calibration_error: None,
             },
         };
         let json = serde_json::to_string(&env).unwrap();
@@ -475,6 +479,10 @@ mod tests {
                 confidence: 1.0,
                 epoch: 0,
                 version: None,
+                dominant_layer: None,
+                layer_activations: None,
+                nars_frequency: None,
+                calibration_error: None,
             },
         };
         let req = V1StepDelegationRequest { step, input };

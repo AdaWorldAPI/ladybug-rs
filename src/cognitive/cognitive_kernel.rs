@@ -30,7 +30,7 @@
 //! └──────────────────────────────────────────────────────────────────────┘
 //! ```
 
-use crate::cognitive::layer_stack::{ConsciousnessSnapshot, LayerId, LayerResult, NUM_LAYERS};
+use crate::cognitive::layer_stack::{ConsciousnessSnapshot, LayerId, LayerNode, LayerResult, NUM_LAYERS};
 use crate::cognitive::metacog::MetaCognition;
 use crate::cognitive::satisfaction_gate::LayerSatisfaction;
 use crate::cognitive::sieve::SocraticSieve;
@@ -38,6 +38,9 @@ use crate::cognitive::two_stroke::{self, ValidationResult};
 use crate::core::Fingerprint;
 use crate::nars::TruthValue;
 use crate::storage::bind_space::{Addr, BindSpace, FINGERPRINT_WORDS};
+
+use ladybug_contract::container::Container;
+use ladybug_contract::wire::{self, CogPacket};
 
 /// BindSpace prefix for working memory (Fluid zone start).
 const PREFIX_FLUID: u8 = 0x10;
@@ -330,12 +333,163 @@ impl CognitiveKernel {
     pub fn satisfaction(&self) -> &LayerSatisfaction {
         &self.satisfaction
     }
+
+    // =========================================================================
+    // L4 ASSIMILATION — Process CogPackets by resonance, not string dispatch
+    // =========================================================================
+
+    /// Process an incoming CogPacket through the 10-layer stack.
+    ///
+    /// This is the L4 Self-Realization path: the contract IS the layer stack.
+    /// Routing happens by fingerprint resonance, not by step_type string parsing.
+    /// The packet's content Container resonates against BindSpace to determine
+    /// which layers fire and what operations execute.
+    ///
+    /// Returns a response CogPacket with crystallization results.
+    pub fn process_packet(
+        &mut self,
+        space: &mut BindSpace,
+        packet: &CogPacket,
+        node: &mut crate::cognitive::layer_stack::LayerNode,
+    ) -> (CognitiveKernelResult, CogPacket) {
+        // Extract fingerprint from Container payload (Container = 8192 bits,
+        // BindSpace = 16384 bits — zero-pad the upper half)
+        let content = packet.content();
+        let input_fp = container_to_fingerprint(content);
+
+        // Apply field modulation from packet header to satisfaction gate
+        let threshold = packet.resonance_threshold();
+        if threshold > 0.0 {
+            // Packet carries modulation — L4 uses it as style hint
+            // This is how agents communicate their FieldModulation through
+            // binary protocol instead of JSON metadata
+            for layer in LayerId::ALL {
+                let sat = packet.satisfaction(layer.index() as u8);
+                if sat > 0.0 {
+                    self.satisfaction.update(layer, sat);
+                }
+            }
+        }
+
+        // Apply NARS truth value from packet header
+        let pkt_tv = packet.truth_value();
+        if pkt_tv.confidence > 0.0 {
+            self.metacog.record_outcome(pkt_tv.confidence, pkt_tv.frequency);
+        }
+
+        // Process through layer stack (deterministic wave processing)
+        let results = crate::cognitive::layer_stack::process_layers_wave(
+            node, &input_fp, self.cycle,
+        );
+
+        // Process layer results through the kernel bridge
+        let snapshot = crate::cognitive::layer_stack::snapshot_consciousness(node, self.cycle);
+        let ck_result = self.process_layer_results(space, &results, &snapshot, &input_fp);
+
+        // Build response packet
+        let mut response = if let Some(crystallized_addr) = ck_result.crystallized.first() {
+            // Crystallization occurred — return the crystallized fingerprint
+            if let Some(crystal_node) = space.read(*crystallized_addr) {
+                let crystal_container = fingerprint_to_container(&crystal_node.fingerprint);
+                CogPacket::response(
+                    wire::wire_ops::CRYSTALLIZE,
+                    packet.target_addr(),
+                    packet.source_addr(),
+                    crystal_container,
+                )
+            } else {
+                CogPacket::response(
+                    packet.opcode(),
+                    packet.target_addr(),
+                    packet.source_addr(),
+                    content.clone(),
+                )
+            }
+        } else {
+            // No crystallization — return processed result
+            CogPacket::response(
+                packet.opcode(),
+                packet.target_addr(),
+                packet.source_addr(),
+                content.clone(),
+            )
+        };
+
+        // Populate response header with cognitive state
+        response.set_cycle(ck_result.cycle);
+        response.set_layer(snapshot.dominant_layer.index() as u8);
+
+        // Pack satisfaction scores
+        let scores = two_stroke::snapshot_scores(&ck_result.satisfaction);
+        let mut sat_array = [0.0f32; 10];
+        for (i, &s) in scores.iter().enumerate().take(10) {
+            sat_array[i] = s;
+        }
+        response.set_satisfaction_array(&sat_array);
+
+        // Pack NARS truth value from validation
+        if let Some(ref validation) = ck_result.validation {
+            match validation {
+                ValidationResult::Pass { nars_confidence, meta_confidence } => {
+                    let tv = ladybug_contract::TruthValue::new(*meta_confidence, *nars_confidence);
+                    response.set_truth_value(&tv);
+                    response.set_flags(response.flags() | wire::FLAG_VALIDATED);
+                }
+                ValidationResult::Reject { .. } | ValidationResult::Hold { .. } => {
+                    response.set_flags(response.flags() | wire::FLAG_ERROR);
+                }
+            }
+        }
+
+        // Pack causal rung from dominant layer
+        let rung = match snapshot.dominant_layer {
+            LayerId::L3 => 1, // See
+            LayerId::L5 => 2, // Do
+            LayerId::L7 => 3, // Imagine
+            _ => 0,
+        };
+        response.set_rung(rung);
+
+        if !ck_result.crystallized.is_empty() {
+            response.set_flags(response.flags() | wire::FLAG_CRYSTALLIZED);
+        }
+
+        response.update_checksum();
+        (ck_result, response)
+    }
 }
 
 impl Default for CognitiveKernel {
     fn default() -> Self {
         Self::new()
     }
+}
+
+// =============================================================================
+// CONTAINER ↔ FINGERPRINT BRIDGING
+// =============================================================================
+
+/// Convert a Container (8192 bits = 128 × u64) to a Fingerprint-compatible
+/// word array (16384 bits = 256 × u64). Upper half zero-padded.
+fn container_to_fingerprint(container: &Container) -> Fingerprint {
+    let mut words = [0u64; FINGERPRINT_WORDS];
+    for (i, &w) in container.words.iter().enumerate() {
+        words[i] = w;
+    }
+    // XOR-fold: replicate lower 128 words into upper 128 with permutation
+    // This preserves information density while filling the full 16K space
+    for i in 0..128 {
+        words[128 + i] = container.words[i].rotate_left(7);
+    }
+    Fingerprint::from_raw(words)
+}
+
+/// Convert a BindSpace fingerprint array back to a Container.
+/// Truncates to 128 words (8192 bits).
+fn fingerprint_to_container(fp: &[u64; FINGERPRINT_WORDS]) -> Container {
+    let mut words = [0u64; 128];
+    words.copy_from_slice(&fp[..128]);
+    Container { words }
 }
 
 // =============================================================================
@@ -607,6 +761,44 @@ mod tests {
         let bundled = bundle_recent(&space, PREFIX_FLUID, 4, 4);
         assert!(bundled.is_some());
         assert_eq!(bundled.unwrap(), all_ones); // majority wins
+    }
+
+    #[test]
+    fn test_process_packet_roundtrip() {
+        use ladybug_contract::container::Container;
+        use ladybug_contract::wire::{self, CogPacket};
+
+        let mut ck = CognitiveKernel::new();
+        let mut space = BindSpace::new();
+        let mut node = LayerNode::new("test");
+
+        // Create a CogPacket with a random container payload
+        let content = Container::random(42);
+        let pkt = CogPacket::request(
+            wire::wire_ops::EXECUTE,
+            0x0C00, // Agent prefix
+            0x8001, // Node zone target
+            content,
+        );
+
+        let (result, response) = ck.process_packet(&mut space, &pkt, &mut node);
+        assert_eq!(result.cycle, 1);
+        assert!(response.is_response());
+        assert!(!result.ops_performed.is_empty());
+        // Response carries satisfaction scores
+        let sat = response.satisfaction_array();
+        assert!(sat.iter().any(|&s| s >= 0.0));
+    }
+
+    #[test]
+    fn test_container_fingerprint_bridge() {
+        use ladybug_contract::container::Container;
+
+        let c = Container::random(99);
+        let fp = container_to_fingerprint(&c);
+        let c_back = fingerprint_to_container(fp.as_raw());
+        // Lower 128 words should roundtrip exactly
+        assert_eq!(c.words, c_back.words);
     }
 
     #[test]

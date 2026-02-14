@@ -9,7 +9,7 @@ use std::fmt;
 ///
 /// - **frequency** (f): Proportion of positive evidence (0.0 - 1.0)
 /// - **confidence** (c): Reliability of the frequency (0.0 - 1.0)
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TruthValue {
     pub frequency: f32,
     pub confidence: f32,
