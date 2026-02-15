@@ -12,6 +12,7 @@
 pub mod texture;
 pub mod meaning_axes;
 pub mod council;
+pub mod resonance;
 
 pub use texture::{GraphMetrics, Texture, compute};
 pub use meaning_axes::{
@@ -19,3 +20,7 @@ pub use meaning_axes::{
     decode_axes, detect_viscosity, encode_axes,
 };
 pub use council::{Archetype, Epiphany, EpiphanyDetector, InnerCouncil};
+pub use resonance::{
+    AwarenessEntry, AwarenessField, AwarenessLens, AwarenessSummary,
+    FocusMask, FocusedEntry, FocusedResonance, HdrResonance, TriangleCouncil,
+};
