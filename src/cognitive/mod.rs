@@ -50,6 +50,7 @@ mod style;
 mod substrate;
 mod thought;
 pub mod two_stroke;
+pub mod pattern_detector;
 
 pub use awareness::{AwarenessBlackboard, AwarenessSnapshot, CortexResult};
 pub use collapse_gate::*;
@@ -80,3 +81,4 @@ pub use two_stroke::{
     snapshot_scores, validate_l9,
 };
 pub use cognitive_kernel::{CognitiveKernel, CognitiveKernelResult, KernelLayerOp};
+pub use pattern_detector::{MetaPattern, detect as detect_meta_pattern};
