@@ -359,22 +359,79 @@ impl Executor {
         self.stats.causal_ops += 1;
 
         match inst.opcode {
-            // SEE: Rung 1 - Correlation
+            // SEE: Rung 1 — Observation / Correlation
+            // P(B|A) as Hamming overlap ratio between fingerprints at src1 and src2.
+            // Result: NARS truth value where frequency = overlap/total, confidence from sample.
             0x00 => {
-                // Would query correlation store
-                ExecResult::Ok(None)
+                let a = self.registers.read(inst.src1);
+                let b = self.registers.read(inst.src2);
+                match (a, b) {
+                    (Some(a), Some(b)) => {
+                        // Count overlapping set bits (AND) vs total set bits in A
+                        let mut overlap = 0u32;
+                        let mut total_a = 0u32;
+                        for i in 0..FINGERPRINT_WORDS {
+                            overlap += (a[i] & b[i]).count_ones();
+                            total_a += a[i].count_ones();
+                        }
+                        let frequency = if total_a > 0 {
+                            overlap as f32 / total_a as f32
+                        } else {
+                            0.0
+                        };
+                        // Confidence grows with evidence (total bits set)
+                        let confidence = (total_a as f32 / (total_a as f32 + 1.0)).min(0.99);
+                        ExecResult::Truth(TruthValue::new(frequency, confidence))
+                    }
+                    _ => ExecResult::Error("SEE: operands not found".into()),
+                }
             }
 
-            // DO: Rung 2 - Intervention
+            // DO: Rung 2 — Intervention
+            // Remove confounding variable (src2) from observation (src1) via XOR-unbind.
+            // do(X) = unbind(observed, confounder). The causal effect isolated from correlation.
             0x01 => {
-                // Would perform intervention
-                ExecResult::Ok(None)
+                let observed = self.registers.read(inst.src1);
+                let confounder = self.registers.read(inst.src2);
+                match (observed, confounder) {
+                    (Some(obs), Some(conf)) => {
+                        let mut intervened = [0u64; FINGERPRINT_WORDS];
+                        for i in 0..FINGERPRINT_WORDS {
+                            intervened[i] = obs[i] ^ conf[i]; // XOR-unbind
+                        }
+                        self.registers.write(inst.dest, intervened);
+                        ExecResult::Ok(Some(intervened))
+                    }
+                    _ => ExecResult::Error("DO: operands not found".into()),
+                }
             }
 
-            // IMAGINE: Rung 3 - Counterfactual
+            // IMAGINE: Rung 3 — Counterfactual
+            // Fork: snapshot src1, apply DO (unbind src2), measure Hamming distance
+            // between actual and counterfactual. Distance IS causal impact.
             0x02 => {
-                // Would fork world and simulate
-                ExecResult::Ok(None)
+                let actual = self.registers.read(inst.src1);
+                let factor = self.registers.read(inst.src2);
+                match (actual, factor) {
+                    (Some(act), Some(fac)) => {
+                        // Counterfactual: what if we removed this factor?
+                        let mut counterfactual = [0u64; FINGERPRINT_WORDS];
+                        for i in 0..FINGERPRINT_WORDS {
+                            counterfactual[i] = act[i] ^ fac[i];
+                        }
+                        // Causal impact = Hamming distance between actual and counterfactual
+                        let mut distance = 0u32;
+                        for i in 0..FINGERPRINT_WORDS {
+                            distance += (act[i] ^ counterfactual[i]).count_ones();
+                        }
+                        // Store counterfactual at dest
+                        self.registers.write(inst.dest, counterfactual);
+                        // Return as truth: frequency = normalized impact, confidence = high (deterministic)
+                        let impact = distance as f32 / (FINGERPRINT_WORDS as f32 * 64.0);
+                        ExecResult::Truth(TruthValue::new(impact, 0.95))
+                    }
+                    _ => ExecResult::Error("IMAGINE: operands not found".into()),
+                }
             }
 
             _ => ExecResult::Error(format!("Causal opcode {:02X} not implemented", inst.opcode)),
