@@ -38,6 +38,7 @@ pub mod resonance;
 pub mod rl_ops;
 pub mod scm;
 pub mod session;
+pub mod dream;
 
 pub use blackboard::{Blackboard, Decision, IceCakedLayer};
 pub use cam_ops::{
@@ -128,3 +129,6 @@ pub use cognitive_styles::{
     TaskOutcome,
     create_base_styles,
 };
+
+// Dream consolidation (offline pruning, merging, creative recombination)
+pub use dream::{DreamConfig, consolidate as dream_consolidate};

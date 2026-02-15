@@ -109,6 +109,8 @@ pub mod search;
 pub mod storage;
 pub mod width_16k;
 pub mod world;
+pub mod spectroscopy;
+pub mod qualia;
 
 // === Unified execution contract (crewai-rust × ada-n8n integration) ===
 pub mod contract;
