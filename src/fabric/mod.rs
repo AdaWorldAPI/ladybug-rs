@@ -37,6 +37,7 @@ pub mod mrna;
 pub mod shadow;
 pub mod subsystem;
 pub mod udp_transport;
+pub mod scheduler;
 pub mod zero_copy;
 
 pub use butterfly::{Butterfly, ButterflyDetector, ButterflyPrediction};
@@ -50,5 +51,8 @@ pub use mrna::{CrossPollination, FieldSnapshot, MRNA, ResonanceField};
 pub use subsystem::Subsystem;
 pub use udp_transport::{
     FramePacket, LaneRouter, MAX_UDP_PAYLOAD, ReceiverStats, SenderStats, UdpReceiver, UdpSender,
+};
+pub use scheduler::{
+    BundleCollector, DispatchPlan, ExecutionMode, FireflyScheduler, SchedulerResult, SchedulerStats,
 };
 pub use zero_copy::{AddrRef, Deferred, ZeroCopyExecutor};
