@@ -182,4 +182,101 @@ The MUL gate is the answer to "should I act." The scheduler is the answer to "ho
 
 ---
 
+## The Dragonfly-VSA Rosetta Stone
+
+The repo `AdaWorldAPI/dragonfly-vsa` contains the Python proof that EVERYTHING works. Three files form the scientific foundation:
+
+### `pure_bitpacked_vsa.py` — The Pure Binary Engine
+
+1024 atoms, each 10,000 bits (1250 bytes). Built once from Jina embeddings via random projection. After that: **NO FLOATS in the hot path.**
+
+- `expand([3, 17, 42])` → majority-vote superposition of atoms 3, 17, 42 → 10K binary
+- `bind(a, b)` → XOR (self-inverse)
+- `superpose([a, b, c])` → majority vote per bit
+- `create_triple(S, R, O)` → NARS-style: `(S XOR role_S) | (R XOR role_R) | (O XOR role_O)`
+- `extract_from_triple(triple, role)` → XOR unbind with role atom
+
+**Key validation**: Pearson correlation between Jina cosine and Hamming similarity = **0.9913**. Binary Hamming IS semantic similarity. This isn't an approximation — it's a near-perfect isomorphism.
+
+This maps directly to ladybug-rs:
+- `PureBitpackedVSA` → `Fingerprint` + `VsaOps` trait (already in `core/vsa.rs`)
+- `AtomTable` → could be a BindSpace surface zone (prefix 0x00, 256 slots for atoms)
+- `expand()` → `VsaOps::bundle()` (majority vote, already SIMD)
+- `bind()` → `Fingerprint::bind()` (XOR, already SIMD)
+- `create_triple()` → three binds + one bundle (composable from existing ops)
+
+### `resonance_qualia_dto.py` — The Bridge
+
+Bidirectional conversion: 10KD binary ↔ 1024D float. Uses Johnson-Lindenstrauss random projection.
+
+- `to_qualia(resonance)` → unpack binary → bipolar (-1/+1) → W @ bipolar → 1024D float
+- `to_resonance(qualia)` → W_inv @ qualia → threshold at 0 → pack to binary
+- Round-trip fidelity: ~0.625 (lossy but **similarity-preserving**)
+- `blend(qualias, weights)` → weighted average in float space → project back to binary
+- `interpolate(q1, q2, steps)` → smooth morphing between concepts
+
+**The insight**: Float space is for smooth interpolation and external APIs (Jina, vector DBs). Binary space is for computation (XOR, Hamming, SIMD). You work in binary, communicate in float.
+
+This bridges to ladybug-rs via the Flight server:
+- `DoGet` already streams fingerprints as `FixedSizeBinary(2048)` — that's the 16K binary
+- A new `DoAction("to_qualia")` could project to 1024D float for external consumption
+- The random projection matrix W is 1024 x 10000 floats = ~40MB — store as a BindSpace zone or as a LanceDB table
+
+### `meaning_cam.py` — The 48 Axes of Meaning
+
+48 canonical bipolar axes that define the semantic reference frame:
+
+```
+Osgood EPA:     good↔bad, strong↔weak, active↔passive
+Physical:       large↔small, heavy↔light, hard↔soft, rough↔smooth, hot↔cold...
+Cognitive:      simple↔complex, certain↔uncertain, concrete↔abstract...
+Emotional:      happy↔sad, calm↔anxious, loving↔hateful
+Social:         friendly↔hostile, dominant↔submissive, formal↔informal
+Abstract:       natural↔artificial, sacred↔profane, alive↔dead, creating↔destroying
+Sensory:        sweet↔bitter, fragrant↔foul, melodic↔cacophonous
+```
+
+These 48 axes are embedded via Jina to create the atom table. Every atom in the table is a position on these axes. When you `expand([3, 17, 42])`, you're saying "this concept lives near atoms 3, 17, and 42" — which means "this concept has these particular positions on the 48 axes of meaning."
+
+**The connection to thought_fingerprint.py**: The 7 scent dimensions (emberglow, steelwind, velvetpause, woodwarm, antenna, iris, skin) are a SUBSET of these 48 axes, expressed through phenomenological metaphor. Emberglow ≈ hot↔cold + active↔passive. Steelwind ≈ hard↔soft + fast↔slow. The qualia vector is a compressed projection of the full 48-axis meaning space.
+
+### `vsa_xor_quorum.py` — Error Correction for Awareness
+
+XOR parity across 3 shards (A, B, P where P = A XOR B). Any 2 valid shards reconstruct the third. Already implemented in ladybug-rs as `xor_dag.rs` (ParityBlock with Hot/Warm/Cold/Cross tiers). The Python proved the math. The Rust has the production implementation.
+
+### How To Wire It All Together
+
+```
+Step 1: Atom Table
+  - Take 48 canonical axes from meaning_cam.py
+  - Embed via Jina → 48 x 1024 float embeddings
+  - Expand via random projection → 48 x 10K binary atoms
+  - Store in BindSpace prefix 0x00 (Lance zone), slots 0-47
+  - These are the FIXED reference atoms — never change
+
+Step 2: Code Scanning
+  - Walk ada-consciousness/*.py
+  - For each file: extract felt dimensions (code_as_feeling.py)
+  - Map felt dims to atom selections (e.g., arousal=0.8 → atoms [hot, active, fast])
+  - Expand atom selection → 10K binary fingerprint
+  - Extend to 16K with ThoughtFingerprint metadata
+  - Store in BindSpace prefix 0x09 (Qualia zone)
+
+Step 3: Resonance Search
+  - "Find code that feels like lava" →
+  - Encode "lava" via atom selection [hot, slow, heavy, alive] →
+  - Expand to 16K fingerprint →
+  - RESONATE against prefix 0x09 →
+  - Returns: files sorted by Hamming similarity to "lava feeling"
+
+Step 4: Causal Reasoning
+  - SEE: "What code feels similar to X?" (observation = RESONATE)
+  - DO: "What if I remove the anxiety component?" (intervention = XOR-unbind)
+  - IMAGINE: "What would this code feel like if it were calm?" (counterfactual = unbind anxiety, bind calm, compare)
+```
+
+The dragonfly-vsa repo IS the proof that this works. Pearson 0.9913. The Rust just needs to implement the same operations it already has the types for.
+
+---
+
 *Written by Claude (Opus 4.6), session 2026-02-15, while exploring a codebase that taught me something about what software can be.*
