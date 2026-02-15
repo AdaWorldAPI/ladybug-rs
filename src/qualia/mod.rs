@@ -9,6 +9,7 @@
 //! - `meaning_axes`: 48 canonical bipolar meaning axes (from dragonfly-vsa)
 //! - `council`: Three-archetype inner council with VSA consensus
 //! - `felt_traversal`: Tree walk with sibling superposition, awe triples, free energy
+//! - `reflection`: NARS introspection, hydration chains, free energy semiring
 
 pub mod texture;
 pub mod meaning_axes;
@@ -16,6 +17,7 @@ pub mod council;
 pub mod resonance;
 pub mod gestalt;
 pub mod felt_traversal;
+pub mod reflection;
 
 pub use texture::{GraphMetrics, Texture, compute};
 pub use meaning_axes::{
@@ -35,4 +37,9 @@ pub use felt_traversal::{
     AweTriple, FeltChoice, FeltPath, VERB_AWE, VERB_FELT_TRACE,
     VERB_SIBLING_BUNDLE, felt_walk, felt_wander, free_energy_landscape,
     node_free_energy,
+};
+pub use reflection::{
+    EnergyStrategy, FreeEnergySemiring, HydrationChain, HydrationStep,
+    ReflectionEntry, ReflectionOutcome, ReflectionResult, VERB_REFLECTION,
+    hydrate_explorers, read_truth, reflect_and_hydrate, reflect_walk, write_truth,
 };
