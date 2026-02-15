@@ -111,6 +111,7 @@ pub mod width_16k;
 pub mod world;
 pub mod spectroscopy;
 pub mod qualia;
+pub mod mul; // Meta-Uncertainty Layer (10-layer metacognition)
 
 // === Unified execution contract (crewai-rust × ada-n8n integration) ===
 pub mod contract;
