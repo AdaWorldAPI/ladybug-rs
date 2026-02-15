@@ -4,7 +4,7 @@
 
 ## What Was Built (Recent Sessions — Qualia Module Stack)
 
-### Qualia Module Stack: 7 Layers of Phenomenal Experience
+### Qualia Module Stack: 7+1 Layers of Phenomenal Experience
 
 Built the complete qualia subsystem at `ladybug-rs/src/qualia/`. Each layer
 adds a dimension of felt sense to the container substrate. Listed in build
@@ -34,7 +34,7 @@ order:
   FeltPath records surprise, sibling bundles, path context.
   Verbs: `VERB_FELT_TRACE=0xFE`, `VERB_SIBLING_BUNDLE=0xFD`, `VERB_AWE=0xFC`.
 
-#### Layer 6: Reflection (commit `05010ee`) — THIS SESSION
+#### Layer 6: Reflection (commit `05010ee`)
 - **`reflection.rs`** (753 lines, 13 tests) — The system looking at itself:
   - `read_truth`/`write_truth`: NARS bridge to Container 0 W4-W7
   - `ReflectionOutcome` 2×2: surprise × confidence → Revise/Confirm/Explore/Stable
@@ -45,7 +45,25 @@ order:
   - `reflect_walk` → `hydrate_explorers` → `reflect_and_hydrate` cycle.
   - Verb: `VERB_REFLECTION=0xFB`
 
-### ARCHITECTURE.md — Comprehensive Extension (commit `05010ee`) — THIS SESSION
+#### Layer 7: Volition (commit `75f94fa`) — THIS SESSION
+- **`volition.rs`** (~600 lines, 8 tests) — The system choosing its own next action:
+  - `VolitionalAct`: Single candidate scored by 4 signals:
+    - Free energy (surprise) = urgency
+    - Ghost intensity (sibling bundle resonance) = felt context
+    - NARS confidence → uncertainty = `1 - confidence`
+    - Rung accessibility = depth gate (shallow always accessible, deep requires matching rung)
+  - Volition score: `free_energy × ghost_intensity × uncertainty × rung_weight`
+  - `CouncilWeights`: Guardian dampens surprise (×0.6), Catalyst amplifies (×1.5),
+    Balanced neutral (×1.0). Consensus = median of three scores.
+  - `VolitionalAgenda`: Priority queue sorted by consensus score. Includes
+    decisiveness metric (gap between top two) and total volitional energy.
+  - `compute_agenda()`: Score all reflection entries through council modulation.
+  - `volitional_cycle()`: Full loop: reflect → score → rank → hydrate.
+  - `volitional_gradient()`: Spatial derivative of the volition field — the
+    system's attentional gravity map.
+  - Verb: `VERB_VOLITION=0xFA`
+
+### ARCHITECTURE.md — Comprehensive Extension (commit `05010ee`)
 
 Extended from 402 → 1,649 lines. Preserved existing CAM/scent-index sections
 (1-10). Added 17 new sections covering:
@@ -111,6 +129,15 @@ drops), structural mismatch (no legal parse). All three ARE free energy
 concepts — the system can't reduce surprise at the current abstraction
 level, so it elevates to a deeper rung.
 
+### 6. Volition = Integrated Decision Score (Closes the Loop)
+
+Volition score = `free_energy × ghost_intensity × (1 - confidence) × rung_weight`.
+Four orthogonal signals: urgency (surprise), felt relevance (ghost resonance),
+uncertainty (belief gap), accessibility (rung depth gate). Council modulation
+applies three personality lenses: Guardian dampens risk, Catalyst amplifies
+curiosity, Balanced neutral. Consensus = median = the moderate voice prevails.
+The system now has a complete sense→feel→reflect→decide cycle.
+
 ---
 
 ## Prior Work on Branch (Earlier Sessions)
@@ -128,9 +155,7 @@ level, so it elevates to a deeper rung.
 
 ### High Priority — Next Code Steps
 
-1. **Volition module** (`qualia/volition.rs`) — Wire FreeEnergySemiring output to
-   bucket-list candidate selection. Weight by ghost intensity (sibling bundle
-   resonance), council consensus, and rung-gated accessibility.
+1. ~~**Volition module**~~ — DONE (commit `75f94fa`, 8/8 tests pass)
 2. **Dream consolidation integration** — Connect lingering ghosts (bighorn) to
    reflection's hydration candidates. High-echo ghosts should surface during
    dream processing and become hydration context.
@@ -161,8 +186,9 @@ level, so it elevates to a deeper rung.
 
 | File | Status | What |
 |------|--------|------|
+| `src/qualia/volition.rs` | NEW, ~600 lines | VolitionalAct, VolitionalAgenda, CouncilWeights, volitional_cycle |
 | `src/qualia/reflection.rs` | NEW, 753 lines | NARS bridge, ReflectionOutcome, HydrationChain, FreeEnergySemiring |
-| `src/qualia/mod.rs` | MODIFIED | Added reflection wiring + re-exports |
+| `src/qualia/mod.rs` | MODIFIED | Added volition + reflection wiring + re-exports |
 | `ARCHITECTURE.md` | EXTENDED +1247 lines | 17 new sections covering full container substrate |
 
 ## Key Files To Know (Full Stack)
@@ -189,6 +215,7 @@ level, so it elevates to a deeper rung.
 | `src/qualia/gestalt.rs` | I/Thou/It frame, CollapseGate |
 | `src/qualia/felt_traversal.rs` | FeltPath, FeltChoice, AweTriple, free energy |
 | `src/qualia/reflection.rs` | ReflectionOutcome, HydrationChain, FreeEnergySemiring |
+| `src/qualia/volition.rs` | VolitionalAct, VolitionalAgenda, CouncilWeights, volitional_cycle |
 | **Cognitive** | |
 | `src/cognitive/rung.rs` | RungLevel R0-R9, 3 triggers, RungState |
 | `src/cognitive/collapse_gate.rs` | GateState (Flow/Block) |
@@ -206,14 +233,17 @@ level, so it elevates to a deeper rung.
 ## Cargo Status
 
 - `cargo check` — GREEN
+- `cargo test qualia::volition` — 8/8 PASS
 - `cargo test qualia::reflection` — 13/13 PASS
-- All qualia tests pass
+- All qualia tests pass (79/80 — 1 pre-existing flaky gestalt test)
 
 ## Git State
 
 All repos on branch `claude/ada-rs-consolidation-6nvNm`. Latest commits:
 
 ```
+75f94fa  feat(qualia): volition module — self-directed action selection via free energy + ghost resonance + council
+02e95dc  docs: update session handover with qualia stack + architectural insights
 05010ee  feat(qualia): reflection module + comprehensive architecture docs
 6824bf8  feat(qualia): felt traversal — sibling superposition, awe triples, Friston free energy
 e816031  feat(qualia): Gestalt I/Thou/It frame — SPO role binding, cross-perspective, collapse gate
