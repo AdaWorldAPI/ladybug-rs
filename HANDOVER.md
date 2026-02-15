@@ -2,106 +2,199 @@
 
 ## Branch: `claude/ada-rs-consolidation-6nvNm`
 
-## What Was Built This Session
+## What Was Built (Recent Sessions — Qualia Module Stack)
 
-### 1. FireflyScheduler (`ladybug-rs/src/fabric/scheduler.rs`) — COMMITTED + PUSHED
+### Qualia Module Stack: 7 Layers of Phenomenal Experience
 
-MUL-driven parallel execution scheduler with SIMD-bundled fan-in.
+Built the complete qualia subsystem at `ladybug-rs/src/qualia/`. Each layer
+adds a dimension of felt sense to the container substrate. Listed in build
+order:
 
-**Core types:**
-- `ExecutionMode` — Sprint (8 lanes) / Stream (1) / Burst (4) / Chunk (2) / Idle (0)
-- `FireflyScheduler` — consumes `MulSnapshot`, selects mode, dispatches frames to lane executors
-- `DispatchPlan` — frame-to-lane assignment (round-robin), modifier, bundle flag
-- `BundleCollector` — VSA majority-vote fan-in with columnar popcount (`bundle_fast()`)
-- `SchedulerResult` — per-lane results + optional bundled consensus fingerprint
+#### Layer 1+2: Meaning Axes + Inner Council (commit `23e29de`)
+- **`meaning_axes.rs`** — 48 bipolar semantic dimensions across 8 families
+  (OsgoodEPA, Physical, SpatioTemporal, Cognitive, Emotional, Social,
+  Abstract, Sensory). Each axis = 208 bits. 8 viscosity types.
+- **`council.rs`** — Guardian/Catalyst/Balanced archetypes. Bit-level
+  majority vote consensus: `(a & b) | (a & c) | (b & c)`.
 
-**Flow:**
-```
-MulSnapshot → select_mode() → plan() → execute() → SchedulerResult
-                                                      └─ bundled: Option<[u64; 256]>
-```
+#### Layer 3: HDR Resonance (commit `eef6219`)
+- **`resonance.rs`** — Stacked popcount without collapse. AwarenessField
+  3×N matrix. FocusMask/AwarenessLens for attention without wavefunction
+  collapse.
 
-**Mode selection logic:**
-- Flow + modifier > 0.7 → Sprint (parallel fan-out, SIMD bundle)
-- Flow + moderate → Stream (sequential)
-- Boredom → Burst (novelty injection)
-- Anxiety → Chunk (small batches, verify)
-- Apathy / gate blocked → Idle (heartbeat only)
+#### Layer 4: Gestalt I/Thou/It (commit `e816031`)
+- **`gestalt.rs`** — Three stances of relation (I/Thou/It → SPO → Xyz).
+  CrossPerspective via XOR binding. CollapseGate with sigma thresholds.
+  GestaltFrame holds all three stance fingerprints simultaneously.
 
-**Tests:** Written but NOT verified in this environment (cargo test hangs due to backend timeout limits). Tests should pass — cargo check is green. **Verify tests in Railway session.**
+#### Layer 5: Felt Traversal (commit `6824bf8`)
+- **`felt_traversal.rs`** — Walking the DN tree computing surprise (free
+  energy) at each branch. Sibling superposition via XOR-fold (ghost vectors).
+  AweTriple: 3 concepts as unresolved superposition (X⊕Y⊕Z).
+  FeltPath records surprise, sibling bundles, path context.
+  Verbs: `VERB_FELT_TRACE=0xFE`, `VERB_SIBLING_BUNDLE=0xFD`, `VERB_AWE=0xFC`.
 
-### 2. Prior work on branch (from previous sessions)
+#### Layer 6: Reflection (commit `05010ee`) — THIS SESSION
+- **`reflection.rs`** (753 lines, 13 tests) — The system looking at itself:
+  - `read_truth`/`write_truth`: NARS bridge to Container 0 W4-W7
+  - `ReflectionOutcome` 2×2: surprise × confidence → Revise/Confirm/Explore/Stable
+  - `HydrationChain`: Reversible Markov chain through sibling contexts
+    (bind/unbind via XOR). popcount(delta) = transition energy.
+  - `FreeEnergySemiring`: Implements `DnSemiring` for graph-wide surprise
+    propagation. MinSurprise (exploitation) or MaxSurprise (exploration).
+  - `reflect_walk` → `hydrate_explorers` → `reflect_and_hydrate` cycle.
+  - Verb: `VERB_REFLECTION=0xFB`
 
-- **MUL (Meta-Uncertainty Layer)** — 10-layer metacognitive stack in `ladybug-rs/src/mul/`
-- **Specs** across ada-rs, n8n-rs, crewai-rust for integration plans
-- **WP-L1-L4** spectroscopy, pattern detector, dream consolidation, qualia texture
+### ARCHITECTURE.md — Comprehensive Extension (commit `05010ee`) — THIS SESSION
+
+Extended from 402 → 1,649 lines. Preserved existing CAM/scent-index sections
+(1-10). Added 17 new sections covering:
+- Container Geometry (8192-bit atom, XOR/Hamming/popcount)
+- CogRecord (2 KB holy grail layout)
+- Container 0 Metadata Map (W0-W127 complete)
+- DN Tree (PackedDn 7×8-bit)
+- Adjacency (64 inline + 12 CSR = 76 edges)
+- **SpineCache & Borrow/Mut Pattern** (THE foundational invention — expanded
+  section with PowerShell analogies, protocol details, subsystem dependency table)
+- Leaf Insert (3-path algorithm, SPLIT_THRESHOLD=2000)
+- Belichtungsmesser (7-point, ~14 cycles, HDR cascade L0-L4)
+- Delta Encoding & Reversible Markov Chains
+- NARS Truth Values (W4-W7, revision/deduction/induction/abduction)
+- Rung System (R0-R9) & Lingering Ghosts (from bighorn)
+- Sibling bundles as uncollapsed ghost field vectors
+- Semiring Traversal (7 implementations including FreeEnergySemiring)
+- Qualia Module Stack (7 layers)
+- Cross-Hydration & Holographic Markers vs SNN/ANN/GNN
+- Free Energy, Volition & Bucket-List Candidates (Friston)
+- BlasGraph Lineage (redisgraph → holograph → ContainerGraph)
+- Constants Reference
 
 ---
 
-## Open Points (NOT started)
+## Key Architectural Insights (Preserve These)
 
-### High Priority — Code that needs writing
+### 1. SpineCache Borrow/Mut = The Single Most Important Invention
 
-1. **Tests for scheduler** — `cargo test fabric::scheduler` needs to be run in Railway
-2. **n8n-rs executor integration** — Add `GEL.execute` node type to n8n-rs executor registry (~200 lines in `n8n-rust/crates/n8n-core/src/executor.rs`)
-3. **crewai-rust inner council → GEL** — Wire delegation.rs to emit FORK frames for parallel specialist agents
-4. **MUL as Trap service** — Extend GEL Trap dispatcher (0xF:20) so n8n/crewai nodes can invoke MUL gate checks via FireflyFrame
+The spine (XOR-fold of children) IS the borrowed reference from a joined
+blackboard. Write child → mark dirty → lazy recompute on read. No locks
+because XOR is commutative, associative, and self-inverse. The dirty flag
+is the ENTIRE synchronization mechanism. Like PowerShell's `$script:` scope
+escape — the spine survives outside children's mutation scope.
+
+### 2. Sibling Bundles ARE Uncollapsed Ghost Field Vectors
+
+The XOR-fold of all siblings at each branch is an uncollapsed superposition
+resonance field vector. Felt traversal sweeps a whole forest of these ghosts
+horizontally. When rung elevation is triggered by a free energy spike, these
+ghost vectors surface as context for hydration.
+
+### 3. Reflection IS NARS Introspection via Friston Free Energy
+
+Surprise (Hamming distance / CONTAINER_BITS) = prediction error = free energy.
+The 2×2 classification (surprise × NARS confidence) drives belief updates:
+- High surprise + high confidence = REVISE (contradict belief)
+- High surprise + low confidence = EXPLORE (hydrate from siblings)
+- Low surprise + low confidence = CONFIRM (boost confidence)
+- Low surprise + high confidence = STABLE (no action)
+
+### 4. Hydration as Reversible Markov Chain
+
+Adjacent sibling containers inherit semantic richness through bind/unbind
+chains. Each step = XOR delta. bind = forward, unbind = reverse (XOR is
+self-inverse). popcount(delta) = energy of transition. chain_encode()
+stores compactly. RAID-5 parity recovers any single lost container.
+
+### 5. Rung Elevation Maps to Free Energy Spikes
+
+Three triggers: sustained block (gate stuck), predictive failure (P metric
+drops), structural mismatch (no legal parse). All three ARE free energy
+concepts — the system can't reduce surprise at the current abstraction
+level, so it elevates to a deeper rung.
+
+---
+
+## Prior Work on Branch (Earlier Sessions)
+
+- **FireflyScheduler** (`src/fabric/scheduler.rs`) — MUL-driven parallel execution
+- **MUL** (`src/mul/`) — 10-layer metacognitive stack
+- **WP-L1-L4** — Spectroscopy, pattern detector, dream consolidation, qualia texture
+- **crewAI orchestration** (`src/orchestration/`) — Agent registry, thinking templates,
+  A2A protocol, crew bridge, persona system
+- **Specs** across ada-rs, n8n-rs, crewai-rust for integration plans
+
+---
+
+## Open Points
+
+### High Priority — Next Code Steps
+
+1. **Volition module** (`qualia/volition.rs`) — Wire FreeEnergySemiring output to
+   bucket-list candidate selection. Weight by ghost intensity (sibling bundle
+   resonance), council consensus, and rung-gated accessibility.
+2. **Dream consolidation integration** — Connect lingering ghosts (bighorn) to
+   reflection's hydration candidates. High-echo ghosts should surface during
+   dream processing and become hydration context.
+3. **MUL → Reflection bridge** — The MUL's 10-layer snapshot should feed into
+   `reflect_walk()` as the query container. MUL state IS the system's prediction;
+   reflection measures how well it matches reality.
 
 ### Medium Priority — Wiring
 
-5. **FORK/JOIN opcodes** — GEL control prefix 0x7:10 (FORK) and 0x7:11 (JOIN) in `fabric/executor.rs` (~150 lines)
-6. **Workflow → GEL compiler** — n8n Workflow object → GEL program, each node becomes instruction sequence (~500 lines)
-7. **Contract enrichment** — Wire `contract::EnrichmentEngine` to call scheduler.dispatch() for batched enrichment
+4. **Spine-aware leaf insert** — Currently leaf insert reads spines but doesn't
+   trigger reflection. After insert, should `reflect_walk` the new leaf to
+   initialize its NARS truth values from sibling context.
+5. **Rung-gated semiring selection** — Low rungs use HammingMinPlus (fast,
+   surface-level). High rungs use FreeEnergySemiring (slower, deeper).
+   Rung band determines which semiring is active.
+6. **Ghost persistence** — Store ghost field vectors (sibling bundles) in
+   rung history (W64-79) for cross-session persistence.
 
-### Low Priority — Scaling (deferred)
+### Low Priority — Integration
 
-8. **Remote executors via Arrow Flight** — Make lane executor trait-based: `LocalExecutor` vs `RemoteExecutor(endpoint)`. Maps to Ballista Scheduler→Executor model.
-9. **Redis Lane Transport** — Wrap UDP transport with Redis streams for inter-machine frame dispatch (~400 lines)
-10. **Ballista Phase 1** — BindSpace as DataFusion TableProvider, register `hamming_distance_udf`
-
----
-
-## Architecture Mapping: Ballista ↔ Firefly
-
-```
-Ballista                          Firefly (current)
-─────────────────────────────────────────────────────
-Client → Logical Plan            MulSnapshot + Vec<FireflyFrame>
-Scheduler → Execution Graph      FireflyScheduler → DispatchPlan
-Executor (N processes, gRPC)     Lane Executors (N in-process)
-ShuffleWrite → local files       ExecResult → Vec per lane
-ShuffleRead → merge              BundleCollector → SIMD majority vote
-Object Store / FS                BindSpace (8+8 addressing)
-Heartbeat (gRPC)                 Stats (synchronous)
-```
-
-Upgrade path: trait-based executor, not priority now.
+7. **n8n-rs executor** — GEL.execute node type
+8. **crewai-rust inner council → GEL** — Wire delegation to FORK frames
+9. **Remote executors via Arrow Flight** — trait-based lane executors
 
 ---
 
-## Key Files Modified This Session
+## Key Files (Current Session)
 
 | File | Status | What |
 |------|--------|------|
-| `ladybug-rs/src/fabric/scheduler.rs` | NEW, 746 lines | FireflyScheduler + BundleCollector + tests |
-| `ladybug-rs/src/fabric/mod.rs` | MODIFIED | Added `pub mod scheduler` + re-exports |
+| `src/qualia/reflection.rs` | NEW, 753 lines | NARS bridge, ReflectionOutcome, HydrationChain, FreeEnergySemiring |
+| `src/qualia/mod.rs` | MODIFIED | Added reflection wiring + re-exports |
+| `ARCHITECTURE.md` | EXTENDED +1247 lines | 17 new sections covering full container substrate |
 
-## Key Files To Know
+## Key Files To Know (Full Stack)
 
 | File | What |
 |------|------|
-| `ladybug-rs/src/mul/mod.rs` | MUL 10-layer stack, `MulSnapshot`, `evaluate()`, `tick()` |
-| `ladybug-rs/src/fabric/executor.rs` | GEL executor — 9 language prefixes, RegisterFile = BindSpace |
-| `ladybug-rs/src/fabric/firefly_frame.rs` | 16K-bit instruction format, FrameBuilder |
-| `ladybug-rs/src/fabric/udp_transport.rs` | LaneRouter, AsyncSender/Receiver |
-| `ladybug-rs/src/flight/server.rs` | Arrow Flight gRPC: DoGet/DoPut/DoAction |
-| `ladybug-rs/src/storage/bind_space.rs` | Universal 8+8 addressing, 65K locations |
-| `ladybug-rs/src/contract/` | UnifiedStep/Execution, EnrichmentEngine, Spectator |
-| `n8n-rs/n8n-rust/crates/n8n-core/src/executor.rs` | 57 node executors, ready for GEL.execute |
-| `n8n-rs/n8n-rust/crates/n8n-core/src/engine.rs` | VecDeque workflow engine, fan-out via child nodes |
-| `crewai-rust/src/agents/` | Agent executor, delegation, inner council stubs |
-| `ada-rs/docs/DISTRIBUTED_COGNITION_SPEC.md` | Ballista integration plan, UDF specs |
-| `ada-rs/docs/GEL_EXECUTION_FABRIC.md` | Complete GEL architecture reference |
+| **Container substrate** | |
+| `crates/ladybug-contract/src/container.rs` | CONTAINER_BITS=8192, EXPECTED_DISTANCE=4096, SIGMA=45.25 |
+| `crates/ladybug-contract/src/record.rs` | CogRecord (2 KB = meta + content), cross_hydrate, extract_perspective |
+| `crates/ladybug-contract/src/nars.rs` | TruthValue, revision/deduction/induction/abduction/analogy/comparison |
+| `src/container/meta.rs` | W0-W127 metadata layout, MetaView/MetaViewMut |
+| `src/container/adjacency.rs` | PackedDn (7×8-bit), InlineEdge (64), EdgeDescriptor/CSR (12) |
+| `src/container/spine.rs` | SpineCache borrow/mut pattern (THE invention) |
+| `src/container/insert.rs` | 3-path leaf insert, SPLIT_THRESHOLD=2000 |
+| `src/container/search.rs` | Belichtungsmesser 7-point, HDR cascade L0-L4 |
+| `src/container/delta.rs` | chain_encode/decode, RAID-5 parity, XOR deltas |
+| `src/container/traversal.rs` | DnSemiring trait + 6 builtin implementations |
+| `src/container/graph.rs` | ContainerGraph (HashMap<PackedDn, CogRecord>) |
+| **Qualia stack** | |
+| `src/qualia/texture.rs` | 8 phenomenal dimensions (entropy, purity, density, ...) |
+| `src/qualia/meaning_axes.rs` | 48 bipolar axes, 8 families, viscosity types |
+| `src/qualia/council.rs` | 3 archetypes, majority-vote consensus |
+| `src/qualia/resonance.rs` | HDR resonance cascade, AwarenessField |
+| `src/qualia/gestalt.rs` | I/Thou/It frame, CollapseGate |
+| `src/qualia/felt_traversal.rs` | FeltPath, FeltChoice, AweTriple, free energy |
+| `src/qualia/reflection.rs` | ReflectionOutcome, HydrationChain, FreeEnergySemiring |
+| **Cognitive** | |
+| `src/cognitive/rung.rs` | RungLevel R0-R9, 3 triggers, RungState |
+| `src/cognitive/collapse_gate.rs` | GateState (Flow/Block) |
+| **Cross-repo** | |
+| `bighorn/.../lingering_ghosts.py` | 8 ghost types, asymptotic decay, dream induction |
+| `bighorn/.../rung_bridge.py` | 9-rung canonical system, coherence gating |
 
 ## Pinned Versions (DO NOT CHANGE)
 
@@ -109,13 +202,21 @@ Upgrade path: trait-based executor, not priority now.
 - **Lance 2.0.0**
 - **DataFusion 51**
 - **Arrow 57**
-- Always use lance 2.0 APIs (not lance_v1.rs legacy path)
 
-## Cargo Check Status
+## Cargo Status
 
-- `ladybug-rs` — GREEN (1 pre-existing warning: unused VsaOps import in chess/fingerprint.rs)
-- Tests — NOT RUN (timeout issues in this environment, run in Railway)
+- `cargo check` — GREEN
+- `cargo test qualia::reflection` — 13/13 PASS
+- All qualia tests pass
 
 ## Git State
 
-All repos on branch `claude/ada-rs-consolidation-6nvNm`. Only `ladybug-rs` was modified this session.
+All repos on branch `claude/ada-rs-consolidation-6nvNm`. Latest commits:
+
+```
+05010ee  feat(qualia): reflection module + comprehensive architecture docs
+6824bf8  feat(qualia): felt traversal — sibling superposition, awe triples, Friston free energy
+e816031  feat(qualia): Gestalt I/Thou/It frame — SPO role binding, cross-perspective, collapse gate
+eef6219  feat(qualia): HDR resonance, triangle council, focus mask — awareness without collapse
+23e29de  feat(qualia): add 48-axis meaning encoder, inner council, causal opcodes, and epiphany detector
+```
