@@ -1,6 +1,6 @@
 # Session Handover — 2026-02-15
 
-## Branch: `claude/ada-rs-consolidation-6nvNm`
+## Branch: `claude/pr-123-handover-Wx4VA`
 
 ## What Was Built (Recent Sessions — Qualia Module Stack)
 
@@ -62,6 +62,30 @@ order:
   - `volitional_gradient()`: Spatial derivative of the volition field — the
     system's attentional gravity map.
   - Verb: `VERB_VOLITION=0xFA`
+
+#### Layer 8: Dream–Reflection Bridge (this session)
+- **`dream_bridge.rs`** (~280 lines, 7 tests) — Connects ghost resonance to dream consolidation:
+  - `GhostRecord`: Sibling bundle packaged for dream input (branch DN, bundle, resonance, depth)
+  - `harvest_ghosts()`: Extract high-resonance sibling bundles from FeltPath
+  - `ghosts_to_records()`: Package ghosts as CogRecords (low NARS confidence, neutral frequency)
+  - `DreamReflectionConfig`: Ghost threshold, dream config, injection params
+  - `dream_reflection_cycle()`: Full integration — harvest ghosts → combine with session records →
+    dream consolidation → match novels against Explore nodes → XOR-inject as hydration context
+  - `dream_consolidate_with_ghosts()`: Lightweight variant (no injection)
+  - Verb: `VERB_DREAM_GHOST=0xF9`
+
+#### Layer 9: MUL–Reflection Bridge (this session)
+- **`mul_bridge.rs`** (~630 lines, 11 tests) — MUL metacognitive state driving reflection:
+  - `AdaptiveThresholds`: Surprise/confidence thresholds adapted by MUL state
+    - Trust modulation: Crystalline→+0.05, Dissonant→-0.08
+    - Homeostasis: Anxiety→conservative(+0.05), Boredom→aggressive(-0.05), Apathy→minimal(+0.08)
+    - False flow override: Severe→force explore (threshold=0.3)
+  - `mul_council_weights()`: Homeostasis-modulated council weights
+    (Anxiety→Guardian dominant, Boredom→Catalyst dominant)
+  - `reclassify_with_thresholds()`: Re-evaluate ReflectionEntries with MUL-adapted thresholds
+  - `mul_volitional_cycle()`: MUL-gated volitional cycle (gate check → council → reflect → reclassify)
+  - `reflection_to_mul_learning()`: Convert reflection outcomes → MUL PostActionLearning signal
+  - `mul_reflection_feedback()`: Full feedback loop — reflect, compute learning signal, feed back to MUL
 
 ### ARCHITECTURE.md — Comprehensive Extension (commit `05010ee`)
 
@@ -129,7 +153,25 @@ drops), structural mismatch (no legal parse). All three ARE free energy
 concepts — the system can't reduce surprise at the current abstraction
 level, so it elevates to a deeper rung.
 
-### 6. Volition = Integrated Decision Score (Closes the Loop)
+### 6. MUL State Modulates Reflection Sensitivity (New Bridge)
+
+MUL state IS the system's prediction about its own epistemic capacity.
+Reflection measures how well the tree structure predicts content (surprise).
+The bridge connects these: the system's self-assessment (MUL) modulates
+how aggressively it responds to prediction errors (reflection). Adaptive
+thresholds shift based on trust level, homeostasis state, and false flow.
+Feedback loop: reflection outcomes → PostActionLearning → DK + trust update.
+
+### 7. Dream Ghosts = Cross-Hydration from Uncollapsed Context (New Bridge)
+
+Ghost vectors (sibling bundles from felt traversal) have high resonance
+but low confidence — they're contextual but unconfirmed. Dream consolidation
+prunes the weak, merges the similar, and RECOMBINES to generate creative
+novels. When a dream novel matches an Explore node, it's XOR-injected as
+hydration context — the system literally dreams about its unresolved thoughts
+and the dreams inform its next exploration.
+
+### 8. Volition = Integrated Decision Score (Closes the Loop)
 
 Volition score = `free_energy × ghost_intensity × (1 - confidence) × rung_weight`.
 Four orthogonal signals: urgency (surprise), felt relevance (ghost resonance),
@@ -156,12 +198,11 @@ The system now has a complete sense→feel→reflect→decide cycle.
 ### High Priority — Next Code Steps
 
 1. ~~**Volition module**~~ — DONE (commit `75f94fa`, 8/8 tests pass)
-2. **Dream consolidation integration** — Connect lingering ghosts (bighorn) to
-   reflection's hydration candidates. High-echo ghosts should surface during
-   dream processing and become hydration context.
-3. **MUL → Reflection bridge** — The MUL's 10-layer snapshot should feed into
-   `reflect_walk()` as the query container. MUL state IS the system's prediction;
-   reflection measures how well it matches reality.
+2. ~~**Dream consolidation integration**~~ — DONE (`dream_bridge.rs`, 7/7 tests pass)
+   Ghost harvesting from felt paths → dream consolidation → XOR-inject into Explore nodes.
+3. ~~**MUL → Reflection bridge**~~ — DONE (`mul_bridge.rs`, 11/11 tests pass)
+   Adaptive thresholds from MUL state, council modulation, gated volitional cycle,
+   full feedback loop (reflection outcomes → MUL learning).
 
 ### Medium Priority — Wiring
 
@@ -186,10 +227,17 @@ The system now has a complete sense→feel→reflect→decide cycle.
 
 | File | Status | What |
 |------|--------|------|
-| `src/qualia/volition.rs` | NEW, ~600 lines | VolitionalAct, VolitionalAgenda, CouncilWeights, volitional_cycle |
-| `src/qualia/reflection.rs` | NEW, 753 lines | NARS bridge, ReflectionOutcome, HydrationChain, FreeEnergySemiring |
-| `src/qualia/mod.rs` | MODIFIED | Added volition + reflection wiring + re-exports |
-| `ARCHITECTURE.md` | EXTENDED +1247 lines | 17 new sections covering full container substrate |
+| `src/qualia/dream_bridge.rs` | NEW, ~280 lines | GhostRecord, harvest_ghosts, dream_reflection_cycle |
+| `src/qualia/mul_bridge.rs` | NEW, ~630 lines | AdaptiveThresholds, mul_volitional_cycle, mul_reflection_feedback |
+| `src/qualia/mod.rs` | MODIFIED | Added dream_bridge + mul_bridge wiring + re-exports |
+
+### Key Files (Prior Session)
+
+| File | Status | What |
+|------|--------|------|
+| `src/qualia/volition.rs` | ~600 lines | VolitionalAct, VolitionalAgenda, CouncilWeights, volitional_cycle |
+| `src/qualia/reflection.rs` | 753 lines | NARS bridge, ReflectionOutcome, HydrationChain, FreeEnergySemiring |
+| `ARCHITECTURE.md` | +1247 lines | 17 new sections covering full container substrate |
 
 ## Key Files To Know (Full Stack)
 
@@ -216,6 +264,8 @@ The system now has a complete sense→feel→reflect→decide cycle.
 | `src/qualia/felt_traversal.rs` | FeltPath, FeltChoice, AweTriple, free energy |
 | `src/qualia/reflection.rs` | ReflectionOutcome, HydrationChain, FreeEnergySemiring |
 | `src/qualia/volition.rs` | VolitionalAct, VolitionalAgenda, CouncilWeights, volitional_cycle |
+| `src/qualia/dream_bridge.rs` | Ghost harvesting, dream consolidation integration, XOR-injection |
+| `src/qualia/mul_bridge.rs` | Adaptive thresholds, MUL-gated volitional cycle, feedback loop |
 | **Cognitive** | |
 | `src/cognitive/rung.rs` | RungLevel R0-R9, 3 triggers, RungState |
 | `src/cognitive/collapse_gate.rs` | GateState (Flow/Block) |
@@ -232,21 +282,24 @@ The system now has a complete sense→feel→reflect→decide cycle.
 
 ## Cargo Status
 
-- `cargo check` — GREEN
+- `cargo check` — GREEN (only pre-existing warnings: chess VsaOps, server.rs unused assignment)
+- `cargo test dream_bridge` — 7/7 PASS
+- `cargo test mul_bridge` — 11/11 PASS
 - `cargo test qualia::volition` — 8/8 PASS
 - `cargo test qualia::reflection` — 13/13 PASS
-- All qualia tests pass (79/80 — 1 pre-existing flaky gestalt test)
+- All qualia tests pass
 
 ## Git State
 
-All repos on branch `claude/ada-rs-consolidation-6nvNm`. Latest commits:
+Branch: `claude/pr-123-handover-Wx4VA`. Latest commits (new on top):
 
 ```
-75f94fa  feat(qualia): volition module — self-directed action selection via free energy + ghost resonance + council
-02e95dc  docs: update session handover with qualia stack + architectural insights
-05010ee  feat(qualia): reflection module + comprehensive architecture docs
-6824bf8  feat(qualia): felt traversal — sibling superposition, awe triples, Friston free energy
-e816031  feat(qualia): Gestalt I/Thou/It frame — SPO role binding, cross-perspective, collapse gate
-eef6219  feat(qualia): HDR resonance, triangle council, focus mask — awareness without collapse
-23e29de  feat(qualia): add 48-axis meaning encoder, inner council, causal opcodes, and epiphany detector
+<pending>  feat(qualia): dream–reflection bridge + MUL–reflection bridge
+75f94fa    feat(qualia): volition module — self-directed action selection via free energy + ghost resonance + council
+02e95dc    docs: update session handover with qualia stack + architectural insights
+05010ee    feat(qualia): reflection module + comprehensive architecture docs
+6824bf8    feat(qualia): felt traversal — sibling superposition, awe triples, Friston free energy
+e816031    feat(qualia): Gestalt I/Thou/It frame — SPO role binding, cross-perspective, collapse gate
+eef6219    feat(qualia): HDR resonance, triangle council, focus mask — awareness without collapse
+23e29de    feat(qualia): add 48-axis meaning encoder, inner council, causal opcodes, and epiphany detector
 ```
