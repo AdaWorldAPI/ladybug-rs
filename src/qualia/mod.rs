@@ -11,6 +11,8 @@
 //! - `felt_traversal`: Tree walk with sibling superposition, awe triples, free energy
 //! - `reflection`: NARS introspection, hydration chains, free energy semiring
 //! - `volition`: Self-directed action selection via free energy + ghost resonance + council
+//! - `dream_bridge`: Ghost harvesting + dream consolidation → hydration injection
+//! - `mul_bridge`: MUL metacognitive state → adaptive reflection thresholds + feedback
 
 pub mod texture;
 pub mod meaning_axes;
@@ -20,6 +22,8 @@ pub mod gestalt;
 pub mod felt_traversal;
 pub mod reflection;
 pub mod volition;
+pub mod dream_bridge;
+pub mod mul_bridge;
 
 pub use texture::{GraphMetrics, Texture, compute};
 pub use meaning_axes::{
@@ -48,4 +52,15 @@ pub use reflection::{
 pub use volition::{
     CouncilWeights, VolitionalAct, VolitionalAgenda, VERB_VOLITION,
     compute_agenda, focused_volition, volitional_cycle, volitional_gradient,
+};
+pub use dream_bridge::{
+    DreamInjection, DreamReflectionConfig, DreamReflectionResult,
+    GhostRecord, GHOST_RESONANCE_THRESHOLD, VERB_DREAM_GHOST,
+    dream_consolidate_with_ghosts, dream_reflection_cycle,
+    harvest_ghosts, ghosts_to_records,
+};
+pub use mul_bridge::{
+    AdaptiveThresholds, MulReflectionResult,
+    adaptive_thresholds, mul_council_weights, mul_reflection_feedback,
+    mul_volitional_cycle, reclassify_with_thresholds, reflection_to_mul_learning,
 };
