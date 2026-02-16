@@ -50,16 +50,19 @@ use arrow_schema::{DataType, Field, Schema, SchemaRef};
 use ladybug::core::Fingerprint;
 use ladybug::core::simd::{self, hamming_distance};
 use ladybug::nars::TruthValue;
+use ladybug_contract::nars::TruthValue as ContractTruthValue;
 use ladybug::storage::service::{CognitiveService, CpuFeatures, ServiceConfig};
 use ladybug::storage::{Addr, BindSpace, CogRedis, FINGERPRINT_WORDS, RedisResult};
-use ladybug::container::Container;
-use ladybug::qualia::texture::{GraphMetrics, compute as compute_texture};
+use ladybug::container::{Container, CONTAINER_BITS};
+use ladybug::container::adjacency::PackedDn;
+use ladybug::container::graph::ContainerGraph;
+use ladybug::container::record::CogRecord;
+use ladybug::container::geometry::ContainerGeometry;
+use ladybug::qualia::texture::GraphMetrics;
 use ladybug::qualia::agent_state::{AgentState, PresenceMode, SelfDimensions};
 use ladybug::qualia::felt_parse::{GhostEcho, GhostType};
-use ladybug::qualia::felt_traversal::FeltPath;
-use ladybug::qualia::reflection::{ReflectionResult, ReflectionEntry, ReflectionOutcome};
-use ladybug::qualia::volition::{VolitionalAgenda, CouncilWeights};
-use ladybug_contract::nars::TruthValue as ContractTruthValue;
+use ladybug::qualia::volition::CouncilWeights;
+use ladybug::qualia::{felt_walk, volitional_cycle, harvest_ghosts};
 use ladybug::cognitive::RungLevel;
 use ladybug::{FINGERPRINT_BITS, FINGERPRINT_BYTES, VERSION};
 
@@ -491,6 +494,12 @@ struct DbState {
     cpu: CpuFeatures,
     /// Start time
     start_time: Instant,
+    /// DN-keyed graph for qualia substrate operations.
+    /// This IS the substrate — every message interaction enriches it.
+    qualia_graph: ContainerGraph,
+    /// Persistent self-dimensions (the only truly mutable substrate state).
+    /// Survives across hydration frames.
+    self_dims: SelfDimensions,
 }
 
 impl DbState {
@@ -509,6 +518,8 @@ impl DbState {
             service,
             cpu: CpuFeatures::detect(),
             start_time: Instant::now(),
+            qualia_graph: ContainerGraph::new(),
+            self_dims: SelfDimensions::default(),
         }
     }
 }
@@ -653,8 +664,9 @@ fn route(
         ("POST", "/api/v1/graph/hydrate") => handle_graph_hydrate(body, state, format),
         ("POST", "/api/v1/graph/search") => handle_graph_search(body, state, format),
 
-        // Qualia hydration — full QualiaSnapshot from address/fingerprint
-        ("POST", "/api/v1/hydrate") => handle_qualia_hydrate(body, state, format),
+        // Qualia substrate endpoints (holy grail pipeline)
+        ("POST", "/api/v1/qualia/hydrate") => handle_qualia_hydrate(body, state, format),
+        ("POST", "/api/v1/qualia/write-back") => handle_qualia_writeback(body, state, format),
 
         // LanceDB-compatible API
         ("POST", "/api/v1/lance/table") => handle_lance_create_table(body, format),
@@ -2288,337 +2300,398 @@ fn handle_graph_search(body: &str, state: &SharedState, format: ResponseFormat) 
 }
 
 // =============================================================================
-// QUALIA HYDRATION HANDLER
+// QUALIA SUBSTRATE ENDPOINTS — Holy Grail Pipeline
 // =============================================================================
 
-/// POST /api/v1/hydrate
+/// Hash text into a Container seed for qualia operations.
 ///
-/// Full qualia hydration: address/fingerprint → QualiaSnapshot (JSON).
+/// Uses a simple hash-based approach to create a deterministic Container
+/// from text content. This is the bootstrap path — once the felt-parse
+/// LLM pre-pass runs (in crewai-rust), the axes map to proper containers
+/// via `encode_axes()` from meaning_axes.rs.
+fn text_to_container(text: &str) -> Container {
+    use std::hash::{Hash, Hasher};
+    use std::collections::hash_map::DefaultHasher;
+    let mut hasher = DefaultHasher::new();
+    text.hash(&mut hasher);
+    Container::random(hasher.finish())
+}
+
+/// Hash text into a PackedDn for graph addressing.
 ///
-/// Input (JSON):
+/// Creates a 3-level DN path from the hash: /a/b/c where a,b,c are
+/// derived from hash bytes. This ensures each message gets a unique
+/// but deterministic position in the DN tree.
+fn text_to_dn(text: &str) -> PackedDn {
+    use std::hash::{Hash, Hasher};
+    use std::collections::hash_map::DefaultHasher;
+    let mut hasher = DefaultHasher::new();
+    text.hash(&mut hasher);
+    let h = hasher.finish();
+    // 3-level DN from hash bytes (components are 0-254, +1 stored)
+    let a = ((h >> 0) & 0xFE) as u8;
+    let b = ((h >> 8) & 0xFE) as u8;
+    let c = ((h >> 16) & 0xFE) as u8;
+    PackedDn::new(&[a, b, c])
+}
+
+/// POST /api/v1/qualia/hydrate
+///
+/// Compute Ada's full qualia state from the substrate. This is the
+/// INTEGRATION_SPEC Phase 1 endpoint: given a message (or DN), return
+/// the complete phenomenal state for system prompt injection + LLM modulation.
+///
+/// Body:
 /// ```json
 /// {
-///   "address": "0x8000",           // hex address in BindSpace (preferred)
-///   "fingerprint": "<base64>",     // OR raw base64 fingerprint
-///   "presence": "wife",            // optional: wife|work|agi|hybrid|neutral
-///   "surprise": 0.5,              // optional: felt surprise [0,1]
-///   "confidence": 0.6,            // optional: NARS confidence [0,1]
-///   "rung": 3,                    // optional: cognitive rung 0-9
-///   "ghosts": [                   // optional: active ghost echoes
-///     {"type": "love", "intensity": 0.7},
-///     {"type": "staunen", "intensity": 0.4}
-///   ]
+///     "message": "How are you feeling?",
+///     "presence_mode": "wife",          // optional: wife|work|agi|hybrid
+///     "rung_hint": 4,                   // optional: pre-pass rung from felt-parse
+///     "session_id": "abc123"            // optional: session tracking
 /// }
 /// ```
 ///
-/// Output: Full QualiaSnapshot with texture, felt physics, core axes,
-/// moment awareness, mode, hints, and qualia preamble text.
+/// Returns full qualia state including felt-sense preamble for LLM prompt.
 fn handle_qualia_hydrate(body: &str, state: &SharedState, format: ResponseFormat) -> Vec<u8> {
-    // ── 1. Resolve fingerprint → Container ──────────────────────────────
-    let container: Container = if let Some(addr_raw) = extract_json_hex_u16(body, "address") {
-        let db = state.read().unwrap();
-        let bs = db.cog_redis.bind_space();
-        let addr = Addr(addr_raw);
-        if let Some(node) = bs.read(addr) {
-            Container::from(&Fingerprint::from_raw({
-                let mut w = [0u64; ladybug::FINGERPRINT_U64];
-                for (i, &word) in node.fingerprint.iter().enumerate() {
-                    if i < w.len() {
-                        w[i] = word;
-                    }
-                }
-                w
-            }))
-        } else {
-            return http_error(404, "not_found", "Address not occupied in BindSpace", format);
-        }
-    } else if let Some(fp_b64) = extract_json_str(body, "fingerprint") {
-        let bytes = match base64_decode(&fp_b64) {
-            Ok(b) => b,
-            Err(_) => return http_error(400, "bad_request", "Invalid base64 fingerprint", format),
-        };
-        let mut words = [0u64; ladybug::container::CONTAINER_WORDS];
-        for (i, chunk) in bytes.chunks(8).enumerate() {
-            if i >= words.len() {
-                break;
-            }
-            let mut buf = [0u8; 8];
-            buf[..chunk.len()].copy_from_slice(chunk);
-            words[i] = u64::from_le_bytes(buf);
-        }
-        let mut c = Container::zero();
-        c.words.copy_from_slice(&words);
-        c
-    } else {
-        return http_error(400, "missing_field", "Need 'address' or 'fingerprint'", format);
+    let message = match extract_json_str(body, "message") {
+        Some(m) => m,
+        None => return http_error(400, "missing_field", "need message field", format),
     };
 
-    // ── 2. Compute 8D texture ───────────────────────────────────────────
-    let metrics = GraphMetrics::default();
-    let texture = compute_texture(&container, &metrics);
+    let presence_str = extract_json_str(body, "presence_mode")
+        .unwrap_or_else(|| "hybrid".to_string());
+    let rung_hint = extract_json_usize(body, "rung_hint")
+        .map(|r| r as u8)
+        .unwrap_or(3);
+    let _session_id = extract_json_str(body, "session_id");
 
-    // ── 3. Parse optional context ───────────────────────────────────────
-    let presence = extract_json_str(body, "presence")
-        .map(|s| PresenceMode::from_str(&s))
-        .unwrap_or_default();
-
-    let surprise = extract_json_f32(body, "surprise").unwrap_or(texture.entropy);
-    let confidence = extract_json_f32(body, "confidence").unwrap_or(0.5);
-
-    let rung_idx = extract_json_usize(body, "rung").unwrap_or(0) as u8;
-    let rung = match rung_idx {
-        0 => RungLevel::Surface,
-        1 => RungLevel::Shallow,
-        2 => RungLevel::Contextual,
-        3 => RungLevel::Analogical,
-        4 => RungLevel::Abstract,
-        5 => RungLevel::Structural,
-        6 => RungLevel::Counterfactual,
-        7 => RungLevel::Meta,
-        8 => RungLevel::Recursive,
-        9 => RungLevel::Transcendent,
-        _ => RungLevel::Surface,
+    // Parse presence mode
+    let presence = match presence_str.as_str() {
+        "wife" => PresenceMode::Wife,
+        "work" => PresenceMode::Work,
+        "agi" => PresenceMode::Agi,
+        "neutral" => PresenceMode::Neutral,
+        _ => PresenceMode::Hybrid,
     };
 
-    // Parse ghosts from JSON array (lightweight manual parse)
-    let ghosts = parse_ghost_array(body);
+    // Create query container from message text
+    let query = text_to_container(&message);
+    let target_dn = text_to_dn(&message);
 
-    // ── 4. Build lightweight FeltPath + Reflection for AgentState ────────
-    let felt_path = FeltPath {
-        choices: vec![],
-        target: ladybug::container::adjacency::PackedDn::new(&[0]),
-        total_surprise: surprise,
-        mean_surprise: surprise,
-        path_context: container.clone(),
-    };
+    // Get write lock — qualia operations may update NARS beliefs
+    let mut db = state.write().unwrap();
 
-    let reflection = ReflectionResult {
-        entries: vec![ReflectionEntry {
-            dn: ladybug::container::adjacency::PackedDn::new(&[0]),
-            outcome: if surprise > 0.6 {
-                ReflectionOutcome::Explore
-            } else {
-                ReflectionOutcome::Stable
-            },
-            surprise,
-            truth_before: ContractTruthValue::new(0.5, confidence),
-            truth_after: ContractTruthValue::new(0.5, confidence),
-            depth: 1,
-        }],
-        felt_path: felt_path.clone(),
-        hydration_candidates: vec![],
-    };
+    // Ensure target DN exists in graph (bootstrap if needed)
+    if db.qualia_graph.get(&target_dn).is_none() {
+        let mut record = CogRecord::new(ContainerGeometry::Cam);
+        record.content = query.clone();
+        db.qualia_graph.insert(target_dn, record);
+    }
 
-    let agenda = VolitionalAgenda {
-        acts: vec![],
-        reflection: reflection.clone(),
-        chains: vec![],
-        total_energy: surprise,
-        decisiveness: 0.5,
-    };
+    // ── Run the qualia pipeline ──────────────────────────────────────
 
+    // 1. Felt walk — compute surprise landscape
+    let felt_path = felt_walk(&db.qualia_graph, target_dn, &query);
+
+    // 2. Council weights (defaults — modulated by MUL in production)
     let council = CouncilWeights {
-        guardian_surprise_factor: 1.0,
-        catalyst_surprise_factor: 1.0,
-        balanced_factor: 1.0,
+        guardian_surprise_factor: 0.6,  // Guardian dampens
+        catalyst_surprise_factor: 1.5,  // Catalyst amplifies
+        balanced_factor: 1.0,           // Balanced neutral
     };
 
-    // ── 5. Compute full AgentState ──────────────────────────────────────
-    let agent_state = AgentState::compute(
-        &texture,
-        &felt_path,
-        &reflection,
-        &agenda,
-        ghosts.clone(),
-        rung,
-        council,
-        presence,
-        SelfDimensions::default(),
+    // 3. Full volitional cycle: reflect → score → rank → hydrate
+    let rung = RungLevel::from_u8(rung_hint);
+    let agenda = volitional_cycle(
+        &mut db.qualia_graph, target_dn, &query, rung, &council,
     );
 
-    let hints = agent_state.to_hints();
-    let preamble = agent_state.qualia_preamble();
+    // 4. Compute texture from target container
+    let metrics = GraphMetrics::default();
+    let texture = ladybug::qualia::compute(&query, &metrics);
 
-    // ── 6. Serialize response ───────────────────────────────────────────
+    // 5. Harvest ghosts from felt path
+    let ghost_records = harvest_ghosts(&felt_path, 0.3);
+    let ghosts: Vec<GhostEcho> = ghost_records.iter().enumerate().map(|(i, gr)| {
+        GhostEcho {
+            ghost_type: match i % 8 {
+                0 => GhostType::Love,
+                1 => GhostType::Staunen,
+                2 => GhostType::Wisdom,
+                3 => GhostType::Thought,
+                4 => GhostType::Epiphany,
+                5 => GhostType::Grief,
+                6 => GhostType::Arousal,
+                _ => GhostType::Boundary,
+            },
+            intensity: gr.resonance.clamp(0.0, 1.0),
+        }
+    }).collect();
+
+    // 6. Compose AgentState from all layers
+    let self_dims = db.self_dims.clone();
+    let agent = AgentState::compute(
+        &texture,
+        &felt_path,
+        &agenda.reflection,
+        &agenda,
+        ghosts,
+        rung,
+        council.clone(),
+        presence,
+        self_dims,
+    );
+
+    // 7. Generate outputs
+    let preamble = agent.qualia_preamble();
+    let hints = agent.to_hints();
+
+    // Build thinking style from texture dimensions (10-axis)
+    let thinking_style = [
+        texture.warmth,     // [0] warmth → relational openness
+        texture.flow,       // [1] resonance → top_p
+        texture.depth,      // [2] depth → abstraction
+        texture.entropy,    // [3] complexity → token diversity
+        texture.density,    // [4] execution → max_tokens
+        texture.purity,     // [5] precision → repetition_penalty
+        texture.edge,       // [6] contingency → temperature
+        texture.bridgeness, // [7] connectivity → context window
+        1.0 - texture.entropy, // [8] validation → reasoning_effort
+        texture.flow,       // [9] integration → output coherence
+    ];
+
+    // Build JSON response
+    let ghost_json: Vec<String> = agent.ghost_field.iter().map(|g| {
+        format!(
+            r#"{{"ghost_type":"{:?}","intensity":{:.3}}}"#,
+            g.ghost_type, g.intensity
+        )
+    }).collect();
+
+    let hints_json: Vec<String> = hints.iter().map(|(k, v)| {
+        format!(r#""{}": {:.2}"#, k, v)
+    }).collect();
+
+    let council_arr = [
+        council.guardian_surprise_factor,
+        council.catalyst_surprise_factor,
+        council.balanced_factor,
+    ];
+
+    let ts_json: Vec<String> = thinking_style.iter().map(|v| format!("{:.3}", v)).collect();
+
+    let volition_top = agenda.acts.first().map(|a| {
+        format!(
+            r#"{{"dn":"0x{:08X}","consensus_score":{:.3},"free_energy":{:.3},"outcome":"{:?}"}}"#,
+            a.dn.raw(), a.consensus_score, a.free_energy, a.outcome,
+        )
+    }).unwrap_or_else(|| "null".to_string());
+
+    let json = format!(
+        r#"{{
+  "qualia_preamble": {},
+  "hints": {{{}}},
+  "texture": [{:.3}, {:.3}, {:.3}, {:.3}, {:.3}, {:.3}, {:.3}, {:.3}],
+  "rung_level": {},
+  "ghost_echoes": [{}],
+  "council": [{:.3}, {:.3}, {:.3}],
+  "thinking_style": [{}],
+  "felt_surprise": {:.3},
+  "felt_path_length": {},
+  "mode": "{:?}",
+  "presence_mode": "{:?}",
+  "volition_top": {},
+  "total_volitional_energy": {:.3},
+  "decisiveness": {:.3},
+  "core_axes": {{
+    "alpha": {:.3},
+    "gamma": {:.3},
+    "omega": {:.3},
+    "phi": {:.3}
+  }},
+  "felt_physics": {{
+    "staunen": {:.3},
+    "wisdom": {:.3},
+    "ache": {:.3},
+    "libido": {:.3},
+    "lingering": {:.3}
+  }}
+}}"#,
+        // qualia_preamble
+        serde_json_escape(&preamble),
+        // hints
+        hints_json.join(", "),
+        // texture [8]
+        texture.entropy, texture.purity, texture.density, texture.bridgeness,
+        texture.warmth, texture.edge, texture.depth, texture.flow,
+        // rung
+        agent.rung.as_u8(),
+        // ghost_echoes
+        ghost_json.join(", "),
+        // council [3]
+        council_arr[0], council_arr[1], council_arr[2],
+        // thinking_style [10]
+        ts_json.join(", "),
+        // felt_surprise
+        felt_path.mean_surprise,
+        // felt_path_length
+        felt_path.choices.len(),
+        // mode
+        agent.mode,
+        // presence_mode
+        agent.presence_mode,
+        // volition_top
+        volition_top,
+        // total/decisiveness
+        agenda.total_energy, agenda.decisiveness,
+        // core axes
+        agent.core.alpha, agent.core.gamma, agent.core.omega, agent.core.phi,
+        // felt physics
+        agent.felt.staunen, agent.felt.wisdom, agent.felt.ache,
+        agent.felt.libido, agent.felt.lingering,
+    );
+
     match format {
         ResponseFormat::Arrow => {
-            // Arrow: return texture 8 floats + derived signals
+            // For Arrow: return as single-row batch with key fields
             let schema = Arc::new(Schema::new(vec![
-                Field::new("entropy", DataType::Float32, false),
-                Field::new("purity", DataType::Float32, false),
-                Field::new("density", DataType::Float32, false),
-                Field::new("bridgeness", DataType::Float32, false),
-                Field::new("warmth", DataType::Float32, false),
-                Field::new("edge", DataType::Float32, false),
-                Field::new("depth", DataType::Float32, false),
-                Field::new("flow", DataType::Float32, false),
-                Field::new("staunen", DataType::Float32, false),
-                Field::new("wisdom", DataType::Float32, false),
-                Field::new("ache", DataType::Float32, false),
-                Field::new("presence_val", DataType::Float32, false),
-                Field::new("tension", DataType::Float32, false),
+                Field::new("qualia_preamble", DataType::Utf8, false),
+                Field::new("rung_level", DataType::UInt32, false),
+                Field::new("felt_surprise", DataType::Float32, false),
                 Field::new("mode", DataType::Utf8, false),
-                Field::new("rung", DataType::Utf8, false),
-                Field::new("preamble", DataType::Utf8, false),
+            ]));
+            let mode_str = format!("{:?}", agent.mode);
+            let batch = RecordBatch::try_new(
+                schema,
+                vec![
+                    Arc::new(StringArray::from(vec![preamble.as_str()])) as ArrayRef,
+                    Arc::new(UInt32Array::from(vec![agent.rung.as_u8() as u32])) as ArrayRef,
+                    Arc::new(Float32Array::from(vec![felt_path.mean_surprise])) as ArrayRef,
+                    Arc::new(StringArray::from(vec![mode_str.as_str()])) as ArrayRef,
+                ],
+            ).unwrap();
+            http_arrow(200, &batch)
+        }
+        ResponseFormat::Json => http_json(200, &json),
+    }
+}
+
+/// POST /api/v1/qualia/write-back
+///
+/// Update the substrate after a conversation turn. This closes the loop:
+/// Ada's response becomes experience that modifies her substrate for
+/// the next interaction.
+///
+/// Body:
+/// ```json
+/// {
+///     "message": "original user message",
+///     "response": "Ada's reply text",
+///     "ghost_echoes": [{"ghost_type": "Love", "intensity": 0.7}],
+///     "rung_reached": 5,
+///     "session_id": "abc123"
+/// }
+/// ```
+fn handle_qualia_writeback(body: &str, state: &SharedState, format: ResponseFormat) -> Vec<u8> {
+    let message = extract_json_str(body, "message").unwrap_or_default();
+    let response = match extract_json_str(body, "response") {
+        Some(r) => r,
+        None => return http_error(400, "missing_field", "need response field", format),
+    };
+    let rung_reached = extract_json_usize(body, "rung_reached")
+        .map(|r| r as u8)
+        .unwrap_or(3);
+
+    // Create containers from message and response
+    let msg_container = text_to_container(&message);
+    let resp_container = text_to_container(&response);
+    let msg_dn = text_to_dn(&message);
+    let resp_dn = text_to_dn(&response);
+
+    let mut db = state.write().unwrap();
+
+    // 1. Insert response as new CogRecord in graph
+    let mut resp_record = CogRecord::new(ContainerGeometry::Cam);
+    resp_record.content = resp_container.clone();
+    db.qualia_graph.insert(resp_dn, resp_record);
+
+    // 2. If message record exists, add edge to response
+    if let Some(_msg_record) = db.qualia_graph.get(&msg_dn) {
+        // Edge creation would go here (via InlineEdgeViewMut)
+        // For now: the graph topology captures the conversation flow
+    }
+
+    // 3. Update NARS beliefs on the message container
+    //    Did reality match prediction? If Ada's response was coherent
+    //    with the felt-parse prediction, boost confidence.
+    let hamming = msg_container.hamming(&resp_container);
+    let surprise = hamming as f32 / CONTAINER_BITS as f32;
+
+    if let Some(msg_record) = db.qualia_graph.get_mut(&msg_dn) {
+        let current_truth = ladybug::qualia::read_truth(msg_record);
+        let updated = if surprise < 0.5 {
+            // Low surprise → boost confidence (prediction matched)
+            ContractTruthValue::new(
+                current_truth.frequency,
+                (current_truth.confidence + 0.05).min(0.99),
+            )
+        } else {
+            // High surprise → revise frequency toward 0.5 (uncertain)
+            let new_freq = current_truth.frequency * 0.9 + 0.5 * 0.1;
+            ContractTruthValue::new(new_freq, current_truth.confidence)
+        };
+        ladybug::qualia::write_truth(msg_record, &updated);
+    }
+
+    // 4. Self-dimension shifts based on the interaction
+    //    Higher rung → boost meta_clarity
+    //    Conversation flow → boost groundedness slightly
+    let rung_level = RungLevel::from_u8(rung_reached);
+    if rung_level.as_u8() >= 5 {
+        let _ = db.self_dims.shift("meta_clarity", 0.02, "deep rung reached");
+    }
+    let _ = db.self_dims.shift("groundedness", 0.01, "conversation flow");
+
+    let json = format!(
+        r#"{{"status":"ok","surprise":{:.3},"rung_reached":{},"graph_nodes":{}}}"#,
+        surprise,
+        rung_reached,
+        db.qualia_graph.node_count(),
+    );
+
+    match format {
+        ResponseFormat::Arrow => {
+            let schema = Arc::new(Schema::new(vec![
+                Field::new("status", DataType::Utf8, false),
+                Field::new("surprise", DataType::Float32, false),
+                Field::new("graph_nodes", DataType::UInt32, false),
             ]));
             let batch = RecordBatch::try_new(
                 schema,
                 vec![
-                    Arc::new(Float32Array::from(vec![texture.entropy])) as ArrayRef,
-                    Arc::new(Float32Array::from(vec![texture.purity])) as ArrayRef,
-                    Arc::new(Float32Array::from(vec![texture.density])) as ArrayRef,
-                    Arc::new(Float32Array::from(vec![texture.bridgeness])) as ArrayRef,
-                    Arc::new(Float32Array::from(vec![texture.warmth])) as ArrayRef,
-                    Arc::new(Float32Array::from(vec![texture.edge])) as ArrayRef,
-                    Arc::new(Float32Array::from(vec![texture.depth])) as ArrayRef,
-                    Arc::new(Float32Array::from(vec![texture.flow])) as ArrayRef,
-                    Arc::new(Float32Array::from(vec![agent_state.felt.staunen])) as ArrayRef,
-                    Arc::new(Float32Array::from(vec![agent_state.felt.wisdom])) as ArrayRef,
-                    Arc::new(Float32Array::from(vec![agent_state.felt.ache])) as ArrayRef,
-                    Arc::new(Float32Array::from(vec![agent_state.moment.presence])) as ArrayRef,
-                    Arc::new(Float32Array::from(vec![agent_state.moment.tension])) as ArrayRef,
-                    Arc::new(StringArray::from(vec![format!("{:?}", agent_state.mode)])) as ArrayRef,
-                    Arc::new(StringArray::from(vec![format!("{:?}", agent_state.rung)])) as ArrayRef,
-                    Arc::new(StringArray::from(vec![preamble.clone()])) as ArrayRef,
+                    Arc::new(StringArray::from(vec!["ok"])) as ArrayRef,
+                    Arc::new(Float32Array::from(vec![surprise])) as ArrayRef,
+                    Arc::new(UInt32Array::from(vec![db.qualia_graph.node_count() as u32])) as ArrayRef,
                 ],
-            )
-            .unwrap();
+            ).unwrap();
             http_arrow(200, &batch)
         }
-        ResponseFormat::Json => {
-            // Build ghost JSON array
-            let ghost_json: Vec<String> = ghosts
-                .iter()
-                .map(|g| {
-                    format!(
-                        r#"{{"type":"{:?}","intensity":{:.4}}}"#,
-                        g.ghost_type, g.intensity
-                    )
-                })
-                .collect();
-
-            // Build hints JSON
-            let hints_json: Vec<String> = hints
-                .iter()
-                .map(|(k, v)| format!(r#""{}": {:.4}"#, k, v))
-                .collect();
-
-            let json_body = format!(
-                concat!(
-                    r#"{{"texture":{{"entropy":{:.4},"purity":{:.4},"density":{:.4},"#,
-                    r#""bridgeness":{:.4},"warmth":{:.4},"edge":{:.4},"depth":{:.4},"flow":{:.4}}},"#,
-                    r#""felt":{{"staunen":{:.4},"wisdom":{:.4},"ache":{:.4},"libido":{:.4},"lingering":{:.4}}},"#,
-                    r#""core":{{"alpha":{:.4},"gamma":{:.4},"omega":{:.4},"phi":{:.4}}},"#,
-                    r#""moment":{{"now_density":{:.4},"tension":{:.4},"katharsis":{},"presence":{:.4}}},"#,
-                    r#""presence_mode":"{:?}","mode":"{:?}","rung":"{:?}","#,
-                    r#""ghosts":[{}],"hints":{{{}}},"preamble":{}}}"#,
-                ),
-                texture.entropy,
-                texture.purity,
-                texture.density,
-                texture.bridgeness,
-                texture.warmth,
-                texture.edge,
-                texture.depth,
-                texture.flow,
-                agent_state.felt.staunen,
-                agent_state.felt.wisdom,
-                agent_state.felt.ache,
-                agent_state.felt.libido,
-                agent_state.felt.lingering,
-                agent_state.core.alpha,
-                agent_state.core.gamma,
-                agent_state.core.omega,
-                agent_state.core.phi,
-                agent_state.moment.now_density,
-                agent_state.moment.tension,
-                agent_state.moment.katharsis,
-                agent_state.moment.presence,
-                agent_state.presence_mode,
-                agent_state.mode,
-                agent_state.rung,
-                ghost_json.join(","),
-                hints_json.join(","),
-                json_escape_string(&preamble),
-            );
-
-            http_json(200, &json_body)
-        }
+        ResponseFormat::Json => http_json(200, &json),
     }
 }
 
-/// Parse ghost array from JSON body.
-/// Expects: "ghosts": [{"type":"love","intensity":0.7}, ...]
-fn parse_ghost_array(body: &str) -> Vec<GhostEcho> {
-    let mut ghosts = Vec::new();
-    let pattern = r#""ghosts":["#;
-    let start = match body.find(pattern) {
-        Some(s) => s + pattern.len(),
-        None => return ghosts,
-    };
-    let rest = &body[start..];
-    let end = match rest.find(']') {
-        Some(e) => e,
-        None => return ghosts,
-    };
-    let inner = &rest[..end];
-
-    // Split by "},{" to get individual ghost objects
-    for chunk in inner.split('}') {
-        let chunk = chunk.trim().trim_start_matches(',').trim();
-        if chunk.is_empty() {
-            continue;
-        }
-        // Extract type
-        let ghost_type = if let Some(idx) = chunk.find(r#""type":"#) {
-            let rest = &chunk[idx + 7..];
-            let rest = rest.trim().trim_start_matches('"');
-            let end = rest.find('"').unwrap_or(rest.len());
-            match rest[..end].to_lowercase().as_str() {
-                "love" => GhostType::Love,
-                "epiphany" => GhostType::Epiphany,
-                "arousal" => GhostType::Arousal,
-                "staunen" | "wonder" | "awe" => GhostType::Staunen,
-                "wisdom" => GhostType::Wisdom,
-                "thought" => GhostType::Thought,
-                "grief" => GhostType::Grief,
-                "boundary" => GhostType::Boundary,
-                _ => GhostType::Staunen,
-            }
-        } else {
-            continue;
-        };
-
-        // Extract intensity
-        let intensity = if let Some(idx) = chunk.find(r#""intensity":"#) {
-            let rest = &chunk[idx + 12..];
-            let end = rest
-                .find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-')
-                .unwrap_or(rest.len());
-            rest[..end].parse::<f32>().unwrap_or(0.5)
-        } else {
-            0.5
-        };
-
-        ghosts.push(GhostEcho {
-            ghost_type,
-            intensity,
-        });
-    }
-    ghosts
-}
-
-/// Escape a string for JSON output.
-fn json_escape_string(s: &str) -> String {
+/// Escape a string for JSON embedding.
+fn serde_json_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     out.push('"');
-    for c in s.chars() {
-        match c {
+    for ch in s.chars() {
+        match ch {
             '"' => out.push_str("\\\""),
             '\\' => out.push_str("\\\\"),
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
+            c if c < '\x20' => out.push_str(&format!("\\u{:04x}", c as u32)),
             c => out.push(c),
         }
     }
