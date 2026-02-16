@@ -13,6 +13,8 @@
 //! - `volition`: Self-directed action selection via free energy + ghost resonance + council
 //! - `dream_bridge`: Ghost harvesting + dream consolidation → hydration injection
 //! - `mul_bridge`: MUL metacognitive state → adaptive reflection thresholds + feedback
+//! - `felt_parse`: Text→substrate bridge via grammar SPO + meaning axes + ghost resonance
+//! - `agent_state`: Meta-cognitive holder composing all qualia layers into unified self-state
 
 pub mod texture;
 pub mod meaning_axes;
@@ -24,6 +26,8 @@ pub mod reflection;
 pub mod volition;
 pub mod dream_bridge;
 pub mod mul_bridge;
+pub mod felt_parse;
+pub mod agent_state;
 
 pub use texture::{GraphMetrics, Texture, compute};
 pub use meaning_axes::{
@@ -63,4 +67,14 @@ pub use mul_bridge::{
     AdaptiveThresholds, MulReflectionResult,
     adaptive_thresholds, mul_council_weights, mul_reflection_feedback,
     mul_volitional_cycle, reclassify_with_thresholds, reflection_to_mul_learning,
+};
+pub use felt_parse::{
+    FeltParse, GhostEcho, GhostType, MirrorField, MirrorResonance,
+    ParsedSpo, SoulResonance, TextureHint, TrustFabric,
+    axis_key_to_index, felt_parse_prompt, sparse_felt_parse,
+};
+pub use agent_state::{
+    AgentMode, AgentState, CoreAxes, DimensionShift, FeltPhysics,
+    InnerMode, InterventionType, MomentAwareness, PresenceMode,
+    SelfDimensions,
 };
