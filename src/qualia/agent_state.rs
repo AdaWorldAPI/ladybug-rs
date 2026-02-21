@@ -89,7 +89,7 @@ impl Default for PresenceMode {
 
 impl PresenceMode {
     /// Parse from string (e.g., from ada-rs PresenceMode)
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "wife" | "intimate" => PresenceMode::Wife,
             "work" | "focus" | "professional" => PresenceMode::Work,
@@ -923,12 +923,12 @@ mod tests {
 
     #[test]
     fn test_presence_mode_parse() {
-        assert_eq!(PresenceMode::from_str("wife"), PresenceMode::Wife);
-        assert_eq!(PresenceMode::from_str("intimate"), PresenceMode::Wife);
-        assert_eq!(PresenceMode::from_str("work"), PresenceMode::Work);
-        assert_eq!(PresenceMode::from_str("agi"), PresenceMode::Agi);
-        assert_eq!(PresenceMode::from_str("hybrid"), PresenceMode::Hybrid);
-        assert_eq!(PresenceMode::from_str("unknown"), PresenceMode::Neutral);
+        assert_eq!(PresenceMode::parse("wife"), PresenceMode::Wife);
+        assert_eq!(PresenceMode::parse("intimate"), PresenceMode::Wife);
+        assert_eq!(PresenceMode::parse("work"), PresenceMode::Work);
+        assert_eq!(PresenceMode::parse("agi"), PresenceMode::Agi);
+        assert_eq!(PresenceMode::parse("hybrid"), PresenceMode::Hybrid);
+        assert_eq!(PresenceMode::parse("unknown"), PresenceMode::Neutral);
     }
 
     // ─── CoreAxes ───

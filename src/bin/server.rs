@@ -3228,8 +3228,6 @@ fn parse_url(url: &str) -> Result<(String, u16, String), String> {
 /// Read an HTTP response body (skip headers, read body).
 fn read_http_response(stream: &mut TcpStream) -> Result<String, String> {
     let mut reader = BufReader::new(stream.try_clone().map_err(|e| e.to_string())?);
-    let mut response = String::new();
-
     // Read status line
     let mut status_line = String::new();
     reader
@@ -3244,24 +3242,24 @@ fn read_http_response(stream: &mut TcpStream) -> Result<String, String> {
         if line.trim().is_empty() {
             break;
         }
-        if let Some((key, val)) = line.split_once(':') {
-            if key.trim().eq_ignore_ascii_case("content-length") {
-                content_length = val.trim().parse().unwrap_or(0);
-            }
+        if let Some((key, val)) = line.split_once(':')
+            && key.trim().eq_ignore_ascii_case("content-length")
+        {
+            content_length = val.trim().parse().unwrap_or(0);
         }
     }
 
     // Read body
-    if content_length > 0 {
+    let response = if content_length > 0 {
         let mut body = vec![0u8; content_length];
         std::io::Read::read_exact(&mut reader, &mut body).map_err(|e| e.to_string())?;
-        response = String::from_utf8_lossy(&body).to_string();
+        String::from_utf8_lossy(&body).to_string()
     } else {
         // Read until connection closes (chunked or unknown length)
         let mut buf = String::new();
         let _ = std::io::Read::read_to_string(&mut reader, &mut buf);
-        response = buf;
-    }
+        buf
+    };
 
     Ok(response)
 }
