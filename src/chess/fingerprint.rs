@@ -19,7 +19,7 @@
 //!             ⊕ BIND(phase,          ADDR_PHASE)
 //! ```
 
-use crate::core::{DIM_U64, Fingerprint, VsaOps};
+use crate::core::{DIM_U64, Fingerprint};
 use super::position::{ChessPosition, Color, GamePhase, PieceType};
 
 /// Bit ranges for each section of the fingerprint.

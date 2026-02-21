@@ -109,7 +109,7 @@ impl GhostType {
     }
 
     /// Parse from string (case-insensitive).
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "love" => Some(GhostType::Love),
             "epiphany" => Some(GhostType::Epiphany),
@@ -1149,7 +1149,7 @@ mod tests {
     fn test_ghost_type_roundtrip() {
         for ghost_type in &GhostType::ALL {
             let s = ghost_type.as_str();
-            let parsed = GhostType::from_str(s).unwrap();
+            let parsed = GhostType::parse(s).unwrap();
             assert_eq!(*ghost_type, parsed, "roundtrip failed for {}", s);
         }
     }
