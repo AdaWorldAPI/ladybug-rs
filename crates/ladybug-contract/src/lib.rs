@@ -32,9 +32,11 @@
 //! | [`schema`] | Unified 2×8192 CogRecord schema constants and field descriptors |
 
 pub mod container;
+pub mod wide_container;
 pub mod geometry;
 pub mod meta;
 pub mod record;
+pub mod cogrecord8k;
 
 pub mod address;
 pub mod codebook;
@@ -52,8 +54,10 @@ pub mod schema;
 
 // === Convenience re-exports ===
 pub use container::{Container, CONTAINER_BITS, CONTAINER_BYTES, CONTAINER_WORDS};
+pub use wide_container::{WideContainer, EmbeddingFormat, WIDE_BITS, WIDE_BYTES, WIDE_WORDS};
 pub use geometry::ContainerGeometry;
 pub use record::CogRecord;
+pub use cogrecord8k::{CogRecord8K, RECORD8K_BITS, RECORD8K_BYTES, SLOT_META, SLOT_CAM, SLOT_INDEX, SLOT_EMBED};
 pub use meta::{MetaView, MetaViewMut};
 pub use address::{CognitiveAddress, CognitiveDomain};
 pub use codebook::OpCategory;
