@@ -50,7 +50,7 @@ fn text_to_dn(text: &str) -> PackedDn {
 /// ```json
 /// {
 ///     "message": "How are you feeling?",
-///     "presence_mode": "wife",          // optional: wife|work|agi|hybrid
+///     "presence_mode": "intimate",      // optional: intimate|work|agi|hybrid
 ///     "rung_hint": 4,                   // optional: pre-pass rung from felt-parse
 ///     "session_id": "abc123"            // optional: session tracking
 /// }
@@ -72,7 +72,7 @@ fn handle_qualia_hydrate(body: &str, state: &SharedState, format: ResponseFormat
 
     // Parse presence mode
     let presence = match presence_str.as_str() {
-        "wife" => PresenceMode::Wife,
+        "intimate" => PresenceMode::Intimate,
         "work" => PresenceMode::Work,
         "agi" => PresenceMode::Agi,
         "neutral" => PresenceMode::Neutral,
