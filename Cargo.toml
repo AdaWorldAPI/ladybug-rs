@@ -46,6 +46,7 @@ bench = []                       # Benchmark suite (comparison vs Qdrant/Milvus)
 flight = ["arrow-flight", "tonic", "prost"]  # Arrow Flight MCP server
 crewai = ["flight"]                          # crewAI orchestration (A2A, agent cards, thinking templates)
 json_fallback = []                           # Legacy JSON MCP types (backwards compat)
+rustynum = ["dep:rustynum-rs"]               # AVX-512 VPOPCNTDQ + VNNI via rustynum
 
 # Vendor integrations — uncommented by Dockerfile presets at build time.
 # Require repos cloned into vendor/ and dependency lines below uncommented.
@@ -57,7 +58,7 @@ json_fallback = []                           # Legacy JSON MCP types (backwards 
 full = [
     "simd", "parallel", "python",
     "codebook", "hologram", "spo", "compress", "quantum",
-    "lancedb", "neo4j", "redis"
+    "lancedb", "neo4j", "redis", "rustynum"
 ]
 
 # =============================================================================
@@ -193,6 +194,20 @@ pyo3 = { version = "0.23", optional = true, features = ["extension-module"] }
 # Renamed to crewai-vendor to avoid collision with ladybug's built-in crewai feature.
 # -----------------------------------------------------------------------------
 # crewai-vendor = { package = "crewai", path = "vendor/crewai-rust", optional = true }
+
+# -----------------------------------------------------------------------------
+# Vendor: rustynum-rs (SIMD numerical library with AVX-512 VPOPCNTDQ + VNNI)
+# Source: https://github.com/AdaWorldAPI/rustynum
+# Provides runtime-dispatched kernels:
+#   - VPOPCNTDQ popcount/hamming (8× speedup over scalar POPCNT)
+#   - VNNI VPDPBUSD int8 dot product (64× speedup for embeddings)
+#   - Optimized bundle (ripple-carry > per-bit counting)
+#   - GEMM for batch operations
+#   - Zero-copy Container bridge: view_u64_as_bytes()
+# Requires: nightly Rust (portable_simd)
+# Requires: git clone https://github.com/AdaWorldAPI/rustynum vendor/rustynum
+# -----------------------------------------------------------------------------
+rustynum-rs = { path = "vendor/rustynum/rustynum-rs", optional = true }
 
 # =============================================================================
 # DEV DEPENDENCIES

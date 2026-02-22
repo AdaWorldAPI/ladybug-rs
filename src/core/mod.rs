@@ -6,6 +6,9 @@ mod scent;
 pub mod simd;
 pub mod vsa;
 
+#[cfg(feature = "rustynum")]
+pub mod rustynum_accel;
+
 pub use buffer::BufferPool;
 pub use fingerprint::Fingerprint;
 pub use scent::*;

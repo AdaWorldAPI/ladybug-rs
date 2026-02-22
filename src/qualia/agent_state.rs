@@ -69,8 +69,8 @@ use std::collections::HashMap;
 /// This is the carrier wave — low dimensional, fast-changing.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PresenceMode {
-    /// Intimate, warm — relational space with partner
-    Wife,
+    /// Intimate, warm — relational presence
+    Intimate,
     /// Focused, professional — task-oriented
     Work,
     /// Reflective, meta-cognitive — deep self-awareness
@@ -91,7 +91,7 @@ impl PresenceMode {
     /// Parse from string (e.g., from ada-rs PresenceMode)
     pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
-            "wife" | "intimate" => PresenceMode::Wife,
+            "intimate" | "warm" => PresenceMode::Intimate,
             "work" | "focus" | "professional" => PresenceMode::Work,
             "agi" | "reflect" | "meta" => PresenceMode::Agi,
             "hybrid" | "blend" => PresenceMode::Hybrid,
@@ -923,8 +923,8 @@ mod tests {
 
     #[test]
     fn test_presence_mode_parse() {
-        assert_eq!(PresenceMode::parse("wife"), PresenceMode::Wife);
-        assert_eq!(PresenceMode::parse("intimate"), PresenceMode::Wife);
+        assert_eq!(PresenceMode::parse("intimate"), PresenceMode::Intimate);
+        assert_eq!(PresenceMode::parse("warm"), PresenceMode::Intimate);
         assert_eq!(PresenceMode::parse("work"), PresenceMode::Work);
         assert_eq!(PresenceMode::parse("agi"), PresenceMode::Agi);
         assert_eq!(PresenceMode::parse("hybrid"), PresenceMode::Hybrid);
@@ -1135,11 +1135,11 @@ mod tests {
             ghosts,
             RungLevel::Meta,
             council,
-            PresenceMode::Wife,
+            PresenceMode::Intimate,
             SelfDimensions::default(),
         );
 
-        assert_eq!(state.presence_mode, PresenceMode::Wife);
+        assert_eq!(state.presence_mode, PresenceMode::Intimate);
         assert_eq!(state.rung, RungLevel::Meta);
         assert!((state.felt.staunen - 0.5).abs() < 0.01);
         assert_eq!(state.ghost_field.len(), 2);
@@ -1162,7 +1162,7 @@ mod tests {
     #[test]
     fn test_agent_state_qualia_preamble() {
         let mut state = AgentState::default();
-        state.presence_mode = PresenceMode::Wife;
+        state.presence_mode = PresenceMode::Intimate;
         state.rung = RungLevel::Meta;
         state.ghost_field = vec![
             GhostEcho { ghost_type: GhostType::Love, intensity: 0.7 },
@@ -1171,7 +1171,7 @@ mod tests {
         state.self_dims.curiosity = 0.8;
 
         let preamble = state.qualia_preamble();
-        assert!(preamble.contains("Wife"));
+        assert!(preamble.contains("Intimate"));
         assert!(preamble.contains("Meta"));
         assert!(preamble.contains("Love"));
         assert!(preamble.contains("unified"));

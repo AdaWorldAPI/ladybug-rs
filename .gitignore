@@ -10,5 +10,8 @@ __pycache__/
 *.dylib
 *.dll
 
+# Vendor dependencies (local clones, not tracked)
+vendor/
+
 # Session transcripts (local only)
 .claude/
