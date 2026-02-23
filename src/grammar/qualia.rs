@@ -76,7 +76,7 @@ impl QualiaField {
         coordinates[2] = Self::compute_dominance(&text_lower);
 
         // Depth: personal markers
-        coordinates[3] = Self::compute_intimacy(&text_lower);
+        coordinates[3] = Self::compute_depth(&text_lower);
 
         // Certainty: epistemic confidence
         coordinates[4] = Self::compute_certainty(&text_lower);
@@ -211,7 +211,7 @@ impl QualiaField {
         (score + 0.5).clamp(0.0, 1.0)
     }
 
-    fn compute_intimacy(text: &str) -> f32 {
+    fn compute_depth(text: &str) -> f32 {
         let intimate = [
             "heart", "soul", "love", "dear", "soft", "gentle", "whisper", "touch", "embrace",
             "kiss", "close", "together", "us", "we",
@@ -696,7 +696,7 @@ mod tests {
     }
 
     #[test]
-    fn test_intimacy_detection() {
+    fn test_depth_detection() {
         let intimate = QualiaField::from_text("Our hearts touched as we embraced together");
         let distant = QualiaField::from_text("The quarterly report shows a 5% increase");
 

@@ -1119,8 +1119,8 @@ pub enum CausalOp {
 #[derive(Clone, Copy, Debug)]
 pub enum QualiaOp {
     // Activation/Valence core (0xB00-0xB1F)
-    ArousalGet = 0xB00,
-    ArousalSet = 0xB01,
+    ActivationGet = 0xB00,
+    ActivationSet = 0xB01,
     ValenceGet = 0xB02,
     ValenceSet = 0xB03,
     TensionGet = 0xB04,
@@ -3195,8 +3195,8 @@ impl OpDictionary {
         // Activation get - activation dimension
         // Extracts activation from fingerprint entropy/spread
         self.register(
-            QualiaOp::ArousalGet as u16,
-            "QUALIA_AROUSAL_GET",
+            QualiaOp::ActivationGet as u16,
+            "QUALIA_ACTIVATION_GET",
             OpSignature {
                 inputs: vec![OpType::Fingerprint],
                 output: OpType::Scalar,

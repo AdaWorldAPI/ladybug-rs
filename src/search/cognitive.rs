@@ -289,7 +289,7 @@ pub enum SearchVia {
 
     // Qualia resonance
     QualiaMatch,
-    ArousalMatch,
+    ActivationMatch,
     ValenceMatch,
 
     // SPO structure
@@ -590,7 +590,7 @@ impl CognitiveSearch {
             .take(k)
             .map(|atom| CognitiveResult {
                 atom: atom.clone(),
-                via: SearchVia::ArousalMatch,
+                via: SearchVia::ActivationMatch,
                 scores: RelevanceScores {
                     qualia: atom.qualia.activation,
                     combined: atom.qualia.activation,
