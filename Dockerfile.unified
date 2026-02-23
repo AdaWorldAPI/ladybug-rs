@@ -39,6 +39,11 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /build/ladybug
 COPY . .
 
+# --- Vendor submodules (clone if not present in build context) ---
+RUN if [ ! -f vendor/rustynum/rustynum-rs/Cargo.toml ]; then \
+      git clone --depth 1 https://github.com/AdaWorldAPI/rustynum vendor/rustynum; \
+    fi
+
 ARG LB_FEATURES="simd,parallel,codebook,hologram,quantum"
 
 # Build with CPU auto-detect

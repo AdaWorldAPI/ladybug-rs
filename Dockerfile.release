@@ -27,7 +27,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM chef AS deps
 
 RUN apt-get update && apt-get install -y \
-    pkg-config libssl-dev cmake protobuf-compiler \
+    pkg-config libssl-dev cmake protobuf-compiler git \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=planner /build/recipe.json recipe.json
@@ -53,6 +53,11 @@ FROM deps AS builder
 
 # Copy full source
 COPY . .
+
+# --- Vendor submodules (clone if not present in build context) ---
+RUN if [ ! -f vendor/rustynum/rustynum-rs/Cargo.toml ]; then \
+      git clone --depth 1 https://github.com/AdaWorldAPI/rustynum vendor/rustynum; \
+    fi
 
 # AVX-512 binary
 RUN RUSTFLAGS="-C target-cpu=x86-64-v4 -C link-arg=-s" \

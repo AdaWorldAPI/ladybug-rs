@@ -23,8 +23,9 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /build
 
-# --- Clone n8n-rs vendor ---
-RUN git clone --depth 1 https://github.com/AdaWorldAPI/n8n-rs vendor/n8n-rs
+# --- Clone vendor repos ---
+RUN git clone --depth 1 https://github.com/AdaWorldAPI/n8n-rs vendor/n8n-rs && \
+    git clone --depth 1 https://github.com/AdaWorldAPI/rustynum vendor/rustynum
 
 # --- Copy source ---
 COPY . .

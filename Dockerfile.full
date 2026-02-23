@@ -22,9 +22,10 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /build
 
-# --- Clone both vendor repos ---
+# --- Clone all vendor repos ---
 RUN git clone --depth 1 https://github.com/AdaWorldAPI/n8n-rs vendor/n8n-rs && \
-    git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust vendor/crewai-rust
+    git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust vendor/crewai-rust && \
+    git clone --depth 1 https://github.com/AdaWorldAPI/rustynum vendor/rustynum
 
 # --- Copy source ---
 COPY . .
