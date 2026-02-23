@@ -284,7 +284,7 @@ Complete mapping between the Python ecosystem and ladybug-rs:
 | `Epiphany` discovery | `EpiphanyDetector` (council.rs) | Built |
 | `MicrocodeTriangle` (BYTE 0/1/2) | Ghost persistence + SpineCache | Partial |
 | `StyleResonance` + Friston gate | `TrustFabric` + `CouncilWeights` | Built |
-| `SoulFieldResonanceDTO` (brain_extension.py) | `UserResonance` | Built |
+| `PartnerStateDTO` (brain_extension.py) | `UserResonance` | Built |
 | `SoulDTO` (soul.py) | `UserResonance` + `AxisActivation` | Partial |
 | `FeltDTO` (felt_calibration.py) | `FeltParse` + `TextureHint` | Built |
 | `SovereigntyState` (DORMANT→TAKING) | `RungLevel` (R0→R9) | Built |
@@ -308,7 +308,7 @@ Complete mapping between the Python ecosystem and ladybug-rs:
 | `LivingFrameState` (living_frame.py) | `AgentState` (composition) | **Built** |
 | `LivingFrame.compute_rung()` | `AgentState::compute_rung_from_self()` | **Built** |
 | `InterventionType` (living_frame.py) | `InterventionType` enum | **Built** |
-| `SoulResonanceDTO` (soul_resonance_field.py) | `UserResonance` + `TrustFabric` | Built |
+| `PartnerResonanceDTO` (soul_resonance_field.py) | `UserResonance` + `TrustFabric` | Built |
 | `OperatorWeights` (soul_resonance_field.py) | Via `CouncilWeights` modulation | Partial |
 | `AffectiveWeights` (soul_resonance_field.py) | `AxisActivation` (meaning_axes) | Partial |
 | `SomaticSite` (soul_resonance_field.py) | Via `TextureHint` mapping | **Gap** |

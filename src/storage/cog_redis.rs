@@ -46,7 +46,7 @@
 //! │ GET key        │ GET key [FEEL] [TRACE] [DECAY]                          │
 //! │ SET key val    │ SET key val [QUALIA q] [TRUTH f,c] [TTL t] [PROMOTE]    │
 //! │ DEL key        │ DEL key [FORGET] [SUPPRESS]                             │
-//! │ KEYS pattern   │ KEYS pattern [VALENCE min max] [AROUSAL min max]        │
+//! │ KEYS pattern   │ KEYS pattern [VALENCE min max] [ACTIVATION min max]        │
 //! │ LPUSH          │ BIND a b [VIA verb] → edge                              │
 //! │ LPOP           │ UNBIND edge a → b                                       │
 //! │ SCAN           │ RESONATE query [MEXICAN_HAT] → similar + qualia         │

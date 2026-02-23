@@ -1049,7 +1049,7 @@ impl BindSpace {
             (0x01, "INTUIT"),
             (0x02, "SENSE"),
             (0x03, "VALENCE"),
-            (0x04, "AROUSAL"),
+            (0x04, "ACTIVATION"),
             (0x05, "TENSION"),
         ];
         for (slot, label) in qualia_ops {
