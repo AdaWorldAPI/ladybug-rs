@@ -4,16 +4,16 @@
 //! Captures the felt-sense dimensions of meaning.
 //!
 //! Based on experiential qualities relevant to meaning:
-//! valence, arousal, dominance, intimacy, etc.
+//! valence, activation, dominance, depth, etc.
 
 use crate::core::Fingerprint;
 
 /// The 18 qualia dimensions
 pub const QUALIA_DIMENSIONS: [&str; 18] = [
     "valence",        // Positive/negative feeling
-    "arousal",        // Activation level (calm to excited)
+    "activation",        // Activation level (calm to excited)
     "dominance",      // Control/agency (submissive to dominant)
-    "intimacy",       // Closeness (distant to intimate)
+    "depth",       // Closeness (distant to intimate)
     "certainty",      // Epistemic confidence (uncertain to certain)
     "urgency",        // Temporal pressure (relaxed to urgent)
     "depth",          // Abstraction level (surface to deep)
@@ -69,14 +69,14 @@ impl QualiaField {
         // Valence: positive vs negative
         coordinates[0] = Self::compute_valence(&text_lower);
 
-        // Arousal: intensity markers
-        coordinates[1] = Self::compute_arousal(&text_lower);
+        // Activation: intensity markers
+        coordinates[1] = Self::compute_activation(&text_lower);
 
         // Dominance: control/agency
         coordinates[2] = Self::compute_dominance(&text_lower);
 
-        // Intimacy: personal markers
-        coordinates[3] = Self::compute_intimacy(&text_lower);
+        // Closeness: personal/relational markers
+        coordinates[3] = Self::compute_closeness(&text_lower);
 
         // Certainty: epistemic confidence
         coordinates[4] = Self::compute_certainty(&text_lower);
@@ -152,7 +152,7 @@ impl QualiaField {
         (diff + 1.0) / 2.0 // Normalize to 0-1
     }
 
-    fn compute_arousal(text: &str) -> f32 {
+    fn compute_activation(text: &str) -> f32 {
         let high = [
             "!",
             "suddenly",
@@ -175,8 +175,8 @@ impl QualiaField {
         let high_count: usize = high.iter().map(|w| text.matches(w).count()).sum();
         let low_count: usize = low.iter().map(|w| text.matches(w).count()).sum();
 
-        let arousal = (high_count as f32 - low_count as f32 * 0.5) * 0.2;
-        (arousal + 0.5).clamp(0.0, 1.0)
+        let activation = (high_count as f32 - low_count as f32 * 0.5) * 0.2;
+        (activation + 0.5).clamp(0.0, 1.0)
     }
 
     fn compute_dominance(text: &str) -> f32 {
@@ -211,13 +211,13 @@ impl QualiaField {
         (score + 0.5).clamp(0.0, 1.0)
     }
 
-    fn compute_intimacy(text: &str) -> f32 {
-        let intimate = [
-            "heart", "soul", "love", "dear", "soft", "gentle", "whisper", "touch", "embrace",
-            "kiss", "close", "together", "us", "we",
+    fn compute_closeness(text: &str) -> f32 {
+        let relational = [
+            "heart", "soul", "dear", "soft", "gentle", "close", "together", "us", "we",
+            "care", "share", "connect",
         ];
 
-        let count: usize = intimate.iter().map(|w| text.matches(w).count()).sum();
+        let count: usize = relational.iter().map(|w| text.matches(w).count()).sum();
         (count as f32 * 0.15).min(1.0)
     }
 
@@ -688,19 +688,19 @@ mod tests {
     }
 
     #[test]
-    fn test_arousal_detection() {
+    fn test_activation_detection() {
         let high = QualiaField::from_text("Suddenly there was an intense explosion!");
         let low = QualiaField::from_text("The calm peaceful lake was serene and quiet");
 
-        assert!(high.get("arousal").unwrap() > low.get("arousal").unwrap());
+        assert!(high.get("activation").unwrap() > low.get("activation").unwrap());
     }
 
     #[test]
-    fn test_intimacy_detection() {
-        let intimate = QualiaField::from_text("Our hearts touched as we embraced together");
+    fn test_depth_detection() {
+        let close = QualiaField::from_text("Our hearts together we care and share");
         let distant = QualiaField::from_text("The quarterly report shows a 5% increase");
 
-        assert!(intimate.get("intimacy").unwrap() > distant.get("intimacy").unwrap());
+        assert!(close.get("closeness").unwrap_or(0.0) > distant.get("closeness").unwrap_or(0.0));
     }
 
     #[test]

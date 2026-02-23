@@ -421,7 +421,6 @@ ARCHIVE:   S3 (via Lance)   - Full Parquet snapshots, 11 9s durability
 
 ## Contact
 
-**Owner**: Jan Hübener (jahube)
 **GitHub**: https://github.com/AdaWorldAPI/ladybug-rs
 
 ---

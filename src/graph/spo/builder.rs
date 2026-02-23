@@ -220,18 +220,18 @@ mod tests {
     fn test_build_node_roundtrip() {
         let lbl_person = label_fp("Person");
         let key_name = label_fp("name");
-        let val_jan = label_fp("Jan");
+        let val_alice = label_fp("Alice");
 
         let record = SpoBuilder::build_node(
-            dn_hash("jan"),
+            dn_hash("alice"),
             &[&lbl_person],
-            &[(&key_name, &val_jan)],
+            &[(&key_name, &val_alice)],
             TruthValue::new(1.0, 0.9),
         )
         .unwrap();
 
         // Verify DN is stamped
-        assert_eq!(record.meta.words[0], dn_hash("jan"));
+        assert_eq!(record.meta.words[0], dn_hash("alice"));
 
         // Verify geometry is Spo
         let geom = (record.meta.words[1] >> 16) & 0xFF;

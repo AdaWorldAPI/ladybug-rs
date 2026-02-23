@@ -582,12 +582,12 @@ impl SpeechActClassification {
 
 #[derive(Clone, Debug, Default)]
 pub struct QualiaExtraction {
-    pub arousal: f32,      // Calm ↔ Excited
+    pub activation: f32,      // Calm ↔ Excited
     pub valence: f32,      // Negative ↔ Positive
     pub tension: f32,      // Relaxed ↔ Tense
     pub depth: f32,        // Surface ↔ Profound
     pub certainty: f32,    // Doubtful ↔ Certain
-    pub intimacy: f32,     // Distant ↔ Intimate
+    pub depth: f32,     // Distant ↔ Intimate
     pub urgency: f32,      // Relaxed ↔ Urgent
     pub novelty: f32,      // Familiar ↔ Novel
 }
@@ -608,18 +608,18 @@ impl QualiaExtraction {
         // Depth from complexity (token count)
         q.depth = (tokens.len() as f32 / 20.0).min(1.0);
         
-        // Arousal from punctuation
+        // Activation from punctuation
         if tokens.iter().any(|t| t.text.contains('!')) {
-            q.arousal = 0.8;
+            q.activation = 0.8;
         } else {
-            q.arousal = 0.4;
+            q.activation = 0.4;
         }
         
-        // Intimacy from pronouns
+        // Depth from pronouns
         if nsm.weight(nsm_slots::I) > 0.5 || nsm.weight(nsm_slots::YOU) > 0.5 {
-            q.intimacy = 0.7;
+            q.depth = 0.7;
         } else {
-            q.intimacy = 0.3;
+            q.depth = 0.3;
         }
         
         q.tension = 0.5;
@@ -633,8 +633,8 @@ impl QualiaExtraction {
         let mut fp = Fingerprint::zero();
         
         let dims = [
-            self.arousal, self.valence, self.tension, self.depth,
-            self.certainty, self.intimacy, self.urgency, self.novelty,
+            self.activation, self.valence, self.tension, self.depth,
+            self.certainty, self.depth, self.urgency, self.novelty,
         ];
         
         for (i, &val) in dims.iter().enumerate() {

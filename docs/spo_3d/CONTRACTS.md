@@ -154,7 +154,7 @@ impl NibbleScent {
 }
 
 #[test] fn scent_different_types_distinct() {
-    let person = build_node(dn_hash("jan"), &[LBL_PERSON], &[(KEY_NAME, "Jan")]);
+    let person = build_node(dn_hash("alice"), &[LBL_PERSON], &[(KEY_NAME, "Alice")]);
     let concept = build_node(dn_hash("rust"), &[LBL_CONCEPT], &[(KEY_NAME, "Rust")]);
     let ps = NibbleScent::from_record(&person);
     let cs = NibbleScent::from_record(&concept);
@@ -613,31 +613,31 @@ pub fn spo_revision(a: &CogRecord, b: &CogRecord) -> TruthValue;
 
 ```rust
 #[test] fn test_1_node_roundtrip() {
-    // Create "Jan" {Person, name: "Jan", age: 42}
+    // Create "Alice" {Person, name: "Alice", age: 42}
     // Insert into store → retrieve → verify X axis Hamming < 100
 }
 
 #[test] fn test_2_forward_query() {
-    // Jan → KNOWS → Ada
-    // query_forward(jan_fp, KNOWS_fp) must find Ada
+    // Alice → KNOWS → Bob
+    // query_forward(alice_fp, KNOWS_fp) must find Bob
 }
 
 #[test] fn test_3_reverse_query() {
-    // Jan → KNOWS → Ada
-    // query_reverse(ada_fp, KNOWS_fp) must find Jan — NO separate index
+    // Alice → KNOWS → Bob
+    // query_reverse(bob_fp, KNOWS_fp) must find Alice — NO separate index
 }
 
 #[test] fn test_4_cam_content_lookup() {
-    // 100 nodes → query by content fingerprint → find Jan
+    // 100 nodes → query by content fingerprint → find Alice
 }
 
 #[test] fn test_5_nars_reasoning() {
-    // "Jan knows Rust" <0.8, 0.9> + "Rust helps CAM" <0.7, 0.8>
+    // "Alice knows Rust" <0.8, 0.9> + "Rust helps CAM" <0.7, 0.8>
     // → deduction → verify f/c values → revision increases confidence
 }
 
 #[test] fn test_6_causal_chain_coherence() {
-    // Create chain: Jan → KNOWS → Rust → ENABLES → CAM
+    // Create chain: Alice → KNOWS → Rust → ENABLES → CAM
     // Verify Z→X resonance (Hamming < 200)
     // Verify causal_successors finds the chain
     // Build meta-awareness record → verify convergence

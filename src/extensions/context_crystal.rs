@@ -70,12 +70,12 @@ pub struct SentenceAtom {
 /// Compact qualia representation (4D → 8D for more nuance)
 #[derive(Clone, Debug, Default)]
 pub struct QualiaVector {
-    pub arousal: f32,   // Calm ↔ Excited
+    pub activation: f32,   // Calm ↔ Excited
     pub valence: f32,   // Negative ↔ Positive
     pub tension: f32,   // Relaxed ↔ Tense
     pub depth: f32,     // Surface ↔ Profound
     pub certainty: f32, // Doubtful ↔ Certain
-    pub intimacy: f32,  // Distant ↔ Intimate
+    pub depth: f32,  // Distant ↔ Intimate
     pub urgency: f32,   // Relaxed ↔ Urgent
     pub novelty: f32,   // Familiar ↔ Novel
 }
@@ -83,12 +83,12 @@ pub struct QualiaVector {
 impl QualiaVector {
     pub fn neutral() -> Self {
         Self {
-            arousal: 0.5,
+            activation: 0.5,
             valence: 0.5,
             tension: 0.5,
             depth: 0.5,
             certainty: 0.5,
-            intimacy: 0.5,
+            depth: 0.5,
             urgency: 0.5,
             novelty: 0.5,
         }
@@ -100,12 +100,12 @@ impl QualiaVector {
 
         // Each dimension gets ~2048 bits (16384/8)
         let dims = [
-            self.arousal,
+            self.activation,
             self.valence,
             self.tension,
             self.depth,
             self.certainty,
-            self.intimacy,
+            self.depth,
             self.urgency,
             self.novelty,
         ];
@@ -123,12 +123,12 @@ impl QualiaVector {
 
     /// Distance to another qualia vector
     pub fn distance(&self, other: &Self) -> f32 {
-        let da = self.arousal - other.arousal;
+        let da = self.activation - other.activation;
         let dv = self.valence - other.valence;
         let dt = self.tension - other.tension;
         let dd = self.depth - other.depth;
         let dc = self.certainty - other.certainty;
-        let di = self.intimacy - other.intimacy;
+        let di = self.depth - other.depth;
         let du = self.urgency - other.urgency;
         let dn = self.novelty - other.novelty;
         (da * da + dv * dv + dt * dt + dd * dd + dc * dc + di * di + du * du + dn * dn).sqrt()

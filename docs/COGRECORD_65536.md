@@ -4,7 +4,7 @@
 *VPOPCNTDQ × VNNI: Two distance metrics, one memory layout.*
 
 ladybug-rs Architecture Decision Record
-February 21, 2026 — Jan Hübener / Claude Architecture Audit
+February 21, 2026 — AdaWorldAPI / Claude Architecture Audit
 
 ---
 

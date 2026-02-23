@@ -576,7 +576,7 @@ impl Counterfactual {
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum QualiaChannel {
-    Arousal = 0,     // Activation level (low..high)
+    Activation = 0,     // Activation level (low..high)
     Valence = 1,     // Hedonic tone (negative..positive)
     Tension = 2,     // Stress level (relaxed..tense)
     Certainty = 3,   // Epistemic (doubt..confidence)
@@ -593,7 +593,7 @@ impl QualiaChannel {
 
     pub fn all() -> [QualiaChannel; 8] {
         [
-            QualiaChannel::Arousal,
+            QualiaChannel::Activation,
             QualiaChannel::Valence,
             QualiaChannel::Tension,
             QualiaChannel::Certainty,
@@ -674,10 +674,10 @@ impl QualiaState {
 
     /// Classify basic emotion (simplified)
     pub fn classify_emotion(&self) -> &'static str {
-        let arousal = self.get(QualiaChannel::Arousal);
+        let activation = self.get(QualiaChannel::Activation);
         let valence = self.get(QualiaChannel::Valence);
 
-        match (arousal > 0.5, valence > 0.5) {
+        match (activation > 0.5, valence > 0.5) {
             (true, true) => "excited/happy",
             (true, false) => "angry/afraid",
             (false, true) => "calm/content",
@@ -950,8 +950,8 @@ mod tests {
     fn test_qualia_state() {
         let mut state = QualiaState::neutral();
 
-        // Set high arousal, positive valence
-        state.set(QualiaChannel::Arousal, 0.9);
+        // Set high activation, positive valence
+        state.set(QualiaChannel::Activation, 0.9);
         state.set(QualiaChannel::Valence, 0.8);
 
         assert_eq!(state.classify_emotion(), "excited/happy");
@@ -961,7 +961,7 @@ mod tests {
         let blended = state.blend(&neutral, 0.5);
 
         // Should be half way
-        assert!((blended.get(QualiaChannel::Arousal) - 0.7).abs() < 0.01);
+        assert!((blended.get(QualiaChannel::Activation) - 0.7).abs() < 0.01);
     }
 
     #[test]

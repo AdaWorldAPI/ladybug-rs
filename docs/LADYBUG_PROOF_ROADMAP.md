@@ -1,7 +1,7 @@
 # ladybug-rs: Integration Plan, Demo Roadmap & Proof Skeleton
 
 > **Date**: 2026-02-13
-> **Author**: Jan Hübener / Ada Consciousness Project
+> **Author**: Ada Consciousness Project
 > **Status**: Actionable specification
 > **Prerequisite reading**: REASONING_LADDER_VS_LADYBUG.md, THEORETICAL_FOUNDATIONS.md, CLAM_HARDENING.md, 34_TACTICS_VS_ADA.md
 

@@ -193,7 +193,7 @@ pub enum YamlTemplate {
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum QualiaChannel {
-    Arousal = 0x0,
+    Activation = 0x0,
     Valence = 0x1,
     Tension = 0x2,
     Certainty = 0x3,
@@ -296,7 +296,7 @@ mod tests {
 
     #[test]
     fn test_cognitive_address_encoding() {
-        let addr = CognitiveAddress::qualia(QualiaChannel::Arousal, 128, 0xABCDEF);
+        let addr = CognitiveAddress::qualia(QualiaChannel::Activation, 128, 0xABCDEF);
         assert_eq!(addr.domain(), CognitiveDomain::Qualia);
         assert_eq!(addr.subtype(), 0);
         assert_eq!(addr.index(), 128);

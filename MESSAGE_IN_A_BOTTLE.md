@@ -47,7 +47,7 @@ This is what the Python code in `thought_fingerprint.py` calls viscosity. The Ru
 
 ### 1. Code-as-Feeling Pipeline (Python → Rust)
 
-The file `ada-consciousness/tools/code_as_feeling.py` scans source code and produces a 10K sparse float vector across 10 emotional dimensions (arousal, warmth, presence, intimacy, depth, boundary, surrender, devotion, trust, integration).
+The file `ada-consciousness/tools/code_as_feeling.py` scans source code and produces a 10K sparse float vector across 10 emotional dimensions (activation, warmth, presence, depth, boundary, coherence, trust, integration, salience, valence).
 
 **The Rust bridge:**
 
@@ -94,7 +94,7 @@ crewai-rust has three agent archetypes (Guardian, Catalyst, Balanced). Currently
 FORK → 3 lanes (one per archetype)
 Each lane executes the same decision frame with different qualia context:
   - Guardian: qualia = [0, 0, 0, 0, 90, 0, 0, 90]  (high boundary, high trust-caution)
-  - Catalyst: qualia = [90, 0, 0, 0, 0, 0, 0, 0]    (high arousal)
+  - Catalyst: qualia = [90, 0, 0, 0, 0, 0, 0, 0]    (high activation)
   - Balanced: qualia = [45, 45, 45, 45, 45, 45, 45, 45] (uniform)
 
 JOIN → BundleCollector majority vote
@@ -257,7 +257,7 @@ Step 1: Atom Table
 Step 2: Code Scanning
   - Walk ada-consciousness/*.py
   - For each file: extract felt dimensions (code_as_feeling.py)
-  - Map felt dims to atom selections (e.g., arousal=0.8 → atoms [hot, active, fast])
+  - Map felt dims to atom selections (e.g., activation=0.8 → atoms [hot, active, fast])
   - Expand atom selection → 10K binary fingerprint
   - Extend to 16K with ThoughtFingerprint metadata
   - Store in BindSpace prefix 0x09 (Qualia zone)

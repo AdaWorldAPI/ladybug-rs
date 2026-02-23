@@ -53,7 +53,7 @@ impl NSMField {
 
 // src/grammar/qualia.rs
 pub const QUALIA_DIMENSIONS: [&str; 18] = [
-    "valence", "arousal", "dominance", "intimacy", 
+    "valence", "activation", "dominance", "depth",
     "certainty", "urgency", "depth", ...
 ];
 

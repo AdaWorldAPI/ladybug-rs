@@ -723,7 +723,7 @@ impl QualiaShiftOp {
         Self { shifts }
     }
 
-    pub fn arousal(delta: f32) -> Self {
+    pub fn activation(delta: f32) -> Self {
         let mut shifts = [0.0; 8];
         shifts[0] = delta;
         Self { shifts }

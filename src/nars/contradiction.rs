@@ -66,7 +66,7 @@ pub fn detect_contradictions(
 ///
 /// # Science
 /// - Festinger (1957): Cognitive dissonance theory
-/// - Berlyne (1960): Optimal arousal — moderate conflict drives curiosity
+/// - Berlyne (1960): Optimal activation — moderate conflict drives curiosity
 /// - Peng & Nisbett (1999): Dialectical thinking
 pub fn induce_dissonance(truth: &TruthValue) -> (TruthValue, f32) {
     // Maximum dissonance: flip frequency, halve confidence

@@ -50,7 +50,7 @@ fn text_to_dn(text: &str) -> PackedDn {
 /// ```json
 /// {
 ///     "message": "How are you feeling?",
-///     "presence_mode": "intimate",      // optional: intimate|work|agi|hybrid
+///     "presence_mode": "personal",      // optional: personal|work|agi|hybrid
 ///     "rung_hint": 4,                   // optional: pre-pass rung from felt-parse
 ///     "session_id": "abc123"            // optional: session tracking
 /// }
@@ -72,7 +72,7 @@ fn handle_qualia_hydrate(body: &str, state: &SharedState, format: ResponseFormat
 
     // Parse presence mode
     let presence = match presence_str.as_str() {
-        "intimate" => PresenceMode::Intimate,
+        "personal" => PresenceMode::Personal,
         "work" => PresenceMode::Work,
         "agi" => PresenceMode::Agi,
         "neutral" => PresenceMode::Neutral,
@@ -120,13 +120,13 @@ fn handle_qualia_hydrate(body: &str, state: &SharedState, format: ResponseFormat
     let ghosts: Vec<GhostEcho> = ghost_records.iter().enumerate().map(|(i, gr)| {
         GhostEcho {
             ghost_type: match i % 8 {
-                0 => GhostType::Love,
+                0 => GhostType::Affinity,
                 1 => GhostType::Staunen,
                 2 => GhostType::Wisdom,
                 3 => GhostType::Thought,
                 4 => GhostType::Epiphany,
                 5 => GhostType::Grief,
-                6 => GhostType::Arousal,
+                6 => GhostType::Somatic,
                 _ => GhostType::Boundary,
             },
             intensity: gr.resonance.clamp(0.0, 1.0),

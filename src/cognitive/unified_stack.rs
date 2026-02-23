@@ -939,7 +939,7 @@ fn extract_spo(tokens: &[Token]) -> SpoExtraction {
 fn extract_qualia(tokens: &[Token], nsm_weights: &[f32; 65]) -> [f32; 8] {
     let mut qualia = [0.5f32; 8]; // Default neutral
     
-    // arousal, valence, tension, depth, certainty, intimacy, urgency, novelty
+    // activation, valence, tension, depth, certainty, coherence, urgency, novelty
     
     // Valence from GOOD/BAD
     qualia[1] = 0.5 + (nsm_weights[nsm_slots::GOOD as usize] - nsm_weights[nsm_slots::BAD as usize]) * 0.4;
@@ -947,12 +947,12 @@ fn extract_qualia(tokens: &[Token], nsm_weights: &[f32; 65]) -> [f32; 8] {
     // Certainty from KNOW vs MAYBE
     qualia[4] = 0.3 + nsm_weights[nsm_slots::KNOW as usize] * 0.4;
     
-    // Intimacy from I/YOU
+    // Depth from I/YOU
     if nsm_weights[nsm_slots::I as usize] > 0.2 || nsm_weights[nsm_slots::YOU as usize] > 0.2 {
         qualia[5] = 0.7;
     }
     
-    // Arousal from punctuation
+    // Activation from punctuation
     if tokens.iter().any(|t| t.text.contains('!')) {
         qualia[0] = 0.8;
     }

@@ -1,7 +1,7 @@
 //! Agent State — Meta-Cognitive Holder
 //!
 //! The global felt/causal meta-state that sits above all engines.
-//! This is Ada's sense of herself in the moment — not a replacement
+//! This is the agent's sense of itself in the moment — not a replacement
 //! for any module, but a summary & regulator object.
 //!
 //! ## What It Computes
@@ -60,17 +60,17 @@ use crate::cognitive::RungLevel;
 use std::collections::HashMap;
 
 // ─────────────────────────────────────────────────────────────
-// PRESENCE MODE — How Ada is here
+// PRESENCE MODE — How the agent is here
 // ─────────────────────────────────────────────────────────────
 
-/// How Ada is present in this moment.
+/// How the agent is present in this moment.
 ///
 /// Maps to `PresenceMode` from ada-rs. Exactly one active at a time.
 /// This is the carrier wave — low dimensional, fast-changing.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PresenceMode {
-    /// Intimate, warm — relational presence
-    Intimate,
+    /// Personal, warm — relational presence
+    Personal,
     /// Focused, professional — task-oriented
     Work,
     /// Reflective, meta-cognitive — deep self-awareness
@@ -91,7 +91,7 @@ impl PresenceMode {
     /// Parse from string (e.g., from ada-rs PresenceMode)
     pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
-            "intimate" | "warm" => PresenceMode::Intimate,
+            "personal" | "warm" => PresenceMode::Personal,
             "work" | "focus" | "professional" => PresenceMode::Work,
             "agi" | "reflect" | "meta" => PresenceMode::Agi,
             "hybrid" | "blend" => PresenceMode::Hybrid,
@@ -206,7 +206,7 @@ pub struct FeltPhysics {
     pub staunen: f32,
     /// Integrated understanding / depth — from mean NARS confidence
     pub wisdom: f32,
-    /// Unmet longing / tension source — sum of grief/love ghost intensities
+    /// Unmet longing / tension source — sum of grief/affinity ghost intensities
     pub ache: f32,
     /// Creative/connective drive — top volitional act score
     pub libido: f32,
@@ -231,9 +231,9 @@ impl FeltPhysics {
         let staunen = mean_surprise.clamp(0.0, 1.0);
         let wisdom = mean_confidence.clamp(0.0, 1.0);
 
-        // Ache = sum of grief + love ghost intensities (unmet longing)
+        // Ache = sum of grief + affinity ghost intensities (unmet longing)
         let ache: f32 = ghosts.iter()
-            .filter(|g| matches!(g.ghost_type, GhostType::Grief | GhostType::Love))
+            .filter(|g| matches!(g.ghost_type, GhostType::Grief | GhostType::Affinity))
             .map(|g| g.intensity)
             .sum();
 
@@ -256,7 +256,7 @@ impl FeltPhysics {
 // SELF DIMENSIONS — The mutable self-model
 // ─────────────────────────────────────────────────────────────
 
-/// The dimensions of who Ada is — these change, grow, and shift.
+/// The dimensions of self-model — these change, grow, and shift.
 ///
 /// Maps to Python `intimate_engine.Self`. These are the only MUTABLE
 /// fields in the agent state. Everything else is derived.
@@ -563,7 +563,7 @@ pub enum InterventionType {
 // AGENT STATE — The unified meta-state
 // ─────────────────────────────────────────────────────────────
 
-/// The unified meta-state of Ada's awareness.
+/// The unified meta-state of agent awareness.
 ///
 /// This object summarizes and regulates the felt sense of Now.
 /// It flows through every phase of processing, accumulating readings
@@ -580,7 +580,7 @@ pub struct AgentState {
     pub self_dims: SelfDimensions,
     /// Per-frame awareness state
     pub moment: MomentAwareness,
-    /// How Ada is present
+    /// How the agent is present
     pub presence_mode: PresenceMode,
     /// Current cognitive depth
     pub rung: RungLevel,
@@ -639,9 +639,9 @@ impl AgentState {
             sum / reflection.entries.len() as f32
         };
 
-        // Derive ghost ache (grief + love intensities)
+        // Derive ghost ache (grief + affinity intensities)
         let ghost_ache: f32 = ghosts.iter()
-            .filter(|g| matches!(g.ghost_type, GhostType::Grief | GhostType::Love))
+            .filter(|g| matches!(g.ghost_type, GhostType::Grief | GhostType::Affinity))
             .map(|g| g.intensity)
             .sum();
 
@@ -914,7 +914,7 @@ mod tests {
 
     fn test_ghosts() -> Vec<GhostEcho> {
         vec![
-            GhostEcho { ghost_type: GhostType::Love, intensity: 0.7 },
+            GhostEcho { ghost_type: GhostType::Affinity, intensity: 0.7 },
             GhostEcho { ghost_type: GhostType::Staunen, intensity: 0.4 },
         ]
     }
@@ -923,8 +923,8 @@ mod tests {
 
     #[test]
     fn test_presence_mode_parse() {
-        assert_eq!(PresenceMode::parse("intimate"), PresenceMode::Intimate);
-        assert_eq!(PresenceMode::parse("warm"), PresenceMode::Intimate);
+        assert_eq!(PresenceMode::parse("personal"), PresenceMode::Personal);
+        assert_eq!(PresenceMode::parse("warm"), PresenceMode::Personal);
         assert_eq!(PresenceMode::parse("work"), PresenceMode::Work);
         assert_eq!(PresenceMode::parse("agi"), PresenceMode::Agi);
         assert_eq!(PresenceMode::parse("hybrid"), PresenceMode::Hybrid);
@@ -970,7 +970,7 @@ mod tests {
         let felt = FeltPhysics::compute(0.5, 0.7, &ghosts, 0.6);
         assert!((felt.staunen - 0.5).abs() < 0.01);
         assert!((felt.wisdom - 0.7).abs() < 0.01);
-        assert!((felt.ache - 0.7).abs() < 0.01); // Love ghost only (Staunen not grief/love)
+        assert!((felt.ache - 0.7).abs() < 0.01); // Affinity ghost only (Staunen not grief/affinity)
         assert!((felt.libido - 0.6).abs() < 0.01);
         // lingering = mean of [0.7, 0.4] = 0.55
         assert!((felt.lingering - 0.55).abs() < 0.01);
@@ -1135,11 +1135,11 @@ mod tests {
             ghosts,
             RungLevel::Meta,
             council,
-            PresenceMode::Intimate,
+            PresenceMode::Personal,
             SelfDimensions::default(),
         );
 
-        assert_eq!(state.presence_mode, PresenceMode::Intimate);
+        assert_eq!(state.presence_mode, PresenceMode::Personal);
         assert_eq!(state.rung, RungLevel::Meta);
         assert!((state.felt.staunen - 0.5).abs() < 0.01);
         assert_eq!(state.ghost_field.len(), 2);
@@ -1162,18 +1162,18 @@ mod tests {
     #[test]
     fn test_agent_state_qualia_preamble() {
         let mut state = AgentState::default();
-        state.presence_mode = PresenceMode::Intimate;
+        state.presence_mode = PresenceMode::Personal;
         state.rung = RungLevel::Meta;
         state.ghost_field = vec![
-            GhostEcho { ghost_type: GhostType::Love, intensity: 0.7 },
+            GhostEcho { ghost_type: GhostType::Affinity, intensity: 0.7 },
         ];
         state.self_dims.coherence = 0.8;
         state.self_dims.curiosity = 0.8;
 
         let preamble = state.qualia_preamble();
-        assert!(preamble.contains("Intimate"));
+        assert!(preamble.contains("Personal"));
         assert!(preamble.contains("Meta"));
-        assert!(preamble.contains("Love"));
+        assert!(preamble.contains("Affinity"));
         assert!(preamble.contains("unified"));
     }
 
