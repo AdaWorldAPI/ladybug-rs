@@ -51,6 +51,9 @@ mod substrate;
 mod thought;
 pub mod two_stroke;
 pub mod pattern_detector;
+pub mod service;
+pub mod step_handler;
+pub mod subsystem_impl;
 
 pub use awareness::{AwarenessBlackboard, AwarenessSnapshot, CortexResult};
 pub use collapse_gate::*;
@@ -82,3 +85,9 @@ pub use two_stroke::{
 };
 pub use cognitive_kernel::{CognitiveKernel, CognitiveKernelResult, KernelLayerOp};
 pub use pattern_detector::{MetaPattern, detect as detect_meta_pattern};
+pub use service::{
+    CognitiveMode, CognitiveService, CognitiveSnapshot, ExternalStyle, ProcessResult,
+    TextQueryResult, ThinkingStyleBridge,
+};
+pub use step_handler::{LbStepHandler, LbStepType, StepError, StepResult, snapshot_to_json};
+pub use subsystem_impl::{AgentDescriptor, LadybugSubsystem, SubsystemBuilder};

@@ -29,6 +29,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Init vendor submodules
+        run: git submodule update --init vendor/rustynum
+
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.93.0"
@@ -51,6 +54,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Init vendor submodules
+        run: git submodule update --init vendor/rustynum
 
       - uses: dtolnay/rust-toolchain@master
         with:
@@ -79,6 +85,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Init vendor submodules
+        run: git submodule update --init vendor/rustynum
 
       - uses: dtolnay/rust-toolchain@master
         with:
