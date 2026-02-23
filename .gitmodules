@@ -4,3 +4,6 @@
 [submodule "vendor/lance"]
 	path = vendor/lance
 	url = https://github.com/AdaWorldAPI/lance.git
+[submodule "vendor/rustynum"]
+	path = vendor/rustynum
+	url = https://github.com/AdaWorldAPI/rustynum
