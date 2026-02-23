@@ -90,22 +90,22 @@ pub struct CognitiveState {
 /// Integrated cognitive fabric
 pub struct CognitiveFabric {
     /// Current thinking style
-    style: ThinkingStyle,
+    pub(crate) style: ThinkingStyle,
 
     /// Quad-triangle state
-    triangles: QuadTriangle,
+    pub(crate) triangles: QuadTriangle,
 
     /// 10-layer node
-    node: LayerNode,
+    pub(crate) node: LayerNode,
 
     /// Satisfaction gate (Maslow hierarchy)
-    satisfaction: LayerSatisfaction,
+    pub(crate) satisfaction: LayerSatisfaction,
 
     /// Previous cycle scores (for 2-stroke async reads)
-    prev_scores: [f32; super::layer_stack::NUM_LAYERS],
+    pub(crate) prev_scores: [f32; super::layer_stack::NUM_LAYERS],
 
     /// Processing cycle counter
-    cycle: u64,
+    pub(crate) cycle: u64,
 
     /// History of collapse decisions
     collapse_history: Vec<CollapseDecision>,
