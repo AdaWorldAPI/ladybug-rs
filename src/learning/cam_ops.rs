@@ -1118,7 +1118,7 @@ pub enum CausalOp {
 #[repr(u16)]
 #[derive(Clone, Copy, Debug)]
 pub enum QualiaOp {
-    // Arousal/Valence core (0xB00-0xB1F)
+    // Activation/Valence core (0xB00-0xB1F)
     ArousalGet = 0xB00,
     ArousalSet = 0xB01,
     ValenceGet = 0xB02,
@@ -3192,8 +3192,8 @@ impl OpDictionary {
             }),
         );
 
-        // Arousal get - activation dimension
-        // Extracts arousal from fingerprint entropy/spread
+        // Activation get - activation dimension
+        // Extracts activation from fingerprint entropy/spread
         self.register(
             QualiaOp::ArousalGet as u16,
             "QUALIA_AROUSAL_GET",
@@ -3201,16 +3201,16 @@ impl OpDictionary {
                 inputs: vec![OpType::Fingerprint],
                 output: OpType::Scalar,
             },
-            "Get arousal (0.0 to 1.0) from fingerprint activation spread",
+            "Get activation (0.0 to 1.0) from fingerprint activation spread",
             Arc::new(|_ctx, args| {
                 if args.is_empty() {
                     return OpResult::Scalar(0.5);
                 }
                 let fp = &args[0];
 
-                // Arousal = how spread out the activation is
-                // High arousal = bits evenly distributed
-                // Low arousal = bits clustered
+                // Activation = how spread out the activation is
+                // High activation = bits evenly distributed
+                // Low activation = bits clustered
                 let total_pop = fp.popcount();
 
                 // Measure distribution by comparing quarters
@@ -3223,7 +3223,7 @@ impl OpDictionary {
                     }
                 }
 
-                // Calculate variance (low variance = even spread = high arousal)
+                // Calculate variance (low variance = even spread = high activation)
                 let mean = total_pop as f64 / 4.0;
                 let variance: f64 = quarter_pops
                     .iter()
@@ -3231,11 +3231,11 @@ impl OpDictionary {
                     .sum::<f64>()
                     / 4.0;
 
-                // Normalize: low variance = high arousal
+                // Normalize: low variance = high activation
                 let max_variance = (mean * 3.0).powi(2); // theoretical max
-                let arousal = 1.0 - (variance / max_variance.max(1.0)).min(1.0);
+                let activation = 1.0 - (variance / max_variance.max(1.0)).min(1.0);
 
-                OpResult::Scalar(arousal)
+                OpResult::Scalar(activation)
             }),
         );
 

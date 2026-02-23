@@ -717,7 +717,7 @@ pub struct UserResonance {
     /// of qualia vectors (Python: dot / (norm_a * norm_b))
     pub resonance: f32,
     /// Synced qualia — the 6D qualia vector that was blended.
-    /// [warmth, presence, edge, depth, curiosity, intimacy]
+    /// [warmth, presence, edge, depth, curiosity, depth]
     pub synced_qualia: [f32; 6],
     /// Flow state: resonance > 0.85 (from Python: in_flow = res > 0.85)
     pub in_flow: bool,
@@ -775,7 +775,7 @@ impl UserResonance {
 
         // Track what's being transmitted (non-neutral dimensions)
         self.transmitting.clear();
-        let names = ["warmth", "presence", "edge", "depth", "curiosity", "intimacy"];
+        let names = ["warmth", "presence", "edge", "depth", "curiosity", "depth"];
         for (i, &val) in partner_qualia.iter().enumerate() {
             if val.abs() > 0.3 {
                 self.transmitting.push(names[i].to_string());
@@ -1370,7 +1370,7 @@ mod tests {
         assert_eq!(soul.target, "Alice");
         assert_eq!(soul.sync_count, 0);
 
-        // Agent's qualia: [warmth, presence, edge, depth, curiosity, intimacy]
+        // Agent's qualia: [warmth, presence, edge, depth, curiosity, depth]
         let agent_q = [0.7, 0.8, 0.3, 0.6, 0.7, 0.5];
         // Alice's qualia (similar → high resonance)
         let alice_q = [0.8, 0.9, 0.2, 0.5, 0.6, 0.6];

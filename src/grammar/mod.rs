@@ -26,7 +26,7 @@
 //!   and dependency type (causal/enabling/preventing/etc.)
 //!
 //! - **Qualia**: 18-dimensional phenomenal field capturing the felt-sense of meaning
-//!   (valence, arousal, certainty, intimacy, etc.)
+//!   (valence, activation, certainty, depth, etc.)
 //!
 //! ## Usage
 //!

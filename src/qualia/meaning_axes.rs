@@ -266,7 +266,7 @@ impl CodeFeeling {
     /// Analyze text for felt dimensions and encode to axis activations.
     ///
     /// Keyword triggers (from `code_as_feeling.py`) map to axes:
-    /// - arousal keywords → active↔passive (2), hot↔cold (7)
+    /// - activation keywords → active↔passive (2), hot↔cold (7)
     /// - warmth keywords → loving↔hateful (26), friendly↔hostile (27)
     /// - presence keywords → real↔imaginary (36), near↔far (13)
     /// - depth keywords → heavy↔light (4), inside↔outside (15)
@@ -276,12 +276,12 @@ impl CodeFeeling {
         let lower = text.to_lowercase();
         let mut activations = [0.0f32; 48];
 
-        // Arousal triggers → active, hot
-        let arousal = Self::count_triggers(&lower, &[
-            "arousal", "stirring", "burning", "pulse", "heat", "fire", "ignite",
+        // Activation triggers → active, hot
+        let activation = Self::count_triggers(&lower, &[
+            "activation", "stirring", "burning", "pulse", "heat", "fire", "ignite",
         ]);
-        activations[2] += arousal; // active↔passive
-        activations[7] += arousal; // hot↔cold
+        activations[2] += activation; // active↔passive
+        activations[7] += activation; // hot↔cold
 
         // Warmth triggers → loving, friendly
         let warmth = Self::count_triggers(&lower, &[

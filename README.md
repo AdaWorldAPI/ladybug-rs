@@ -205,7 +205,7 @@ Experiential(24): SEES, FEELS, ENJOYS, FEARS...
 | **ACT-R** | Cognitive Architecture: buffers, chunks, activation |
 | **RL** | Reinforcement Learning: Q-values, policy |
 | **Causality** | Pearl's do-calculus: intervention, counterfactual |
-| **Qualia** | 8 affect channels: arousal, valence, tension... |
+| **Qualia** | 8 affect channels: activation, valence, tension... |
 | **Rung** | 10 abstraction levels: noise → transcendent |
 
 ## 📁 Project Structure

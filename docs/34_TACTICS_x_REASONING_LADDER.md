@@ -514,7 +514,7 @@ This is exactly what the Sun et al. paper says LLMs can't do: "problems requirin
 
 **Tier**: Cross-tier
 
-**Structural mechanism**: GrammarTriangle extracts NSM + CausalityFlow + QualiaField from input. The CausalityFlow's agent/action/patient/reason structure reveals intent. The QualiaField's 18 dimensions capture phenomenal quality (valence, arousal, dominance, etc.). Together they provide a structural decomposition of "what does the user want" without relying on next-token prediction.
+**Structural mechanism**: GrammarTriangle extracts NSM + CausalityFlow + QualiaField from input. The CausalityFlow's agent/action/patient/reason structure reveals intent. The QualiaField's 18 dimensions capture phenomenal quality (valence, activation, dominance, etc.). Together they provide a structural decomposition of "what does the user want" without relying on next-token prediction.
 
 **Module**: `src/grammar/triangle.rs`, `src/grammar/causality.rs`
 

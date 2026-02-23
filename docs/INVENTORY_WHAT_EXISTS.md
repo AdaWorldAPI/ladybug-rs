@@ -86,9 +86,9 @@ NSM_PRIMITIVES = [
 ```python
 QUALIA_DIMENSIONS = [
     "valence",        # Positive/negative feeling
-    "arousal",        # Activation level
+    "activation",        # Activation level
     "dominance",      # Control/agency
-    "intimacy",       # Closeness
+    "depth",       # Closeness
     "certainty",      # Epistemic confidence
     "urgency",        # Temporal pressure
     "depth",          # Abstraction level

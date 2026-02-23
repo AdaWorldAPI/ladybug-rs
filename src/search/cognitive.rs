@@ -2,7 +2,7 @@
 //!
 //! Unified search across three dimensions:
 //! - **NARS**: Inference operations (deduction, induction, abduction, analogy)
-//! - **Qualia**: Felt resonance (arousal, valence, tension, certainty)
+//! - **Qualia**: Felt resonance (activation, valence, tension, certainty)
 //! - **SPO**: Graph structure (subject-predicate-object)
 //!
 //! This is "human-like" search: not just similarity, but meaning, feeling, and connection.
@@ -15,7 +15,7 @@
 //! │                                                                         │
 //! │   NARS (Logic)              Qualia (Feel)           SPO (Structure)    │
 //! │   ━━━━━━━━━━━━              ━━━━━━━━━━━━━           ━━━━━━━━━━━━━━     │
-//! │   deduction                 arousal                 subject            │
+//! │   deduction                 activation                 subject            │
 //! │   induction                 valence                 predicate          │
 //! │   abduction                 tension                 object             │
 //! │   analogy                   certainty                                  │
@@ -63,7 +63,7 @@ const WORDS: usize = 256;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct QualiaVector {
     /// Activation level (0.0 = calm, 1.0 = excited)
-    pub arousal: f32,
+    pub activation: f32,
     /// Hedonic tone (-1.0 = negative, 1.0 = positive)
     pub valence: f32,
     /// Stress level (0.0 = relaxed, 1.0 = tense)
@@ -84,7 +84,7 @@ impl QualiaVector {
     /// Create from array
     pub fn from_array(arr: [f32; 8]) -> Self {
         Self {
-            arousal: arr[0],
+            activation: arr[0],
             valence: arr[1],
             tension: arr[2],
             certainty: arr[3],
@@ -98,7 +98,7 @@ impl QualiaVector {
     /// Convert to array
     pub fn to_array(&self) -> [f32; 8] {
         [
-            self.arousal,
+            self.activation,
             self.valence,
             self.tension,
             self.certainty,
@@ -586,14 +586,14 @@ impl CognitiveSearch {
     pub fn find_by_arousal(&self, min: f32, max: f32, k: usize) -> Vec<CognitiveResult> {
         self.atoms
             .iter()
-            .filter(|atom| atom.qualia.arousal >= min && atom.qualia.arousal <= max)
+            .filter(|atom| atom.qualia.activation >= min && atom.qualia.activation <= max)
             .take(k)
             .map(|atom| CognitiveResult {
                 atom: atom.clone(),
                 via: SearchVia::ArousalMatch,
                 scores: RelevanceScores {
-                    qualia: atom.qualia.arousal,
-                    combined: atom.qualia.arousal,
+                    qualia: atom.qualia.activation,
+                    combined: atom.qualia.activation,
                     ..Default::default()
                 },
             })
@@ -933,13 +933,13 @@ mod tests {
     #[test]
     fn test_qualia_vector() {
         let q1 = QualiaVector {
-            arousal: 0.8,
+            activation: 0.8,
             valence: 0.6,
             ..Default::default()
         };
 
         let q2 = QualiaVector {
-            arousal: 0.7,
+            activation: 0.7,
             valence: 0.5,
             ..Default::default()
         };
@@ -976,7 +976,7 @@ mod tests {
         // Add atoms with qualia
         let fp1 = random_fp();
         let q1 = QualiaVector {
-            arousal: 0.8,
+            activation: 0.8,
             valence: 0.9,
             ..Default::default()
         };
@@ -984,7 +984,7 @@ mod tests {
 
         let fp2 = random_fp();
         let q2 = QualiaVector {
-            arousal: 0.7,
+            activation: 0.7,
             valence: 0.8,
             ..Default::default()
         };
@@ -992,7 +992,7 @@ mod tests {
 
         // Intuit should find similar qualia
         let query_q = QualiaVector {
-            arousal: 0.75,
+            activation: 0.75,
             valence: 0.85,
             ..Default::default()
         };
@@ -1025,7 +1025,7 @@ mod tests {
                 CognitiveAtom::new(random_fp())
                     .with_truth(TruthValue::new(0.8, 0.7))
                     .with_qualia(QualiaVector {
-                        arousal: 0.5 + i as f32 * 0.1,
+                        activation: 0.5 + i as f32 * 0.1,
                         ..Default::default()
                     })
             })

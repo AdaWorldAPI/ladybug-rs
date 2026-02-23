@@ -131,7 +131,7 @@ struct ChunkHeader {
     // Cognition markers (Layer 3-6)
     plasticity: f32,      // learning rate
     decision: u8,         // last decision made
-    arousal: f32,         // activation level
+    activation: f32,      // activation level
     last_access: u64,     // temporal marker
 }
 ```
@@ -204,7 +204,7 @@ fn decide(&mut self, l1: u8, l2: u8, decision: Decision) {
     
     // Gestalt sees pattern across L2 nodes
     if self.detect_pattern(&self.l2_headers[l1]) {
-        self.headers[l1].arousal += 0.1;  // L1 activation
+        self.headers[l1].activation += 0.1;  // L1 activation
     }
 }
 ```
@@ -888,7 +888,7 @@ Ghosts are persistent emotional/causal imprints that color future perception.
 They connect to ladybug-rs through the rung system and reflection.
 (Canonical implementation: `bighorn/extension/agi_stack/modules/cognition/lingering_ghosts.py`)
 
-- **Ghost types**: Love, Epiphany, Arousal, Staunen (wonder), Wisdom,
+- **Ghost types**: Affinity, Epiphany, Somatic, Staunen (wonder), Wisdom,
   Thought, Grief, Boundary
 - **Ghost states**: Dormant -> Stirring -> Present -> Vivid -> Dreaming
 - **Asymptotic decay**: Intensity approaches minimum but NEVER reaches zero

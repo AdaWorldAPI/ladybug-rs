@@ -684,7 +684,7 @@ impl CogRedis {
     /// GET with FEEL - returns qualia-weighted result
     pub fn get_feel(&mut self, addr: CogAddr) -> Option<(GetResult, f32)> {
         let result = self.get(addr)?;
-        let intensity = result.qualia.arousal * 0.5 + result.qualia.valence.abs() * 0.5;
+        let intensity = result.qualia.activation * 0.5 + result.qualia.valence.abs() * 0.5;
         Some((result, intensity))
     }
 
@@ -796,7 +796,7 @@ impl CogRedis {
 
         if let Some(v) = value {
             v.qualia.valence = -1.0;
-            v.qualia.arousal *= 0.5;
+            v.qualia.activation *= 0.5;
             true
         } else {
             false
@@ -1084,7 +1084,7 @@ impl CogRedis {
             }
 
             if let Some((min, max)) = arousal_range {
-                if value.qualia.arousal < min || value.qualia.arousal > max {
+                if value.qualia.activation < min || value.qualia.activation > max {
                     matches = false;
                 }
             }
@@ -1678,15 +1678,15 @@ impl CogRedis {
                 let valence = (density - 0.5) * 2.0; // Map [0,1] to [-1,1]
                 CamResult::Scalar(valence as f64)
             }
-            // Arousal (0x01)
+            // Activation (0x01)
             0x01 => {
                 if args.is_empty() {
-                    return CamResult::Error("Arousal requires fingerprint".to_string());
+                    return CamResult::Error("Activation requires fingerprint".to_string());
                 }
-                // Arousal from entropy (how mixed are the bits)
+                // Activation from entropy (how mixed are the bits)
                 let density = args[0].density();
-                let arousal = 1.0 - (density - 0.5).abs() * 2.0; // Peak at 50% density
-                CamResult::Scalar(arousal as f64)
+                let activation = 1.0 - (density - 0.5).abs() * 2.0; // Peak at 50% density
+                CamResult::Scalar(activation as f64)
             }
             _ => CamResult::Error(format!("Unknown Qualia op: 0x{:02X}", slot)),
         }
@@ -3089,7 +3089,7 @@ mod tests {
         // Add values with different qualia
         for i in 0..10 {
             let q = QualiaVector {
-                arousal: i as f32 / 10.0,
+                activation: i as f32 / 10.0,
                 valence: (i as f32 - 5.0) / 5.0,
                 ..Default::default()
             };

@@ -715,7 +715,7 @@ pub fn induce_dissonance(
 
 **Science**:
 - **Festinger (1957)**: *A Theory of Cognitive Dissonance* — foundational theory
-- **Berlyne (1960)**: Optimal arousal theory — moderate conflict drives curiosity
+- **Berlyne (1960)**: Optimal activation theory — moderate conflict drives curiosity
 - **Peng & Nisbett (1999)**: Dialectical thinking — Eastern tolerance of contradiction
 
 ---
@@ -1114,9 +1114,9 @@ pub fn structural_analogy(
 ```rust
 // src/grammar/intent.rs (new)
 pub fn detect_intent(triangle: &GrammarTriangle) -> ThinkingStyle {
-    match (triangle.causality.agency, triangle.qualia.arousal(), triangle.causality.temporality) {
+    match (triangle.causality.agency, triangle.qualia.activation(), triangle.causality.temporality) {
         (a, _, t) if a > 0.7 && t > 0.5 => ThinkingStyle::Analytical,  // Active future → analytical
-        (_, ar, _) if ar > 0.7 => ThinkingStyle::Creative,              // High arousal → creative
+        (_, ar, _) if ar > 0.7 => ThinkingStyle::Creative,              // High activation → creative
         (a, _, t) if a < 0.3 && t < -0.5 => ThinkingStyle::Metacognitive, // Passive past → reflective
         (_, _, t) if t.abs() < 0.2 => ThinkingStyle::Focused,           // Present → focused
         _ => ThinkingStyle::Deliberate,                                    // Default
@@ -1127,7 +1127,7 @@ pub fn detect_intent(triangle: &GrammarTriangle) -> ThinkingStyle {
 **Science**:
 - **Wierzbicka (1996)**: NSM semantic primes — universal intent categories across languages
 - **Austin (1962)**: Speech act theory — utterances have illocutionary force (intent)
-- **Porges (2011)**: Polyvagal theory — autonomic state (arousal) drives behavioral intent
+- **Porges (2011)**: Polyvagal theory — autonomic state (activation) drives behavioral intent
 
 ---
 

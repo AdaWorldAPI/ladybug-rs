@@ -159,9 +159,9 @@ impl GrammarTriangle {
         self.qualia.get("valence").unwrap_or(0.5) > 0.5
     }
 
-    /// Is this triangle high arousal?
+    /// Is this triangle high activation?
     pub fn is_high_arousal(&self) -> bool {
-        self.qualia.get("arousal").unwrap_or(0.5) > 0.6
+        self.qualia.get("activation").unwrap_or(0.5) > 0.6
     }
 
     /// Is this triangle future-oriented?
@@ -181,7 +181,7 @@ impl GrammarTriangle {
             temporality: self.temporality(),
             agency: self.agency(),
             valence: self.qualia("valence").unwrap_or(0.5),
-            arousal: self.qualia("arousal").unwrap_or(0.5),
+            activation: self.qualia("activation").unwrap_or(0.5),
             certainty: self.qualia("certainty").unwrap_or(0.5),
         }
     }
@@ -194,7 +194,7 @@ pub struct TriangleSummary {
     pub temporality: f32,
     pub agency: f32,
     pub valence: f32,
-    pub arousal: f32,
+    pub activation: f32,
     pub certainty: f32,
 }
 
@@ -213,7 +213,7 @@ impl std::fmt::Display for TriangleSummary {
             self.temporality,
             self.agency,
             self.valence,
-            self.arousal,
+            self.activation,
             self.certainty
         )
     }
@@ -234,7 +234,7 @@ mod tests {
         assert!(!top.is_empty());
 
         // Should have some qualia
-        assert!(romeo.qualia("arousal").is_some());
+        assert!(romeo.qualia("activation").is_some());
     }
 
     #[test]

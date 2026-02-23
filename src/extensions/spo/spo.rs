@@ -321,8 +321,8 @@ impl OrthogonalCodebook {
 
 #[derive(Clone)]
 struct Qualia {
-    /// Arousal: calm ↔ excited (0.0 - 1.0)
-    arousal: f64,
+    /// Activation: calm ↔ excited (0.0 - 1.0)
+    activation: f64,
     /// Valence: negative ↔ positive (0.0 - 1.0)
     valence: f64,
     /// Tension: relaxed ↔ tense (0.0 - 1.0)
@@ -334,16 +334,16 @@ struct Qualia {
 impl Qualia {
     fn neutral() -> Self {
         Self {
-            arousal: 0.5,
+            activation: 0.5,
             valence: 0.5,
             tension: 0.5,
             depth: 0.5,
         }
     }
 
-    fn new(arousal: f64, valence: f64, tension: f64, depth: f64) -> Self {
+    fn new(activation: f64, valence: f64, tension: f64, depth: f64) -> Self {
         Self {
-            arousal,
+            activation,
             valence,
             tension,
             depth,
@@ -353,7 +353,7 @@ impl Qualia {
     /// Encode qualia as fingerprint modification
     fn to_fingerprint(&self) -> Fingerprint {
         // Each dimension maps to a different bit pattern
-        let arousal_seed = (self.arousal * 1000.0) as u64;
+        let arousal_seed = (self.activation * 1000.0) as u64;
         let valence_seed = (self.valence * 1000.0) as u64 + 10000;
         let tension_seed = (self.tension * 1000.0) as u64 + 20000;
         let depth_seed = (self.depth * 1000.0) as u64 + 30000;
@@ -368,7 +368,7 @@ impl Qualia {
 
     /// Distance between qualia states
     fn distance(&self, other: &Qualia) -> f64 {
-        let da = self.arousal - other.arousal;
+        let da = self.activation - other.activation;
         let dv = self.valence - other.valence;
         let dt = self.tension - other.tension;
         let dd = self.depth - other.depth;

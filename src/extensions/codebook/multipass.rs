@@ -164,7 +164,7 @@ pub enum ConceptType {
 
     // Qualia anchors
     Felt,    // Felt-sense quality
-    Arousal, // Energy level
+    Activation, // Energy level
     Valence, // Positive/negative
     Tension, // Cognitive tension
 
@@ -194,7 +194,7 @@ impl ConceptType {
             ConceptType::Grounds,
             ConceptType::Abstracts,
             ConceptType::Felt,
-            ConceptType::Arousal,
+            ConceptType::Activation,
             ConceptType::Valence,
             ConceptType::Tension,
             ConceptType::Subject,
@@ -220,7 +220,7 @@ impl ConceptType {
             ConceptType::Grounds => "grounds anchors bases foundations roots",
             ConceptType::Abstracts => "abstracts generalizes summarizes essence core",
             ConceptType::Felt => "felt sense feeling quality experience qualia",
-            ConceptType::Arousal => "arousal energy activation intensity vigor",
+            ConceptType::Activation => "activation energy activation intensity vigor",
             ConceptType::Valence => "valence positive negative pleasant unpleasant",
             ConceptType::Tension => "tension conflict uncertainty ambiguity unresolved",
             ConceptType::Subject => "subject agent actor source origin initiator",
@@ -585,7 +585,7 @@ fn main() {
         ),
         (
             "excitement energy enthusiasm".to_string(),
-            Some(ConceptType::Arousal),
+            Some(ConceptType::Activation),
         ),
         (
             "pleasant positive good".to_string(),

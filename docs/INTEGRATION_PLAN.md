@@ -122,7 +122,7 @@ No float vectors exist at query time.
 | 211 | Reserved | 24-31 | u8 | — |
 | 211 | Tau hash | 32-63 | u32 | Temporal context hash |
 | 212 | Valence | 0-15 | u16 | Emotional tone |
-| 212 | Arousal | 16-31 | u16 | Energy/activation |
+| 212 | Activation | 16-31 | u16 | Energy/activation |
 | 212 | Dominance | 32-47 | u16 | Control/agency |
 | 212 | Novelty | 48-63 | u16 | Surprise |
 | 213 | Certainty | 0-15 | u16 | Epistemic confidence |

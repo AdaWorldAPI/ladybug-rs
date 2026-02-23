@@ -319,7 +319,7 @@ impl CrystalCell {
         if let Some(q) = qualia {
             // Running average of qualia
             let w = self.count as f32;
-            self.qualia.arousal = (self.qualia.arousal * w + q.arousal) / (w + 1.0);
+            self.qualia.activation = (self.qualia.activation * w + q.activation) / (w + 1.0);
             self.qualia.valence = (self.qualia.valence * w + q.valence) / (w + 1.0);
             self.qualia.tension = (self.qualia.tension * w + q.tension) / (w + 1.0);
             self.qualia.depth = (self.qualia.depth * w + q.depth) / (w + 1.0);

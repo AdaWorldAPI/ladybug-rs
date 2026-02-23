@@ -94,7 +94,7 @@ pub enum NsmCategory {
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum QualiaChannel {
-    Arousal = 0x0,     // Activation/energy (high=alert, low=calm) - Russell 1980
+    Activation = 0x0,     // Activation/energy (high=alert, low=calm) - Russell 1980
     Valence = 0x1,     // Hedonic tone (positive/negative)
     Tension = 0x2,     // Stress/relaxation continuum
     Certainty = 0x3,   // Confidence/doubt (epistemic)
@@ -395,7 +395,7 @@ impl CognitiveAddress {
                 format!(
                     "Qualia::{}",
                     match self.subtype() {
-                        0 => "Arousal",
+                        0 => "Activation",
                         1 => "Valence",
                         2 => "Tension",
                         3 => "Certainty",
@@ -680,7 +680,7 @@ impl CognitiveCodebook {
 
     fn init_qualia(&mut self) {
         let channels = [
-            (QualiaChannel::Arousal, "Q_AROUSAL"),
+            (QualiaChannel::Activation, "Q_AROUSAL"),
             (QualiaChannel::Valence, "Q_VALENCE"),
             (QualiaChannel::Tension, "Q_TENSION"),
             (QualiaChannel::Certainty, "Q_CERTAINTY"),
