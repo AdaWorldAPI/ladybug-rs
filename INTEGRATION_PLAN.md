@@ -1,6 +1,6 @@
 # AdaWorld Unified Cognitive Integration Plan
 
-## Status: IN PROGRESS
+## Status: IN PROGRESS (Phase 1 near-complete, Phase 2 started)
 
 This document is the canonical integration plan for connecting ladybug-rs,
 crewai-rust, n8n-rs, cubus, and rustynum into a unified cognitive architecture.
@@ -30,7 +30,7 @@ It survives context resets and serves as the task skeleton for agents.
            │ SemanticKrnl │     │ 10-Layer     │
            │ Blackboard   │     │ CollapseGate │
            └──────┬───────┘     │ CogKernel    │
-                  │             │ BindSpace    │
+                  │             │ BindSpace ◄──────── THE HUB
                   │             └──────┬───────┘
                   │                    │
                   └──────────┬─────────┘
@@ -55,7 +55,9 @@ It survives context resets and serves as the task skeleton for agents.
                     │ DeltaLayer       │
                     │ LayerStack       │
                     │ CollapseGate     │
-                    │ NumElement trait │
+                    │ BF16 Hamming     │
+                    │ Superposition    │
+                    │ AwarenessState   │
                     └──────────────────┘
 ```
 
@@ -80,7 +82,9 @@ Agents + Crews ──lb.query──► CognitiveService(PassiveRag)
 - [x] CognitiveService with PassiveRag mode (service.rs)
 - [x] ThinkingStyleBridge (36→12 mapping)
 - [x] Grammar Triangle → fingerprint pipeline
-- [ ] StepHandler for `lb.query` step type
+- [x] LbStepHandler routing lb.query/resonate/process/gate/style/snapshot/mode/reset
+- [x] LadybugSubsystem with lifecycle bridge + agent descriptors
+- [ ] Registration in crewai-rust SubsystemRegistry
 - [ ] Integration test with crewai-rust's Pipeline
 
 ### Mode 2: ladybug-rs as Brain
@@ -139,8 +143,9 @@ UnifiedExecution
 **What exists today:**
 - [x] CognitiveSnapshot for blackboard exchange (service.rs)
 - [x] apply_snapshot() for external state injection
+- [x] LadybugSubsystem with mode-aware lifecycle (subsystem_impl.rs)
+- [x] AgentDescriptor for lb:analyst and lb:advisor (A2A registry)
 - [ ] N8nSubsystem implementing Subsystem trait
-- [ ] LadybugSubsystem implementing Subsystem trait
 - [ ] ImpactGate integration with CognitiveService
 - [ ] FreeWill → style self-modification wiring
 
@@ -158,24 +163,29 @@ UnifiedExecution
 - [x] Serialization/deserialization
 - [x] Tests
 
-#### 1.2 StepHandler Implementation [TODO]
-- [ ] Create `src/cognitive/step_handler.rs`
-- [ ] Implement `StepHandler` trait for ladybug domain (`lb.*`)
-- [ ] Route `lb.query` → CognitiveService.query_text()
-- [ ] Route `lb.resonate` → CognitiveService.query_resonance()
-- [ ] Route `lb.process` → CognitiveService.process_text()
-- [ ] Route `lb.gate` → CognitiveService.evaluate_gate()
-- [ ] Route `lb.style` → CognitiveService.set_style_external()
-- [ ] Write step output to Blackboard as CognitiveSnapshot
+#### 1.2 StepHandler Implementation [DONE]
+- [x] Create `src/cognitive/step_handler.rs`
+- [x] `LbStepHandler` wraps CognitiveService with UnifiedStep dispatch
+- [x] Route `lb.query` → query_text() (all modes)
+- [x] Route `lb.resonate` → query_resonance() (all modes, base64 or text)
+- [x] Route `lb.process` → process_text() (Brain/Orchestrated, optional style)
+- [x] Route `lb.gate` → evaluate_gate() (arbitrary scores)
+- [x] Route `lb.style` → set_style_external() + modulation JSON output
+- [x] Route `lb.snapshot` → snapshot() or basic state info
+- [x] Route `lb.mode` → set_mode() with previous/new tracking
+- [x] Route `lb.reset` → reset() cognitive state
+- [x] 16 tests passing
 
-#### 1.3 Subsystem Trait [TODO]
-- [ ] Create `src/cognitive/subsystem_impl.rs`
-- [ ] Implement `Subsystem` for `LadybugSubsystem`
-  - `step_handler()` → returns StepHandler from 1.2
-  - `init_blackboard()` → pre-populate with default CognitiveSnapshot
-  - `register_agents()` → register cognitive agents in A2A
-  - `install_hooks()` → lifecycle hooks for style sync
-- [ ] Mode-aware: PassiveRag vs Brain behavior
+#### 1.3 Subsystem Trait [DONE]
+- [x] Create `src/cognitive/subsystem_impl.rs`
+- [x] `LadybugSubsystem` with mode-aware lifecycle
+  - `step_handler()` → returns LbStepHandler with configured mode + style
+  - `init_state()` → JSON with cognitive snapshot, modulation, capabilities
+  - `agent_descriptors()` → lb:analyst (query/resonate/gate) + lb:advisor (style/process)
+  - `shutdown()` → lifecycle hook (no-op, future: flush BindSpace)
+- [x] `SubsystemBuilder` for fluent configuration
+- [x] `AgentDescriptor` with JSON export for A2A registry
+- [x] 9 tests passing (including full lifecycle test)
 
 #### 1.4 CognitiveKernel ↔ Service Unification [TODO]
 - [ ] Bridge CognitiveKernel (BindSpace operations) into CognitiveService
@@ -271,15 +281,23 @@ UnifiedExecution
 ### 5. rustynum-core (Math Foundation)
 
 #### 5.1 Shared Primitives [DONE]
-- [x] DeltaLayer (address-sparse XOR)
-- [x] LayerStack (sequential processing with merge)
-- [x] CollapseGate (SD-based gating: FLOW/HOLD/BLOCK)
-- [x] NumElement trait alias
+- [x] DeltaLayer<N> (ephemeral XOR diffs, ground truth `&self` forever)
+- [x] LayerStack<N> (multi-writer concurrent stacks with CollapseGate)
+- [x] CollapseGate (conflict-threshold gating: Flow/Hold/Block)
+- [x] Fingerprint<N> (XOR group with BitXor/BitAnd impls, Hamming distance)
+- [x] BF16 Hamming with AVX-512 dispatch + scalar fallback
+- [x] BF16 structural diff (sign_flips, exponent_bits, mantissa_bits per dim)
+- [x] BF16 superposition decompose → 4-state awareness (Crystallized/Tensioned/Uncertain/Noise)
+- [x] Awareness packing (2 bits per dim) and unpacking
+- [x] fp32_to_bf16_bytes / bf16_bytes_to_fp32 conversion
+- [x] ComputeCaps + ComputeTier hardware detection (AVX-512, AMX, GPU)
+- [x] Blackboard (64-byte aligned memory arena)
 
 #### 5.2 Future Primitives [TODO]
 - [ ] Majority vote bundle (used by CognitiveKernel.bundle_recent)
 - [ ] Hamming similarity (portable version of AVX-512 VPOPCNTDQ)
 - [ ] Fingerprint XOR-fold (Container 8192 ↔ Fingerprint 16384)
+- [ ] Focus mask: dimension selection based on codebook crystallization history
 
 ### 6. ladybug-contract (Pure Types)
 
@@ -313,14 +331,14 @@ UnifiedExecution
 
 ## Priority Order
 
-### Phase 1: Vertical Slice (Mode 1 — Passive RAG)
+### Phase 1: Vertical Slice (Mode 1 — Passive RAG) [NEAR-COMPLETE]
 1. [x] CognitiveService + ThinkingStyleBridge (ladybug-rs) **DONE**
-2. [ ] StepHandler for `lb.*` domain (ladybug-rs)
-3. [ ] LadybugSubsystem trait impl (ladybug-rs)
+2. [x] LbStepHandler for `lb.*` domain — 8 step types (ladybug-rs) **DONE**
+3. [x] LadybugSubsystem with lifecycle + agent descriptors (ladybug-rs) **DONE**
 4. [ ] Registration in crewai-rust SubsystemRegistry
 5. [ ] End-to-end test: crewai-rust crew → lb.query → response
 
-### Phase 2: Brain Mode (Mode 2)
+### Phase 2: Brain Mode (Mode 2) [IN PROGRESS]
 6. [ ] Grammar → QuadTriangle bidirectional wiring
 7. [ ] CognitiveKernel ↔ Service unification
 8. [ ] Persona → ThinkingStyle bidirectional sync
@@ -332,10 +350,183 @@ UnifiedExecution
 12. [ ] FreeWill + style evolution
 13. [ ] A2A blackboard protocol
 
-### Phase 4: Numeric Foundation
-14. [ ] cubus awareness ↔ ladybug CognitiveSnapshot bridge
-15. [ ] Shared rustynum-core primitives (majority vote, Hamming)
-16. [ ] CognitiveSnapshot wire format in ladybug-contract
+### Phase 4: Numeric Foundation + BF16 Superposition
+14. [ ] BindSpace ↔ rustynum DeltaLayer/LayerStack integration
+15. [ ] BF16 superposition sensing in BindSpace (hot path)
+16. [ ] Crystal codebook as cold accumulation (feedback loop)
+17. [ ] cubus awareness ↔ ladybug CognitiveSnapshot bridge
+18. [ ] CognitiveSnapshot wire format in ladybug-contract
+
+---
+
+## BF16 Superposition Architecture (Hot/Cold/Feedback)
+
+The core architectural insight connecting rustynum-core to ladybug-rs BindSpace
+is a three-layer loop: **hot sensing**, **cold accumulation**, **feedback bias**.
+
+### The Problem
+
+Scanning all 1024 Jina dimensions (or all 16,384 fingerprint bits) for every
+operation is wasteful. Most dimensions are noise for any given context. The
+system needs to know WHERE to focus — not through configuration, but through
+lived experience.
+
+### The Solution: Three Loops
+
+```
+                    ┌──────────────────────────────────────────────────┐
+                    │          HOT PATH (microseconds)                 │
+                    │                                                  │
+                    │  On every insert / query / agent flux:           │
+                    │  1. Pick 2-3 relevant vectors from BindSpace     │
+                    │  2. superposition_decompose(vectors, thresholds) │
+                    │  3. → 4-state per dimension:                     │
+                    │       Crystallized = sign+exp agree (real signal)│
+                    │       Tensioned = sign disagree (contradiction)  │
+                    │       Uncertain = sign agree, exp spread (maybe) │
+                    │       Noise = only mantissa differs (ignore)     │
+                    │  4. Pack to 2 bits/dim → write to BindSpace meta │
+                    │                                                  │
+                    │  Cost: ~2µs per decomposition                    │
+                    │  Runs: continuously, ambient, every operation    │
+                    └──────────────────┬───────────────────────────────┘
+                                       │
+                                       ▼
+                    ┌──────────────────────────────────────────────────┐
+                    │          COLD PATH (Lance / Crystal)             │
+                    │                                                  │
+                    │  CrystalCodebook accumulates which superpositions│
+                    │  crystallized over time:                         │
+                    │  - Which dimension triples showed sign consensus │
+                    │  - Which exponent ranges stabilized              │
+                    │  - 125 cells (5×5×5 grid) as learned centroids  │
+                    │  - NOT a trained model — a lived history         │
+                    │                                                  │
+                    │  Storage: SPO Crystal (3D content-addressable)   │
+                    │  Update: Lloyd iteration on codebook centroids   │
+                    │  Compression: centroid + sparse residual (50KB)  │
+                    └──────────────────┬───────────────────────────────┘
+                                       │
+                                       ▼
+                    ┌──────────────────────────────────────────────────┐
+                    │          FEEDBACK LOOP                           │
+                    │                                                  │
+                    │  Codebook biases WHICH dimensions get weighted   │
+                    │  in the next superposition:                      │
+                    │                                                  │
+                    │  NOT: "scan all 1024 Jina dims"                  │
+                    │  BUT: "these 47 dims crystallized before,        │
+                    │         weight them in next decomposition"       │
+                    │                                                  │
+                    │  Focus mask = top dimension triples from history │
+                    │  Updated lazily (not every cycle)                │
+                    │  Makes superposition smarter over time           │
+                    └──────────────────────────────────────────────────┘
+```
+
+### CAM = Content-Addressable Memory (Address IS Content)
+
+When 3 dimensions consistently show sign agreement across different contexts,
+those 3 dimensions ARE the address of that concept. They emerge from the data,
+not from design. The top triples from counting = CAM codebook entries.
+
+```
+Dimension triples that crystallize:
+  (valence, agency, temporality)  → emotional intent fingerprint
+  (depth, complexity, coherence)  → analytical difficulty address
+  (novelty, salience, aesthetic)  → creative inspiration address
+
+These aren't designed — they're discovered by counting sign consensus.
+```
+
+### Where BF16 Benefits Most
+
+| Component | Current | With BF16 | Benefit |
+|-----------|---------|-----------|---------|
+| **SemanticKernel** | HTTP + JSON serialization | In-process BF16 Hamming | 1000x faster, zero-copy |
+| **Crystal4K / SPO** | f64 similarity | BF16 structured diff | Sign=polarity, Exp=magnitude, Mantissa=noise separation |
+| **Sentence Crystal** | Jina 1024D → random projection | BF16 superposition → 4-state awareness | Knows WHERE focus is, not just popcount |
+| **Crystal Compress** | Codebook + residual | BF16 codebook centroids | 2B per dim vs 4B, same semantic fidelity |
+| **BindSpace** | Fingerprint [u64;256] | DeltaLayer<256> overlays | Multi-writer concurrent, XOR algebra, CollapseGate |
+
+### BindSpace as the Hub
+
+All services should be nudged toward BindSpace:
+
+```
+              BindSpace (65,536 addresses)
+              ┌─────────────────────────────────────┐
+              │ Surface 0x00-0x0B: cognitive state   │
+              │ Orchestration 0x0C-0x0F: agents/A2A  │
+              │ Fluid 0x10-0x7F: working memory      │
+              │ Nodes 0x80-0xFF: crystallized truth   │
+              │                                       │
+              │ Each address:                         │
+              │   [u64; 256] = Fingerprint2K          │
+              │   ≡ rustynum Fingerprint<256>          │
+              │   Overlaid with DeltaLayer<256>        │
+              │   Multi-writer via LayerStack<256>     │
+              │   Gated by CollapseGate (Flow/Hold/   │
+              │   Block)                               │
+              └───────────────┬─────────────────────┘
+                              │
+          ┌───────────────────┼─────────────────────┐
+          ▼                   ▼                     ▼
+   Grammar Triangle      CognitiveKernel      SemanticKernel
+   text → fp → write     L1-L10 → BindOps    crewai ↔ BindSpace
+                              │
+                              ▼
+                    BF16 superposition sensing
+                    (on every read/write pair)
+                              │
+                              ▼
+                    CrystalCodebook accumulation
+                    (background, lazy update)
+                              │
+                              ▼
+                    Focus mask → next sensing weighted
+```
+
+### rustynum-core ↔ ladybug-rs Type Mapping
+
+| rustynum-core | ladybug-rs | Notes |
+|---------------|------------|-------|
+| `Fingerprint<256>` | `Fingerprint` ([u64;256]) | Same layout, zero-copy cast |
+| `DeltaLayer<256>` | — (new) | XOR overlay on BindSpace nodes |
+| `LayerStack<256>` | — (new) | Multi-writer per BindSpace address |
+| `CollapseGate` | `GateState` (Flow/Hold/Block) | Same semantics, unify enum |
+| `BF16Weights` | — (new) | Per-search weight tuning |
+| `SuperpositionState` | — (new) | 4-state awareness per dimension |
+| `AwarenessThresholds` | — (new) | Configurable per thinking style |
+| `BF16StructuralDiff` | — (new) | Learning signal per update |
+| `Blackboard` | `BindSpace` | Converge to BindSpace as canonical |
+
+### 256Kbit Container Architecture (Future)
+
+The next-generation CogRecord format expands to 4 containers:
+
+```
+┌──────────────────────────────────────────────────────┐
+│  Container 0 (upper): METADATA                       │
+│  - neo4j-rs DN tree pointers (LCRS encoding)         │
+│  - Hash search index (O(1) prefix lookup)            │
+│  - Format field: describes how to interpret C1-C3    │
+│  - Quick node/edge metadata for graph traversal      │
+│                                                      │
+│  Container 1-3 (lower): PAYLOAD                      │
+│  Option A: 3D spatial leaf (one container per axis)   │
+│  Option B: Hybrid bitpacked                          │
+│    - Jina 1024D embedding (BF16: 2KB)                │
+│    - Semantic fingerprint (remaining bits)            │
+│    - Format field in C0 selects interpretation        │
+│                                                      │
+│  The format field enables:                           │
+│  - DN tree lookup (graph traversal)                  │
+│  - Hash search (content addressing)                  │
+│  - BF16 awareness (superposition sensing)            │
+│  - All without touching containers you don't need    │
+└──────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -343,26 +534,44 @@ UnifiedExecution
 
 | File | Purpose |
 |------|---------|
-| `ladybug-rs/src/cognitive/service.rs` | **NEW** Mode-aware CognitiveService |
-| `ladybug-rs/src/cognitive/fabric.rs` | CognitiveFabric (10-layer, 2-stroke) |
-| `ladybug-rs/src/cognitive/substrate.rs` | CognitiveSubstrate (7-layer, mRNA) |
-| `ladybug-rs/src/cognitive/cognitive_kernel.rs` | CognitiveKernel (BindSpace bridge) |
-| `ladybug-rs/src/cognitive/style.rs` | 12 ThinkingStyles + FieldModulation |
-| `ladybug-rs/src/cognitive/collapse_gate.rs` | SD-based FLOW/HOLD/BLOCK |
-| `ladybug-rs/src/cognitive/quad_triangle.rs` | 4×3 QuadTriangle |
-| `ladybug-rs/src/grammar/triangle.rs` | Grammar Triangle (NSM+Causality+Qualia) |
-| `ladybug-rs/src/grammar/nsm.rs` | 65 NSM semantic primitives |
-| `ladybug-rs/src/grammar/qualia.rs` | 18D qualia field |
-| `ladybug-rs/src/grammar/causality.rs` | Causality flow (WHO→DID→WHAT→WHY) |
-| `ladybug-rs/src/extensions/` | NSM substrate, SPO crystal, hologram, CAM |
-| `crewai-rust/src/contract/pipeline.rs` | Pipeline + StepRouter + Phase |
-| `crewai-rust/src/contract/router.rs` | StepDomain enum + StepHandler trait |
-| `crewai-rust/src/contract/subsystem.rs` | Subsystem trait + SubsystemRegistry |
-| `crewai-rust/src/persona/thinking_style.rs` | 36 styles, 23D, 6 clusters |
-| `crewai-rust/src/chat/semantic_kernel.rs` | HTTP bridge to ladybug BindSpace |
+| **ladybug-rs cognitive pipeline** | |
+| `src/cognitive/service.rs` | Mode-aware CognitiveService (3 modes) |
+| `src/cognitive/step_handler.rs` | LbStepHandler — lb.* step dispatch (8 types) |
+| `src/cognitive/subsystem_impl.rs` | LadybugSubsystem lifecycle + agent descriptors |
+| `src/cognitive/fabric.rs` | CognitiveFabric (10-layer, 2-stroke, satisfaction) |
+| `src/cognitive/substrate.rs` | CognitiveSubstrate (7-layer, mRNA, butterfly) |
+| `src/cognitive/cognitive_kernel.rs` | CognitiveKernel (BindSpace bridge, L1-L10 ops) |
+| `src/cognitive/style.rs` | 12 ThinkingStyles + FieldModulation |
+| `src/cognitive/collapse_gate.rs` | SD-based FLOW/HOLD/BLOCK |
+| `src/cognitive/quad_triangle.rs` | 4×3 QuadTriangle (120K bits) |
+| **ladybug-rs grammar pipeline** | |
+| `src/grammar/triangle.rs` | Grammar Triangle (NSM+Causality+Qualia→10Kbit) |
+| `src/grammar/nsm.rs` | 65 NSM semantic primitives |
+| `src/grammar/qualia.rs` | 18D qualia field |
+| `src/grammar/causality.rs` | Causality flow (WHO→DID→WHAT→WHY) |
+| **ladybug-rs extensions (BF16 target)** | |
+| `src/extensions/spo/spo.rs` | SPO Crystal — 5×5×5 content-addressable graph |
+| `src/extensions/sentence_crystal.rs` | Sentence Crystal — Jina 1024D → 5^5 grid + NSM |
+| `src/extensions/compress/compress.rs` | Crystal Compress — learned codebook quantization |
+| **ladybug-rs storage** | |
+| `src/storage/bind_space.rs` | BindSpace (65K addresses, [u64;256] per node) |
+| `src/contract/` | UnifiedStep/DataEnvelope/EnrichmentEngine/Spectator |
+| **crewai-rust** | |
+| `src/contract/pipeline.rs` | Pipeline + StepRouter + Phase |
+| `src/contract/router.rs` | StepDomain enum + StepHandler trait |
+| `src/contract/subsystem.rs` | Subsystem trait + SubsystemRegistry |
+| `src/persona/thinking_style.rs` | 36 styles, 23D, 6 clusters |
+| `src/chat/semantic_kernel.rs` | HTTP bridge to ladybug BindSpace |
+| **rustynum-core (BF16 foundation)** | |
+| `src/bf16_hamming.rs` | BF16 Hamming, structural diff, superposition decompose |
+| `src/delta.rs` | DeltaLayer<N> — ephemeral XOR on immutable ground truth |
+| `src/layer_stack.rs` | LayerStack<N> + CollapseGate (Flow/Hold/Block) |
+| `src/fingerprint.rs` | Fingerprint<N> — XOR group, Hamming, type aliases |
+| `src/compute.rs` | ComputeCaps + ComputeTier hardware detection |
+| **other repos** | |
 | `n8n-rs/n8n-rust/crates/n8n-contract/src/` | Unified execution types |
 | `cubus/cubus/src/awareness.rs` | BF16 awareness substrate |
-| `rustynum/rustynum-core/src/ops/` | DeltaLayer, LayerStack, CollapseGate |
+| `ladybug-contract/src/` | Container, WideContainer, CogRecord8K, CogPacket |
 
 ---
 
@@ -408,6 +617,13 @@ UnifiedExecution
 
 ---
 
+## Commit History (this session)
+
+| Commit | Description |
+|--------|-------------|
+| `1800ee3` | feat: CognitiveService + ThinkingStyleBridge + INTEGRATION_PLAN |
+| `8fe497e` | feat: LbStepHandler + LadybugSubsystem for lb.* domain routing |
+
 ## Backups
 
 - **crewai-rust**: DO NOT force push. Branch `claude/vsaclip-hamming-recognition-y0b94` has merge of main.
@@ -418,5 +634,6 @@ UnifiedExecution
 
 ---
 
-*Last updated: 2026-02-23*
+*Last updated: 2026-02-23 (session 2 — BF16 architecture + step handler + subsystem)*
 *Session: claude/vsaclip-hamming-recognition-y0b94*
+*Total cognitive tests: 44 (19 service + 16 step_handler + 9 subsystem)*

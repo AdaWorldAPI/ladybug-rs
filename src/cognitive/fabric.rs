@@ -400,6 +400,72 @@ impl CognitiveFabric {
         &self.collapse_history[start..]
     }
 
+    /// Prime triangle activations from Grammar Triangle dimensions.
+    ///
+    /// Maps Grammar sub-fields to QuadTriangle corners:
+    ///
+    /// ```text
+    /// Grammar dimension              → Triangle corner
+    /// ───────────────────────────────────────────────────
+    /// NSM activation strength        → Processing.Analytical
+    /// Qualia: intentionality         → Processing.Intuitive
+    /// Causality: agency              → Processing.Procedural
+    ///
+    /// Qualia: depth + complexity     → Content.Abstract
+    /// Qualia: concreteness           → Content.Concrete
+    /// Qualia: social                 → Content.Relational
+    ///
+    /// Qualia: coherence              → Gestalt.Coherence
+    /// Qualia: novelty                → Gestalt.Novelty
+    /// Qualia: salience               → Gestalt.Resonance
+    ///
+    /// Crystallization: layer-driven (not grammar-driven)
+    /// ```
+    ///
+    /// Called before `process()` to seed triangles with semantic content.
+    /// Gentle nudge rate (0.15) blends with layer-based updates in process().
+    pub fn prime_from_grammar(&mut self, grammar: &crate::grammar::GrammarTriangle) {
+        // Processing: how are we thinking about this?
+        let nsm_strength = grammar.nsm.norm().min(1.0);
+        let intentionality = grammar.qualia("intentionality").unwrap_or(0.5);
+        let agency = grammar.agency();
+
+        let proc_acts = self.triangles.processing.activations();
+        self.triangles.processing.set_activations(
+            proc_acts[0] * 0.85 + nsm_strength * 0.15,
+            proc_acts[1] * 0.85 + intentionality * 0.15,
+            proc_acts[2] * 0.85 + agency * 0.15,
+        );
+
+        // Content: what is this about?
+        let depth = grammar.qualia("depth").unwrap_or(0.5);
+        let complexity = grammar.qualia("complexity").unwrap_or(0.5);
+        let abstract_strength = ((depth + complexity) / 2.0).min(1.0);
+        let concreteness = grammar.qualia("concreteness").unwrap_or(0.5);
+        let social = grammar.qualia("social").unwrap_or(0.5);
+
+        let cont_acts = self.triangles.content.activations();
+        self.triangles.content.set_activations(
+            cont_acts[0] * 0.85 + abstract_strength * 0.15,
+            cont_acts[1] * 0.85 + concreteness * 0.15,
+            cont_acts[2] * 0.85 + social * 0.15,
+        );
+
+        // Gestalt: how does the whole feel?
+        let coherence = grammar.qualia("coherence").unwrap_or(0.5);
+        let novelty = grammar.qualia("novelty").unwrap_or(0.5);
+        let salience = grammar.qualia("salience").unwrap_or(0.5);
+
+        let gest_acts = self.triangles.gestalt.activations();
+        self.triangles.gestalt.set_activations(
+            gest_acts[0] * 0.85 + coherence * 0.15,
+            gest_acts[1] * 0.85 + novelty * 0.15,
+            gest_acts[2] * 0.85 + salience * 0.15,
+        );
+
+        // Crystallization: left to layers (validation-driven, not content-driven)
+    }
+
     /// Reset to neutral state
     pub fn reset(&mut self) {
         self.triangles = QuadTriangle::neutral();
@@ -519,5 +585,55 @@ mod tests {
 
         assert_eq!(restored.style(), ThinkingStyle::Creative);
         assert_eq!(restored.cycle, fabric.cycle);
+    }
+
+    #[test]
+    fn test_prime_from_grammar() {
+        use crate::grammar::GrammarTriangle;
+
+        let mut fabric = CognitiveFabric::new("test");
+        let before = fabric.triangles.to_floats();
+
+        // High-agency, future-oriented text should shift Processing.Procedural up
+        let grammar = GrammarTriangle::from_text(
+            "I will actively build and create something new tomorrow",
+        );
+        fabric.prime_from_grammar(&grammar);
+        let after = fabric.triangles.to_floats();
+
+        // At least some activations should have shifted
+        let changed = before
+            .iter()
+            .zip(after.iter())
+            .filter(|(a, b)| (*a - *b).abs() > 0.001)
+            .count();
+        assert!(changed > 0, "Grammar priming should shift at least one activation");
+    }
+
+    #[test]
+    fn test_prime_from_grammar_different_texts() {
+        use crate::grammar::GrammarTriangle;
+
+        let mut fabric1 = CognitiveFabric::new("test1");
+        let grammar1 = GrammarTriangle::from_text(
+            "The mathematical proof demonstrates logical consistency with rigor",
+        );
+        fabric1.prime_from_grammar(&grammar1);
+        let analytical = fabric1.triangles.to_floats();
+
+        let mut fabric2 = CognitiveFabric::new("test2");
+        let grammar2 = GrammarTriangle::from_text(
+            "She felt a deep warmth of compassion and emotional connection",
+        );
+        fabric2.prime_from_grammar(&grammar2);
+        let emotional = fabric2.triangles.to_floats();
+
+        // Different texts should produce different triangle states
+        let diff: f32 = analytical
+            .iter()
+            .zip(emotional.iter())
+            .map(|(a, b)| (*a - *b).abs())
+            .sum();
+        assert!(diff > 0.01, "Analytical vs emotional text should differ, got diff={}", diff);
     }
 }

@@ -481,14 +481,19 @@ impl CognitiveService {
         let grammar = GrammarTriangle::from_text(text);
         let fingerprint = grammar.to_fingerprint();
 
-        // 2. Full cognitive cycle through the fabric
+        // 2. Prime QuadTriangle with Grammar dimensions (NSM, Qualia, Causality)
+        //    This seeds Processing/Content/Gestalt corners from semantic content
+        //    before the 10-layer stack runs. Gentle 0.15 nudge blends with layers.
+        self.fabric.prime_from_grammar(&grammar);
+
+        // 3. Full cognitive cycle through the fabric
         let state = self.fabric.process(&fingerprint);
 
-        // 3. Build snapshot for cross-crate exchange
+        // 4. Build snapshot for cross-crate exchange
         let mut snapshot = CognitiveSnapshot::from_cognitive_state(&state);
         snapshot.grammar_summary = Some(format!("{}", grammar.summary()));
 
-        // 4. Store state
+        // 5. Store state
         self.last_grammar = Some(grammar);
         self.last_snapshot = Some(snapshot.clone());
 
