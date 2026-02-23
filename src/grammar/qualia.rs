@@ -75,8 +75,8 @@ impl QualiaField {
         // Dominance: control/agency
         coordinates[2] = Self::compute_dominance(&text_lower);
 
-        // Depth: personal markers
-        coordinates[3] = Self::compute_depth(&text_lower);
+        // Closeness: personal/relational markers
+        coordinates[3] = Self::compute_closeness(&text_lower);
 
         // Certainty: epistemic confidence
         coordinates[4] = Self::compute_certainty(&text_lower);
@@ -211,13 +211,13 @@ impl QualiaField {
         (score + 0.5).clamp(0.0, 1.0)
     }
 
-    fn compute_depth(text: &str) -> f32 {
-        let intimate = [
-            "heart", "soul", "love", "dear", "soft", "gentle", "whisper", "touch", "embrace",
-            "kiss", "close", "together", "us", "we",
+    fn compute_closeness(text: &str) -> f32 {
+        let relational = [
+            "heart", "soul", "dear", "soft", "gentle", "close", "together", "us", "we",
+            "care", "share", "connect",
         ];
 
-        let count: usize = intimate.iter().map(|w| text.matches(w).count()).sum();
+        let count: usize = relational.iter().map(|w| text.matches(w).count()).sum();
         (count as f32 * 0.15).min(1.0)
     }
 
@@ -697,10 +697,10 @@ mod tests {
 
     #[test]
     fn test_depth_detection() {
-        let intimate = QualiaField::from_text("Our hearts touched as we embraced together");
+        let close = QualiaField::from_text("Our hearts together we care and share");
         let distant = QualiaField::from_text("The quarterly report shows a 5% increase");
 
-        assert!(intimate.get("depth").unwrap() > distant.get("depth").unwrap());
+        assert!(close.get("closeness").unwrap_or(0.0) > distant.get("closeness").unwrap_or(0.0));
     }
 
     #[test]
