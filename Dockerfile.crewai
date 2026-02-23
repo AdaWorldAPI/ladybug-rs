@@ -23,8 +23,9 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /build
 
-# --- Clone crewai-rust vendor ---
-RUN git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust vendor/crewai-rust
+# --- Clone vendor repos ---
+RUN git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust vendor/crewai-rust && \
+    git clone --depth 1 https://github.com/AdaWorldAPI/rustynum vendor/rustynum
 
 # --- Copy source ---
 COPY . .

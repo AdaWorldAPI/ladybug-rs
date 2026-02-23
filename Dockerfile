@@ -25,7 +25,7 @@
 FROM rust:1.93-slim-bookworm AS builder
 
 RUN apt-get update && apt-get install -y \
-    pkg-config libssl-dev cmake protobuf-compiler \
+    pkg-config libssl-dev cmake protobuf-compiler git \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
@@ -39,6 +39,13 @@ RUN mkdir -p src/bin && \
 
 # --- Full source ---
 COPY . .
+
+# --- Vendor submodules (clone if not present in build context) ---
+# Cargo validates path dependencies at resolution time regardless of features,
+# so vendor repos must exist even when their features aren't enabled.
+RUN if [ ! -f vendor/rustynum/rustynum-rs/Cargo.toml ]; then \
+      git clone --depth 1 https://github.com/AdaWorldAPI/rustynum vendor/rustynum; \
+    fi
 
 # Features to enable (flight enables Arrow Flight gRPC)
 # NOTE: lancedb feature has API compatibility issues - enable after fixing lance module

@@ -206,6 +206,7 @@ pyo3 = { version = "0.23", optional = true, features = ["extension-module"] }
 #   - Zero-copy Container bridge: view_u64_as_bytes()
 # Requires: nightly Rust (portable_simd)
 # Requires: git clone https://github.com/AdaWorldAPI/rustynum vendor/rustynum
+#           (or: git submodule update --init vendor/rustynum)
 # -----------------------------------------------------------------------------
 rustynum-rs = { path = "vendor/rustynum/rustynum-rs", optional = true }
 
