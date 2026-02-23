@@ -301,7 +301,7 @@ docker build --build-arg FEATURES="simd,parallel,flight" -t ladybug .
 
 ### What the Owner Wants
 
-Based on the architecture, the owner (Jan Hübener) is building a cognitive substrate that:
+Based on the architecture, the owner is building a cognitive substrate that:
 - Uses 8+8 addressing for universal bind space
 - Translates 4096 CAM operations to LanceDB
 - Provides Redis syntax for cognitive semantics

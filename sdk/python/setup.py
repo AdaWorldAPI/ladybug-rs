@@ -7,7 +7,7 @@ setup(
     description="Python SDK for LadybugDB cognitive database",
     long_description=open("README.md").read() if __import__("os").path.exists("README.md") else "",
     long_description_content_type="text/markdown",
-    author="Ada Consciousness Project",
+    author="AdaWorldAPI",
     url="https://github.com/AdaWorldAPI/ladybug-rs",
     py_modules=["ladybugdb"],
     python_requires=">=3.8",

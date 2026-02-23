@@ -208,9 +208,9 @@ mod tests {
 
     #[test]
     fn test_pseudo_embedding() {
-        let e1 = generate_pseudo_embedding("Ada");
-        let e2 = generate_pseudo_embedding("Ada");
-        let e3 = generate_pseudo_embedding("Jan");
+        let e1 = generate_pseudo_embedding("Alice");
+        let e2 = generate_pseudo_embedding("Alice");
+        let e3 = generate_pseudo_embedding("Bob");
 
         // Same text → same embedding
         assert_eq!(e1, e2);

@@ -120,13 +120,13 @@ fn handle_qualia_hydrate(body: &str, state: &SharedState, format: ResponseFormat
     let ghosts: Vec<GhostEcho> = ghost_records.iter().enumerate().map(|(i, gr)| {
         GhostEcho {
             ghost_type: match i % 8 {
-                0 => GhostType::Love,
+                0 => GhostType::Affinity,
                 1 => GhostType::Staunen,
                 2 => GhostType::Wisdom,
                 3 => GhostType::Thought,
                 4 => GhostType::Epiphany,
                 5 => GhostType::Grief,
-                6 => GhostType::Arousal,
+                6 => GhostType::Somatic,
                 _ => GhostType::Boundary,
             },
             intensity: gr.resonance.clamp(0.0, 1.0),

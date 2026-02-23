@@ -49,8 +49,8 @@
 //! let engine = UnifiedEngine::new(UnifiedConfig::default());
 //!
 //! // DN tree through CogRedis syntax
-//! engine.dn_set("Ada:A:soul:identity", fingerprint, rung)?;
-//! let node = engine.dn_get("Ada:A:soul:identity")?;
+//! engine.dn_set("agent:A:soul:identity", fingerprint, rung)?;
+//! let node = engine.dn_get("agent:A:soul:identity")?;
 //!
 //! // ACID transaction
 //! let txn = engine.begin()?;
@@ -298,7 +298,7 @@ impl UnifiedEngine {
     /// Set DN path with fingerprint and rung
     ///
     /// Creates the full path hierarchy if it doesn't exist.
-    /// DN path format: "Ada:A:soul:identity"
+    /// DN path format: "agent:A:soul:identity"
     pub fn dn_set(
         &self,
         path: &str,
@@ -1556,7 +1556,7 @@ impl UnifiedEngine {
     // REDIS-STYLE DN NAVIGATION (GET/SET/HGET/HSET for paths)
     // =========================================================================
 
-    /// Redis GET for DN path: GET Ada:A:soul:identity
+    /// Redis GET for DN path: GET agent:A:soul:identity
     ///
     /// Returns the fingerprint at the path, or None if not exists.
     /// This is the primary Redis-compatible read operation.
@@ -1580,7 +1580,7 @@ impl UnifiedEngine {
         }
     }
 
-    /// Redis SET for DN path: SET Ada:A:soul:identity <fingerprint>
+    /// Redis SET for DN path: SET agent:A:soul:identity <fingerprint>
     ///
     /// Creates the path hierarchy if needed and sets the fingerprint.
     pub fn set(&self, path: &str, value: &[u8]) -> Result<(), UnifiedError> {
@@ -1606,7 +1606,7 @@ impl UnifiedEngine {
         Ok(())
     }
 
-    /// Redis HGET for DN path: HGET Ada:A:soul label
+    /// Redis HGET for DN path: HGET agent:A:soul label
     ///
     /// Gets a specific field from the node (label, rung, depth, etc.)
     pub fn hget(&self, path: &str, field: &str) -> Result<Option<String>, UnifiedError> {
@@ -1633,7 +1633,7 @@ impl UnifiedEngine {
         }
     }
 
-    /// Redis HSET for DN path: HSET Ada:A:soul label "identity node"
+    /// Redis HSET for DN path: HSET agent:A:soul label "identity node"
     ///
     /// Sets a specific field on the node.
     pub fn hset(&self, path: &str, field: &str, value: &str) -> Result<bool, UnifiedError> {

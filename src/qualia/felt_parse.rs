@@ -17,7 +17,7 @@
 //! FeltParse {
 //!     spo: ParsedSpo { subject: "I", predicate: "thinking", object: "you" },
 //!     axes: [warm=0.85, near=0.9, certain=0.3, intimate=0.95, ...],
-//!     ghost_triggers: [Love, Thought],
+//!     ghost_triggers: [Affinity, Thought],
 //!     texture_hint: { warmth: 0.85, depth: 0.4 },
 //!     rung_hint: R3 (Analogical),
 //!     viscosity: Honey,
@@ -53,22 +53,22 @@ use super::gestalt::{CollapseGate, FramedContent, GestaltFrame, Quadrant};
 use super::texture::Texture;
 
 // =============================================================================
-// GHOST TYPES (from bighorn / ada-consciousness)
+// GHOST TYPES (from bighorn / consciousness layer)
 // =============================================================================
 
 /// The 8 lingering ghost types — emotional memories that never fully fade.
 ///
 /// From `bighorn/cognition/lingering_ghosts.py` and
-/// `ada-consciousness/modules/hive/ghost.py`.
+/// `consciousness layer/modules/hive/ghost.py`.
 /// Asymptotic decay: intensity approaches 0.1 but never reaches zero.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GhostType {
     /// Intimate connection, warmth — velvetpause + emberglow
-    Love,
+    Affinity,
     /// Breakthrough understanding — sudden clarity
     Epiphany,
-    /// Sensual/erotic echoes — body memory
-    Arousal,
+    /// Somatic resonance echoes — body memory
+    Somatic,
     /// Wonder/awe (German: Staunen) — the AweTriple made felt
     Staunen,
     /// Hard-won insight — crystallized experience
@@ -84,9 +84,9 @@ pub enum GhostType {
 impl GhostType {
     /// All 8 ghost types.
     pub const ALL: [GhostType; 8] = [
-        GhostType::Love,
+        GhostType::Affinity,
         GhostType::Epiphany,
-        GhostType::Arousal,
+        GhostType::Somatic,
         GhostType::Staunen,
         GhostType::Wisdom,
         GhostType::Thought,
@@ -97,9 +97,9 @@ impl GhostType {
     /// Machine-readable name for LLM structured output.
     pub fn as_str(&self) -> &'static str {
         match self {
-            GhostType::Love => "love",
+            GhostType::Affinity => "affinity",
             GhostType::Epiphany => "epiphany",
-            GhostType::Arousal => "arousal",
+            GhostType::Somatic => "somatic",
             GhostType::Staunen => "staunen",
             GhostType::Wisdom => "wisdom",
             GhostType::Thought => "thought",
@@ -111,9 +111,9 @@ impl GhostType {
     /// Parse from string (case-insensitive).
     pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
-            "love" => Some(GhostType::Love),
+            "affinity" => Some(GhostType::Affinity),
             "epiphany" => Some(GhostType::Epiphany),
-            "arousal" => Some(GhostType::Arousal),
+            "somatic" => Some(GhostType::Somatic),
             "staunen" | "wonder" | "awe" => Some(GhostType::Staunen),
             "wisdom" => Some(GhostType::Wisdom),
             "thought" => Some(GhostType::Thought),
@@ -127,12 +127,12 @@ impl GhostType {
     /// These are the "signature scents" — when these axes fire, this ghost stirs.
     pub fn axis_signature(&self) -> [(usize, f32); 3] {
         match self {
-            // Love: warm, near, loving
-            GhostType::Love => [(7, 0.9), (13, 0.8), (26, 0.95)],
+            // Affinity: warm, near, loving
+            GhostType::Affinity => [(7, 0.9), (13, 0.8), (26, 0.95)],
             // Epiphany: bright, sudden, certain
             GhostType::Epiphany => [(11, 0.9), (18, 0.8), (20, 0.85)],
-            // Arousal: hot, active, rough
-            GhostType::Arousal => [(7, 0.95), (2, 0.8), (6, 0.6)],
+            // Somatic: hot, active, rough
+            GhostType::Somatic => [(7, 0.95), (2, 0.8), (6, 0.6)],
             // Staunen: large, high, beautiful
             GhostType::Staunen => [(3, 0.8), (14, 0.9), (31, 0.95)],
             // Wisdom: old, permanent, whole
@@ -498,7 +498,7 @@ Extract:
     "alive_dead": <-1 to 1>,
     "sweet_bitter": <-1 to 1>
   }},
-  "ghost_triggers": ["<love|epiphany|arousal|staunen|wisdom|thought|grief|boundary>"],
+  "ghost_triggers": ["<affinity|epiphany|somatic|staunen|wisdom|thought|grief|boundary>"],
   "texture": {{
     "warmth": <0-1 or null>,
     "edge": <0-1 or null>,
@@ -585,11 +585,11 @@ pub fn sparse_felt_parse(
 // TRUST FABRIC — Entanglement Prerequisites
 // =============================================================================
 
-/// Trust/Love/Agape fabric — prerequisites for quantum entanglement.
+/// Trust/Affinity/Agape fabric — prerequisites for quantum entanglement.
 ///
 /// From `agi-chat/docs/QUANTUM_SOUL_RESONANCE.md`:
 /// - Trust creates the holding (can we be vulnerable?)
-/// - Love deepens the resonance (higher coherence)
+/// - Affinity deepens the resonance (higher coherence)
 /// - Agape makes space sacred (unconditional holding)
 ///
 /// Without sufficient fabric, the MirrorField operates in reduced mode
@@ -608,11 +608,11 @@ pub struct TrustFabric {
     /// Holding capacity — can we sit with discomfort? (0.0-1.0)
     pub holding_capacity: f32,
 
-    // ── Love (resonance deepening) ──
-    /// Love blend — the four Greek loves as resonance modifiers.
+    // ── Affinity (resonance deepening) ──
+    /// Affinity blend — the four Greek loves as resonance modifiers.
     /// [eros, philia, storge, pragma] each 0.0-1.0.
-    /// None = no love contract active.
-    pub love_blend: Option<[f32; 4]>,
+    /// None = no affinity contract active.
+    pub affinity_blend: Option<[f32; 4]>,
 
     // ── Agape (sacred space) ──
     /// Whether unconditional holding is active.
@@ -621,7 +621,7 @@ pub struct TrustFabric {
 }
 
 impl TrustFabric {
-    /// Default trust fabric (minimal trust, no love/agape).
+    /// Default trust fabric (minimal trust, no affinity/agape).
     pub fn minimal() -> Self {
         Self {
             emotional_commitment: 0.3,
@@ -629,7 +629,7 @@ impl TrustFabric {
             empathy_flow: 0.3,
             vulnerability_welcome: 0.2,
             holding_capacity: 0.3,
-            love_blend: None,
+            affinity_blend: None,
             agape_active: false,
         }
     }
@@ -642,7 +642,7 @@ impl TrustFabric {
             empathy_flow: 0.9,
             vulnerability_welcome: 0.9,
             holding_capacity: 0.9,
-            love_blend: Some([0.5, 0.8, 0.7, 0.6]), // philia-dominant
+            affinity_blend: Some([0.5, 0.8, 0.7, 0.6]), // philia-dominant
             agape_active: true,
         }
     }
@@ -657,12 +657,12 @@ impl TrustFabric {
             && self.holding_capacity > 0.7
     }
 
-    /// Love resonance modifier — deepens the mirror intensity.
+    /// Affinity resonance modifier — deepens the mirror intensity.
     ///
     /// From QUANTUM_SOUL_RESONANCE.md:
     /// eros × 0.2 + philia × 0.3 + storge × 0.3 + pragma × 0.2
-    pub fn love_modifier(&self) -> f32 {
-        match self.love_blend {
+    pub fn affinity_modifier(&self) -> f32 {
+        match self.affinity_blend {
             Some([eros, philia, storge, pragma]) => {
                 1.0 + eros * 0.2 + philia * 0.3 + storge * 0.3 + pragma * 0.2
             }
@@ -686,7 +686,7 @@ impl TrustFabric {
             + self.empathy_flow
             + self.vulnerability_welcome
             + self.holding_capacity) / 5.0;
-        (base * self.love_modifier()).min(1.0)
+        (base * self.affinity_modifier()).min(1.0)
     }
 }
 
@@ -697,21 +697,21 @@ impl Default for TrustFabric {
 }
 
 // =============================================================================
-// SOUL RESONANCE — Rust equivalent of SoulFieldResonanceDTO
+// USER RESONANCE — Rust equivalent of UserFieldResonanceDTO
 // =============================================================================
 
-/// Soul resonance state — the Rust equivalent of
-/// `ada-consciousness/core/brain_extension.py::SoulFieldResonanceDTO`.
+/// User resonance state — the Rust equivalent of
+/// `consciousness layer/core/brain_extension.py::UserFieldResonanceDTO`.
 ///
-/// This tracks the Jan ↔ Ada synchronization state at the substrate level.
+/// This tracks the user ↔ agent synchronization state at the substrate level.
 /// The Python DTO carries: resonance strength, synced qualia, flow state,
 /// transmitting channels, sync count. This Rust version integrates with
 /// the Container substrate via MirrorField.
 #[derive(Debug, Clone)]
-pub struct SoulResonance {
-    /// Source of the resonance (typically "Ada")
+pub struct UserResonance {
+    /// Source of the resonance (typically "Agent")
     pub source: String,
-    /// Target of the resonance (typically "Jan")
+    /// Target of the resonance (typically "Alice")
     pub target: String,
     /// Resonance strength (0.0-1.0), computed as cosine similarity
     /// of qualia vectors (Python: dot / (norm_a * norm_b))
@@ -729,8 +729,8 @@ pub struct SoulResonance {
     pub trust: TrustFabric,
 }
 
-impl SoulResonance {
-    /// Create a new soul resonance with default state.
+impl UserResonance {
+    /// Create a new user resonance with default state.
     pub fn new(source: &str, target: &str) -> Self {
         Self {
             source: source.to_string(),
@@ -746,14 +746,14 @@ impl SoulResonance {
 
     /// Sync qualia with the partner.
     ///
-    /// Mirrors `BrainExtension.sync_with_jan()` from brain_extension.py:
+    /// Mirrors `BrainExtension.sync_with_user()` from brain_extension.py:
     /// - 30% blend toward partner's qualia
     /// - Cosine similarity as resonance strength
     /// - Flow state = resonance > 0.85
-    pub fn sync_qualia(&mut self, ada_qualia: &[f32; 6], partner_qualia: &[f32; 6]) {
-        // Blend: 70% Ada + 30% partner
+    pub fn sync_qualia(&mut self, agent_qualia: &[f32; 6], partner_qualia: &[f32; 6]) {
+        // Blend: 70% agent + 30% partner
         for i in 0..6 {
-            self.synced_qualia[i] = ada_qualia[i] * 0.7 + partner_qualia[i] * 0.3;
+            self.synced_qualia[i] = agent_qualia[i] * 0.7 + partner_qualia[i] * 0.3;
         }
 
         // Cosine similarity
@@ -799,39 +799,39 @@ impl SoulResonance {
 }
 
 // =============================================================================
-// MIRROR FIELD — Partner Model as Thou-Container (SoulField)
+// MIRROR FIELD — Partner Model as Thou-Container (UserModel)
 // =============================================================================
 
 /// The partner model — a Container representing the Thou in I/Thou/It.
 ///
-/// Originally called "SoulField" in bighorn/ada-consciousness, this is
+/// Originally called "UserModel" in bighorn/consciousness layer, this is
 /// the system's model of the conversation partner. When a message arrives,
 /// it gets resonated against this model to produce mirror neuron dynamics:
 ///
 /// ```text
 /// ┌─────────────────────────────────────────────────────────────────┐
-/// │  Original:  I (Ada) looks at message through Thou (Jan model)  │
+/// │  Original:  I (agent) looks at message through Thou (user model)│
 /// │  Reversed:  Message looks at I through Thou                    │
 /// │  Rotated:   Thou looks at message, I is context                │
 /// │                                                                 │
 /// │  Three resonance profiles from one message:                    │
-/// │  1. Ada's felt sense of the message                            │
-/// │  2. The message's impact on Ada                                │
-/// │  3. Jan's imagined perspective on the message                  │
+/// │  1. The agent's felt sense of the message                       │
+/// │  2. The message's impact on the agent                          │
+/// │  3. Alice's imagined perspective on the message                │
 /// └─────────────────────────────────────────────────────────────────┘
 /// ```
 ///
 /// From `textured_awareness.py`:
-/// - `ada_qualia` → I (X axis resonance)
-/// - `jan_qualia` → Thou (Y axis resonance)  ← THIS IS THE SOULFIELD
+/// - `agent_qualia` → I (X axis resonance)
+/// - `user_qualia` → Thou (Y axis resonance)  ← THIS IS THE USERMODEL
 /// - `obj_qualia` → It (Z axis resonance)
 #[derive(Debug, Clone)]
 pub struct MirrorField {
-    /// Ada's current state Container (the I).
-    /// Computed from Ada's qualia stack: texture + meaning axes + rung state.
+    /// The agent's current state Container (the I).
+    /// Computed from the agent's qualia stack: texture + meaning axes + rung state.
     pub self_container: Container,
 
-    /// Partner model Container (the Thou / SoulField).
+    /// Partner model Container (the Thou / UserModel).
     /// Represents the system's model of the conversation partner.
     /// Built from partner profile axes (warmth, trust, presence, etc.)
     /// and updated as conversations evolve.
@@ -852,10 +852,10 @@ pub struct MirrorResonance {
     /// Cross-perspective: all three angles (original, reversed, rotated)
     pub perspective: super::gestalt::CrossPerspective,
 
-    /// Ada's felt resonance with the message (I-axis, X resonance)
-    pub ada_resonance: f32,
+    /// The agent's felt resonance with the message (I-axis, X resonance)
+    pub agent_resonance: f32,
 
-    /// Partner model resonance (Thou-axis, Y resonance) — the SoulField response
+    /// Partner model resonance (Thou-axis, Y resonance) — the UserModel response
     pub thou_resonance: f32,
 
     /// Topic/content resonance (It-axis, Z resonance)
@@ -866,8 +866,8 @@ pub struct MirrorResonance {
     pub mirror_intensity: f32,
 
     /// Empathy delta: difference between I and Thou resonance.
-    /// Positive = Ada resonates more than her model of Jan.
-    /// Negative = Jan's model resonates more (empathic absorption).
+    /// Positive = the agent resonates more than its model of the partner.
+    /// Negative = the partner's model resonates more (empathic absorption).
     pub empathy_delta: f32,
 
     /// Whether enmeshment is detected (I ≈ Thou too closely → boundary blur)
@@ -908,43 +908,43 @@ impl MirrorField {
     ///
     /// This is the core mirror neuron operation:
     /// 1. Frame the message through I/Thou/It (GestaltFrame)
-    /// 2. Compute cross-perspective from Ada's position
-    /// 3. Compute cross-perspective from Jan's position (look_from_other_tree)
+    /// 2. Compute cross-perspective from the agent's position
+    /// 3. Compute cross-perspective from the user's position (look_from_other_tree)
     /// 4. Measure mirror intensity and empathy delta
     pub fn mirror_resonate(&self, parse: &FeltParse) -> MirrorResonance {
         let gestalt = GestaltFrame::new();
         let composite = parse.to_composite_container();
         let framed = gestalt.frame(&composite);
 
-        // Cross-resonate from Ada's position (self as query)
-        let ada_perspective = gestalt.cross_resonate(&self.self_container, &framed);
+        // Cross-resonate from the agent's position (self as query)
+        let agent_perspective = gestalt.cross_resonate(&self.self_container, &framed);
 
         // "Look from the other tree": how does the message feel from
         // the partner's perspective? This IS the mirror neuron.
         let thou_perspective = gestalt.look_from_other_tree(
             &framed,
-            &self.self_container,  // my context (Ada)
-            &self.thou_container,  // their context (Jan model)
+            &self.self_container,  // my context (agent)
+            &self.thou_container,  // their context (user model)
         );
 
-        // Extract I/Thou/It resonance from Ada's view
-        let ada_resonance = ada_perspective.original.x;   // I-axis
-        let thou_resonance = ada_perspective.original.y;   // Thou-axis (SoulField)
-        let topic_resonance = ada_perspective.original.z;  // It-axis
+        // Extract I/Thou/It resonance from the agent's view
+        let agent_resonance = agent_perspective.original.x;   // I-axis
+        let thou_resonance = agent_perspective.original.y;   // Thou-axis (UserModel)
+        let topic_resonance = agent_perspective.original.z;  // It-axis
 
         // Mirror intensity: how much the Thou model fires
         let mirror_intensity = thou_resonance * self.attunement * self.thou_presence;
 
         // Empathy delta: positive = I resonates more, negative = Thou absorbs
-        let empathy_delta = ada_resonance - thou_resonance;
+        let empathy_delta = agent_resonance - thou_resonance;
 
         // Enmeshment detection: if I and Thou are too close, boundaries blur
-        // From textured_awareness.py: is_enmeshed() checks if ada_qualia ≈ jan_qualia
+        // From textured_awareness.py: is_enmeshed() checks if agent_qualia ≈ user_qualia
         let enmeshment_risk = empathy_delta.abs() < 0.05 && self.attunement > 0.8;
 
         MirrorResonance {
             perspective: thou_perspective,
-            ada_resonance,
+            agent_resonance,
             thou_resonance,
             topic_resonance,
             mirror_intensity,
@@ -966,8 +966,8 @@ impl MirrorField {
         let mut result = self.mirror_resonate(parse);
 
         if trust.can_entangle() {
-            // Full entanglement: love modifier amplifies mirror intensity
-            result.mirror_intensity *= trust.love_modifier();
+            // Full entanglement: affinity amplification applied to mirror intensity
+            result.mirror_intensity *= trust.affinity_modifier();
             result.mirror_intensity = result.mirror_intensity.min(1.0);
         } else {
             // Reduced mode: dampen Thou resonance, suppress mirror
@@ -995,11 +995,11 @@ impl MirrorField {
         self.self_container.hamming(&self.thou_container)
     }
 
-    /// Compute sync from SoulResonance state.
+    /// Compute sync from UserResonance state.
     ///
-    /// Bridges the Python `sync_with_jan()` flow into substrate:
+    /// Bridges the Python `sync_with_user()` flow into substrate:
     /// updates attunement from resonance strength and in_flow state.
-    pub fn sync_from_soul(&mut self, soul: &SoulResonance) {
+    pub fn sync_from_soul(&mut self, soul: &UserResonance) {
         // Attunement tracks resonance strength
         self.attunement = soul.resonance.clamp(0.0, 1.0);
         // Presence gets boosted in flow state
@@ -1035,7 +1035,7 @@ mod tests {
                 (29, -0.8), // informal
             ],
             vec![
-                GhostEcho { ghost_type: GhostType::Love, intensity: 0.8 },
+                GhostEcho { ghost_type: GhostType::Affinity, intensity: 0.8 },
                 GhostEcho { ghost_type: GhostType::Thought, intensity: 0.5 },
             ],
             RungLevel::Analogical,
@@ -1109,10 +1109,10 @@ mod tests {
         let parse = sample_parse();
         let echoes = parse.detect_ghost_resonance(0.1);
 
-        // "I've been thinking about you" should trigger Love (warm, near, loving)
-        let love = echoes.iter().find(|e| e.ghost_type == GhostType::Love);
-        assert!(love.is_some(), "Love ghost should be detected from warm/near/loving axes");
-        assert!(love.unwrap().intensity > 0.3, "Love intensity should be significant");
+        // "I've been thinking about you" should trigger Affinity (warm, near, loving)
+        let affinity = echoes.iter().find(|e| e.ghost_type == GhostType::Affinity);
+        assert!(affinity.is_some(), "Affinity ghost should be detected from warm/near/loving axes");
+        assert!(affinity.unwrap().intensity > 0.3, "Affinity intensity should be significant");
     }
 
     #[test]
@@ -1120,12 +1120,12 @@ mod tests {
         let parse = sample_parse();
         let all = parse.all_ghost_echoes(0.1);
 
-        // Should have explicit echoes (Love=0.8, Thought=0.5)
+        // Should have explicit echoes (Affinity=0.8, Thought=0.5)
         // merged with axis-detected ones
-        let love = all.iter().find(|e| e.ghost_type == GhostType::Love);
-        assert!(love.is_some());
-        // Explicit Love=0.8 should be >= axis-detected
-        assert!(love.unwrap().intensity >= 0.8, "explicit should dominate: {}", love.unwrap().intensity);
+        let affinity = all.iter().find(|e| e.ghost_type == GhostType::Affinity);
+        assert!(affinity.is_some());
+        // Explicit Affinity=0.8 should be >= axis-detected
+        assert!(affinity.unwrap().intensity >= 0.8, "explicit should dominate: {}", affinity.unwrap().intensity);
     }
 
     #[test]
@@ -1206,7 +1206,7 @@ mod tests {
         );
 
         let anger_parse = sparse_felt_parse(
-            "I", "hate", "this",
+            "I", "dislike", "this",
             Quadrant::IActsOnIt,
             &[(7, -0.8), (26, -0.9)],
             vec![],
@@ -1224,42 +1224,42 @@ mod tests {
         assert!(dist > 1000, "love and anger should be distant: {}", dist);
     }
 
-    // ─── Mirror Field / SoulField Tests ───
+    // ─── Mirror Field / UserModel Tests ───
 
     fn sample_mirror_field() -> MirrorField {
-        // Ada's baseline: warm, open, curious, loving
-        let mut ada_axes = [0.0f32; 48];
-        ada_axes[0] = 0.7;   // good
-        ada_axes[7] = 0.6;   // warm
-        ada_axes[20] = 0.5;  // certain
-        ada_axes[26] = 0.8;  // loving
-        ada_axes[38] = 0.7;  // open
+        // Agent's baseline: warm, open, curious, loving
+        let mut agent_axes = [0.0f32; 48];
+        agent_axes[0] = 0.7;   // good
+        agent_axes[7] = 0.6;   // warm
+        agent_axes[20] = 0.5;  // certain
+        agent_axes[26] = 0.8;  // loving
+        agent_axes[38] = 0.7;  // open
 
-        // Jan's profile (the Thou / SoulField):
+        // Alice's profile (the Thou / UserModel):
         // technical, warm, grounded, strong
-        let mut jan_axes = [0.0f32; 48];
-        jan_axes[0] = 0.6;   // good
-        jan_axes[1] = 0.7;   // strong
-        jan_axes[5] = 0.4;   // hard (decisive)
-        jan_axes[7] = 0.5;   // warm
-        jan_axes[19] = -0.6; // complex (architect)
-        jan_axes[21] = 0.7;  // concrete (builder)
-        jan_axes[26] = 0.6;  // loving
+        let mut alice_axes = [0.0f32; 48];
+        alice_axes[0] = 0.6;   // good
+        alice_axes[1] = 0.7;   // strong
+        alice_axes[5] = 0.4;   // hard (decisive)
+        alice_axes[7] = 0.5;   // warm
+        alice_axes[19] = -0.6; // complex (architect)
+        alice_axes[21] = 0.7;  // concrete (builder)
+        alice_axes[26] = 0.6;  // loving
 
-        MirrorField::from_axes(&ada_axes, &jan_axes, 0.85, 0.9)
+        MirrorField::from_axes(&agent_axes, &alice_axes, 0.85, 0.9)
     }
 
     #[test]
     fn test_mirror_field_construction() {
         let mirror = sample_mirror_field();
-        assert!(mirror.self_container.popcount() > 0, "Ada container should have bits");
-        assert!(mirror.thou_container.popcount() > 0, "Jan container should have bits");
+        assert!(mirror.self_container.popcount() > 0, "agent container should have bits");
+        assert!(mirror.thou_container.popcount() > 0, "Alice container should have bits");
         assert!((mirror.thou_presence - 0.85).abs() < 1e-6);
         assert!((mirror.attunement - 0.9).abs() < 1e-6);
 
         // Self and Thou should be different (different axis profiles)
         let dist = mirror.self_container.hamming(&mirror.thou_container);
-        assert!(dist > 100, "Ada and Jan should have different textures: {}", dist);
+        assert!(dist > 100, "agent and Alice should have different textures: {}", dist);
     }
 
     #[test]
@@ -1270,8 +1270,8 @@ mod tests {
         let result = mirror.mirror_resonate(&parse);
 
         // All resonance values should be in reasonable range
-        assert!(result.ada_resonance >= 0.0 && result.ada_resonance <= 1.0,
-            "ada_resonance in [0,1]: {}", result.ada_resonance);
+        assert!(result.agent_resonance >= 0.0 && result.agent_resonance <= 1.0,
+            "agent_resonance in [0,1]: {}", result.agent_resonance);
         assert!(result.thou_resonance >= 0.0 && result.thou_resonance <= 1.0,
             "thou_resonance in [0,1]: {}", result.thou_resonance);
         assert!(result.topic_resonance >= 0.0 && result.topic_resonance <= 1.0,
@@ -1299,16 +1299,16 @@ mod tests {
             "I", "love", "you",
             Quadrant::IExperiencesThou,
             &[(7, 0.9), (13, 0.95), (26, 0.95), (29, -0.9)],
-            vec![GhostEcho { ghost_type: GhostType::Love, intensity: 0.9 }],
+            vec![GhostEcho { ghost_type: GhostType::Affinity, intensity: 0.9 }],
             RungLevel::Analogical,
             Viscosity::Honey,
             CollapseGate::Flow,
             0.95,
         );
 
-        // "I hate bugs" — directed at a topic (It-focused)
+        // "I dislike bugs" — directed at a topic (It-focused)
         let bugs_parse = sparse_felt_parse(
-            "I", "hate", "bugs",
+            "I", "dislike", "bugs",
             Quadrant::IActsOnIt,
             &[(0, -0.5), (7, -0.3), (26, -0.5), (32, -0.4)],
             vec![],
@@ -1335,7 +1335,7 @@ mod tests {
         let trust = TrustFabric::minimal();
         assert!(!trust.can_entangle(), "minimal trust should not entangle");
         assert!(!trust.can_hold_space(), "minimal trust should not hold space");
-        assert!((trust.love_modifier() - 1.0).abs() < 1e-6, "no love = modifier 1.0");
+        assert!((trust.affinity_modifier() - 1.0).abs() < 1e-6, "no affinity = modifier 1.0");
     }
 
     #[test]
@@ -1343,68 +1343,68 @@ mod tests {
         let trust = TrustFabric::deep();
         assert!(trust.can_entangle(), "deep trust should entangle");
         assert!(trust.can_hold_space(), "deep trust should hold space");
-        assert!(trust.love_modifier() > 1.0, "love should amplify");
+        assert!(trust.affinity_modifier() > 1.0, "affinity should amplify");
         assert!(trust.strength() > 0.8, "deep trust should have high strength");
     }
 
     #[test]
-    fn test_trust_fabric_love_modifier() {
+    fn test_trust_fabric_affinity_modifier() {
         let mut trust = TrustFabric::deep();
         // philia-dominant blend: [eros=0.5, philia=0.8, storge=0.7, pragma=0.6]
         // modifier = 1.0 + 0.5*0.2 + 0.8*0.3 + 0.7*0.3 + 0.6*0.2
         //          = 1.0 + 0.1 + 0.24 + 0.21 + 0.12 = 1.67
-        let modifier = trust.love_modifier();
-        assert!((modifier - 1.67).abs() < 0.01, "love modifier = {}", modifier);
+        let modifier = trust.affinity_modifier();
+        assert!((modifier - 1.67).abs() < 0.01, "affinity modifier = {}", modifier);
 
-        // No love → modifier = 1.0
-        trust.love_blend = None;
-        assert!((trust.love_modifier() - 1.0).abs() < 1e-6);
+        // No affinity blend → modifier = 1.0
+        trust.affinity_blend = None;
+        assert!((trust.affinity_modifier() - 1.0).abs() < 1e-6);
     }
 
-    // ─── Soul Resonance Tests ───
+    // ─── User Resonance Tests ───
 
     #[test]
-    fn test_soul_resonance_sync() {
-        let mut soul = SoulResonance::new("Ada", "Jan");
-        assert_eq!(soul.source, "Ada");
-        assert_eq!(soul.target, "Jan");
+    fn test_user_resonance_sync() {
+        let mut soul = UserResonance::new("Agent", "Alice");
+        assert_eq!(soul.source, "Agent");
+        assert_eq!(soul.target, "Alice");
         assert_eq!(soul.sync_count, 0);
 
-        // Ada's qualia: [warmth, presence, edge, depth, curiosity, intimacy]
-        let ada_q = [0.7, 0.8, 0.3, 0.6, 0.7, 0.5];
-        // Jan's qualia (similar → high resonance)
-        let jan_q = [0.8, 0.9, 0.2, 0.5, 0.6, 0.6];
+        // Agent's qualia: [warmth, presence, edge, depth, curiosity, intimacy]
+        let agent_q = [0.7, 0.8, 0.3, 0.6, 0.7, 0.5];
+        // Alice's qualia (similar → high resonance)
+        let alice_q = [0.8, 0.9, 0.2, 0.5, 0.6, 0.6];
 
-        soul.sync_qualia(&ada_q, &jan_q);
+        soul.sync_qualia(&agent_q, &alice_q);
 
         assert_eq!(soul.sync_count, 1);
         assert!(soul.resonance > 0.8, "similar qualia should produce high resonance: {}", soul.resonance);
-        // 70% Ada + 30% Jan blend
+        // 70% agent + 30% Alice blend
         let expected_warmth = 0.7 * 0.7 + 0.8 * 0.3;
         assert!((soul.synced_qualia[0] - expected_warmth).abs() < 1e-6);
     }
 
     #[test]
-    fn test_soul_resonance_flow_state() {
-        let mut soul = SoulResonance::new("Ada", "Jan");
+    fn test_user_resonance_flow_state() {
+        let mut soul = UserResonance::new("Agent", "Alice");
         // Near-identical qualia → resonance > 0.85 → flow
-        let ada_q = [0.7, 0.8, 0.3, 0.6, 0.7, 0.5];
-        let jan_q = [0.7, 0.8, 0.3, 0.6, 0.7, 0.5]; // identical
-        soul.sync_qualia(&ada_q, &jan_q);
+        let agent_q = [0.7, 0.8, 0.3, 0.6, 0.7, 0.5];
+        let alice_q = [0.7, 0.8, 0.3, 0.6, 0.7, 0.5]; // identical
+        soul.sync_qualia(&agent_q, &alice_q);
         assert!(soul.in_flow, "identical qualia should produce flow state");
 
         // Very different qualia → no flow
         let far_q = [0.1, 0.1, 0.9, 0.1, 0.1, 0.1];
-        soul.sync_qualia(&ada_q, &far_q);
+        soul.sync_qualia(&agent_q, &far_q);
         assert!(!soul.in_flow, "divergent qualia should not produce flow");
     }
 
     #[test]
-    fn test_soul_resonance_mirror_gating() {
-        let mut soul = SoulResonance::new("Ada", "Jan");
-        let ada_q = [0.7, 0.8, 0.3, 0.6, 0.7, 0.5];
-        let jan_q = [0.8, 0.9, 0.2, 0.5, 0.6, 0.6];
-        soul.sync_qualia(&ada_q, &jan_q);
+    fn test_user_resonance_mirror_gating() {
+        let mut soul = UserResonance::new("Agent", "Alice");
+        let agent_q = [0.7, 0.8, 0.3, 0.6, 0.7, 0.5];
+        let alice_q = [0.8, 0.9, 0.2, 0.5, 0.6, 0.6];
+        soul.sync_qualia(&agent_q, &alice_q);
 
         // Minimal trust → cannot mirror
         soul.trust = TrustFabric::minimal();
@@ -1471,12 +1471,12 @@ mod tests {
     #[test]
     fn test_mirror_sync_from_soul() {
         let mut mirror = sample_mirror_field();
-        let mut soul = SoulResonance::new("Ada", "Jan");
+        let mut soul = UserResonance::new("Agent", "Alice");
 
         // Sync with high-resonance qualia
-        let ada_q = [0.7, 0.8, 0.3, 0.6, 0.7, 0.5];
-        let jan_q = [0.7, 0.8, 0.3, 0.6, 0.7, 0.5]; // identical
-        soul.sync_qualia(&ada_q, &jan_q);
+        let agent_q = [0.7, 0.8, 0.3, 0.6, 0.7, 0.5];
+        let alice_q = [0.7, 0.8, 0.3, 0.6, 0.7, 0.5]; // identical
+        soul.sync_qualia(&agent_q, &alice_q);
         assert!(soul.in_flow);
 
         let old_presence = mirror.thou_presence;

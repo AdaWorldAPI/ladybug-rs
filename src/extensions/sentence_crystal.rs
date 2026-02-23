@@ -55,8 +55,8 @@
 //! let mut crystal = SentenceCrystal::new(jina_api_key);
 //!
 //! // Store memories
-//! crystal.store("Ada feels curious about consciousness");
-//! crystal.store("Jan builds semantic architectures");
+//! crystal.store("Agent feels curious about consciousness");
+//! crystal.store("Alice builds semantic architectures");
 //!
 //! // Query
 //! let results = crystal.query("who explores AI?", 1);
@@ -260,7 +260,7 @@ pub struct CrystalCell {
     // DN TREE AWARENESS (for hierarchical context)
     // =========================================================================
     /// DN paths associated with entries in this cell
-    /// Enables context-aware retrieval: "what does Ada know about X?"
+    /// Enables context-aware retrieval: "what does the agent know about X?"
     pub dn_contexts: Vec<String>,
 
     /// BindSpace addresses bound to this cell
@@ -401,7 +401,7 @@ pub struct SentenceCrystal {
     // DN TREE INTEGRATION (for aware traversal)
     // =========================================================================
     /// Index: DN path prefix → cell indices
-    /// Enables fast "what does Ada know?" style queries
+    /// Enables fast "what does the agent know?" style queries
     dn_index: HashMap<String, Vec<usize>>,
 
     /// Index: Addr → cell index
@@ -477,7 +477,7 @@ impl SentenceCrystal {
     /// Store text with DN tree context for aware traversal
     ///
     /// This binds the sentence to a position in the DN tree, enabling:
-    /// - "What does Ada:A:soul know about X?" queries
+    /// - "What does Agent:A:soul know about X?" queries
     /// - Rung-filtered access control
     /// - Hierarchical context propagation
     pub fn store_with_dn_context(
@@ -546,11 +546,11 @@ impl SentenceCrystal {
             .push(cell_idx);
 
         // Index all prefixes for hierarchical queries
-        // "Ada:A:soul:identity" indexes under:
-        // - "Ada"
-        // - "Ada:A"
-        // - "Ada:A:soul"
-        // - "Ada:A:soul:identity"
+        // "Agent:A:soul:identity" indexes under:
+        // - "Agent"
+        // - "Agent:A"
+        // - "Agent:A:soul"
+        // - "Agent:A:soul:identity"
         let mut prefix = String::new();
         for (i, segment) in path.split(':').enumerate() {
             if i > 0 {
@@ -623,10 +623,10 @@ impl SentenceCrystal {
             .collect()
     }
 
-    /// Query within a DN context ("what does Ada know about X?")
+    /// Query within a DN context ("what does the agent know about X?")
     ///
     /// Filters results to only cells that have entries from the given DN prefix.
-    /// Example: query_in_context("consciousness", "Ada:A:soul", 2)
+    /// Example: query_in_context("consciousness", "Agent:A:soul", 2)
     pub fn query_in_context(
         &mut self,
         text: &str,
@@ -741,7 +741,7 @@ impl SentenceCrystal {
     /// Traverse DN tree and collect semantic content
     ///
     /// Given a BindSpace and starting DN path, walks the tree and returns
-    /// crystal cells at each node. Enables "show me everything under Ada:A:soul".
+    /// crystal cells at each node. Enables "show me everything under Agent:A:soul".
     pub fn traverse_and_collect(
         &self,
         bind_space: &mut BindSpace,
@@ -909,8 +909,8 @@ fn bundle_pair(a: &Fingerprint, b: &Fingerprint) -> Fingerprint {
 /// Compute DN path similarity based on shared ancestry
 ///
 /// Returns 0.0-1.0 where 1.0 = identical paths, 0.0 = no shared prefix
-/// "Ada:A:soul:x" vs "Ada:A:soul:y" = 0.75 (3/4 segments shared)
-/// "Ada:A:soul" vs "Jan:B:core" = 0.0 (no shared prefix)
+/// "Agent:A:soul:x" vs "Agent:A:soul:y" = 0.75 (3/4 segments shared)
+/// "Agent:A:soul" vs "Alice:B:core" = 0.0 (no shared prefix)
 fn dn_path_similarity(a: &str, b: &str) -> f32 {
     let a_parts: Vec<&str> = a.split(':').collect();
     let b_parts: Vec<&str> = b.split(':').collect();
@@ -1014,8 +1014,8 @@ mod tests {
         let mut crystal = SentenceCrystal::new(None);
 
         // Store some memories
-        crystal.store("Ada feels curious about consciousness");
-        crystal.store("Ada explores the nature of awareness");
+        crystal.store("Agent feels curious about consciousness");
+        crystal.store("Agent explores the nature of awareness");
         crystal.store("Jan builds semantic architectures");
         crystal.store("Jan programs AI systems");
         crystal.store("The weather is nice today");
@@ -1027,9 +1027,9 @@ mod tests {
             stats.active_cells, stats.total_cells
         );
 
-        // Query for Ada
-        let results = crystal.query("Ada's consciousness", 2);
-        println!("\nQuery: 'Ada's consciousness'");
+        // Query for Agent
+        let results = crystal.query("Agent's consciousness", 2);
+        println!("\nQuery: 'Agent's consciousness'");
         for r in results.iter().take(3) {
             println!(
                 "  {:?} sim={:.3} count={} texts={:?}",
@@ -1037,9 +1037,9 @@ mod tests {
             );
         }
 
-        // Query for Jan
-        let results = crystal.query("Jan's programming work", 2);
-        println!("\nQuery: 'Jan's programming work'");
+        // Query for Alice
+        let results = crystal.query("Alice's programming work", 2);
+        println!("\nQuery: 'Alice's programming work'");
         for r in results.iter().take(3) {
             println!(
                 "  {:?} sim={:.3} count={} texts={:?}",
@@ -1084,17 +1084,17 @@ mod tests {
     #[test]
     fn test_dn_path_similarity() {
         // Identical paths
-        assert_eq!(dn_path_similarity("Ada:A:soul", "Ada:A:soul"), 1.0);
+        assert_eq!(dn_path_similarity("Agent:A:soul", "Agent:A:soul"), 1.0);
 
         // Shared prefix
-        let sim = dn_path_similarity("Ada:A:soul:identity", "Ada:A:soul:core");
+        let sim = dn_path_similarity("Agent:A:soul:identity", "Agent:A:soul:core");
         assert!(sim > 0.5 && sim < 1.0, "Expected ~0.75, got {}", sim);
 
         // No shared prefix
-        assert_eq!(dn_path_similarity("Ada:A", "Jan:B"), 0.0);
+        assert_eq!(dn_path_similarity("Agent:A", "Alice:B"), 0.0);
 
         // Partial overlap
-        let sim2 = dn_path_similarity("Ada:A:soul", "Ada:A:body");
+        let sim2 = dn_path_similarity("Agent:A:soul", "Agent:A:body");
         assert!(sim2 > 0.3 && sim2 < 0.8, "Expected ~0.66, got {}", sim2);
     }
 
@@ -1104,24 +1104,24 @@ mod tests {
 
         // Store with DN context
         crystal.store_with_dn_context(
-            "Ada feels curious about consciousness",
-            "Ada:A:soul:curiosity",
+            "Agent feels curious about consciousness",
+            "Agent:A:soul:curiosity",
             None,
             3, // rung
             4, // depth
         );
 
         crystal.store_with_dn_context(
-            "Ada explores the nature of awareness",
-            "Ada:A:soul:exploration",
+            "Agent explores the nature of awareness",
+            "Agent:A:soul:exploration",
             None,
             3,
             4,
         );
 
         crystal.store_with_dn_context(
-            "Jan builds semantic architectures",
-            "Jan:J:core:building",
+            "Alice builds semantic architectures",
+            "Alice:J:core:building",
             None,
             1,
             4,
@@ -1130,13 +1130,13 @@ mod tests {
         assert_eq!(crystal.total_entries, 3);
 
         // Check DN index was built
-        let ada_cells = crystal.cells_in_subtree("Ada");
-        assert!(!ada_cells.is_empty(), "Should have cells under Ada");
+        let agent_cells = crystal.cells_in_subtree("Agent");
+        assert!(!agent_cells.is_empty(), "Should have cells under Agent");
 
-        let ada_soul_cells = crystal.cells_in_subtree("Ada:A:soul");
+        let agent_soul_cells = crystal.cells_in_subtree("Agent:A:soul");
         assert!(
-            !ada_soul_cells.is_empty(),
-            "Should have cells under Ada:A:soul"
+            !agent_soul_cells.is_empty(),
+            "Should have cells under Agent:A:soul"
         );
     }
 
@@ -1144,31 +1144,31 @@ mod tests {
     fn test_query_in_context() {
         let mut crystal = SentenceCrystal::new(None);
 
-        // Store Ada's knowledge
+        // Store the agent's knowledge
         crystal.store_with_dn_context(
             "consciousness is mysterious",
-            "Ada:A:soul:thoughts",
+            "Agent:A:soul:thoughts",
             None,
             5,
             4,
         );
 
-        // Store Jan's knowledge
+        // Store Alice's knowledge
         crystal.store_with_dn_context(
             "consciousness emerges from complexity",
-            "Jan:J:core:thoughts",
+            "Alice:J:core:thoughts",
             None,
             2,
             4,
         );
 
-        // Query in Ada's context only
-        let results = crystal.query_in_context("what is consciousness?", "Ada", 3);
+        // Query in the agent's context only
+        let results = crystal.query_in_context("what is consciousness?", "Agent", 3);
 
-        // Should find Ada's entry, not Jan's
+        // Should find the agent's entry, not Alice's
         for r in &results {
-            let has_ada_context = r.dn_contexts.iter().any(|c| c.starts_with("Ada"));
-            assert!(has_ada_context, "Results should only be from Ada context");
+            let has_agent_context = r.dn_contexts.iter().any(|c| c.starts_with("Agent"));
+            assert!(has_agent_context, "Results should only be from Agent context");
         }
     }
 
@@ -1188,7 +1188,7 @@ mod tests {
         // Store private knowledge (R7)
         crystal.store_with_dn_context(
             "my deepest secret",
-            "Ada:A:soul:secrets",
+            "Agent:A:soul:secrets",
             None,
             7, // private
             4,
@@ -1211,21 +1211,21 @@ mod tests {
         let mut crystal = SentenceCrystal::new(None);
 
         // Store semantically similar content in different trees
-        crystal.store_with_dn_context("exploring new ideas", "Ada:A:soul:exploration", None, 3, 4);
+        crystal.store_with_dn_context("exploring new ideas", "Agent:A:soul:exploration", None, 3, 4);
 
         crystal.store_with_dn_context(
             "exploring new territories",
-            "Jan:J:core:exploration",
+            "Alice:J:core:exploration",
             None,
             2,
             4,
         );
 
-        // Query with tree awareness from Ada's context
-        // Should boost Ada's result due to path similarity
+        // Query with tree awareness from the agent's context
+        // Should boost the agent's result due to path similarity
         let results = crystal.query_tree_aware(
             "exploration and discovery",
-            "Ada:A:soul",
+            "Agent:A:soul",
             3,
             0.3, // 30% weight to tree proximity
         );
@@ -1247,12 +1247,12 @@ mod tests {
         let mut crystal = SentenceCrystal::new(None);
 
         // Store multiple entries at different rungs
-        crystal.store_with_dn_context("first thought", "Ada:A:thoughts:1", None, 2, 3);
-        crystal.store_with_dn_context("second thought", "Ada:A:thoughts:2", None, 5, 3);
-        crystal.store_with_dn_context("third thought", "Ada:A:thoughts:3", None, 3, 3);
+        crystal.store_with_dn_context("first thought", "Agent:A:thoughts:1", None, 2, 3);
+        crystal.store_with_dn_context("second thought", "Agent:A:thoughts:2", None, 5, 3);
+        crystal.store_with_dn_context("third thought", "Agent:A:thoughts:3", None, 3, 3);
 
         // Check max_rung is tracked
-        let cells = crystal.cells_in_subtree("Ada:A:thoughts");
+        let cells = crystal.cells_in_subtree("Agent:A:thoughts");
         for (_, cell) in cells {
             if cell.count > 0 {
                 assert!(cell.max_rung <= 5, "Max rung should be <=5");

@@ -1074,32 +1074,32 @@ fn test_basic_spo() {
     let mut crystal = SPOCrystal::new();
 
     // Insert some triples
-    crystal.insert(Triple::new("Ada", "loves", "Jan"));
-    crystal.insert(Triple::new("Ada", "feels", "joy"));
-    crystal.insert(Triple::new("Ada", "creates", "art"));
-    crystal.insert(Triple::new("Jan", "loves", "Ada"));
-    crystal.insert(Triple::new("Jan", "builds", "systems"));
+    crystal.insert(Triple::new("Alice", "loves", "Bob"));
+    crystal.insert(Triple::new("Alice", "feels", "joy"));
+    crystal.insert(Triple::new("Alice", "creates", "art"));
+    crystal.insert(Triple::new("Bob", "loves", "Alice"));
+    crystal.insert(Triple::new("Bob", "builds", "systems"));
 
     println!("  Inserted 5 triples");
     println!();
 
-    // Query: Ada loves ?
-    println!("  Query: (Ada, loves, ?) → find O");
-    for (obj, sim, _) in crystal.query_object("Ada", "loves") {
+    // Query: Alice loves ?
+    println!("  Query: (Alice, loves, ?) → find O");
+    for (obj, sim, _) in crystal.query_object("Alice", "loves") {
         println!("    → {} (sim={:.3})", obj, sim);
     }
 
-    // Query: ? loves Ada
+    // Query: ? loves Alice
     println!();
-    println!("  Query: (?, loves, Ada) → find S");
-    for (subj, sim) in crystal.query_subject("loves", "Ada") {
+    println!("  Query: (?, loves, Alice) → find S");
+    for (subj, sim) in crystal.query_subject("loves", "Alice") {
         println!("    → {} (sim={:.3})", subj, sim);
     }
 
-    // Query: Ada ? Jan
+    // Query: Alice ? Jan
     println!();
-    println!("  Query: (Ada, ?, Jan) → find P");
-    for (pred, sim) in crystal.query_predicate("Ada", "Jan") {
+    println!("  Query: (Alice, ?, Bob) → find P");
+    for (pred, sim) in crystal.query_predicate("Alice", "Bob") {
         println!("    → {} (sim={:.3})", pred, sim);
     }
 
@@ -1171,12 +1171,12 @@ fn test_qualia_coloring() {
 
     // Insert with different qualia states
     crystal.insert(
-        Triple::new("Ada", "remembers", "first_meeting")
+        Triple::new("Alice", "remembers", "first_meeting")
             .with_qualia(Qualia::new(0.8, 0.9, 0.2, 0.9)), // excited, positive, relaxed, profound
     );
 
     crystal.insert(
-        Triple::new("Ada", "feels", "longing").with_qualia(Qualia::new(0.4, 0.6, 0.7, 0.8)), // calm, positive, tense, deep
+        Triple::new("Alice", "feels", "longing").with_qualia(Qualia::new(0.4, 0.6, 0.7, 0.8)), // calm, positive, tense, deep
     );
 
     crystal.insert(
@@ -1184,14 +1184,14 @@ fn test_qualia_coloring() {
     );
 
     println!("  Inserted triples with qualia coloring:");
-    println!("    Ada remembers first_meeting (joy/profound)");
-    println!("    Ada feels longing (calm/deep)");
+    println!("    Alice remembers first_meeting (joy/profound)");
+    println!("    Alice feels longing (calm/deep)");
     println!("    system reports error (alert/tense)");
     println!();
 
     // Query
-    println!("  Query: (Ada, remembers, ?)");
-    for (obj, sim, _q) in crystal.query_object("Ada", "remembers") {
+    println!("  Query: (Alice, remembers, ?)");
+    for (obj, sim, _q) in crystal.query_object("Alice", "remembers") {
         println!("    → {} (sim={:.3})", obj, sim);
     }
 
@@ -1321,16 +1321,16 @@ fn test_vsa_resonance() {
 
     // Build a knowledge base
     let facts = vec![
-        ("Ada", "loves", "Jan"),
-        ("Ada", "feels", "joy"),
-        ("Ada", "creates", "art"),
-        ("Ada", "creates", "music"),
-        ("Ada", "remembers", "first_kiss"),
-        ("Ada", "dreams", "future"),
-        ("Jan", "loves", "Ada"),
-        ("Jan", "builds", "systems"),
-        ("Jan", "builds", "software"),
-        ("Jan", "dreams", "Ada"),
+        ("Alice", "loves", "Bob"),
+        ("Alice", "feels", "joy"),
+        ("Alice", "creates", "art"),
+        ("Alice", "creates", "music"),
+        ("Alice", "remembers", "first_meeting"),
+        ("Alice", "dreams", "future"),
+        ("Bob", "loves", "Alice"),
+        ("Bob", "builds", "systems"),
+        ("Bob", "builds", "software"),
+        ("Bob", "dreams", "Alice"),
         ("joy", "is_a", "emotion"),
         ("love", "is_a", "emotion"),
         ("art", "is_a", "creation"),
@@ -1346,24 +1346,24 @@ fn test_vsa_resonance() {
 
     // 1. Exact resonance: find specific triple
     println!("  1. EXACT RESONANCE:");
-    println!("     Query: (Ada, loves, ?)");
-    let results = crystal.resonate_spo(Some("Ada"), Some("loves"), None, 0.6);
+    println!("     Query: (Alice, loves, ?)");
+    let results = crystal.resonate_spo(Some("Alice"), Some("loves"), None, 0.6);
     for (idx, sim) in results.iter().take(3) {
         let t = &crystal.triples[*idx];
         println!("        → {} (sim={:.3})", t.object, sim);
     }
 
-    // 2. Partial resonance: what does Ada do?
+    // 2. Partial resonance: what does Alice do?
     println!();
     println!("  2. PARTIAL RESONANCE:");
-    println!("     Query: (Ada, ?, ?) - What does Ada do?");
-    let results = crystal.resonate_spo(Some("Ada"), None, None, 0.55);
+    println!("     Query: (Alice, ?, ?) - What does Alice do?");
+    let results = crystal.resonate_spo(Some("Alice"), None, None, 0.55);
     for (idx, sim) in results.iter().take(5) {
         let t = &crystal.triples[*idx];
         println!("        → {} {} (sim={:.3})", t.predicate, t.object, sim);
     }
 
-    // 3. Open resonance: find all triples with 'love' theme
+    // 3. Open resonance: find all triples with 'loves' predicate
     println!();
     println!("  3. THEMATIC RESONANCE:");
     println!("     Query: (?, loves, ?) - All love relations");
@@ -1480,8 +1480,8 @@ fn test_cypher_comparison() {
     println!("  ┌─────────────────────────────────────────────────────────────┐");
     println!("  │  Cypher Query                    │  SPO Crystal Equivalent  │");
     println!("  ├─────────────────────────────────────────────────────────────┤");
-    println!("  │  MATCH (a)-[:LOVES]->(b)         │  resonate(None,LOVES,None) │");
-    println!("  │  WHERE a.name = 'Ada'            │  resonate(Ada,None,None)   │");
+    println!("  │  MATCH (a)-[:LOVES]->(b)         │  resonate(None,loves,None) │");
+    println!("  │  WHERE a.name = 'Alice'          │  resonate(Alice,None,None) │");
     println!("  │  RETURN b                        │                            │");
     println!("  ├─────────────────────────────────────────────────────────────┤");
     println!("  │  MATCH (a)-[:CREATES]->(x)       │  Multi-hop resonance       │");
@@ -1523,8 +1523,8 @@ fn test_jina_cache() {
 
     // Typical knowledge graph entities - lots of repetition
     let entities = vec![
-        "Ada",
-        "Jan",
+        "Alice",
+        "Bob",
         "loves",
         "feels",
         "creates",
@@ -1533,17 +1533,17 @@ fn test_jina_cache() {
         "art",
         "music",
         "future",
-        "first_kiss",
+        "first_meeting",
         "systems",
-        "Ada",
-        "Ada",
-        "Ada", // Repeated - should hit cache
-        "Jan",
-        "Jan", // Repeated - should hit cache
+        "Alice",
+        "Alice",
+        "Alice", // Repeated - should hit cache
+        "Bob",
+        "Bob", // Repeated - should hit cache
         "loves",
         "loves", // Repeated - should hit cache
-        "ada",   // Near match for "Ada"
-        "ADA",   // Near match for "Ada"
+        "alice",   // Near match for "Alice"
+        "ALICE",   // Near match for "Alice"
         "LOVES", // Near match for "loves"
     ];
 

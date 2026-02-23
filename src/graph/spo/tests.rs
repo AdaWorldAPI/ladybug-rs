@@ -1,8 +1,8 @@
 //! SPO 3D — Six Ironclad Tests
 //!
 //! Test 1: Node round-trip (build → insert → retrieve → verify)
-//! Test 2: Forward query (Jan KNOWS Ada → find Ada from Jan)
-//! Test 3: Reverse query (Jan KNOWS Ada → find Jan from Ada, NO extra index)
+//! Test 2: Forward query (Bob KNOWS Alice → find Alice from Bob)
+//! Test 3: Reverse query (Bob KNOWS Alice → find Bob from Alice, NO extra index)
 //! Test 4: CAM content lookup (100 nodes → find by fingerprint)
 //! Test 5: NARS reasoning (deduction + revision along chain)
 //! Test 6: Causal chain coherence (Z→X resonance + meta convergence)
@@ -26,15 +26,15 @@ mod tests {
     fn test_1_node_roundtrip() {
         let lbl_person = label_fp("Person");
         let key_name = label_fp("name");
-        let val_jan = label_fp("Jan");
+        let val_bob = label_fp("Bob");
         let key_age = label_fp("age");
         let val_42 = label_fp("42");
 
-        // Build node: Jan {Person, name: "Jan", age: 42}
+        // Build node: Bob {Person, name: "Bob", age: 42}
         let record = SpoBuilder::build_node(
-            dn_hash("jan"),
+            dn_hash("bob"),
             &[&lbl_person],
-            &[(&key_name, &val_jan), (&key_age, &val_42)],
+            &[(&key_name, &val_bob), (&key_age, &val_42)],
             TruthValue::new(1.0, 0.9),
         ).unwrap();
 
@@ -43,10 +43,10 @@ mod tests {
         store.insert(record.clone()).unwrap();
 
         // Retrieve
-        let retrieved = store.get(dn_hash("jan")).unwrap();
+        let retrieved = store.get(dn_hash("bob")).unwrap();
 
         // Verify DN matches
-        assert_eq!(retrieved.meta.words[0], dn_hash("jan"));
+        assert_eq!(retrieved.meta.words[0], dn_hash("bob"));
 
         // Unpack and verify X axis is Hamming-close to the original
         let desc = AxisDescriptors::from_words(&[
@@ -81,44 +81,44 @@ mod tests {
         let mut store = SpoStore::new();
 
         // Create entities
-        let jan_fp = label_fp("Jan");
-        let ada_fp = label_fp("Ada");
+        let bob_fp = label_fp("Bob");
+        let alice_fp = label_fp("Alice");
         let knows_fp = label_fp("KNOWS");
 
-        let jan_node = SpoBuilder::build_node(
-            dn_hash("jan"), &[&label_fp("Person")],
-            &[(&label_fp("name"), &jan_fp)],
+        let bob_node = SpoBuilder::build_node(
+            dn_hash("bob"), &[&label_fp("Person")],
+            &[(&label_fp("name"), &bob_fp)],
             TruthValue::new(1.0, 0.9),
         ).unwrap();
 
-        let ada_node = SpoBuilder::build_node(
-            dn_hash("ada"), &[&label_fp("Person")],
-            &[(&label_fp("name"), &ada_fp)],
+        let alice_node = SpoBuilder::build_node(
+            dn_hash("alice"), &[&label_fp("Person")],
+            &[(&label_fp("name"), &alice_fp)],
             TruthValue::new(1.0, 0.9),
         ).unwrap();
 
-        // Create edge: Jan KNOWS Ada
+        // Create edge: Bob KNOWS Alice
         let edge = SpoBuilder::build_edge(
-            dn_hash("jan_knows_ada"),
-            &jan_fp,
+            dn_hash("bob_knows_alice"),
+            &bob_fp,
             &knows_fp,
-            &ada_fp,
+            &alice_fp,
             TruthValue::new(0.8, 0.9),
         ).unwrap();
 
-        store.insert(jan_node).unwrap();
-        store.insert(ada_node).unwrap();
+        store.insert(bob_node).unwrap();
+        store.insert(alice_node).unwrap();
         store.insert(edge).unwrap();
 
-        // Forward query: "What does Jan know?"
-        let hits = store.query_forward(&jan_fp, &knows_fp, 4000);
+        // Forward query: "What does Bob know?"
+        let hits = store.query_forward(&bob_fp, &knows_fp, 4000);
         assert!(
             !hits.is_empty(),
             "Forward query must find at least one result"
         );
 
         // The edge record should be in the results
-        let found_edge = hits.iter().any(|h| h.dn == dn_hash("jan_knows_ada"));
+        let found_edge = hits.iter().any(|h| h.dn == dn_hash("bob_knows_alice"));
         assert!(found_edge, "Forward query must find the edge record");
     }
 
@@ -130,42 +130,42 @@ mod tests {
     fn test_3_reverse_query() {
         let mut store = SpoStore::new();
 
-        let jan_fp = label_fp("Jan");
-        let ada_fp = label_fp("Ada");
+        let alice_fp = label_fp("Alice");
+        let bob_fp = label_fp("Bob");
         let knows_fp = label_fp("KNOWS");
 
-        let jan_node = SpoBuilder::build_node(
-            dn_hash("jan"), &[&label_fp("Person")],
-            &[(&label_fp("name"), &jan_fp)],
+        let alice_node = SpoBuilder::build_node(
+            dn_hash("alice"), &[&label_fp("Person")],
+            &[(&label_fp("name"), &alice_fp)],
             TruthValue::new(1.0, 0.9),
         ).unwrap();
 
-        let ada_node = SpoBuilder::build_node(
-            dn_hash("ada"), &[&label_fp("Person")],
-            &[(&label_fp("name"), &ada_fp)],
+        let bob_node = SpoBuilder::build_node(
+            dn_hash("bob"), &[&label_fp("Person")],
+            &[(&label_fp("name"), &bob_fp)],
             TruthValue::new(1.0, 0.9),
         ).unwrap();
 
         let edge = SpoBuilder::build_edge(
-            dn_hash("jan_knows_ada"),
-            &jan_fp,
+            dn_hash("alice_knows_bob"),
+            &alice_fp,
             &knows_fp,
-            &ada_fp,
+            &bob_fp,
             TruthValue::new(0.8, 0.9),
         ).unwrap();
 
-        store.insert(jan_node).unwrap();
-        store.insert(ada_node).unwrap();
+        store.insert(alice_node).unwrap();
+        store.insert(bob_node).unwrap();
         store.insert(edge).unwrap();
 
-        // Reverse query: "Who knows Ada?" — scanning Z+Y, no reverse index!
-        let hits = store.query_reverse(&ada_fp, &knows_fp, 4000);
+        // Reverse query: "Who knows Bob?" — scanning Z+Y, no reverse index!
+        let hits = store.query_reverse(&bob_fp, &knows_fp, 4000);
         assert!(
             !hits.is_empty(),
             "Reverse query must find results WITHOUT any extra index"
         );
 
-        let found_edge = hits.iter().any(|h| h.dn == dn_hash("jan_knows_ada"));
+        let found_edge = hits.iter().any(|h| h.dn == dn_hash("alice_knows_bob"));
         assert!(found_edge, "Reverse query must find the edge record");
     }
 
@@ -218,15 +218,15 @@ mod tests {
     fn test_5_nars_reasoning() {
         let mut store = SpoStore::new();
 
-        let jan_fp = label_fp("Jan");
+        let alice_fp = label_fp("Alice");
         let rust_fp = label_fp("Rust");
         let cam_fp = label_fp("CAM");
         let knows_fp = label_fp("KNOWS");
         let helps_fp = label_fp("HELPS");
 
-        // "Jan knows Rust" <0.8, 0.9>
+        // "Alice knows Rust" <0.8, 0.9>
         let e1 = SpoBuilder::build_edge(
-            dn_hash("e1"), &jan_fp, &knows_fp, &rust_fp,
+            dn_hash("e1"), &alice_fp, &knows_fp, &rust_fp,
             TruthValue::new(0.8, 0.9),
         ).unwrap();
 
@@ -239,7 +239,7 @@ mod tests {
         store.insert(e1).unwrap();
         store.insert(e2).unwrap();
 
-        // Chain deduction: Jan → Rust → CAM
+        // Chain deduction: Alice → Rust → CAM
         let chain_tv = store.chain_deduction(&[dn_hash("e1"), dn_hash("e2")]);
 
         // Frequency: 0.8 × 0.7 = 0.56
@@ -273,14 +273,14 @@ mod tests {
         // We use the SAME fingerprint for the shared entity (Rust)
         // so the Z→X link should have low Hamming distance.
 
-        let jan_fp = label_fp("Jan");
+        let alice_fp = label_fp("Alice");
         let rust_fp = label_fp("Rust");
         let cam_fp = label_fp("CAM");
         let knows_fp = label_fp("KNOWS");
         let enables_fp = label_fp("ENABLES");
 
         let e1 = SpoBuilder::build_edge(
-            dn_hash("chain_e1"), &jan_fp, &knows_fp, &rust_fp,
+            dn_hash("chain_e1"), &alice_fp, &knows_fp, &rust_fp,
             TruthValue::new(0.8, 0.9),
         ).unwrap();
 

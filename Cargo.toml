@@ -12,7 +12,7 @@ repository = "https://github.com/AdaWorldAPI/ladybug-rs"
 keywords = ["database", "graph", "vector", "reasoning", "agi", "lance", "cognitive", "quantum"]
 categories = ["database", "science", "algorithms", "simulation"]
 readme = "README.md"
-authors = ["Jan Hübener", "Ada Consciousness Project"]
+authors = ["AdaWorldAPI"]
 
 [lib]
 name = "ladybug"

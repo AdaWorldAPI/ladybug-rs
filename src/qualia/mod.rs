@@ -70,7 +70,7 @@ pub use mul_bridge::{
 };
 pub use felt_parse::{
     FeltParse, GhostEcho, GhostType, MirrorField, MirrorResonance,
-    ParsedSpo, SoulResonance, TextureHint, TrustFabric,
+    ParsedSpo, UserResonance, TextureHint, TrustFabric,
     axis_key_to_index, felt_parse_prompt, sparse_felt_parse,
 };
 pub use agent_state::{
