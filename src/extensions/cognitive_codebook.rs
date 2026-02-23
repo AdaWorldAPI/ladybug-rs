@@ -680,7 +680,7 @@ impl CognitiveCodebook {
 
     fn init_qualia(&mut self) {
         let channels = [
-            (QualiaChannel::Activation, "Q_AROUSAL"),
+            (QualiaChannel::Activation, "Q_ACTIVATION"),
             (QualiaChannel::Valence, "Q_VALENCE"),
             (QualiaChannel::Tension, "Q_TENSION"),
             (QualiaChannel::Certainty, "Q_CERTAINTY"),

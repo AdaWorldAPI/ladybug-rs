@@ -1070,7 +1070,7 @@ impl CogRedis {
     pub fn keys_by_qualia(
         &self,
         valence_range: Option<(f32, f32)>,
-        arousal_range: Option<(f32, f32)>,
+        activation_range: Option<(f32, f32)>,
     ) -> Vec<CogAddr> {
         let mut results = Vec::new();
 
@@ -1083,7 +1083,7 @@ impl CogRedis {
                 }
             }
 
-            if let Some((min, max)) = arousal_range {
+            if let Some((min, max)) = activation_range {
                 if value.qualia.activation < min || value.qualia.activation > max {
                     matches = false;
                 }
@@ -3097,8 +3097,8 @@ mod tests {
         }
 
         // Search by qualia range
-        let high_arousal = redis.keys_by_qualia(None, Some((0.7, 1.0)));
-        assert!(!high_arousal.is_empty());
+        let high_activation = redis.keys_by_qualia(None, Some((0.7, 1.0)));
+        assert!(!high_activation.is_empty());
 
         let positive_valence = redis.keys_by_qualia(Some((0.0, 1.0)), None);
         assert!(!positive_valence.is_empty());

@@ -583,7 +583,7 @@ impl CognitiveSearch {
     }
 
     /// Find by specific qualia dimension
-    pub fn find_by_arousal(&self, min: f32, max: f32, k: usize) -> Vec<CognitiveResult> {
+    pub fn find_by_activation(&self, min: f32, max: f32, k: usize) -> Vec<CognitiveResult> {
         self.atoms
             .iter()
             .filter(|atom| atom.qualia.activation >= min && atom.qualia.activation <= max)

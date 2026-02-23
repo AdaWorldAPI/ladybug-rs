@@ -353,12 +353,12 @@ impl Qualia {
     /// Encode qualia as fingerprint modification
     fn to_fingerprint(&self) -> Fingerprint {
         // Each dimension maps to a different bit pattern
-        let arousal_seed = (self.activation * 1000.0) as u64;
+        let activation_seed = (self.activation * 1000.0) as u64;
         let valence_seed = (self.valence * 1000.0) as u64 + 10000;
         let tension_seed = (self.tension * 1000.0) as u64 + 20000;
         let depth_seed = (self.depth * 1000.0) as u64 + 30000;
 
-        let a = Fingerprint::from_seed(arousal_seed);
+        let a = Fingerprint::from_seed(activation_seed);
         let v = Fingerprint::from_seed(valence_seed);
         let t = Fingerprint::from_seed(tension_seed);
         let d = Fingerprint::from_seed(depth_seed);

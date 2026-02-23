@@ -160,7 +160,7 @@ impl GrammarTriangle {
     }
 
     /// Is this triangle high activation?
-    pub fn is_high_arousal(&self) -> bool {
+    pub fn is_high_activation(&self) -> bool {
         self.qualia.get("activation").unwrap_or(0.5) > 0.6
     }
 

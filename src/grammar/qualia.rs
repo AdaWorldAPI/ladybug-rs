@@ -70,7 +70,7 @@ impl QualiaField {
         coordinates[0] = Self::compute_valence(&text_lower);
 
         // Activation: intensity markers
-        coordinates[1] = Self::compute_arousal(&text_lower);
+        coordinates[1] = Self::compute_activation(&text_lower);
 
         // Dominance: control/agency
         coordinates[2] = Self::compute_dominance(&text_lower);
@@ -152,7 +152,7 @@ impl QualiaField {
         (diff + 1.0) / 2.0 // Normalize to 0-1
     }
 
-    fn compute_arousal(text: &str) -> f32 {
+    fn compute_activation(text: &str) -> f32 {
         let high = [
             "!",
             "suddenly",
@@ -688,7 +688,7 @@ mod tests {
     }
 
     #[test]
-    fn test_arousal_detection() {
+    fn test_activation_detection() {
         let high = QualiaField::from_text("Suddenly there was an intense explosion!");
         let low = QualiaField::from_text("The calm peaceful lake was serene and quiet");
 

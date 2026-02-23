@@ -2024,7 +2024,7 @@ They use the same BindSpace fluent API internally:
 | Prefix | Surface | How it uses BindSpace |
 |--------|---------|----------------------|
 | 0x08 | **ACT-R** | Chunks = BindNodes. Activation = NARS confidence. Retrieval = hamming search on content. |
-| 0x09 | **Qualia** | 18 affect channels in meta W56-63. `meta.qualia_valence()`, `.qualia_arousal()`. |
+| 0x09 | **Qualia** | 18 affect channels in meta W56-63. `meta.qualia_valence()`, `.qualia_activation()`. |
 | 0x0A | **Memory** | Episodic sessions. Each moment = BindNode. Session = DN tree subtree. |
 | 0x0B | **Learning** | Pattern/sequence learning reads/writes content containers. Dirty tracking triggers consolidation. |
 | 0x0C | **Agents** | Agent cards at `0x0C:xx`. Capabilities = inline edges to verb nodes. |

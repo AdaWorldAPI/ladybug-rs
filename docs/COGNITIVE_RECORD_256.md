@@ -471,7 +471,7 @@ words 37-38: Object sketch (128 bits)
 word 39: Qualia summary (integer-quantized)
   ┌────────────────┬────────────────┬────────────────┬────────────────┐
   │ [0:15]         │ [16:31]        │ [32:47]        │ [48:63]        │
-  │ arousal_q      │ valence_q      │ tension_q      │ depth_q        │
+  │ activation_q      │ valence_q      │ tension_q      │ depth_q        │
   │ u16 (0..65535) │ u16            │ u16            │ u16            │
   │ 0=calm         │ 0=negative     │ 0=relaxed      │ 0=surface      │
   │ 65535=excited  │ 65535=positive │ 65535=tense    │ 65535=profound │

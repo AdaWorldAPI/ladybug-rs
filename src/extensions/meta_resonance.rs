@@ -55,7 +55,7 @@ pub struct FlowVector {
 /// Change in qualia dimensions
 #[derive(Clone, Debug, Default)]
 pub struct QualiaDelta {
-    pub arousal_change: f32, // Getting calmer or more excited?
+    pub activation_change: f32, // Getting calmer or more excited?
     pub valence_change: f32, // Getting happier or sadder?
     pub tension_change: f32, // Relaxing or tensing?
     pub depth_change: f32,   // Getting deeper or shallower?
@@ -92,7 +92,7 @@ impl FlowVector {
         let mut flow = Self::compute(before, after);
 
         flow.qualia_delta = QualiaDelta {
-            arousal_change: qualia_after[0] - qualia_before[0],
+            activation_change: qualia_after[0] - qualia_before[0],
             valence_change: qualia_after[1] - qualia_before[1],
             tension_change: qualia_after[2] - qualia_before[2],
             depth_change: qualia_after[3] - qualia_before[3],
@@ -125,7 +125,7 @@ impl FlowVector {
 
 impl QualiaDelta {
     pub fn similarity(&self, other: &Self) -> f32 {
-        let da = (self.arousal_change - other.arousal_change).abs();
+        let da = (self.activation_change - other.activation_change).abs();
         let dv = (self.valence_change - other.valence_change).abs();
         let dt = (self.tension_change - other.tension_change).abs();
         let dd = (self.depth_change - other.depth_change).abs();
