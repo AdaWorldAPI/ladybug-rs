@@ -39,6 +39,7 @@
 //! No scan, no index lookup, no serialization.
 //! One VPOPCNTDQ pass per container per hop.
 
+#[cfg(test)]
 use crate::container::Container;
 use crate::wide_container::{WideContainer, EmbeddingFormat, WIDE_BYTES};
 
@@ -111,6 +112,24 @@ impl CogRecord8K {
         let mut record = Self::new();
         record.set_embedding_format(format);
         record
+    }
+
+    // =========================================================================
+    // WIDE METADATA ACCESS (16384-bit expanded schema)
+    // =========================================================================
+
+    /// Read-only view into the full 16,384-bit metadata container.
+    ///
+    /// Provides access to both legacy fields (W0–W127) and expanded schema
+    /// fields (W128–W255): SPO Crystal, Hybrid Crystal, extended NARS,
+    /// scent index, causal graph, 10-layer activations, DN spine cache.
+    pub fn wide_meta(&self) -> crate::wide_meta::WideMetaView<'_> {
+        crate::wide_meta::WideMetaView::new(&self.meta.words)
+    }
+
+    /// Mutable view into the full 16,384-bit metadata container.
+    pub fn wide_meta_mut(&mut self) -> crate::wide_meta::WideMetaViewMut<'_> {
+        crate::wide_meta::WideMetaViewMut::new(&mut self.meta.words)
     }
 
     // =========================================================================
@@ -492,5 +511,67 @@ mod tests {
 
         // This means: 4× the data at the same VPOPCNTDQ throughput
         // as 8 legacy containers (which would be 8 × 16 = 128 iterations)
+    }
+
+    #[test]
+    fn test_wide_meta_through_cogrecord8k() {
+        use crate::wide_meta::SpoTriple;
+
+        let mut r = CogRecord8K::new();
+
+        // Write SPO triple via wide_meta_mut
+        let triple = SpoTriple {
+            subject_dn: 0x0C00,
+            predicate_hash: 0xABCD,
+            confidence_q8: 200,
+            object_dn: 0x0C42,
+            evidence_count: 5,
+            flags: 0,
+        };
+        r.wide_meta_mut().set_spo_triple(0, &triple);
+
+        // Write 10-layer activations
+        let activations = [0.1, 0.2, 0.9, 0.4, 0.5, 0.6, 0.3, 0.8, 0.7, 0.15];
+        r.wide_meta_mut().set_layer_activations(&activations);
+        r.wide_meta_mut().set_calibration_error(0.05);
+
+        // Write spine cache
+        r.wide_meta_mut().set_spine(&[0xA0, 0xB0, 0xC0]);
+
+        // Finalize with checksum
+        r.wide_meta_mut().init_wide();
+
+        // Read back via wide_meta
+        let wm = r.wide_meta();
+        let read_triple = wm.spo_triple(0);
+        assert_eq!(read_triple.subject_dn, 0x0C00);
+        assert_eq!(read_triple.object_dn, 0x0C42);
+        assert_eq!(read_triple.confidence_q8, 200);
+
+        assert_eq!(wm.dominant_layer(), 2); // 0.9 is highest
+        assert!((wm.calibration_error() - 0.05).abs() < 1e-12);
+        assert_eq!(wm.spine_depth(), 3);
+        assert!(wm.verify_wide_checksum());
+        assert!(!wm.is_legacy_only());
+    }
+
+    #[test]
+    fn test_wide_meta_legacy_compatibility() {
+        let mut r = CogRecord8K::new();
+
+        // Write via legacy meta view (through wide_meta_mut)
+        r.wide_meta_mut().legacy_mut().set_dn_addr(0xDEAD_BEEF);
+        r.wide_meta_mut().legacy_mut().set_rung_level(5);
+
+        // Read via wide_meta
+        assert_eq!(r.wide_meta().dn_addr(), 0xDEAD_BEEF);
+        assert_eq!(r.wide_meta().rung_level(), 5);
+
+        // Also readable through legacy MetaView on the container
+        let legacy = crate::meta::MetaView::new(
+            (&r.meta.words[..128]).try_into().unwrap()
+        );
+        assert_eq!(legacy.dn_addr(), 0xDEAD_BEEF);
+        assert_eq!(legacy.rung_level(), 5);
     }
 }
