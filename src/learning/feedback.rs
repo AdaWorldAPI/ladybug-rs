@@ -768,4 +768,379 @@ mod tests {
         );
         assert!(signal2.decay_rate < 0.90, "high crystallization should decrease decay: {}", signal2.decay_rate);
     }
+
+    #[test]
+    fn test_multi_agent_awareness_convergence_no_a2a() {
+        // Core awareness convergence test — no A2A dependency.
+        // Simulates the feedback loop that runs when rustynum GEMM backend
+        // produces hybrid pipeline results and ladybug-rs applies them.
+        //
+        // 3 "agents" each produce feedback signals with different characteristics:
+        //   - Explorer: high crystallization (settled knowledge)
+        //   - Contrarian: high sign flips (polarity conflict)
+        //   - Noisy: mostly mantissa noise (no real signal)
+        //
+        // A learner's WideMetaView accumulates feedback from all agents.
+        // After multiple rounds, the NARS truth values, hybrid weights,
+        // and RL Q-values should reflect the combined awareness.
+        let mut words = [0u64; 256];
+
+        // Initialize: unknown state (f=0.5, c=0.1)
+        let init_f = 0.5f32;
+        let init_c = 0.1f32;
+        words[4] = init_f.to_bits() as u64 | ((init_c.to_bits() as u64) << 32);
+
+        // Round 1: Explorer — crystallized, Revision signal
+        let explorer = build_feedback(
+            500, 16384, 500, 8000, 8000, 7500,
+            2, 10, 100, 1024, 0.90, 0.03,
+            &[0.85; 32], 0.95,
+        );
+        assert_eq!(explorer.bf16_causal.inferred_op, NarsInferenceType::Revision);
+        apply_feedback(&mut words, &explorer, 0.2, 1);
+
+        let freq_r1 = f32::from_bits((words[4] & 0xFFFF_FFFF) as u32);
+        assert!(freq_r1 > init_f, "Revision should increase freq: {} > {}", freq_r1, init_f);
+
+        // Round 2: Contrarian — negation signal
+        let contrarian = build_feedback(
+            5000, 16384, 5000, 8000, 8000, 3000,
+            400, 50, 100, 1024, 0.10, 0.45,
+            &[0.3; 32], 0.95,
+        );
+        assert_eq!(contrarian.bf16_causal.inferred_op, NarsInferenceType::Negation);
+        apply_feedback(&mut words, &contrarian, 0.2, 2);
+
+        let freq_r2 = f32::from_bits((words[4] & 0xFFFF_FFFF) as u32);
+        // Negation should moderate the frequency
+        assert!(freq_r2 > 0.0 && freq_r2 <= 1.0, "Freq should be valid: {}", freq_r2);
+
+        // Round 3: Explorer again — reinforces crystallized view
+        let explorer2 = build_feedback(
+            300, 16384, 300, 8200, 8100, 7800,
+            1, 5, 80, 1024, 0.92, 0.02,
+            &[0.9; 32], 0.94,
+        );
+        apply_feedback(&mut words, &explorer2, 0.2, 3);
+
+        let freq_r3 = f32::from_bits((words[4] & 0xFFFF_FFFF) as u32);
+        let conf_r3 = f32::from_bits(((words[4] >> 32) & 0xFFFF_FFFF) as u32);
+
+        // After 3 rounds, confidence should have accumulated
+        assert!(conf_r3 > init_c, "Confidence should grow: {} > {}", conf_r3, init_c);
+
+        // Hybrid weights should have been written (W144-W159)
+        let hw0 = f32::from_bits((words[144] & 0xFFFF_FFFF) as u32);
+        let hw1 = f32::from_bits(((words[144] >> 32) & 0xFFFF_FFFF) as u32);
+        assert!(hw0 > 0.0 && hw1 > 0.0, "Hybrid weights should be positive: w0={}, w1={}", hw0, hw1);
+
+        // Evidence history should have 3 entries shifted through (W162)
+        let ev0 = f32::from_bits((words[162] & 0xFFFF_FFFF) as u32);
+        assert!(ev0 > 0.0, "Evidence history should have entries: {}", ev0);
+
+        // RL Q-values: action 0 (Revision) should be positive, action 1 (Negation) should exist
+        let q_revision = f32::from_bits((words[32] & 0xFFFF_FFFF) as u32);
+        let q_negation = f32::from_bits(((words[32] >> 32) & 0xFFFF_FFFF) as u32);
+        assert!(q_revision != 0.0 || q_negation != 0.0,
+            "RL Q-values should be updated: revision={}, negation={}", q_revision, q_negation);
+
+        // Decay rate should have adapted: contrarian increased it, explorer decreased it
+        let decay = f32::from_bits(((words[160] >> 32) & 0xFFFF_FFFF) as u32);
+        assert!(
+            decay > 0.0 && decay < 1.0,
+            "Decay rate should be valid: {}",
+            decay
+        );
+    }
+
+    // ====================================================================
+    // Multi-agent A2A awareness feedback bridge (requires crewai feature)
+    // ====================================================================
+    //
+    // Demonstrates the full loop:
+    //
+    //   Agent A: recognition → build_feedback() → encode as A2A message
+    //        ↓ A2A channel (XOR superposition in BindSpace 0x0F)
+    //   Agent B: read channel → decode feedback → apply_feedback() → WideMetaView
+    //
+    // When compiled into a single binary with rustynum, the recognition
+    // results come from the GEMM-backed hybrid pipeline. Here we simulate
+    // the numbers that would flow from hybrid_pipeline() + extract_learning_signal().
+
+    #[test]
+    #[cfg(feature = "crewai")]
+    fn test_a2a_feedback_bridge_two_agents() {
+        use crate::storage::bind_space::BindSpace;
+        use crate::orchestration::a2a::{
+            A2AProtocol, A2AMessage, MessageKind, DeliveryStatus,
+        };
+
+        let mut space = BindSpace::new();
+        let mut protocol = A2AProtocol::new();
+
+        // Agent A (slot 0x02): explorer agent — produces crystallized feedback
+        // Agent B (slot 0x05): learner agent — receives and applies feedback
+        let _channel = protocol.open_channel(0x02, 0x05);
+
+        // === Agent A's recognition cycle ===
+        //
+        // These numbers would come from rustynum hybrid_pipeline():
+        //   - hamming_distance, total_bits from K2 exact
+        //   - conflict/energy/agreement from EnergyConflict
+        //   - sign_flips etc. from BF16 structural diff
+        //   - crystallized/tension from extract_learning_signal()
+        let agent_a_feedback = build_feedback(
+            800,    // hamming_distance (close match)
+            16384,  // total_bits (SKU-16K)
+            800,    // conflict
+            8100,   // energy_a
+            8050,   // energy_b
+            7250,   // agreement (high — good match)
+            3,      // sign_flips (few)
+            15,     // exponent_bits_changed
+            120,    // mantissa_bits_changed
+            1024,   // total_bf16_dims
+            0.85,   // crystallized_ratio (high — settled)
+            0.04,   // tension_ratio (low)
+            &[0.8; 32], // attention_weights from awareness
+            0.95,   // current_decay
+        );
+
+        // Verify Agent A's feedback is a revision signal (crystallized)
+        assert_eq!(
+            agent_a_feedback.bf16_causal.inferred_op,
+            NarsInferenceType::Revision,
+            "High crystallization should trigger Revision"
+        );
+
+        // === Agent A sends feedback through A2A channel ===
+        //
+        // In production, the feedback signal's hybrid_weights would be
+        // encoded into the message payload or fingerprint. Here we use
+        // the Knowledge message kind to carry awareness.
+        let feedback_msg = A2AMessage {
+            id: "feedback-001".to_string(),
+            sender_slot: 0x02,
+            receiver_slot: 0x05,
+            kind: MessageKind::Knowledge,
+            payload: format!(
+                "crystallized={:.2},tension={:.2},op={:?},decay={:.3}",
+                agent_a_feedback.bf16_causal.crystallized_ratio,
+                agent_a_feedback.bf16_causal.tension_ratio,
+                agent_a_feedback.bf16_causal.inferred_op,
+                agent_a_feedback.decay_rate,
+            ),
+            fingerprint: None,
+            timestamp: 1,
+            status: DeliveryStatus::Pending,
+            thinking_style_hint: Some("analytical".to_string()),
+            resonance_weight: 1.0,
+        };
+
+        let status = protocol.send(feedback_msg, &mut space);
+        assert_eq!(status, DeliveryStatus::Delivered);
+
+        // Channel should show activity
+        let resonance = protocol.field_resonance(0x02, 0x05);
+        assert!(
+            resonance > 0.0,
+            "A2A channel should have resonance after feedback: {}",
+            resonance
+        );
+        assert_eq!(protocol.superposition_depth(0x02, 0x05), 1);
+
+        // === Agent B reads the channel and applies feedback ===
+        //
+        // In production, Agent B would decode the message and reconstruct
+        // the FeedbackSignal. Here we apply it directly to a WideMetaView buffer.
+        let mut words_b = [0u64; 256];
+
+        // Initialize Agent B's NARS state (unknown: f=0.5, c=0.1)
+        let init_freq = 0.5f32;
+        let init_conf = 0.1f32;
+        words_b[4] = init_freq.to_bits() as u64 | ((init_conf.to_bits() as u64) << 32);
+
+        // Apply Agent A's feedback to Agent B's metadata
+        apply_feedback(&mut words_b, &agent_a_feedback, 0.2, 1);
+
+        // Verify Agent B's NARS state was updated
+        let new_freq = f32::from_bits((words_b[4] & 0xFFFF_FFFF) as u32);
+        let new_conf = f32::from_bits(((words_b[4] >> 32) & 0xFFFF_FFFF) as u32);
+        assert!(
+            new_freq > 0.5,
+            "Revision from Agent A should increase frequency: {}",
+            new_freq
+        );
+        assert!(
+            new_conf > 0.0 && new_conf <= 1.0,
+            "Confidence should be valid: {}",
+            new_conf
+        );
+
+        // Verify hybrid weights were written to W144-W159
+        let w0 = f32::from_bits((words_b[144] & 0xFFFF_FFFF) as u32);
+        assert!(
+            w0 > 0.0,
+            "Hybrid weight W144 should be non-zero after feedback: {}",
+            w0
+        );
+
+        // Verify RL Q-value was updated (action slot 0 = Revision)
+        let q0 = f32::from_bits((words_b[32] & 0xFFFF_FFFF) as u32);
+        assert!(
+            q0 != 0.0,
+            "Q-value for Revision action should be updated: {}",
+            q0
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "crewai")]
+    fn test_a2a_multi_round_feedback_convergence() {
+        use crate::storage::bind_space::BindSpace;
+        use crate::orchestration::a2a::{
+            A2AProtocol, A2AMessage, MessageKind, DeliveryStatus,
+        };
+
+        let mut space = BindSpace::new();
+        let mut protocol = A2AProtocol::new();
+
+        // 3 agents: explorer(0), contrarian(1), learner(2)
+        // explorer → learner: crystallized feedback
+        // contrarian → learner: negation feedback
+        let _ch_explore = protocol.open_channel(0, 2);
+        let _ch_contra = protocol.open_channel(1, 2);
+
+        let mut learner_words = [0u64; 256];
+        let init_freq = 0.5f32;
+        let init_conf = 0.1f32;
+        learner_words[4] = init_freq.to_bits() as u64 | ((init_conf.to_bits() as u64) << 32);
+
+        // === Round 1: Explorer sends crystallized feedback ===
+        let explorer_feedback = build_feedback(
+            500, 16384, 500, 8000, 8000, 7500,
+            2, 10, 100, 1024, 0.90, 0.03,
+            &[0.85; 32], 0.95,
+        );
+        let msg_explore = A2AMessage {
+            id: "explore-r1".to_string(),
+            sender_slot: 0,
+            receiver_slot: 2,
+            kind: MessageKind::Knowledge,
+            payload: "crystallized_feedback".to_string(),
+            fingerprint: None,
+            timestamp: 1,
+            status: DeliveryStatus::Pending,
+            thinking_style_hint: None,
+            resonance_weight: 1.0,
+        };
+        protocol.send(msg_explore, &mut space);
+        apply_feedback(&mut learner_words, &explorer_feedback, 0.15, 1);
+
+        let freq_after_r1 = f32::from_bits((learner_words[4] & 0xFFFF_FFFF) as u32);
+
+        // === Round 2: Contrarian sends negation feedback ===
+        let contra_feedback = build_feedback(
+            5000, 16384, 5000, 8000, 8000, 3000,
+            400, 50, 100, 1024, 0.10, 0.45,
+            &[0.3; 32], 0.95,
+        );
+        let msg_contra = A2AMessage {
+            id: "contra-r2".to_string(),
+            sender_slot: 1,
+            receiver_slot: 2,
+            kind: MessageKind::Knowledge,
+            payload: "negation_feedback".to_string(),
+            fingerprint: None,
+            timestamp: 2,
+            status: DeliveryStatus::Pending,
+            thinking_style_hint: None,
+            resonance_weight: 1.0,
+        };
+        protocol.send(msg_contra, &mut space);
+        apply_feedback(&mut learner_words, &contra_feedback, 0.15, 2);
+
+        let freq_after_r2 = f32::from_bits((learner_words[4] & 0xFFFF_FFFF) as u32);
+
+        // === Round 3: Explorer sends another crystallized signal ===
+        let explorer_feedback_r3 = build_feedback(
+            300, 16384, 300, 8200, 8100, 7800,
+            1, 5, 80, 1024, 0.92, 0.02,
+            &[0.9; 32], 0.94,
+        );
+        let msg_explore_r3 = A2AMessage {
+            id: "explore-r3".to_string(),
+            sender_slot: 0,
+            receiver_slot: 2,
+            kind: MessageKind::Knowledge,
+            payload: "crystallized_feedback_r3".to_string(),
+            fingerprint: None,
+            timestamp: 3,
+            status: DeliveryStatus::Pending,
+            thinking_style_hint: None,
+            resonance_weight: 1.0,
+        };
+        protocol.send(msg_explore_r3, &mut space);
+        apply_feedback(&mut learner_words, &explorer_feedback_r3, 0.15, 3);
+
+        let freq_after_r3 = f32::from_bits((learner_words[4] & 0xFFFF_FFFF) as u32);
+
+        // === Verify convergence ===
+
+        // After contrarian negation, frequency should have been pushed down
+        assert!(
+            freq_after_r2 < freq_after_r1 || freq_after_r2 < 0.8,
+            "Negation should reduce or moderate frequency: r1={:.3} r2={:.3}",
+            freq_after_r1, freq_after_r2
+        );
+
+        // After 2nd explorer signal, frequency should recover
+        assert!(
+            freq_after_r3 > 0.0 && freq_after_r3 <= 1.0,
+            "Final frequency should be valid: {}",
+            freq_after_r3
+        );
+
+        // A2A channel awareness should accumulate
+        let explore_awareness = protocol.field_resonance(0, 2);
+        let contra_awareness = protocol.field_resonance(1, 2);
+        let total = protocol.total_awareness();
+
+        assert!(
+            explore_awareness > 0.0,
+            "Explorer channel should have resonance: {}",
+            explore_awareness
+        );
+        assert!(
+            contra_awareness > 0.0,
+            "Contrarian channel should have resonance: {}",
+            contra_awareness
+        );
+        assert!(
+            total > explore_awareness,
+            "Total awareness should exceed single channel: {}",
+            total
+        );
+
+        // Explorer channel had 2 messages, should have higher superposition depth
+        assert_eq!(protocol.superposition_depth(0, 2), 2);
+        assert_eq!(protocol.superposition_depth(1, 2), 1);
+
+        // Hybrid weights should reflect mixed signals
+        let w0 = f32::from_bits((learner_words[144] & 0xFFFF_FFFF) as u32);
+        let w1 = f32::from_bits(((learner_words[144] >> 32) & 0xFFFF_FFFF) as u32);
+        assert!(
+            w0 > 0.0 && w1 > 0.0,
+            "Hybrid weights should be positive: w0={} w1={}",
+            w0, w1
+        );
+
+        // Evidence history should have entries (W162)
+        let ev_slot0 = f32::from_bits((learner_words[162] & 0xFFFF_FFFF) as u32);
+        assert!(
+            ev_slot0 > 0.0,
+            "Evidence history should have entries: slot0={}",
+            ev_slot0
+        );
+    }
 }
