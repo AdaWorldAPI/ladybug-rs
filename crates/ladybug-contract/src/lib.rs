@@ -35,6 +35,7 @@ pub mod container;
 pub mod wide_container;
 pub mod geometry;
 pub mod meta;
+pub mod wide_meta;
 pub mod record;
 pub mod cogrecord8k;
 
@@ -59,6 +60,7 @@ pub use geometry::ContainerGeometry;
 pub use record::CogRecord;
 pub use cogrecord8k::{CogRecord8K, RECORD8K_BITS, RECORD8K_BYTES, SLOT_META, SLOT_CAM, SLOT_INDEX, SLOT_EMBED};
 pub use meta::{MetaView, MetaViewMut};
+pub use wide_meta::{WideMetaView, WideMetaViewMut, SpoTriple, WIDE_SCHEMA_VERSION};
 pub use address::{CognitiveAddress, CognitiveDomain};
 pub use codebook::OpCategory;
 pub use nars::TruthValue;
