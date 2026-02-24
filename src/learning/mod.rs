@@ -132,3 +132,14 @@ pub use cognitive_styles::{
 
 // Dream consolidation (offline pruning, merging, creative recombination)
 pub use dream::{DreamConfig, consolidate as dream_consolidate};
+
+// Query→NARS feedback loop (closes the learning circuit)
+// Wires: hybrid_pipeline() → NARS revision → WideMetaView → RL Q-values
+// BF16 1+7+8 prefix decomposition → causal signal → NARS inference type
+pub mod feedback;
+pub use feedback::{
+    FeedbackSignal, Bf16CausalSignal, NarsInferenceType,
+    truth_from_energy_conflict, truth_from_hamming,
+    causal_from_bf16_diff, build_feedback, apply_feedback,
+    apply_hamming_feedback,
+};
