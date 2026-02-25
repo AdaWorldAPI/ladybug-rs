@@ -426,19 +426,42 @@ pub fn apply_feedback(
     words[W_EXT_NARS_BASE + 2] =
         (words[W_EXT_NARS_BASE + 2] & !0xFFFF_FFFF) | ev_bits;
 
-    // --- 3. Hybrid weights (W144-W159) ---
+    // --- 3. Hybrid weights (W144-W159) with crystallization gate ---
+
+    // Learning state word (W125, last reserved word before checksum).
+    // Byte layout: [crystallized:1 | reserved:7 | crystallization_cycle:24 | _:32]
+    const W_LEARNING_STATE: usize = 125;
+    const CRYSTALLIZATION_THRESHOLD: f32 = 0.80;
+
+    let learning_flags = (words[W_LEARNING_STATE] & 0xFF) as u8;
+    let is_crystallized = learning_flags & 0x01 != 0;
 
     const W_HYBRID_BASE: usize = 144;
-    for i in 0..32 {
-        let word = W_HYBRID_BASE + i / 2;
-        let shift = (i % 2) * 32;
-        let current = f32::from_bits(((words[word] >> shift) & 0xFFFF_FFFF) as u32);
-        let target = signal.hybrid_weights[i];
-        // EMA update
-        let updated = current * (1.0 - learning_rate) + target * learning_rate;
-        let bits = updated.to_bits() as u64;
-        words[word] = (words[word] & !(0xFFFF_FFFF_u64 << shift)) | (bits << shift);
+
+    if !is_crystallized {
+        // Still learning — apply EMA weight update
+        for i in 0..32 {
+            let word = W_HYBRID_BASE + i / 2;
+            let shift = (i % 2) * 32;
+            let current = f32::from_bits(((words[word] >> shift) & 0xFFFF_FFFF) as u32);
+            let target = signal.hybrid_weights[i];
+            // EMA update
+            let updated = current * (1.0 - learning_rate) + target * learning_rate;
+            let bits = updated.to_bits() as u64;
+            words[word] = (words[word] & !(0xFFFF_FFFF_u64 << shift)) | (bits << shift);
+        }
+
+        // Check if we should crystallize (transition from learning → learned)
+        if signal.bf16_causal.crystallized_ratio > CRYSTALLIZATION_THRESHOLD {
+            // Set crystallized flag + record the cycle when it happened
+            let cycle_bits = (cycle & 0x00FF_FFFF) as u64; // 24-bit cycle counter
+            words[W_LEARNING_STATE] =
+                (words[W_LEARNING_STATE] & !0xFFFF_FFFF)
+                | 0x01                    // crystallized flag
+                | (cycle_bits << 8);      // crystallization cycle
+        }
     }
+    // else: crystallized — skip weight updates (container has "learned")
 
     // --- 4. RL Q-value update (W32-W39) ---
 
@@ -498,6 +521,38 @@ pub fn apply_hamming_feedback(
     };
 
     apply_feedback(words, &signal, learning_rate, cycle);
+}
+
+// ============================================================================
+// Crystallization state queries (learned vs learning)
+// ============================================================================
+
+/// Word offset for the learning state flag.
+/// Uses W125 (last reserved metadata word before checksum).
+pub const W_LEARNING_STATE: usize = 125;
+
+/// Check whether a container's hybrid weights have crystallized (learned).
+///
+/// When crystallized, `apply_feedback()` skips W144-W159 EMA updates —
+/// the weights are frozen at their settled values.
+pub fn is_crystallized(words: &[u64; 256]) -> bool {
+    (words[W_LEARNING_STATE] & 0x01) != 0
+}
+
+/// Get the cycle number when crystallization occurred (0 if still learning).
+pub fn crystallization_cycle(words: &[u64; 256]) -> u64 {
+    if !is_crystallized(words) {
+        return 0;
+    }
+    (words[W_LEARNING_STATE] >> 8) & 0x00FF_FFFF
+}
+
+/// Force a container back into "learning" mode by clearing the crystallized flag.
+///
+/// Use this when external evidence contradicts the crystallized state
+/// (e.g., NARS abduction detects a sign reversal in a crystallized dimension).
+pub fn decrystallize(words: &mut [u64; 256]) {
+    words[W_LEARNING_STATE] &= !0xFFFF_FFFF; // Clear flag + cycle
 }
 
 // ============================================================================
@@ -1142,5 +1197,94 @@ mod tests {
             "Evidence history should have entries: slot0={}",
             ev_slot0
         );
+    }
+
+    #[test]
+    fn test_crystallization_gate_learning_to_learned() {
+        let mut words = [0u64; 256];
+
+        // Initially not crystallized
+        assert!(!is_crystallized(&words));
+        assert_eq!(crystallization_cycle(&words), 0);
+
+        // Apply feedback with HIGH crystallized_ratio (>0.80 threshold)
+        let signal = build_feedback(
+            1000, 16384, 1000, 8000, 8000, 7000,
+            2, 5, 100, 1024,
+            0.95, // crystallized_ratio > 0.80 → should trigger crystallization
+            0.01,
+            &[0.9; 32], 0.95,
+        );
+
+        apply_feedback(&mut words, &signal, 0.3, 42);
+
+        // Should now be crystallized
+        assert!(is_crystallized(&words), "should be crystallized after high ratio");
+        assert_eq!(crystallization_cycle(&words), 42);
+
+        // Weights should have been written (we were learning before crystallization)
+        let w0 = f32::from_bits((words[144] & 0xFFFF_FFFF) as u32);
+        assert!(w0 > 0.0, "weights should have been updated before freeze: {}", w0);
+
+        // Now apply feedback again — weights should NOT change (frozen)
+        let old_w0 = w0;
+        let signal2 = build_feedback(
+            1000, 16384, 1000, 8000, 8000, 7000,
+            2, 5, 100, 1024, 0.99, 0.01,
+            &[0.1; 32], // very different target weights
+            0.95,
+        );
+        apply_feedback(&mut words, &signal2, 0.3, 100);
+
+        let new_w0 = f32::from_bits((words[144] & 0xFFFF_FFFF) as u32);
+        assert_eq!(old_w0, new_w0, "crystallized weights should NOT change: {} vs {}", old_w0, new_w0);
+    }
+
+    #[test]
+    fn test_decrystallize_resumes_learning() {
+        let mut words = [0u64; 256];
+
+        // Force crystallization
+        let signal = build_feedback(
+            1000, 16384, 1000, 8000, 8000, 7000,
+            2, 5, 100, 1024, 0.95, 0.01,
+            &[0.9; 32], 0.95,
+        );
+        apply_feedback(&mut words, &signal, 0.3, 10);
+        assert!(is_crystallized(&words));
+
+        // Decrystallize
+        decrystallize(&mut words);
+        assert!(!is_crystallized(&words));
+        assert_eq!(crystallization_cycle(&words), 0);
+
+        // Weights should update again
+        let old_w0 = f32::from_bits((words[144] & 0xFFFF_FFFF) as u32);
+        let signal2 = build_feedback(
+            1000, 16384, 1000, 8000, 8000, 7000,
+            2, 5, 100, 1024, 0.50, 0.20, // below threshold, won't re-crystallize
+            &[0.1; 32], 0.95,
+        );
+        apply_feedback(&mut words, &signal2, 0.9, 20); // high learning rate to force change
+
+        let new_w0 = f32::from_bits((words[144] & 0xFFFF_FFFF) as u32);
+        assert_ne!(old_w0, new_w0, "decrystallized weights should resume EMA: {} vs {}", old_w0, new_w0);
+    }
+
+    #[test]
+    fn test_below_threshold_stays_learning() {
+        let mut words = [0u64; 256];
+
+        // Apply with LOW crystallized ratio (below 0.80 threshold)
+        let signal = build_feedback(
+            1000, 16384, 1000, 8000, 8000, 7000,
+            5, 20, 200, 1024,
+            0.50, // below threshold
+            0.30,
+            &[0.5; 32], 0.95,
+        );
+        apply_feedback(&mut words, &signal, 0.3, 5);
+
+        assert!(!is_crystallized(&words), "should remain learning with low crystallized ratio");
     }
 }
