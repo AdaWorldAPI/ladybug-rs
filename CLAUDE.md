@@ -419,6 +419,201 @@ ARCHIVE:   S3 (via Lance)   - Full Parquet snapshots, 11 9s durability
 
 ---
 
+## Composition Model — XOR Binding vs Parallel Slicing vs Address Space
+
+### READ THIS BEFORE TOUCHING STORAGE CODE
+
+ladybug-rs uses three composition mechanisms. They are NOT interchangeable.
+Each operates at a different level. Using the wrong one breaks the architecture.
+
+### Decision Matrix
+
+| Question | Answer → Mechanism |
+|----------|-------------------|
+| "Are these regions accessed **independently**?" | YES → **Parallel Slicing** |
+| "Must both signals **coexist** in search?" | YES → **XOR Binding** |
+| "Need to **recover one signal from another**?" | YES → **XOR Binding** (self-inverse) |
+| "Are they **functionally unrelated**?" | YES → **Parallel Slicing** |
+| "Is memory allocation a bottleneck?" | YES → **XOR Binding** (1 container vs 2) |
+| "Do you need **tree topology**?" | YES → **Address Space** + DnIndex |
+
+### Mechanism 1: Parallel Slicing (Independent Regions)
+
+Used when regions are **functionally independent** and both accessed
+in **different query types**. No semantic relationship between them.
+
+```
+BindNode.fingerprint[256 words]
+├── [0..128]   = META container  (graph structure, NARS, timestamps)
+└── [128..256] = CONTENT container (semantic search, HDC fingerprint)
+```
+
+Access pattern:
+```rust
+let meta = node.meta_words();       // &[u64; 128] — borrows [0..128]
+let content = node.content_words(); // &[u64; 128] — borrows [128..256]
+// No borrow conflict: non-overlapping slices
+```
+
+**When to use**: Metadata vs content. Graph topology vs search fingerprint.
+Any case where you need fast direct access to two unrelated concerns.
+
+### Mechanism 2: XOR Binding (Reversible Superposition)
+
+Used when signals are **semantically related** and should **coexist in
+the same container** for query flexibility.
+
+```rust
+// Bind: SPO structure + semantic axes → composite container
+let composite = spo_container.xor(&axis_container);
+
+// Unbind: recover either signal by XOR with the other
+let recovered_spo = composite.xor(&axis_container);  // = spo_container
+let recovered_axes = composite.xor(&spo_container);  // = axis_container
+```
+
+**Why it works**: XOR is self-inverse and associative.
+`A ⊕ B ⊕ B = A` always. Both signals live in one container,
+either queryable via unbind. Half the storage cost.
+
+**When to use**: SPO triples + semantic axes. Edge encoding
+(from ⊕ permute(verb) ⊕ permute(to)). Any case where you need
+two signals in one container and want to query by either.
+
+### Mechanism 3: Address Space (Tree Hierarchy)
+
+Used for **DN tree topology**. Parent-child relationships are
+NOT encoded in fingerprints — they're encoded in Addr assignments.
+
+```rust
+let parent_addr = Addr::new(0x80, 0x01);
+let child_addr = Addr::new(0x81, 0x02);
+dn_index.register(child_packed_dn, child_addr);
+// Relationship is in DnIndex, not in fingerprint content
+```
+
+**When to use**: Any tree/graph topology. Reparenting doesn't
+require recomputing fingerprints. Upward traversal via PackedDn
+is O(1) bit masking.
+
+---
+
+## CollapseGate — Dispersion-Based Compute Allocation
+
+CollapseGate is **NOT** a storage mechanism. It's a **decision gate**
+that controls when superposition collapses to commitment.
+
+### Three Gate States
+
+| State | SD Range | Action | Semantics |
+|-------|----------|--------|-----------|
+| **FLOW** | SD < 0.15 | Collapse immediately | Clear winner → commit |
+| **HOLD** | 0.15 ≤ SD ≤ 0.35 | Maintain superposition | Ruminate → store in SPPM |
+| **BLOCK** | SD > 0.35 | Cannot collapse | Need clarification → ask user |
+
+SD measures **dispersion across candidate scores**, not confidence.
+FLOW = fast path. HOLD = exploratory. BLOCK = expensive.
+
+### CollapseGate in the Writethrough Pattern
+
+This is how the Blackboard borrow-mut scheme works without breaking
+ownership or zero-copy:
+
+```
+Step 1: Agent READS AwarenessFrame from Blackboard (immutable borrow)
+        ├─ No copy: TypedSlot returns &AwarenessFrame
+        └─ The frame is owned by the Blackboard
+
+Step 2: NARS driver runs pure inference → produces NEW NarsSemanticState
+        ├─ Pure function: (&AwarenessFrame, &axes) → NarsSemanticState
+        └─ New allocation — no borrow conflict with Step 1
+
+Step 3: SPO driver runs → produces NEW Vec<SpoTriple>
+        └─ Same pattern: pure function, new allocation
+
+Step 4: CollapseGate evaluates the candidates
+        ├─ FLOW: low dispersion → safe to commit
+        ├─ HOLD: high dispersion → buffer in SPPM, don't commit yet
+        └─ BLOCK: extreme dispersion → cannot proceed
+
+Step 5 (FLOW): Agent WRITES new TypedSlots to Blackboard
+        ├─ bb.put_typed("awareness:nars", nars_state, ...)
+        ├─ bb.put_typed("awareness:spo_triples", triples, ...)
+        ├─ Different keys from Step 1 → no borrow conflict
+        └─ TypedSlot is Box<dyn Any> → moved, not copied
+
+Step 6: BindSpace reads the new TypedSlots
+        ├─ Computes XOR delta: old ⊕ new = sparse diff
+        ├─ XorDelta stores only changed words (typically 1-2 of 256)
+        ├─ Applies delta to storage: words[i] ^= delta.values[vi]
+        └─ Marks address dirty in 65K-bit bitset
+```
+
+**Why this is zero-copy**:
+- Step 1: `&AwarenessFrame` reference, no copy
+- Steps 2-3: New allocations (driver outputs), not copies of input
+- Step 5: `Box<dyn Any>` moved into Blackboard, no copy
+- Step 6: XOR delta is sparse (1-2 words), not a 2KB container copy
+
+**Why borrow-mut is safe**:
+- Reads and writes use DIFFERENT slot keys
+- Each phase owns its output slots exclusively
+- Phase discipline ensures one writer at a time
+- No mutable reference to input survives past the pure function call
+
+**Why CollapseGate is critical**:
+- Without it, every awareness update would immediately commit
+- HOLD state allows multiple turns of evidence to accumulate
+- BLOCK state prevents nonsensical commits when evidence is contradictory
+- This maps to NARS: FLOW = crystallized, HOLD = uncertain, BLOCK = tensioned
+
+---
+
+## XOR Delta Caching (width_16k/xor_bubble.rs)
+
+The XOR writethrough to storage uses sparse deltas:
+
+```rust
+pub struct XorDelta {
+    pub bitmap: [u64; 4],   // 256-bit mask (which words changed)
+    pub values: Vec<u64>,   // Only the non-zero XOR values
+}
+
+// Compute: old ⊕ new
+let delta = XorDelta::compute(&old_words, &new_words);
+
+// Apply: mutate storage in-place
+delta.apply(&mut storage_words);
+```
+
+A typical awareness update changes 1-2 words of 256. The delta is
+~16 bytes instead of 2048 bytes. This is why the writethrough is
+effectively zero-copy at the storage level.
+
+---
+
+## Ownership Map — Who Owns What
+
+| Component | Owner | Location | Sacred? |
+|-----------|-------|----------|---------|
+| BindSpace (8+8 addressing) | ladybug-rs | `src/storage/bind_space.rs` | YES |
+| CogRedis (Redis syntax) | ladybug-rs | `src/storage/cog_redis.rs` | YES |
+| ArrowZeroCopy | ladybug-rs | `src/storage/lance_zero_copy/` | YES |
+| CollapseGate | ladybug-rs | `src/cognitive/collapse_gate.rs` | YES |
+| WideMetaView | ladybug-contract | `src/wide_meta.rs` | YES |
+| Container XOR/Hamming | ladybug-contract | `src/container.rs` | YES |
+| StorageBackend trait | neo4j-rs | `src/storage/mod.rs` | YES |
+| SIMD dispatch | rustynum | `rustynum-core/src/simd.rs` | YES |
+| K0/K1/K2 pipeline | rustynum | `rustynum-core/src/kernels.rs` | YES |
+| Blackboard | crewai-rust | `src/blackboard/view.rs` | YES |
+| TypedSlots | crewai-rust | `src/blackboard/typed_slot.rs` | YES |
+| Drivers (NARS, SPO) | crewai-rust | `src/drivers/` | YES |
+
+**"Sacred" means: do not modify the public interface without consensus
+across all repos that depend on it.**
+
+---
+
 ## Contact
 
 **Owner**: Jan Hübener (jahube)
@@ -426,4 +621,4 @@ ARCHIVE:   S3 (via Lance)   - Full Parquet snapshots, 11 9s durability
 
 ---
 
-**🦔 LADYBUG: Where all queries become one.**
+**LADYBUG: Where all queries become one.**
