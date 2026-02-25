@@ -139,6 +139,24 @@ The owner already built the Arrow zero-copy layer. It feeds data back to BindSpa
 
 ---
 
+## Role in the Four-Level Architecture
+
+Ladybug-RS is **Level 2 — Awareness** (temporal process).
+
+> **Canonical cross-repo architecture:** [ada-docs/architecture/FOUR_LEVEL_ARCHITECTURE.md](https://github.com/AdaWorldAPI/ada-docs/blob/main/architecture/FOUR_LEVEL_ARCHITECTURE.md)
+
+Ladybug-RS owns the temporal dimension: the 10-layer cognitive stack processed
+in 7 waves, HDR resonance (3D triangle: Guardian/Catalyst/Balanced), FocusMask,
+12 ThinkingStyles with FieldModulation, CollapseGate (SD-based FLOW/HOLD/BLOCK),
+and the AwarenessBlackboard (grey matter → gate → white matter).
+
+**Resonance is selection, not thought.** HDR resonance selects *which* atoms
+activate on the flow. It does not reason. Reasoning happens in graph edges
+(neo4j-rs, Level 3). Thinking styles as JIT workflows are composed by
+crewai-rust/n8n-rs (Level 4).
+
+---
+
 ## Project Identity
 
 **Ladybug-RS** is a pure-Rust cognitive substrate implementing:
