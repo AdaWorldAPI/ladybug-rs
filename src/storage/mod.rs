@@ -38,6 +38,8 @@ pub mod fingerprint_dict;
 pub mod hardening;
 #[cfg(feature = "lancedb")]
 pub mod lance;
+#[cfg(feature = "lancedb")]
+pub mod lance_persistence;
 pub mod lance_zero_copy;
 pub mod redis_adapter;
 pub mod resilient;
@@ -52,6 +54,8 @@ pub mod xor_dag;
 pub use database::Database;
 #[cfg(feature = "lancedb")]
 pub use lance::{EdgeRecord, LanceStore, NodeRecord};
+#[cfg(feature = "lancedb")]
+pub use lance_persistence::LancePersistence;
 
 // CogRedis exports
 pub use cog_redis::{

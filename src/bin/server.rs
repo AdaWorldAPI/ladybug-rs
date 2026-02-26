@@ -52,6 +52,8 @@ use ladybug::core::simd::{self, hamming_distance};
 use ladybug::nars::TruthValue;
 use ladybug::storage::service::{CognitiveService, CpuFeatures, ServiceConfig};
 use ladybug::storage::{Addr, BindSpace, CogRedis, FINGERPRINT_WORDS, RedisResult};
+#[cfg(feature = "lancedb")]
+use ladybug::storage::LancePersistence;
 use ladybug::{FINGERPRINT_BITS, FINGERPRINT_BYTES, VERSION};
 
 // =============================================================================
@@ -482,6 +484,9 @@ struct DbState {
     cpu: CpuFeatures,
     /// Start time
     start_time: Instant,
+    /// Lance persistence layer
+    #[cfg(feature = "lancedb")]
+    persistence: Arc<LancePersistence>,
 }
 
 impl DbState {
@@ -492,14 +497,71 @@ impl DbState {
         };
 
         let service = CognitiveService::new(svc_config).expect("Failed to create CognitiveService");
+        let mut cog_redis = CogRedis::new();
+        let mut fingerprints = Vec::new();
+
+        #[cfg(feature = "lancedb")]
+        let persistence = {
+            let lance_dir = format!("{}/lance", config.data_dir);
+            let persistence = Arc::new(LancePersistence::new(&lance_dir));
+            let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+
+            if persistence.has_data() {
+                eprintln!("[server] Lance data found, hydrating...");
+
+                if let Err(e) = rt.block_on(persistence.ensure_tables()) {
+                    eprintln!("[server] WARNING: ensure_tables failed: {}", e);
+                }
+
+                match rt.block_on(persistence.hydrate()) {
+                    Ok(Some(space)) => {
+                        let node_count = space.nodes_iter()
+                            .filter(|(a, _)| a.prefix() > 0x0F)
+                            .count();
+                        let edge_count = space.edges_iter().count();
+                        cog_redis.replace_bind_space(space);
+                        eprintln!(
+                            "[server] Hydrated BindSpace: {} nodes, {} edges",
+                            node_count, edge_count
+                        );
+                    }
+                    Ok(None) => {
+                        eprintln!("[server] No BindSpace data to hydrate");
+                    }
+                    Err(e) => {
+                        eprintln!("[server] WARNING: BindSpace hydration failed: {}", e);
+                    }
+                }
+
+                match rt.block_on(persistence.hydrate_index()) {
+                    Ok(fps) if !fps.is_empty() => {
+                        eprintln!("[server] Hydrated {} index fingerprints", fps.len());
+                        fingerprints = fps;
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        eprintln!("[server] WARNING: Index hydration failed: {}", e);
+                    }
+                }
+            } else {
+                eprintln!("[server] No Lance data found, starting fresh");
+                if let Err(e) = rt.block_on(persistence.ensure_tables()) {
+                    eprintln!("[server] WARNING: ensure_tables failed: {}", e);
+                }
+            }
+
+            persistence
+        };
 
         Self {
-            fingerprints: Vec::new(),
+            fingerprints,
             kv: HashMap::new(),
-            cog_redis: CogRedis::new(),
+            cog_redis,
             service,
             cpu: CpuFeatures::detect(),
             start_time: Instant::now(),
+            #[cfg(feature = "lancedb")]
+            persistence,
         }
     }
 }
@@ -1062,7 +1124,7 @@ fn handle_xor(body: &str, format: ResponseFormat) -> Vec<u8> {
     // XOR: one pass over 256 u64 words — nanoseconds
     let mut result = Fingerprint::zero();
     for i in 0..FINGERPRINT_WORDS {
-        result.words_mut()[i] = fp_a.words()[i] ^ fp_b.words()[i];
+        result.as_raw_mut()[i] = fp_a.as_raw()[i] ^ fp_b.as_raw()[i];
     }
 
     match format {
@@ -1105,7 +1167,7 @@ fn handle_xor_verify(body: &str, format: ResponseFormat) -> Vec<u8> {
     // XOR: identical fingerprints produce all zeros
     let mut check = Fingerprint::zero();
     for i in 0..FINGERPRINT_WORDS {
-        check.words_mut()[i] = fp_a.words()[i] ^ fp_b.words()[i];
+        check.as_raw_mut()[i] = fp_a.as_raw()[i] ^ fp_b.as_raw()[i];
     }
     let residual = check.popcount();
     let valid = residual == 0;
@@ -3555,6 +3617,79 @@ fn main() {
 
     let state: SharedState = Arc::new(RwLock::new(DbState::new(&config)));
 
+    // Spawn background persistence thread (flush every 30 seconds)
+    #[cfg(feature = "lancedb")]
+    {
+        let persist_state = Arc::clone(&state);
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().expect("persist runtime");
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(30));
+
+                // Check if there are dirty addresses (quick read lock)
+                let has_dirty = {
+                    let db = persist_state.read().unwrap();
+                    db.cog_redis.bind_space().dirty_addrs().next().is_some()
+                };
+
+                if has_dirty {
+                    // Persist under read lock
+                    let persist_result = {
+                        let db = persist_state.read().unwrap();
+                        let persistence = Arc::clone(&db.persistence);
+                        let bs = db.cog_redis.bind_space();
+                        rt.block_on(persistence.persist_full(bs))
+                    };
+
+                    match persist_result {
+                        Ok(()) => {
+                            if let Ok(mut db) = persist_state.write() {
+                                db.cog_redis.bind_space_mut().clear_dirty();
+                            }
+                            eprintln!("[persist] BindSpace flushed to Lance");
+                        }
+                        Err(e) => {
+                            eprintln!("[persist] BindSpace flush failed: {}", e);
+                        }
+                    }
+                }
+
+                // Persist index fingerprints
+                {
+                    let db = persist_state.read().unwrap();
+                    if !db.fingerprints.is_empty() {
+                        let persistence = Arc::clone(&db.persistence);
+                        if let Err(e) = rt.block_on(persistence.persist_index(&db.fingerprints)) {
+                            eprintln!("[persist] Index flush failed: {}", e);
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Register SIGTERM/SIGINT handler for graceful shutdown
+    #[cfg(feature = "lancedb")]
+    {
+        let shutdown_state = Arc::clone(&state);
+        ctrlc::set_handler(move || {
+            eprintln!("\n[shutdown] Flushing to Lance before exit...");
+            let rt = tokio::runtime::Runtime::new().expect("shutdown runtime");
+            let db = shutdown_state.read().unwrap();
+            let persistence = Arc::clone(&db.persistence);
+
+            if let Err(e) = rt.block_on(persistence.persist_full(db.cog_redis.bind_space())) {
+                eprintln!("[shutdown] BindSpace flush failed: {}", e);
+            }
+            if let Err(e) = rt.block_on(persistence.persist_index(&db.fingerprints)) {
+                eprintln!("[shutdown] Index flush failed: {}", e);
+            }
+            eprintln!("[shutdown] Done. Exiting.");
+            std::process::exit(0);
+        })
+        .expect("Failed to set Ctrl-C handler");
+    }
+
     // Spawn UDP bitpacked Hamming listener
     spawn_udp_listener(&config.host, udp_port, Arc::clone(&state));
 
@@ -3565,6 +3700,7 @@ fn main() {
 
     println!("Listening on http://{}", addr);
     println!("UDP Hamming on udp://{}:{}", config.host, udp_port);
+    println!("Lance persistence: {}/lance", config.data_dir);
 
     // Accept connections
     for stream in listener.incoming() {

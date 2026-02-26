@@ -1,19 +1,19 @@
-//! CogRecord — fixed 2 KB record: metadata container + content container.
+//! CogRecord — fixed 4 KB record: metadata container + content container.
 //!
-//! The **holy grail** layout: every record is exactly `[Container; 2]` = 2 KB.
-//! Container 0 is always metadata. Container 1 is always content.
+//! The **holy grail** layout: every record is exactly `[Container; 2]` = 4 KB.
+//! Container 0 is always metadata (16K bits). Container 1 is always content (16K bits).
 //!
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────┐
-//! │  meta    (1 KB)  identity, NARS truth, edges, rung, RL     │
+//! │  meta    (2 KB)  identity, NARS truth, edges, rung, RL     │
 //! ├─────────────────────────────────────────────────────────────┤
-//! │  content (1 KB)  searchable fingerprint (Hamming / SIMD)   │
+//! │  content (2 KB)  searchable fingerprint (Hamming / SIMD)   │
 //! └─────────────────────────────────────────────────────────────┘
-//!       = 2 KB = 1 Fingerprint = 1 DN tree node = 1 Redis value
+//!       = 4 KB = 1 Fingerprint = 1 DN tree node = 1 Redis value
 //! ```
 //!
 //! For multi-container geometries (Xyz, Chunked, Tree), records are
-//! linked through the DN tree. Each linked record is still 2 KB.
+//! linked through the DN tree. Each linked record is still 4 KB.
 
 use std::ops::Range;
 
@@ -21,13 +21,13 @@ use crate::container::Container;
 use crate::geometry::ContainerGeometry;
 use crate::meta::{MetaView, MetaViewMut, W_REPR_BASE};
 
-/// Fixed-size cognitive record: 8,192-bit metadata + 8,192-bit content = 2 KB.
+/// Fixed-size cognitive record: 16,384-bit metadata + 16,384-bit content = 4 KB.
 ///
 /// This is the atomic unit of storage, search, and transfer:
-/// - DN tree value = 1 CogRecord = 2 KB
-/// - Redis value = 1 CogRecord = 2 KB
+/// - DN tree value = 1 CogRecord = 4 KB
+/// - Redis value = 1 CogRecord = 4 KB
 /// - Fingerprint = 1 CogRecord (reinterpretable)
-/// - SIMD scan unit = 2 × 16 AVX-512 iterations = 32 iterations
+/// - SIMD scan unit = 2 × 32 AVX-512 iterations = 64 iterations
 ///
 /// # Stack Allocated
 ///
@@ -43,7 +43,7 @@ pub struct CogRecord {
 }
 
 impl CogRecord {
-    /// Byte size of a CogRecord (2 × 1 KB = 2048 bytes).
+    /// Byte size of a CogRecord (2 × 2 KB = 4096 bytes).
     pub const SIZE: usize = 2 * crate::container::CONTAINER_BYTES;
 
     /// Create a new record with the given geometry.
@@ -108,18 +108,19 @@ impl CogRecord {
         result
     }
 
-    /// Zero-copy byte view of the entire 2 KB record.
+    /// Zero-copy byte view of the entire 4 KB record.
     #[inline]
     pub fn as_bytes(&self) -> &[u8; Self::SIZE] {
         // SAFETY: CogRecord is #[repr(C, align(64))] with two Containers.
-        // Total size = 2 × 1024 = 2048 bytes.
+        // Total size = 2 × 2048 = 4096 bytes.
         unsafe { &*(self as *const CogRecord as *const [u8; Self::SIZE]) }
     }
 
-    /// Construct from a 2 KB byte slice.
+    /// Construct from byte slice (2 × CONTAINER_BYTES).
     pub fn from_bytes(bytes: &[u8; Self::SIZE]) -> Self {
-        let meta_bytes: &[u8; 1024] = bytes[..1024].try_into().unwrap();
-        let content_bytes: &[u8; 1024] = bytes[1024..].try_into().unwrap();
+        use crate::container::CONTAINER_BYTES;
+        let meta_bytes: &[u8; CONTAINER_BYTES] = bytes[..CONTAINER_BYTES].try_into().unwrap();
+        let content_bytes: &[u8; CONTAINER_BYTES] = bytes[CONTAINER_BYTES..].try_into().unwrap();
         Self {
             meta: Container::from_bytes(meta_bytes),
             content: Container::from_bytes(content_bytes),

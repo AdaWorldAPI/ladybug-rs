@@ -888,9 +888,10 @@ impl MirrorField {
         let self_fp = encode_axes(self_axes);
         let partner_fp = encode_axes(partner_axes);
 
-        let mut self_words = [0u64; 128];
-        let mut thou_words = [0u64; 128];
-        for i in 0..128.min(self_fp.len()) {
+        use crate::container::CONTAINER_WORDS;
+        let mut self_words = [0u64; CONTAINER_WORDS];
+        let mut thou_words = [0u64; CONTAINER_WORDS];
+        for i in 0..CONTAINER_WORDS.min(self_fp.len()) {
             self_words[i] = self_fp[i];
             thou_words[i] = partner_fp[i];
         }

@@ -31,7 +31,7 @@ use datafusion::execution::context::SessionContext;
 use datafusion::prelude::*;
 use std::sync::Arc;
 
-use crate::Result;
+use crate::{Error, Result};
 use crate::core::DIM;
 
 // =============================================================================
@@ -124,7 +124,7 @@ impl SqlEngine {
         if std::path::Path::new(&nodes_path).exists() {
             let dataset = Dataset::open(&nodes_path)
                 .await
-                .map_err(|e| Error::Storage(e.to_string()))?;
+                .map_err(|e: lance::Error| Error::Storage(e.to_string()))?;
             let lance_schema = dataset.schema().clone();
             let arrow_schema: ArrowSchema = ArrowSchema::from(&lance_schema);
 
@@ -133,13 +133,13 @@ impl SqlEngine {
                 .scan()
                 .try_into_stream()
                 .await
-                .map_err(|e| Error::Storage(e.to_string()))?;
+                .map_err(|e: lance::Error| Error::Storage(e.to_string()))?;
 
             use futures::StreamExt;
-            let mut all_batches = Vec::new();
+            let mut all_batches: Vec<RecordBatch> = Vec::new();
             let mut stream = batches;
             while let Some(batch) = stream.next().await {
-                all_batches.push(batch.map_err(|e| Error::Storage(e.to_string()))?);
+                all_batches.push(batch.map_err(|e: lance::Error| Error::Storage(e.to_string()))?);
             }
 
             if !all_batches.is_empty() {
@@ -153,7 +153,7 @@ impl SqlEngine {
         if std::path::Path::new(&edges_path).exists() {
             let dataset = Dataset::open(&edges_path)
                 .await
-                .map_err(|e| Error::Storage(e.to_string()))?;
+                .map_err(|e: lance::Error| Error::Storage(e.to_string()))?;
             let lance_schema = dataset.schema().clone();
             let arrow_schema: ArrowSchema = ArrowSchema::from(&lance_schema);
 
@@ -161,13 +161,13 @@ impl SqlEngine {
                 .scan()
                 .try_into_stream()
                 .await
-                .map_err(|e| Error::Storage(e.to_string()))?;
+                .map_err(|e: lance::Error| Error::Storage(e.to_string()))?;
 
             use futures::StreamExt;
-            let mut all_batches = Vec::new();
+            let mut all_batches: Vec<RecordBatch> = Vec::new();
             let mut stream = batches;
             while let Some(batch) = stream.next().await {
-                all_batches.push(batch.map_err(|e| Error::Storage(e.to_string()))?);
+                all_batches.push(batch.map_err(|e: lance::Error| Error::Storage(e.to_string()))?);
             }
 
             if !all_batches.is_empty() {
