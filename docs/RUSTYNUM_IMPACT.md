@@ -146,7 +146,7 @@ Brain Float 16 with f32 accumulation. Halves memory bandwidth for matrix operati
 | Permute (rotation) | `Container::permute()` — word+bit shift | `NumArrayU8::permute()` — byte+bit shift | **Equivalent** (both O(n)) |
 | Similarity | `Container::similarity()` — hamming/bits | `cosine_i8()` + `hamming_distance()` | **Rustynum** (dual metric) |
 
-**Key difference**: Ladybug-rs operates on `[u64; 128]` (soon `[u64; 256]`). Rustynum operates on `&[u8]`. The byte-slice approach is more flexible (any width) but loses compile-time size guarantees and alignment guarantees.
+**Key difference**: Ladybug-rs operates on `[u64; 256]` (16,384 bits = 2 KB per Container). Rustynum operates on `&[u8]`. The byte-slice approach is more flexible (any width) but loses compile-time size guarantees and alignment guarantees.
 
 **Resolution**: Ladybug-rs `Container` keeps its `#[repr(C, align(64))]` struct with compile-time guarantees. Rustynum operations are called via zero-cost `as_bytes()` view — a `&Container` becomes a `&[u8; 2048]` which becomes a `&[u8]`. No copy. No allocation. The SIMD operations work on the same aligned memory.
 

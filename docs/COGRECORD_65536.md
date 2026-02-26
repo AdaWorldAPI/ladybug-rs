@@ -10,17 +10,18 @@ February 21, 2026 — AdaWorldAPI / Claude Architecture Audit
 
 ## 0. The Insight
 
-Current: `Container = [u64; 128]` = 8,192 bits = 1 KB.
-Current: `CogRecord = [Container; 2]` = 16,384 bits = 2 KB.
-Current: `Fingerprint = [u64; 256]` = 16,384 bits = 2 KB.
+> **UPDATE (Feb 2026):** Phase 0 of this plan is now implemented.
+> `CONTAINER_BITS = 16_384`, `CONTAINER_WORDS = 256`, `SIGMA = 64.0`.
+> Container = Fingerprint = same width. No truncation. No zero-extension.
+> The "Current" state below reflects the pre-change baseline.
 
-Container is **half-width Fingerprint**. Every `From<&Fingerprint> for Container` truncates. Every `From<&Container> for Fingerprint` zero-extends. This is wasted information.
-
-**New: Container = Fingerprint = `[u64; 256]` = 16,384 bits = 2 KB.**
+~~Current: `Container = [u64; 128]` = 8,192 bits = 1 KB.~~
+~~Current: `CogRecord = [Container; 2]` = 16,384 bits = 2 KB.~~
+**Implemented: Container = Fingerprint = `[u64; 256]` = 16,384 bits = 2 KB.**
 
 One type. Full width. No truncation. No zero-extension. The conversion functions become identity operations.
 
-Then: `CogRecord = [Container; 4]` = 65,536 bits = 8 KB.
+Future: `CogRecord = [Container; 4]` = 65,536 bits = 8 KB.
 
 With AVX-512 `VPOPCNTDQ` (confirmed present on this hardware), a full 65,536-bit sweep costs 128 instructions — the same throughput class as the current 8,192-bit sweep's 16 instructions. The pipeline fills identically; only the iteration count changes.
 
@@ -159,16 +160,10 @@ match meta.embedding_metric() {
 
 The entire change starts at one file: `crates/ladybug-contract/src/container.rs`.
 
-### Phase 0: Change Constants (1 hour)
+### Phase 0: Change Constants ~~(1 hour)~~ **DONE (Feb 2026)**
 
 ```rust
-// BEFORE:
-pub const CONTAINER_BITS: usize = 8_192;
-pub const CONTAINER_WORDS: usize = CONTAINER_BITS / 64;  // 128
-pub const CONTAINER_BYTES: usize = CONTAINER_WORDS * 8;  // 1024
-pub const CONTAINER_AVX512_ITERS: usize = CONTAINER_WORDS / 8;  // 16
-
-// AFTER:
+// IMPLEMENTED in crates/ladybug-contract/src/container.rs:
 pub const CONTAINER_BITS: usize = 16_384;
 pub const CONTAINER_WORDS: usize = CONTAINER_BITS / 64;  // 256
 pub const CONTAINER_BYTES: usize = CONTAINER_WORDS * 8;  // 2048
@@ -177,15 +172,10 @@ pub const CONTAINER_AVX512_ITERS: usize = CONTAINER_WORDS / 8;  // 32
 
 Because the code uses `CONTAINER_WORDS` everywhere (not hardcoded `128`), **most code compiles immediately**. The 17 files importing these constants just get wider containers.
 
-### Phase 0.1: Statistical Constants
+### Phase 0.1: Statistical Constants **DONE (Feb 2026)**
 
 ```rust
-// BEFORE:
-pub const EXPECTED_DISTANCE: u32 = 4096;  // 8192/2
-pub const SIGMA: f64 = 45.254833995939045;  // √(8192/4)
-pub const SIGMA_APPROX: u32 = 45;
-
-// AFTER:
+// IMPLEMENTED:
 pub const EXPECTED_DISTANCE: u32 = 8192;  // 16384/2
 pub const SIGMA: f64 = 64.0;  // √(16384/4) = √4096 = 64.0 exactly
 pub const SIGMA_APPROX: u32 = 64;
