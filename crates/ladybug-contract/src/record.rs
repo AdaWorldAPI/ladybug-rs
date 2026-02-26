@@ -21,7 +21,7 @@ use crate::container::Container;
 use crate::geometry::ContainerGeometry;
 use crate::meta::{MetaView, MetaViewMut, W_REPR_BASE};
 
-/// Fixed-size cognitive record: 8,192-bit metadata + 8,192-bit content = 2 KB.
+/// Fixed-size cognitive record: 16,384-bit metadata + 16,384-bit content = 4 KB.
 ///
 /// This is the atomic unit of storage, search, and transfer:
 /// - DN tree value = 1 CogRecord = 2 KB
@@ -43,7 +43,7 @@ pub struct CogRecord {
 }
 
 impl CogRecord {
-    /// Byte size of a CogRecord (2 × 1 KB = 2048 bytes).
+    /// Byte size of a CogRecord (2 × CONTAINER_BYTES).
     pub const SIZE: usize = 2 * crate::container::CONTAINER_BYTES;
 
     /// Create a new record with the given geometry.
@@ -108,18 +108,19 @@ impl CogRecord {
         result
     }
 
-    /// Zero-copy byte view of the entire 2 KB record.
+    /// Zero-copy byte view of the entire record (2 × CONTAINER_BYTES).
     #[inline]
     pub fn as_bytes(&self) -> &[u8; Self::SIZE] {
         // SAFETY: CogRecord is #[repr(C, align(64))] with two Containers.
-        // Total size = 2 × 1024 = 2048 bytes.
+        // Total size = 2 × CONTAINER_BYTES.
         unsafe { &*(self as *const CogRecord as *const [u8; Self::SIZE]) }
     }
 
-    /// Construct from a 2 KB byte slice.
+    /// Construct from a byte slice (2 × CONTAINER_BYTES).
     pub fn from_bytes(bytes: &[u8; Self::SIZE]) -> Self {
-        let meta_bytes: &[u8; 1024] = bytes[..1024].try_into().unwrap();
-        let content_bytes: &[u8; 1024] = bytes[1024..].try_into().unwrap();
+        use crate::container::CONTAINER_BYTES;
+        let meta_bytes: &[u8; CONTAINER_BYTES] = bytes[..CONTAINER_BYTES].try_into().unwrap();
+        let content_bytes: &[u8; CONTAINER_BYTES] = bytes[CONTAINER_BYTES..].try_into().unwrap();
         Self {
             meta: Container::from_bytes(meta_bytes),
             content: Container::from_bytes(content_bytes),
@@ -188,8 +189,8 @@ mod tests {
 
     #[test]
     fn test_cogrecord_size() {
-        assert_eq!(CogRecord::SIZE, 2048);
-        assert_eq!(std::mem::size_of::<CogRecord>(), 2048);
+        assert_eq!(CogRecord::SIZE, 4096);
+        assert_eq!(std::mem::size_of::<CogRecord>(), 4096);
     }
 
     #[test]

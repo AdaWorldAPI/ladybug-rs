@@ -216,11 +216,11 @@ impl<'a> WideMetaView<'a> {
         Self { words }
     }
 
-    /// Get a legacy MetaView over the lower 128 words.
+    /// Get a legacy MetaView over the full container words.
+    ///
+    /// Since CONTAINER_WORDS == WIDE_WORDS == 256, we pass the entire array.
     pub fn legacy(&self) -> crate::meta::MetaView<'_> {
-        // SAFETY: lower 128 words of a 256-word array can be reinterpreted
-        let legacy_words: &[u64; 128] = self.words[..128].try_into().unwrap();
-        crate::meta::MetaView::new(legacy_words)
+        crate::meta::MetaView::new(self.words)
     }
 
     // ====================================================================
@@ -481,10 +481,11 @@ impl<'a> WideMetaViewMut<'a> {
         WideMetaView { words: self.words }
     }
 
-    /// Get a legacy MetaViewMut over the lower 128 words.
+    /// Get a legacy MetaViewMut over the full container words.
+    ///
+    /// Since CONTAINER_WORDS == WIDE_WORDS == 256, we pass the entire array.
     pub fn legacy_mut(&mut self) -> crate::meta::MetaViewMut<'_> {
-        let legacy_words: &mut [u64; 128] = (&mut self.words[..128]).try_into().unwrap();
-        crate::meta::MetaViewMut::new(legacy_words)
+        crate::meta::MetaViewMut::new(self.words)
     }
 
     // ====================================================================
