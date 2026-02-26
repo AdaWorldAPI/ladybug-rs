@@ -568,9 +568,7 @@ mod tests {
         assert_eq!(r.wide_meta().rung_level(), 5);
 
         // Also readable through legacy MetaView on the container
-        let legacy = crate::meta::MetaView::new(
-            (&r.meta.words[..128]).try_into().unwrap()
-        );
+        let legacy = crate::meta::MetaView::new(&r.meta.words);
         assert_eq!(legacy.dn_addr(), 0xDEAD_BEEF);
         assert_eq!(legacy.rung_level(), 5);
     }

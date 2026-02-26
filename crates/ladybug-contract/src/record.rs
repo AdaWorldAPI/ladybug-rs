@@ -189,8 +189,8 @@ mod tests {
 
     #[test]
     fn test_cogrecord_size() {
-        assert_eq!(CogRecord::SIZE, 2048);
-        assert_eq!(std::mem::size_of::<CogRecord>(), 2048);
+        assert_eq!(CogRecord::SIZE, 4096);
+        assert_eq!(std::mem::size_of::<CogRecord>(), 4096);
     }
 
     #[test]

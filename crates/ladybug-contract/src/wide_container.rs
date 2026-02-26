@@ -336,40 +336,35 @@ impl WideContainer {
     }
 
     // =========================================================================
-    // UPSCALE FROM 8192-BIT CONTAINER
+    // CONVERSION FROM/TO CONTAINER
     // =========================================================================
+    // Note: Container and WideContainer are now the same size (256 words,
+    // 16,384 bits). These methods remain for API compatibility.
 
-    /// Promote an 8192-bit Container into the lower half of a WideContainer.
+    /// Convert a Container into a WideContainer (same size, direct copy).
     pub fn from_container(c: &crate::container::Container) -> WideContainer {
         let mut wide = WideContainer::zero();
-        wide.words[..crate::container::CONTAINER_WORDS]
-            .copy_from_slice(&c.words);
+        wide.words.copy_from_slice(&c.words);
         wide
     }
 
-    /// Promote an 8192-bit Container, duplicating into both halves.
+    /// Convert a Container into a WideContainer (same as `from_container`
+    /// since both are now 256 words; replication is a no-op).
     pub fn from_container_replicated(c: &crate::container::Container) -> WideContainer {
-        let mut wide = WideContainer::zero();
-        let n = crate::container::CONTAINER_WORDS;
-        wide.words[..n].copy_from_slice(&c.words);
-        wide.words[n..].copy_from_slice(&c.words);
-        wide
+        Self::from_container(c)
     }
 
-    /// Extract the lower 8192 bits as a Container.
+    /// Extract as a Container (same size, direct copy).
     pub fn to_container_lower(&self) -> crate::container::Container {
-        let n = crate::container::CONTAINER_WORDS;
         let mut words = [0u64; crate::container::CONTAINER_WORDS];
-        words.copy_from_slice(&self.words[..n]);
+        words.copy_from_slice(&self.words);
         crate::container::Container { words }
     }
 
-    /// Extract the upper 8192 bits as a Container.
+    /// Extract as a Container (same as `to_container_lower` since both
+    /// are now 256 words; there is no distinct "upper half").
     pub fn to_container_upper(&self) -> crate::container::Container {
-        let n = crate::container::CONTAINER_WORDS;
-        let mut words = [0u64; crate::container::CONTAINER_WORDS];
-        words.copy_from_slice(&self.words[n..]);
-        crate::container::Container { words }
+        self.to_container_lower()
     }
 
     // =========================================================================
@@ -465,8 +460,8 @@ mod tests {
         let wide = WideContainer::from_container(&c);
         let back = wide.to_container_lower();
         assert_eq!(c, back);
-        // Upper half should be zero
-        assert!(wide.to_container_upper().is_zero());
+        // With equal sizes, upper == lower == original
+        assert_eq!(c, wide.to_container_upper());
     }
 
     #[test]
