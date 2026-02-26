@@ -1620,6 +1620,45 @@ impl BindSpace {
     }
 
     // =========================================================================
+    // LANCE PERSISTENCE ACCESSORS
+    // =========================================================================
+
+    /// Iterate all edges.
+    pub fn edges_iter(&self) -> impl Iterator<Item = &BindEdge> {
+        self.edges.iter()
+    }
+
+    /// Get current next_node allocator position.
+    pub fn next_node_slot(&self) -> (u8, u8) {
+        self.next_node
+    }
+
+    /// Get current next_fluid allocator position.
+    pub fn next_fluid_slot(&self) -> (u8, u8) {
+        self.next_fluid
+    }
+
+    /// Set next_node allocator position (used during hydration).
+    pub fn set_next_node_slot(&mut self, prefix: u8, slot: u8) {
+        self.next_node = (prefix, slot);
+    }
+
+    /// Set next_fluid allocator position (used during hydration).
+    pub fn set_next_fluid_slot(&mut self, prefix: u8, slot: u8) {
+        self.next_fluid = (prefix, slot);
+    }
+
+    /// Link with a pre-built edge (used during hydration).
+    /// Fingerprint is already computed — just insert into edge list + indices.
+    pub fn link_with_edge(&mut self, edge: BindEdge) {
+        let idx = self.edges.len();
+        self.edge_out[edge.from.0 as usize].push(idx);
+        self.edge_in[edge.to.0 as usize].push(idx);
+        self.csr_dirty = true;
+        self.edges.push(edge);
+    }
+
+    // =========================================================================
     // DIRTY TRACKING (Phase 4)
     // =========================================================================
 

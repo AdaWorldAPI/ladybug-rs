@@ -24,7 +24,7 @@ crate-type = ["cdylib", "rlib"]
 # =============================================================================
 
 [features]
-default = ["simd", "parallel"]
+default = ["simd", "parallel", "lancedb", "rustynum"]
 
 # Core features
 simd = []                        # AVX-512 SIMD for Hamming operations
