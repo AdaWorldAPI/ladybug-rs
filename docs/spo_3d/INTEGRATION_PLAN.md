@@ -2,14 +2,6 @@
 
 **Status:** Contract-ready. Implementation pending.
 **Date:** 2026-02-20
-
-> **NOTE (Feb 2026):** This document was written when Container = 128 × u64 = 1 KB.
-> Container is now 256 × u64 = 2 KB (16,384 bits). The SPO sparse encoding concept
-> remains valid — with 2× more words per container, the sparse axes have even more
-> room. The meta container (Container 0) is now a full 256 words, and the content
-> container (Container 1) has 256 words for packed sparse axes.
-> Word offsets and sizes below reflect the pre-widening layout and need updating
-> for the 256-word container.
 **Crate:** `ladybug-rs` → `src/graph/spo/`
 **Contract:** `crates/ladybug-contract/src/` (geometry, scent, spo_record extensions)
 
@@ -17,57 +9,64 @@
 
 ## 1. PROBLEM
 
-CogRecord stores one content Container (1KB). Querying "who knows Ada?" requires scanning ALL records and testing each content fingerprint. No structural axis separation means forward, reverse, and relation queries all hit the same data.
+CogRecord stores one content Container (2 KB, 16,384 bits). Querying "who knows Ada?" requires scanning ALL records and testing each content fingerprint. No structural axis separation means forward, reverse, and relation queries all hit the same data.
 
 The existing `ContainerGeometry::Xyz` links 3 CogRecords via DN tree (what/where/how). This works but requires 3 separate Redis GETs and DN tree traversal to reconstitute.
 
 ## 2. SOLUTION: SPO Geometry
 
-A new `ContainerGeometry::Spo` that uses **sparse containers** within a single 2KB CogRecord envelope. Three axes — Subject (X), Predicate (Y), Object (Z) — encoded as bitmap + non-zero words, co-located in one record.
+A new `ContainerGeometry::Spo` that uses **sparse containers** within a single CogRecord envelope. Three axes — Subject (X), Predicate (Y), Object (Z) — encoded as bitmap + non-zero words, co-located in one content container.
 
 ```text
-┌──────────────────────────────────────────────────────────┐
-│ CogRecord (ContainerGeometry::Spo)                       │
-│                                                          │
-│  meta: Container (1024 bytes)                            │
-│    W0       DN address                                   │
-│    W1       type | geometry=Spo(6) | flags               │
-│    W2-3     timestamps, labels                           │
-│    W4-7     NARS truth (freq, conf, pos_ev, neg_ev)      │
-│    W8-11    DN tree (parent, child, next_sib, prev_sib)  │
-│    W12-17   Scent (48 bytes: 3×16 nibble histograms)     │
-│    W18-33   Inline edge index (64 slots)                 │
-│    W34-39   Sparse axis descriptors (bitmap offsets)      │
-│    W40-47   Bloom filter                                 │
-│    W48-55   Graph metrics                                │
-│    W56-63   Qualia                                       │
-│    W64-79   Rung/RL history                              │
-│    W80-95   Representation descriptor                    │
-│    W96-111  Adjacency CSR                                │
-│    W112-125 Reserved                                     │
-│    W126-127 Checksum + version                           │
-│                                                          │
-│  content: Container (1024 bytes) — packed sparse axes    │
-│    [0..2]    X bitmap (128 bits = 2 u64)                 │
-│    [2..N]    X non-zero words                            │
-│    [N..N+2]  Y bitmap                                    │
-│    [N+2..M]  Y non-zero words                            │
-│    [M..M+2]  Z bitmap                                    │
-│    [M+2..K]  Z non-zero words                            │
-│    [K..128]  padding / overflow                          │
-│                                                          │
-│  Total: 2048 bytes (same as Cam geometry)                │
-└──────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│ CogRecord (ContainerGeometry::Spo)                           │
+│                                                              │
+│  Container 0 — Metadata (2048 bytes = 256 × u64)            │
+│    W0       DN address                                       │
+│    W1       type | geometry=Spo(6) | flags                   │
+│    W2-3     timestamps, labels                               │
+│    W4-7     NARS truth (freq, conf, pos_ev, neg_ev)          │
+│    W8-11    DN tree (parent, child, next_sib, prev_sib)      │
+│    W12-17   Scent (48 bytes: 3×16 nibble histograms)         │
+│    W18-33   Inline edge index (64 slots)                     │
+│    W34-39   Sparse axis descriptors (bitmap offsets)          │
+│    W40-47   Bloom filter                                     │
+│    W48-55   Graph metrics                                    │
+│    W56-63   Qualia                                           │
+│    W64-79   Rung/RL history                                  │
+│    W80-95   Representation descriptor                        │
+│    W96-111  Adjacency CSR                                    │
+│    W112-125 Reserved                                         │
+│    W126-127 Checksum + version                               │
+│    W128-223 Available for future SPO metadata expansion       │
+│    W224-255 SchemaSidecar compact summary                    │
+│                                                              │
+│  Container 1 — Content (2048 bytes) — packed sparse axes     │
+│    [0..4]     X bitmap (256 bits = 4 u64)                    │
+│    [4..N]     X non-zero words                               │
+│    [N..N+4]   Y bitmap                                       │
+│    [N+4..M]   Y non-zero words                               │
+│    [M..M+4]   Z bitmap                                       │
+│    [M+4..K]   Z non-zero words                               │
+│    [K..256]   padding / overflow                             │
+│                                                              │
+│  Each container: 2048 bytes = 16,384 bits                    │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ### Why Sparse Containers
 
 At 30% density (typical for real-world content):
-- Dense axis: 128 words = 1024 bytes
-- Sparse axis: 2 words bitmap + ~38 non-zero words = 320 bytes
-- Three sparse axes: 960 bytes ← fits in one content Container
+- Dense axis: 256 words = 2048 bytes
+- Sparse axis: 4 words bitmap + ~77 non-zero words = 648 bytes
+- Three sparse axes: ~1,944 bytes — fits in one 2,048-byte content Container
 
-Three axes in one record. One Redis GET. Same 2KB envelope.
+Three axes in one record. One Redis GET. Full 16K-bit container width.
+
+> *Changed Feb 2026: Container widened from 128 × u64 (1 KB) to 256 × u64 (2 KB).
+> Sparse bitmaps are now 256 bits (4 u64) instead of 128 bits (2 u64).
+> The 2× wider container gives significantly more room for packed sparse axes —
+> three axes at 30% density use ~1,944 of 2,048 available bytes.*
 
 ## 3. KEY INSIGHT: Z→X CAUSAL CHAIN CORRELATION
 
@@ -120,12 +119,11 @@ The meta-record observing a chain gets its own scent. The system recognizes its 
 
 ### What DOES NOT Change
 
-- `Container` type (128×u64, 8192 bits, 1KB)
-- `CogRecord` struct (meta + content = 2KB)
+- `Container` type (256 × u64, 16,384 bits, 2 KB)
 - 5 RISC ops (BIND, BUNDLE, MATCH, PERMUTE, STORE/SCAN)
 - Codebook (4096 entries, deterministic generation)
 - Existing geometries (Cam, Xyz, Bridge, Extended, Chunked, Tree)
-- MetaView word layout (W0-W127) — we use reserved words
+- MetaView word layout (W0-W127) — we use reserved words W128-W223
 - NARS truth value type and inference functions
 - All existing tests (1,267+)
 
@@ -149,7 +147,7 @@ See: `SCHEMA.md` in this directory.
 ### Phase 2: Sparse Container (Day 1-2)
 - `SparseContainer` with bitmap + non-zero words
 - `to_dense()` / `from_dense()` / `hamming_sparse()` / `bind_sparse()`
-- Pack/unpack 3 sparse axes into one Container
+- Pack/unpack 3 sparse axes into one Container (256 words)
 - Tests: density invariants, hamming equivalence
 
 ### Phase 3: Axis Construction (Day 2-3)
@@ -184,9 +182,9 @@ See: `SCHEMA.md` in this directory.
 | # | Decision | Rationale |
 |---|----------|-----------|
 | 1 | `Spo = 6` in ContainerGeometry | Natural extension, doesn't break existing variants |
-| 2 | Sparse axes packed in content Container | One Redis GET, same 2KB envelope |
+| 2 | Sparse axes packed in content Container (256 words) | One Redis GET, full 16K-bit envelope |
 | 3 | 48-byte nibble histogram replaces 5-byte XOR-fold for SPO | Per-axis type discrimination, no structure loss |
-| 4 | Meta stays dense at W0-W127 | Identity/NARS/DN need fixed O(1) offsets |
+| 4 | Meta stays dense at W0-W127, expansion at W128-W223 | Identity/NARS/DN need fixed O(1) offsets |
 | 5 | BTreeMap for POC, LanceDB for production | Prove correctness first, optimize second |
 | 6 | Z→X Hamming distance = causal coherence | No explicit linking needed, geometry IS the test |
 | 7 | Meta-awareness as recursive SPO records | Epiphanies stack as Z_{n} → X_{n+1} chains |
