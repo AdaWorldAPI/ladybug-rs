@@ -2,6 +2,14 @@
 
 **Status:** Contract-ready. Implementation pending.
 **Date:** 2026-02-20
+
+> **NOTE (Feb 2026):** This document was written when Container = 128 × u64 = 1 KB.
+> Container is now 256 × u64 = 2 KB (16,384 bits). The SPO sparse encoding concept
+> remains valid — with 2× more words per container, the sparse axes have even more
+> room. The meta container (Container 0) is now a full 256 words, and the content
+> container (Container 1) has 256 words for packed sparse axes.
+> Word offsets and sizes below reflect the pre-widening layout and need updating
+> for the 256-word container.
 **Crate:** `ladybug-rs` → `src/graph/spo/`
 **Contract:** `crates/ladybug-contract/src/` (geometry, scent, spo_record extensions)
 

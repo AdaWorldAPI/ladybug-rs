@@ -37,10 +37,9 @@ It survives context resets and serves as the task skeleton for agents.
                              ▼
                     ┌──────────────────┐
                     │ ladybug-contract │
-                    │ Container 8192b  │
-                    │ WideContainer    │
-                    │ CogRecord8K     │
-                    │ CogPacket wire  │
+                    │ Container 16384b │
+                    │ CogRecord 16K    │
+                    │ CogPacket wire   │
                     └────────┬─────────┘
                              ▼
                     ┌──────────────────┐
@@ -296,15 +295,14 @@ UnifiedExecution
 #### 5.2 Future Primitives [TODO]
 - [ ] Majority vote bundle (used by CognitiveKernel.bundle_recent)
 - [ ] Hamming similarity (portable version of AVX-512 VPOPCNTDQ)
-- [ ] Fingerprint XOR-fold (Container 8192 ↔ Fingerprint 16384)
+- [ ] Fingerprint XOR-fold (Container = Fingerprint = 16384 bits)
 - [ ] Focus mask: dimension selection based on codebook crystallization history
 
 ### 6. ladybug-contract (Pure Types)
 
 #### 6.1 Current State [DONE]
-- [x] Container (8192-bit, 128 × u64)
-- [x] WideContainer (16384-bit, 256 × u64)
-- [x] CogRecord / CogRecord8K
+- [x] Container (16384-bit, 256 × u64) *(updated Feb 2026 from 8192-bit)*
+- [x] CogRecord (each container = 16K = 2 KB)
 - [x] CogPacket wire protocol
 - [x] EmbeddingFormat enum
 

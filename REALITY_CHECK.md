@@ -92,6 +92,11 @@ src/container/mod.rs:73        — [u64; 128] = 8,192 bits = 1 KB
 crates/ladybug-contract/src/container.rs:29 — [u64; 128] = 8,192 bits = 1 KB
 ```
 
+> **UPDATE (Feb 2026):** Container has been widened to 16,384 bits (256 × u64 = 2 KB).
+> Container = Fingerprint = same width. No more truncation or zero-extension.
+> The dual-Container type issue (src/container vs contract crate) remains a
+> cleanup target, but the width mismatch is resolved.
+
 They are **identical in layout** but **different Rust types**. You cannot pass one
 where the other is expected without conversion. This means:
 
@@ -102,44 +107,47 @@ where the other is expected without conversion. This means:
 - `src/container/cache.rs`, `src/container/graph.rs` use the local one
 - Type mismatch between modules that should be the same
 
-**AND** there is `Fingerprint` (256 u64 = 16,384 bits = 2 KB) in `src/core/fingerprint.rs`.
+~~**AND** there is `Fingerprint` (256 u64 = 16,384 bits = 2 KB) in `src/core/fingerprint.rs`.
 Two `From` impls exist to convert:
 - Fingerprint → Container: truncation (copy first 128 words, discard upper 128)
 - Container → Fingerprint: zero-extension (copy 128 words, pad 128 zeros)
 
 This means **half the fingerprint is thrown away** when going to storage.
-Or storage records carry **128 zero words** when promoted to Fingerprint.
+Or storage records carry **128 zero words** when promoted to Fingerprint.~~
+
+> **RESOLVED (Feb 2026):** Container and Fingerprint are now both 256 × u64 = 16,384 bits.
+> Conversion is direct copy — no truncation, no zero-extension.
 
 ### THE FIX
 
-The correct layout (which you identified in a previous session) is:
+> **UPDATE (Feb 2026):** The canonical layout is now implemented:
+> - Every Container = 16,384 bits = 256 × u64 = 2 KB. Always.
+> - Container 0 = Metadata CogRecord (16K): W0-W127 MetaView fields, W224-W255 SchemaSidecar
+> - Container 1 = Content CogRecord (16K): All 256 words = searchable VSA fingerprint
+> - Container N = Additional CogRecords (Jina embeddings, etc.)
+> - Constants: CONTAINER_BITS=16384, CONTAINER_WORDS=256, CONTENT_OFFSET=0, CONTENT_WORDS=256
+>
+> The old "8192+8192 = one Fingerprint" model is superseded. Each CogRecord IS one
+> full-width container. A node is composed of separate CogRecords (Container 0 meta,
+> Container 1 content, etc.), each 2 KB.
 
-```
+~~The correct layout (which you identified in a previous session) is:~~
+
+~~```
 CogRecord = 8,192-bit metadata (W0-W127) + 8,192-bit content (W0-W127)
            = 2 Containers = 2 KB total
            = Exactly 1 Fingerprint
-```
+```~~
 
-This means:
+Remaining work:
 1. **Delete `src/container/mod.rs:73` Container** — re-export from contract crate
-2. **Make CogRecord = exactly 1 Fingerprint** — upper 128 words = metadata, lower 128 = content
-   OR: Container 0 (meta) + Container 1 (content), serialized as one Fingerprint
-3. **DN tree in Redis** — each key maps to exactly 2 KB = 1 Fingerprint = 1 CogRecord
-4. **Spine** — XOR of content containers IS the tree spine, same as Redis DN tree
-
-What changes:
-- `crates/ladybug-contract/src/record.rs` — CogRecord becomes `[Container; 2]` not `meta + Vec<Container>`
-- `src/core/fingerprint.rs` — Fingerprint IS a CogRecord (upper=meta, lower=content)
-- Kill `src/container/mod.rs` — everything uses `ladybug_contract::container::Container`
-- `ContainerGeometry::Cam` (the default, most common) stays as 1 meta + 1 content = 2 KB
-- Multi-container geometries (Xyz, Chunked, Tree) become linked lists of 2 KB records via DN tree
+2. Kill duplicate Container type — everything uses `ladybug_contract::container::Container`
 
 ### WHY THIS MATTERS
 
-Right now searching requires loading Container (1 KB) then separately loading metadata.
-With 8192+8192, every record is self-contained. One 2 KB read gives you everything:
-identity, NARS truth, edges, AND the searchable content fingerprint.
-Zero joins. Zero second lookups. The record IS the DN tree node IS the Redis value.
+Each container is self-contained at 2 KB. One read gives you the full 16,384-bit
+searchable fingerprint (Container 1) or the full metadata (Container 0).
+Zero truncation. Zero zero-extension. The record IS the DN tree node IS the storage value.
 
 ---
 
@@ -420,45 +428,41 @@ Wire them into the cognitive kernel (`src/cognitive/cognitive_kernel.rs`):
 
 ---
 
-## THE HOLY GRAIL: 8192 META + 8192 CONTENT
+## THE HOLY GRAIL: 16K-PER-CONTAINER MODEL
 
-### Current State (Wrong)
+> **UPDATE (Feb 2026):** This section described the old "8192+8192" model.
+> The canonical layout is now: every Container = 16,384 bits = 256 × u64 = 2 KB.
+> A node has separate containers (Container 0 = metadata, Container 1 = content, etc.),
+> each one a full 16K-bit CogRecord.
+
+### Previous State (Fixed)
 
 ```
 Fingerprint = 256 u64 = 16,384 bits = 2 KB    (src/core/)
-Container   = 128 u64 =  8,192 bits = 1 KB    (contract + src/container/ DUPLICATE)
+Container   = 256 u64 = 16,384 bits = 2 KB    (contract — updated from 128 u64)
 CogRecord   = 1 meta Container + Vec<Container>  (variable size, heap allocated)
 CogPacket   = 8-word header + 1-2 Containers     (wire protocol)
 ```
 
-Problems:
-- Fingerprint → Container loses half the data (truncation at conversion)
-- CogRecord is heap-allocated Vec (variable size = no zero-copy, no mmap)
-- Two Container types cause type confusion
-- Wire protocol adds its own 64-byte header, different from meta.rs W0-W127
-
-### Target State (8192 + 8192)
+### Current State (Implemented)
 
 ```
-Container   = 128 u64 = 8,192 bits = 1 KB     (ONE type, in contract)
-CogRecord   = [Container; 2] = 2 KB fixed      (meta + content, stack allocated)
-Fingerprint = type alias for CogRecord          (or From<CogRecord> zero-cost)
+Container   = 256 u64 = 16,384 bits = 2 KB     (ONE type, in contract)
+Fingerprint = 256 u64 = 16,384 bits = 2 KB     (same width as Container)
+CogRecord   = separate Containers (meta + content + ...)
 DN tree key = PackedDn (8 bytes)
-DN tree val = CogRecord (2 KB fixed)
-Redis key   = DN address
-Redis value = 2 KB blob (identical to CogRecord)
+DN tree val = Container(s) (2 KB each)
 ```
 
 ### What this gives you
 
-1. **Zero-copy everything**: mmap a file, cast to `&[CogRecord]`, done
-2. **No heap allocation**: `[Container; 2]` lives on the stack
-3. **DN tree = Redis = Storage**: exact same 2 KB blob everywhere
-4. **Spine = XOR of content containers**: `spine = records.iter().fold(Container::zero(), |s, r| s.xor(&r.content))`
-5. **SIMD on full record**: 2 x 16 AVX-512 iterations = 32 iterations per record
-6. **One lookup per node**: GET dn_addr → 2 KB → you have meta + content + edges + NARS
-7. **CLAM tree over CogRecords**: one tree indexes both metadata and content
-8. **panCAKES compression on content container**: XOR-diff from cluster center, 5-70x ratio
+1. **No truncation**: Container = Fingerprint = 16,384 bits, direct copy
+2. **Full-width SIMD**: 32 AVX-512 iterations per Container (256 words / 8)
+3. **σ = 64.0 exactly**: sqrt(16384/4) = 64.0, simplifies all threshold math
+4. **Spine = XOR of content containers**: `spine = records.iter().fold(Container::zero(), |s, r| s.xor(&r.cam))`
+5. **One lookup per container**: GET dn_addr → 2 KB → you have the full 16K fingerprint
+6. **CLAM tree over Containers**: one tree indexes content directly
+7. **panCAKES compression on content container**: XOR-diff from cluster center, 5-70x ratio
 
 ### Migration Path
 
@@ -491,10 +495,10 @@ Week 2: crewai-rust Resurrection
   [6]  Wire task.execute_sync() to real execution (Issue #2)
   [7]  Delete dead wire_bridge or call it (Issue #2)
 
-Week 3: The Holy Grail — 8192+8192
-  [8]  CogRecord = [Container; 2] (Issue #1, steps 2-5)
-  [9]  Update storage to fixed 2 KB records (steps 6-8)
-  [10] Fingerprint = CogRecord alias (step 9)
+Week 3: The Holy Grail — 16K per Container *(DONE Feb 2026)*
+  [8]  ~~CogRecord = [Container; 2]~~ → Container widened to 16384 bits ✓
+  [9]  ~~Update storage to fixed 2 KB records~~ → Constants updated ✓
+  [10] ~~Fingerprint = CogRecord alias~~ → Same width, direct copy ✓
 
 Week 4: Connect the Pipes
   [11] Bridge Grammar → CausalSearch (Issue #3)
@@ -582,9 +586,9 @@ into "scientific breakthrough."
 
 ### The gap between "looks impressive" and "actually works" is ~8 weeks of focused work.
 
-The 8192+8192 change is the architectural unlock (weeks 1-3).
+The 16K-per-container change is the architectural unlock *(completed Feb 2026)*.
 CLAM integration is the scientific unlock (weeks 5-8).
-Everything else follows from having one canonical 2 KB record type
+Everything else follows from having one canonical 2 KB container type
 that IS the fingerprint, IS the DN tree node, IS the Redis value,
 IS the search vector, IS the CLAM tree leaf, IS the storage unit.
 

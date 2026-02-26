@@ -12,10 +12,10 @@ All of the following claims in the SPOQ Plan are **confirmed accurate** against 
 
 | # | Claim | Evidence |
 |---|-------|---------|
-| 1 | Container = `[u64; 128]` = 8,192 bits = 1 KB | `crates/ladybug-contract/src/container.rs:10` — `CONTAINER_WORDS = 8192/64 = 128` |
-| 2 | 16 AVX-512 loads per container | `CONTAINER_AVX512_ITERS = 128/8 = 16` (same file) |
+| 1 | Container = `[u64; 128]` = 8,192 bits = 1 KB | ~~`CONTAINER_WORDS = 8192/64 = 128`~~ **Updated Feb 2026: Container = [u64; 256] = 16,384 bits = 2 KB** |
+| 2 | 16 AVX-512 loads per container | ~~`CONTAINER_AVX512_ITERS = 128/8 = 16`~~ **Updated Feb 2026: 256/8 = 32 iterations** |
 | 3 | `ContainerGeometry` has 6 variants (Cam, Xyz, Bridge, Extended, Chunked, Tree) | `crates/ladybug-contract/src/geometry.rs` — all 6 present |
-| 4 | CogRecord = meta (1 KB) + content (1 KB) = 2 KB | `crates/ladybug-contract/src/record.rs:38` — `pub struct CogRecord { pub meta: Container, pub content: Container }` |
+| 4 | CogRecord = meta (1 KB) + content (1 KB) = 2 KB | **Updated Feb 2026: each Container = 2 KB. Node = separate CogRecords (Container 0 meta, Container 1 content).** |
 | 5 | MetaView word layout W0-W127 | `src/container/meta.rs` — all word offsets match plan exactly (W0=DN, W1=type, W2=time, W4-7=NARS, W12-15=layers, W16-31=edges, W56-63=qualia, W126-127=checksum) |
 | 6 | `belichtungsmesser()` uses 7 sample points `[0,19,41,59,79,101,127]` | `src/container/search.rs:25` — exact match, with 448-bit scaling factor |
 | 7 | `belichtung_stats()` returns (mean, sd×100) | Same file, exists as claimed |

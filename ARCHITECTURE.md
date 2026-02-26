@@ -410,7 +410,7 @@ https://github.com/AdaWorldAPI/ladybug-rs
 
 The sections below document the deep container substrate that underlies
 the CAM/scent architecture above.  Where Part I describes the indexing
-and query surface, Part II describes the 8192-bit cognitive geometry,
+and query surface, Part II describes the 16,384-bit cognitive geometry,
 the DN tree, NARS reasoning, qualia modules, and the Friston free energy
 loop that ties them together.
 
@@ -418,14 +418,15 @@ loop that ties them together.
 
 ## 11. Container Geometry
 
-The **Container** is the atomic unit.  8192 bits = 128 × u64 words = 1 KB.
+The **Container** is the atomic unit.  16,384 bits = 256 × u64 words = 2 KB.
 Stack-allocated, SIMD-aligned (`#[repr(C, align(64))]`), zero-copy.
+Each CogRecord IS one container. A node has N containers (meta, content, embeddings...).
 
 ```text
 ┌──────────────────────────────────────────────────────────┐
-│  128 words × 64 bits = 8192 bits = 1 KB                 │
-│  16 AVX-512 iterations cover the full container          │
-│  Expected random Hamming distance: 4096 (σ ≈ 45)        │
+│  256 words × 64 bits = 16,384 bits = 2 KB               │
+│  32 AVX-512 iterations cover the full container          │
+│  Expected random Hamming distance: 8192 (σ = 64)        │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -1114,9 +1115,9 @@ SNN/ANN/GNN approaches:
    relationships compose via XOR without loss.  GNNs lose information at
    each message-passing layer.
 
-3. **Constant-size representation**: An edge between two 8192-bit containers
-   is another 8192-bit container.  No matter how complex the relationship,
-   it fits in 1 KB.  Neural edge representations grow with model size.
+3. **Constant-size representation**: An edge between two 16,384-bit containers
+   is another 16,384-bit container.  No matter how complex the relationship,
+   it fits in 2 KB.  Neural edge representations grow with model size.
 
 4. **Information content is measurable**: `popcount(a xor b)` = how many bits
    differ = the energy of the transformation.  This is an exact count, not
@@ -1248,7 +1249,7 @@ The key transcoding: RedisGraph stored adjacency as integer node IDs in CSR
 format.  The holograph step replaced integer IDs with Container fingerprints
 and integer edge weights with XOR deltas.  BlasGraph formalized this as
 sparse-adjacent-vector operations.  ContainerGraph (ladybug-rs) is the final
-form: pure Container-native, everything is 8192 bits, all operations are
+form: pure Container-native, everything is 16,384 bits, all operations are
 XOR/Hamming/popcount.
 
 The adjacency encoding in W16-31 (inline) and W96-111 (CSR overflow) is the

@@ -1,7 +1,19 @@
 # The 192×u64 Cognitive Record
 
 **Date**: 2026-02-05
-**Status**: Proposal (alternate to COMPOSITE_FINGERPRINT_SCHEMA.md)
+**Status**: ~~Proposal~~ **SUPERSEDED**
+
+> **NOTE (Feb 2026):** This document proposed a 192-word record with an 8,192-bit
+> (128 × u64) fingerprint lane. The canonical layout is now:
+> - Every Container = 16,384 bits = 256 × u64 = 2 KB
+> - Container 0 = Metadata (16K), Container 1 = Content (16K), Container N = Additional
+> - The 192-word layout was never implemented. See `width_16k/mod.rs` for the current spec.
+> - Many of the GraphBLAS/semiring concepts remain valid and are implemented in
+>   `src/container/semiring.rs` and `src/width_16k/search.rs`.
+>
+> Kept for historical reference — the adjacency bitvector concept and DataFusion operator
+> model described here informed later design decisions.
+
 **Core idea**: One 1,536-byte fixed-size record is the node, the edge row, the sparse adjacency vector, the NARS belief, the scent, AND the VSA fingerprint. Every cognitive operation reduces to SIMD on a lane of the same buffer. Zero-copy from storage through compute through transport.
 
 ---

@@ -2,6 +2,14 @@
 
 > **Date**: 2026-02-13
 > **Status**: PLAN — awaiting implementation
+>
+> **NOTE (Feb 2026):** This document was written when Container = 128 × u64 = 8,192 bits = 1 KB.
+> Container is now 256 × u64 = 16,384 bits = 2 KB. The "8K vs 16K" comparison table
+> and the 128/128 metadata/content split described in §6-§7 are **superseded**.
+> Canonical layout: every Container = 16,384 bits = 256 words. Container 0 = metadata,
+> Container 1 = content (full 256 words = searchable fingerprint), Container N = additional.
+> The BindSpace concepts (typed lens, Arrow backing, DnIndex) remain valid.
+> Specific word-offset references to [0..128] metadata / [128..256] content need updating.
 > **Branch for work**: Create fresh branch from `claude/code-review-SMMuY`
 > **Rollback**: `git revert` the implementation commit(s); all consolidation files remain untouched on the parent branch
 
@@ -1875,7 +1883,7 @@ type Node {
   children: [Node!]!              # dn_index.children(addr)
   parent: Node                    # dn.parent() → resolve
   content: Fingerprint            # content_container()
-  similarity(to: Fingerprint!): Float  # content.hamming() → 1.0 - dist/8192
+  similarity(to: Fingerprint!): Float  # content.hamming() → 1.0 - dist/16384
 }
 
 type Query {

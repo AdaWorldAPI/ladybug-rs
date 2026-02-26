@@ -15,13 +15,13 @@ Four repos currently have independent node representations:
 
 | Repo | Node Type | What It Encodes |
 |------|-----------|-----------------|
-| **ladybug-rs** | `CogRecord` (8192-bit container, 128×u64 metadata) | Fingerprint + NARS truth + edges + Q-values + qualia + graph metrics |
+| **ladybug-rs** | `CogRecord` (16384-bit container, 256×u64) | Fingerprint + NARS truth + edges + Q-values + qualia + graph metrics |
 | **crewai-rust** | `AgentBlueprint` + `ModuleInner` (YAML) | role, goal, thinking_style[10], persona, skills |
 | **n8n-rs** | Workflow nodes | Orchestration steps, triggers, connections, execution state |
 | **neo4j-rs** | `Node { id, labels, properties }` | Property graph model, Cypher queryable |
 
 **The unification**: The ladybug-rs container metadata already encodes ALL of these
-as word-ranges in a single 1KB binary structure. Rather than transcoding between
+as word-ranges in a single 2KB binary structure. Rather than transcoding between
 formats, we make the container the single source of truth and provide typed views
 for each consumer.
 

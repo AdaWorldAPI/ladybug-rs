@@ -140,7 +140,7 @@ order:
 
 Extended from 402 → 1,649 lines. Preserved existing CAM/scent-index sections
 (1-10). Added 17 new sections covering:
-- Container Geometry (8192-bit atom, XOR/Hamming/popcount)
+- Container Geometry (16,384-bit atom, XOR/Hamming/popcount)
 - CogRecord (2 KB holy grail layout)
 - Container 0 Metadata Map (W0-W127 complete)
 - DN Tree (PackedDn 7×8-bit)
@@ -399,7 +399,7 @@ Complete mapping between the Python ecosystem and ladybug-rs:
 | File | What |
 |------|------|
 | **Container substrate** | |
-| `crates/ladybug-contract/src/container.rs` | CONTAINER_BITS=8192, EXPECTED_DISTANCE=4096, SIGMA=45.25 |
+| `crates/ladybug-contract/src/container.rs` | CONTAINER_BITS=16384, EXPECTED_DISTANCE=8192, SIGMA=64.0 |
 | `crates/ladybug-contract/src/record.rs` | CogRecord (2 KB = meta + content), cross_hydrate, extract_perspective |
 | `crates/ladybug-contract/src/nars.rs` | TruthValue, revision/deduction/induction/abduction/analogy/comparison |
 | `src/container/meta.rs` | W0-W127 metadata layout, MetaView/MetaViewMut |
