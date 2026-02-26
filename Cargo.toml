@@ -1,5 +1,6 @@
 [workspace]
 members = [".", "crates/ladybug-contract"]
+exclude = ["vendor"]
 
 [package]
 name = "ladybug"
@@ -179,11 +180,12 @@ pyo3 = { version = "0.23", optional = true, features = ["extension-module"] }
 # NOTE: n8n crates pin Arrow 53 / DataFusion 43. The Dockerfiles add
 # [patch.crates-io] entries to unify Arrow/DataFusion to ladybug's versions.
 # -----------------------------------------------------------------------------
-n8n-core     = { path = "vendor/n8n-rs/n8n-rust/crates/n8n-core",     optional = true }
-n8n-workflow = { path = "vendor/n8n-rs/n8n-rust/crates/n8n-workflow",  optional = true }
-n8n-arrow    = { path = "vendor/n8n-rs/n8n-rust/crates/n8n-arrow",    optional = true }
-n8n-grpc     = { path = "vendor/n8n-rs/n8n-rust/crates/n8n-grpc",     optional = true }
-n8n-hamming  = { path = "vendor/n8n-rs/n8n-rust/crates/n8n-hamming",  optional = true }
+# When developing locally: use sibling directory. In Docker: use vendor/n8n-rs.
+n8n-core     = { path = "../n8n-rs/n8n-rust/crates/n8n-core",     optional = true }
+n8n-workflow = { path = "../n8n-rs/n8n-rust/crates/n8n-workflow",  optional = true }
+n8n-arrow    = { path = "../n8n-rs/n8n-rust/crates/n8n-arrow",    optional = true }
+n8n-grpc     = { path = "../n8n-rs/n8n-rust/crates/n8n-grpc",     optional = true }
+n8n-hamming  = { path = "../n8n-rs/n8n-rust/crates/n8n-hamming",  optional = true }
 
 # -----------------------------------------------------------------------------
 # Vendor: crewai-rust (AI agent orchestration framework)
@@ -193,7 +195,8 @@ n8n-hamming  = { path = "vendor/n8n-rs/n8n-rust/crates/n8n-hamming",  optional =
 # No version conflicts — crewai has no Arrow/DataFusion deps.
 # Renamed to crewai-vendor to avoid collision with ladybug's built-in crewai feature.
 # -----------------------------------------------------------------------------
-crewai-vendor = { package = "crewai", path = "vendor/crewai-rust", optional = true }
+# When developing locally: use sibling directory. In Docker: use vendor/crewai-rust.
+crewai-vendor = { package = "crewai", path = "../crewai-rust", optional = true }
 
 # -----------------------------------------------------------------------------
 # Vendor: rustynum-rs (SIMD numerical library with AVX-512 VPOPCNTDQ + VNNI)

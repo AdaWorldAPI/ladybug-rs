@@ -66,6 +66,9 @@ pub mod persona;
 pub mod semantic_kernel;
 pub mod thinking_template;
 
+#[cfg(feature = "vendor-crewai")]
+pub mod substrate_bridge;
+
 pub use agent_card::{AgentCapability, AgentCard, AgentGoal, AgentRegistry, AgentRole};
 
 pub use thinking_template::{StyleOverride, ThinkingTemplate, ThinkingTemplateRegistry};
