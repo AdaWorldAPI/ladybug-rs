@@ -611,6 +611,10 @@ fn route(
         ("POST", "/api/v1/bind") => handle_bind(body, format),
         ("POST", "/api/v1/bundle") => handle_bundle(body, format),
 
+        // XOR — nanosecond zero-copy parity
+        ("POST", "/api/v1/xor") => handle_xor(body, format),
+        ("POST", "/api/v1/xor/verify") => handle_xor_verify(body, format),
+
         // Search
         ("POST", "/api/v1/search/topk") => handle_topk(body, state, format),
         ("POST", "/api/v1/search/threshold") => handle_threshold(body, state, format),
@@ -1042,6 +1046,90 @@ fn handle_bundle(body: &str, format: ResponseFormat) -> Vec<u8> {
                 result.popcount(),
                 result.density(),
                 fps.len()
+            );
+            http_json(200, &json)
+        }
+    }
+}
+
+/// POST /api/v1/xor — XOR two fingerprints. Single nanosecond operation.
+fn handle_xor(body: &str, format: ResponseFormat) -> Vec<u8> {
+    let a_str = extract_json_str(body, "a").unwrap_or_default();
+    let b_str = extract_json_str(body, "b").unwrap_or_default();
+    let fp_a = resolve_fingerprint(&a_str);
+    let fp_b = resolve_fingerprint(&b_str);
+
+    // XOR: one pass over 256 u64 words — nanoseconds
+    let mut result = Fingerprint::zero();
+    for i in 0..FINGERPRINT_WORDS {
+        result.words_mut()[i] = fp_a.words()[i] ^ fp_b.words()[i];
+    }
+
+    match format {
+        ResponseFormat::Arrow => {
+            let schema = fingerprint_schema();
+            let batch = RecordBatch::try_new(
+                schema,
+                vec![
+                    Arc::new(
+                        FixedSizeBinaryArray::try_from_iter(std::iter::once(result.as_bytes()))
+                            .unwrap(),
+                    ) as ArrayRef,
+                    Arc::new(UInt32Array::from(vec![result.popcount()])) as ArrayRef,
+                    Arc::new(Float32Array::from(vec![result.density()])) as ArrayRef,
+                    Arc::new(UInt32Array::from(vec![FINGERPRINT_BITS as u32])) as ArrayRef,
+                ],
+            )
+            .unwrap();
+            http_arrow(200, &batch)
+        }
+        ResponseFormat::Json => {
+            let json = format!(
+                r#"{{"result":"{}","popcount":{},"density":{:.4},"op":"xor"}}"#,
+                base64_encode(result.as_bytes()),
+                result.popcount(),
+                result.density()
+            );
+            http_json(200, &json)
+        }
+    }
+}
+
+/// POST /api/v1/xor/verify — verify RAID-1 parity: A ⊕ B == 0 means identical
+fn handle_xor_verify(body: &str, format: ResponseFormat) -> Vec<u8> {
+    let a_str = extract_json_str(body, "a").unwrap_or_default();
+    let b_str = extract_json_str(body, "b").unwrap_or_default();
+    let fp_a = resolve_fingerprint(&a_str);
+    let fp_b = resolve_fingerprint(&b_str);
+
+    // XOR: identical fingerprints produce all zeros
+    let mut check = Fingerprint::zero();
+    for i in 0..FINGERPRINT_WORDS {
+        check.words_mut()[i] = fp_a.words()[i] ^ fp_b.words()[i];
+    }
+    let residual = check.popcount();
+    let valid = residual == 0;
+
+    match format {
+        ResponseFormat::Arrow => {
+            let schema = Arc::new(Schema::new(vec![
+                Field::new("valid", DataType::Boolean, false),
+                Field::new("residual_popcount", DataType::UInt32, false),
+            ]));
+            let batch = RecordBatch::try_new(
+                schema,
+                vec![
+                    Arc::new(BooleanArray::from(vec![valid])) as ArrayRef,
+                    Arc::new(UInt32Array::from(vec![residual])) as ArrayRef,
+                ],
+            )
+            .unwrap();
+            http_arrow(200, &batch)
+        }
+        ResponseFormat::Json => {
+            let json = format!(
+                r#"{{"valid":{},"residual_popcount":{},"op":"xor_verify"}}"#,
+                valid, residual
             );
             http_json(200, &json)
         }
