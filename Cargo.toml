@@ -1,5 +1,6 @@
 [workspace]
 members = [".", "crates/ladybug-contract"]
+exclude = ["vendor"]
 
 [package]
 name = "ladybug"
@@ -48,11 +49,11 @@ crewai = ["flight"]                          # crewAI orchestration (A2A, agent 
 json_fallback = []                           # Legacy JSON MCP types (backwards compat)
 rustynum = ["dep:rustynum-rs"]               # AVX-512 VPOPCNTDQ + VNNI via rustynum
 
-# Vendor integrations — uncommented by Dockerfile presets at build time.
-# Require repos cloned into vendor/ and dependency lines below uncommented.
+# Vendor integrations — enable for single-binary builds.
+# Require repos cloned at sibling paths (or into vendor/).
 # See: Dockerfile.n8n, Dockerfile.crewai, Dockerfile.full
-# vendor-n8n = ["dep:n8n-core", "dep:n8n-workflow", "dep:n8n-arrow", "dep:n8n-grpc", "dep:n8n-hamming"]
-# vendor-crewai = ["dep:crewai-vendor", "crewai"]
+vendor-n8n = ["dep:n8n-core", "dep:n8n-workflow", "dep:n8n-arrow", "dep:n8n-grpc", "dep:n8n-hamming"]
+vendor-crewai = ["dep:crewai-vendor", "crewai"]
 
 # All features
 full = [
@@ -179,11 +180,12 @@ pyo3 = { version = "0.23", optional = true, features = ["extension-module"] }
 # NOTE: n8n crates pin Arrow 53 / DataFusion 43. The Dockerfiles add
 # [patch.crates-io] entries to unify Arrow/DataFusion to ladybug's versions.
 # -----------------------------------------------------------------------------
-# n8n-core     = { path = "vendor/n8n-rs/n8n-rust/crates/n8n-core",     optional = true }
-# n8n-workflow = { path = "vendor/n8n-rs/n8n-rust/crates/n8n-workflow",  optional = true }
-# n8n-arrow    = { path = "vendor/n8n-rs/n8n-rust/crates/n8n-arrow",    optional = true }
-# n8n-grpc     = { path = "vendor/n8n-rs/n8n-rust/crates/n8n-grpc",     optional = true }
-# n8n-hamming  = { path = "vendor/n8n-rs/n8n-rust/crates/n8n-hamming",  optional = true }
+# When developing locally: use sibling directory. In Docker: use vendor/n8n-rs.
+n8n-core     = { path = "../n8n-rs/n8n-rust/crates/n8n-core",     optional = true }
+n8n-workflow = { path = "../n8n-rs/n8n-rust/crates/n8n-workflow",  optional = true }
+n8n-arrow    = { path = "../n8n-rs/n8n-rust/crates/n8n-arrow",    optional = true }
+n8n-grpc     = { path = "../n8n-rs/n8n-rust/crates/n8n-grpc",     optional = true }
+n8n-hamming  = { path = "../n8n-rs/n8n-rust/crates/n8n-hamming",  optional = true }
 
 # -----------------------------------------------------------------------------
 # Vendor: crewai-rust (AI agent orchestration framework)
@@ -193,7 +195,8 @@ pyo3 = { version = "0.23", optional = true, features = ["extension-module"] }
 # No version conflicts — crewai has no Arrow/DataFusion deps.
 # Renamed to crewai-vendor to avoid collision with ladybug's built-in crewai feature.
 # -----------------------------------------------------------------------------
-# crewai-vendor = { package = "crewai", path = "vendor/crewai-rust", optional = true }
+# When developing locally: use sibling directory. In Docker: use vendor/crewai-rust.
+crewai-vendor = { package = "crewai", path = "../crewai-rust", optional = true }
 
 # -----------------------------------------------------------------------------
 # Vendor: rustynum-rs (SIMD numerical library with AVX-512 VPOPCNTDQ + VNNI)
