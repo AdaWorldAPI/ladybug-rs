@@ -535,6 +535,11 @@ impl CogRedis {
         &mut self.bind_space
     }
 
+    /// Replace the underlying BindSpace (used for Lance hydration on startup).
+    pub fn replace_bind_space(&mut self, space: BindSpace) {
+        self.bind_space = space;
+    }
+
     /// Resolve key to bind space address
     ///
     /// Maps string keys to 16-bit addresses:

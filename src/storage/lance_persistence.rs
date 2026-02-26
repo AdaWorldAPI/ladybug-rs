@@ -99,6 +99,15 @@ fn bind_state_schema() -> ArrowSchema {
     ])
 }
 
+/// Schema for the HTTP index fingerprints Vec.
+fn index_fingerprints_schema() -> ArrowSchema {
+    ArrowSchema::new(vec![
+        Field::new("id", DataType::Utf8, false),
+        Field::new("fingerprint", DataType::FixedSizeBinary(FP_BYTES), false),
+        Field::new("metadata", DataType::Utf8, true), // JSON-encoded HashMap
+    ])
+}
+
 // =============================================================================
 // HELPERS
 // =============================================================================
@@ -173,6 +182,11 @@ impl LancePersistence {
     /// Path to the state lance dataset
     fn state_path(&self) -> PathBuf {
         self.data_dir.join("bind_state.lance")
+    }
+
+    /// Path to the HTTP index fingerprints dataset
+    fn index_path(&self) -> PathBuf {
+        self.data_dir.join("index_fingerprints.lance")
     }
 
     /// Check if persisted data exists on disk.
@@ -448,6 +462,114 @@ impl LancePersistence {
         .map_err(|e| format!("persist_state write: {}", e))?;
 
         Ok(())
+    }
+
+    // =========================================================================
+    // INDEX FINGERPRINTS PERSISTENCE (HTTP /api/v1/index store)
+    // =========================================================================
+
+    /// Persist the HTTP index fingerprints Vec.
+    pub async fn persist_index(
+        &self,
+        fingerprints: &[(String, crate::core::Fingerprint, std::collections::HashMap<String, String>)],
+    ) -> Result<(), String> {
+        if !self.active {
+            return Ok(());
+        }
+        let index_path = self.index_path();
+
+        if fingerprints.is_empty() {
+            let schema = Arc::new(index_fingerprints_schema());
+            let batch = RecordBatch::new_empty(schema);
+            Dataset::write(batch_reader(batch), index_path.to_str().unwrap(), None)
+                .await
+                .map_err(|e| format!("persist_index empty: {}", e))?;
+            return Ok(());
+        }
+
+        let ids: StringArray = fingerprints.iter().map(|(id, _, _)| Some(id.as_str())).collect();
+
+        let mut fp_builder = FixedSizeBinaryBuilder::new(FP_BYTES);
+        for (_, fp, _) in fingerprints {
+            fp_builder
+                .append_value(fp.as_bytes())
+                .map_err(|e| format!("index fp: {}", e))?;
+        }
+        let fp_arr = fp_builder.finish();
+
+        // Serialize metadata as JSON strings
+        let meta_arr: StringArray = fingerprints
+            .iter()
+            .map(|(_, _, meta)| {
+                if meta.is_empty() {
+                    None
+                } else {
+                    Some(serde_json::to_string(meta).unwrap_or_default())
+                }
+            })
+            .collect();
+
+        let schema = Arc::new(index_fingerprints_schema());
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(ids),
+                Arc::new(fp_arr),
+                Arc::new(meta_arr),
+            ],
+        )
+        .map_err(|e| format!("index batch: {}", e))?;
+
+        let mut params = WriteParams::default();
+        params.mode = WriteMode::Overwrite;
+        Dataset::write(
+            batch_reader(batch),
+            index_path.to_str().unwrap(),
+            Some(params),
+        )
+        .await
+        .map_err(|e| format!("persist_index write: {}", e))?;
+
+        Ok(())
+    }
+
+    /// Hydrate the HTTP index fingerprints Vec from Lance.
+    pub async fn hydrate_index(
+        &self,
+    ) -> Result<Vec<(String, crate::core::Fingerprint, std::collections::HashMap<String, String>)>, String>
+    {
+        let index_path = self.index_path();
+        if !self.active || !index_path.exists() {
+            return Ok(Vec::new());
+        }
+
+        let dataset = Dataset::open(index_path.to_str().unwrap())
+            .await
+            .map_err(|e| format!("open index: {}", e))?;
+
+        let batches = self.scan_all(&dataset).await?;
+        let mut result = Vec::new();
+
+        for batch in &batches {
+            let id_col = batch.column(0).as_any().downcast_ref::<StringArray>().unwrap();
+            let fp_col = batch.column(1).as_any().downcast_ref::<FixedSizeBinaryArray>().unwrap();
+            let meta_col = batch.column(2).as_any().downcast_ref::<StringArray>().unwrap();
+
+            for row in 0..batch.num_rows() {
+                let id = id_col.value(row).to_string();
+                let fp = crate::core::Fingerprint::from_bytes(fp_col.value(row))
+                    .map_err(|e| format!("fp decode: {}", e))?;
+                let meta: std::collections::HashMap<String, String> = if meta_col.is_null(row) {
+                    std::collections::HashMap::new()
+                } else {
+                    serde_json::from_str(meta_col.value(row)).unwrap_or_default()
+                };
+                result.push((id, fp, meta));
+            }
+        }
+
+        eprintln!("[lance-persist] Hydrated {} index fingerprints", result.len());
+        Ok(result)
     }
 
     // =========================================================================
