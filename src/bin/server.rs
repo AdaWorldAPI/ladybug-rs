@@ -1062,7 +1062,7 @@ fn handle_xor(body: &str, format: ResponseFormat) -> Vec<u8> {
     // XOR: one pass over 256 u64 words — nanoseconds
     let mut result = Fingerprint::zero();
     for i in 0..FINGERPRINT_WORDS {
-        result.words_mut()[i] = fp_a.words()[i] ^ fp_b.words()[i];
+        result.as_raw_mut()[i] = fp_a.as_raw()[i] ^ fp_b.as_raw()[i];
     }
 
     match format {
@@ -1105,7 +1105,7 @@ fn handle_xor_verify(body: &str, format: ResponseFormat) -> Vec<u8> {
     // XOR: identical fingerprints produce all zeros
     let mut check = Fingerprint::zero();
     for i in 0..FINGERPRINT_WORDS {
-        check.words_mut()[i] = fp_a.words()[i] ^ fp_b.words()[i];
+        check.as_raw_mut()[i] = fp_a.as_raw()[i] ^ fp_b.as_raw()[i];
     }
     let residual = check.popcount();
     let valid = residual == 0;
