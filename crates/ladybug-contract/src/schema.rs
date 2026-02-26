@@ -1,23 +1,36 @@
-//! Unified CogRecord Schema — the canonical 2×8192-bit record layout.
+//! Unified CogRecord Schema — each CogRecord = one 16,384-bit container.
 //!
 //! This module is the **single source of truth** for the CogRecord schema
 //! shared across ladybug-rs, crewai-rust, and n8n-rs when compiled together.
 //!
 //! ```text
-//! CogRecord = [Container; 2] = 2 KB = 16,384 bits
-//! ┌─────────────────────────────────────────────────────────────┐
-//! │  meta    (8,192 bits = 1 KB)                                │
-//! │  ├── identity:    words[0..8]     dn_addr, container_count  │
-//! │  ├── nars:        words[8..16]    frequency, confidence     │
-//! │  ├── edges:       words[16..48]   adjacency bitfield        │
-//! │  ├── rung/rl:     words[48..64]   consciousness rung, RL    │
-//! │  ├── qualia:      words[64..72]   8 affect channels         │
-//! │  └── repr:        words[72..128]  geometry-specific fields   │
-//! ├─────────────────────────────────────────────────────────────┤
-//! │  content (8,192 bits = 1 KB)                                │
-//! │  └── searchable fingerprint (Hamming / SIMD / XOR-bind)     │
-//! └─────────────────────────────────────────────────────────────┘
-//!       = 2 KB = 1 DN tree node = 1 Redis value = 1 Fingerprint
+//! A node is composed of separate CogRecords (containers):
+//!
+//! Container 0 — Metadata CogRecord (16,384 bits = 256 words = 2 KB)
+//! ┌──────────────────────────────────────────────────────────────┐
+//! │  W0        DN address (identity)                             │
+//! │  W1-3      type / timestamps / label                         │
+//! │  W4-7      NARS truth values                                 │
+//! │  W8-15     DN rung + 7-layer markers                         │
+//! │  W16-31    inline edges (64 packed)                           │
+//! │  W32-39    RL / Q-values / rewards                            │
+//! │  W40-47    bloom filter (512 bits)                            │
+//! │  W48-55    graph metrics                                      │
+//! │  W56-63    qualia: 8 affect channels                          │
+//! │  W64-79    rung history + collapse gate history                │
+//! │  W80-95    representation language descriptor                 │
+//! │  W96-111   DN-sparse adjacency (compact inline CSR)           │
+//! │  W112-125  reserved                                           │
+//! │  W126-127  checksum + version                                 │
+//! │  W128-255  reserved (future expansion)                        │
+//! └──────────────────────────────────────────────────────────────┘
+//!
+//! Container 1 — Content CogRecord (16,384 bits = 256 words = 2 KB)
+//! ┌──────────────────────────────────────────────────────────────┐
+//! │  W0-255    searchable VSA fingerprint (Hamming / XOR-bind)    │
+//! └──────────────────────────────────────────────────────────────┘
+//!
+//! Container N — Additional CogRecords (Jina embeddings, etc.)
 //! ```
 //!
 //! # Usage from Other Runtimes
@@ -26,59 +39,83 @@
 //! // In crewai-rust or n8n-rs (with `ladybug` feature):
 //! use ladybug_contract::schema;
 //!
-//! assert_eq!(schema::RECORD_BYTES, 2048);
-//! assert_eq!(schema::RECORD_CONTAINERS, 2);
-//! assert_eq!(schema::CONTAINER_BITS_EACH, 8192);
+//! assert_eq!(schema::CONTAINER_BITS_EACH, 16384);
+//! assert_eq!(schema::CONTAINER_WORDS_EACH, 256);
+//! assert_eq!(schema::CONTENT_WORDS, 256);
 //! ```
 
 use crate::container::{CONTAINER_BITS, CONTAINER_BYTES, CONTAINER_WORDS};
 
 // =============================================================================
-// RECORD SCHEMA CONSTANTS
+// CONTAINER CONSTANTS
 // =============================================================================
 
-/// Total bits in a CogRecord: 2 × 8,192 = 16,384.
-pub const RECORD_BITS: usize = 2 * CONTAINER_BITS;
-
-/// Total bytes in a CogRecord: 2 × 1,024 = 2,048.
-pub const RECORD_BYTES: usize = 2 * CONTAINER_BYTES;
-
-/// Total u64 words in a CogRecord: 2 × 128 = 256.
-pub const RECORD_WORDS: usize = 2 * CONTAINER_WORDS;
-
-/// Number of containers in a CogRecord (always 2: meta + content).
-pub const RECORD_CONTAINERS: usize = 2;
-
-/// Bits per container: 8,192.
+/// Bits per container (CogRecord): 16,384.
 pub const CONTAINER_BITS_EACH: usize = CONTAINER_BITS;
 
-/// Bytes per container: 1,024.
+/// Bytes per container: 2,048.
 pub const CONTAINER_BYTES_EACH: usize = CONTAINER_BYTES;
 
-/// Words per container: 128.
+/// Words per container: 256.
 pub const CONTAINER_WORDS_EACH: usize = CONTAINER_WORDS;
 
 // =============================================================================
-// METADATA FIELD LAYOUT (word offsets within meta container)
+// CONTENT CONTAINER LAYOUT
 // =============================================================================
 
-/// Word range: identity (dn_addr, container_count, geometry).
-pub const META_IDENTITY: (usize, usize) = (0, 8);
+/// Content container: word offset (always 0 — full container is payload).
+pub const CONTENT_OFFSET: usize = 0;
 
-/// Word range: NARS truth values (frequency, confidence, expectation).
-pub const META_NARS: (usize, usize) = (8, 16);
+/// Content container: word count (all 256 words are searchable fingerprint).
+pub const CONTENT_WORDS: usize = CONTAINER_WORDS; // 256
 
-/// Word range: edge adjacency bitfield (2048-bit neighborhood).
-pub const META_EDGES: (usize, usize) = (16, 48);
+/// Content container: bit count.
+pub const CONTENT_BITS: usize = CONTAINER_BITS; // 16,384
 
-/// Word range: consciousness rung + RL state.
-pub const META_RUNG_RL: (usize, usize) = (48, 64);
+// =============================================================================
+// METADATA FIELD LAYOUT (word offsets within metadata container)
+//
+// Matches crate::meta (MetaView / MetaViewMut) — the canonical bit-level layout.
+// =============================================================================
 
-/// Word range: qualia channels (8 affect dimensions × 8 bytes).
-pub const META_QUALIA: (usize, usize) = (64, 72);
+/// Word range: identity (dn_addr, type, timestamps, label).
+pub const META_IDENTITY: (usize, usize) = (0, 4);
 
-/// Word range: representation / geometry-specific fields.
-pub const META_REPR: (usize, usize) = (72, 128);
+/// Word range: NARS truth values (frequency, confidence, evidence).
+pub const META_NARS: (usize, usize) = (4, 8);
+
+/// Word range: DN rung + gate + 7-layer markers.
+pub const META_RUNG_LAYERS: (usize, usize) = (8, 16);
+
+/// Word range: inline edges (64 packed, 4 per word).
+pub const META_EDGES: (usize, usize) = (16, 32);
+
+/// Word range: RL / Q-values / rewards.
+pub const META_RL: (usize, usize) = (32, 40);
+
+/// Word range: bloom filter (512 bits).
+pub const META_BLOOM: (usize, usize) = (40, 48);
+
+/// Word range: graph metrics (in-degree, out-degree, pagerank, clustering).
+pub const META_GRAPH: (usize, usize) = (48, 56);
+
+/// Word range: qualia channels (8 affect dimensions).
+pub const META_QUALIA: (usize, usize) = (56, 64);
+
+/// Word range: rung history + collapse gate history.
+pub const META_RUNG_HIST: (usize, usize) = (64, 80);
+
+/// Word range: representation language descriptor.
+pub const META_REPR: (usize, usize) = (80, 96);
+
+/// Word range: DN-sparse adjacency (compact inline CSR).
+pub const META_ADJ: (usize, usize) = (96, 112);
+
+/// Word range: reserved.
+pub const META_RESERVED: (usize, usize) = (112, 126);
+
+/// Word range: checksum + version.
+pub const META_CHECKSUM: (usize, usize) = (126, 128);
 
 // =============================================================================
 // SCHEMA FIELD DESCRIPTORS
@@ -105,7 +142,7 @@ impl FieldDescriptor {
         self.word_end - self.word_start
     }
 
-    /// Byte offset from the start of the CogRecord.
+    /// Byte offset from the start of the node (container_index × CONTAINER_BYTES + word_start × 8).
     pub const fn byte_offset(&self) -> usize {
         (self.container as usize) * CONTAINER_BYTES + self.word_start * 8
     }
@@ -116,57 +153,41 @@ impl FieldDescriptor {
     }
 }
 
-/// The complete CogRecord field layout.
+/// Metadata container field descriptors (Container 0).
+pub const META_FIELDS: &[FieldDescriptor] = &[
+    FieldDescriptor { name: "identity",   container: 0, word_start: META_IDENTITY.0,   word_end: META_IDENTITY.1,   bits: (META_IDENTITY.1   - META_IDENTITY.0)   * 64 },
+    FieldDescriptor { name: "nars",       container: 0, word_start: META_NARS.0,       word_end: META_NARS.1,       bits: (META_NARS.1       - META_NARS.0)       * 64 },
+    FieldDescriptor { name: "rung_layers",container: 0, word_start: META_RUNG_LAYERS.0,word_end: META_RUNG_LAYERS.1,bits: (META_RUNG_LAYERS.1- META_RUNG_LAYERS.0)* 64 },
+    FieldDescriptor { name: "edges",      container: 0, word_start: META_EDGES.0,      word_end: META_EDGES.1,      bits: (META_EDGES.1      - META_EDGES.0)      * 64 },
+    FieldDescriptor { name: "rl",         container: 0, word_start: META_RL.0,         word_end: META_RL.1,         bits: (META_RL.1         - META_RL.0)         * 64 },
+    FieldDescriptor { name: "bloom",      container: 0, word_start: META_BLOOM.0,      word_end: META_BLOOM.1,      bits: (META_BLOOM.1      - META_BLOOM.0)      * 64 },
+    FieldDescriptor { name: "graph",      container: 0, word_start: META_GRAPH.0,      word_end: META_GRAPH.1,      bits: (META_GRAPH.1      - META_GRAPH.0)      * 64 },
+    FieldDescriptor { name: "qualia",     container: 0, word_start: META_QUALIA.0,     word_end: META_QUALIA.1,     bits: (META_QUALIA.1     - META_QUALIA.0)     * 64 },
+    FieldDescriptor { name: "rung_hist",  container: 0, word_start: META_RUNG_HIST.0,  word_end: META_RUNG_HIST.1,  bits: (META_RUNG_HIST.1  - META_RUNG_HIST.0)  * 64 },
+    FieldDescriptor { name: "repr",       container: 0, word_start: META_REPR.0,       word_end: META_REPR.1,       bits: (META_REPR.1       - META_REPR.0)       * 64 },
+    FieldDescriptor { name: "adj",        container: 0, word_start: META_ADJ.0,        word_end: META_ADJ.1,        bits: (META_ADJ.1        - META_ADJ.0)        * 64 },
+    FieldDescriptor { name: "reserved",   container: 0, word_start: META_RESERVED.0,   word_end: META_RESERVED.1,   bits: (META_RESERVED.1   - META_RESERVED.0)   * 64 },
+    FieldDescriptor { name: "checksum",   container: 0, word_start: META_CHECKSUM.0,   word_end: META_CHECKSUM.1,   bits: (META_CHECKSUM.1   - META_CHECKSUM.0)   * 64 },
+];
+
+/// The complete field layout across containers.
 pub const FIELDS: &[FieldDescriptor] = &[
-    FieldDescriptor {
-        name: "identity",
-        container: 0,
-        word_start: META_IDENTITY.0,
-        word_end: META_IDENTITY.1,
-        bits: (META_IDENTITY.1 - META_IDENTITY.0) * 64,
-    },
-    FieldDescriptor {
-        name: "nars",
-        container: 0,
-        word_start: META_NARS.0,
-        word_end: META_NARS.1,
-        bits: (META_NARS.1 - META_NARS.0) * 64,
-    },
-    FieldDescriptor {
-        name: "edges",
-        container: 0,
-        word_start: META_EDGES.0,
-        word_end: META_EDGES.1,
-        bits: (META_EDGES.1 - META_EDGES.0) * 64,
-    },
-    FieldDescriptor {
-        name: "rung_rl",
-        container: 0,
-        word_start: META_RUNG_RL.0,
-        word_end: META_RUNG_RL.1,
-        bits: (META_RUNG_RL.1 - META_RUNG_RL.0) * 64,
-    },
-    FieldDescriptor {
-        name: "qualia",
-        container: 0,
-        word_start: META_QUALIA.0,
-        word_end: META_QUALIA.1,
-        bits: (META_QUALIA.1 - META_QUALIA.0) * 64,
-    },
-    FieldDescriptor {
-        name: "repr",
-        container: 0,
-        word_start: META_REPR.0,
-        word_end: META_REPR.1,
-        bits: (META_REPR.1 - META_REPR.0) * 64,
-    },
-    FieldDescriptor {
-        name: "content",
-        container: 1,
-        word_start: 0,
-        word_end: CONTAINER_WORDS,
-        bits: CONTAINER_BITS,
-    },
+    // Container 0: metadata (W0-W127 defined, W128-W255 reserved)
+    FieldDescriptor { name: "identity",   container: 0, word_start: META_IDENTITY.0,   word_end: META_IDENTITY.1,   bits: (META_IDENTITY.1   - META_IDENTITY.0)   * 64 },
+    FieldDescriptor { name: "nars",       container: 0, word_start: META_NARS.0,       word_end: META_NARS.1,       bits: (META_NARS.1       - META_NARS.0)       * 64 },
+    FieldDescriptor { name: "rung_layers",container: 0, word_start: META_RUNG_LAYERS.0,word_end: META_RUNG_LAYERS.1,bits: (META_RUNG_LAYERS.1- META_RUNG_LAYERS.0)* 64 },
+    FieldDescriptor { name: "edges",      container: 0, word_start: META_EDGES.0,      word_end: META_EDGES.1,      bits: (META_EDGES.1      - META_EDGES.0)      * 64 },
+    FieldDescriptor { name: "rl",         container: 0, word_start: META_RL.0,         word_end: META_RL.1,         bits: (META_RL.1         - META_RL.0)         * 64 },
+    FieldDescriptor { name: "bloom",      container: 0, word_start: META_BLOOM.0,      word_end: META_BLOOM.1,      bits: (META_BLOOM.1      - META_BLOOM.0)      * 64 },
+    FieldDescriptor { name: "graph",      container: 0, word_start: META_GRAPH.0,      word_end: META_GRAPH.1,      bits: (META_GRAPH.1      - META_GRAPH.0)      * 64 },
+    FieldDescriptor { name: "qualia",     container: 0, word_start: META_QUALIA.0,     word_end: META_QUALIA.1,     bits: (META_QUALIA.1     - META_QUALIA.0)     * 64 },
+    FieldDescriptor { name: "rung_hist",  container: 0, word_start: META_RUNG_HIST.0,  word_end: META_RUNG_HIST.1,  bits: (META_RUNG_HIST.1  - META_RUNG_HIST.0)  * 64 },
+    FieldDescriptor { name: "repr",       container: 0, word_start: META_REPR.0,       word_end: META_REPR.1,       bits: (META_REPR.1       - META_REPR.0)       * 64 },
+    FieldDescriptor { name: "adj",        container: 0, word_start: META_ADJ.0,        word_end: META_ADJ.1,        bits: (META_ADJ.1        - META_ADJ.0)        * 64 },
+    FieldDescriptor { name: "reserved",   container: 0, word_start: META_RESERVED.0,   word_end: META_RESERVED.1,   bits: (META_RESERVED.1   - META_RESERVED.0)   * 64 },
+    FieldDescriptor { name: "checksum",   container: 0, word_start: META_CHECKSUM.0,   word_end: META_CHECKSUM.1,   bits: (META_CHECKSUM.1   - META_CHECKSUM.0)   * 64 },
+    // Container 1: content (all 256 words)
+    FieldDescriptor { name: "content",    container: 1, word_start: CONTENT_OFFSET,    word_end: CONTENT_WORDS,     bits: CONTENT_BITS },
 ];
 
 /// Look up a field descriptor by name.
@@ -207,64 +228,85 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_record_constants() {
-        assert_eq!(RECORD_BITS, 16_384);
-        assert_eq!(RECORD_BYTES, 2048);
-        assert_eq!(RECORD_WORDS, 256);
-        assert_eq!(RECORD_CONTAINERS, 2);
-        assert_eq!(CONTAINER_BITS_EACH, 8192);
-        assert_eq!(CONTAINER_BYTES_EACH, 1024);
-        assert_eq!(CONTAINER_WORDS_EACH, 128);
+    fn test_container_constants() {
+        assert_eq!(CONTAINER_BITS_EACH, 16_384);
+        assert_eq!(CONTAINER_BYTES_EACH, 2048);
+        assert_eq!(CONTAINER_WORDS_EACH, 256);
     }
 
     #[test]
-    fn test_meta_fields_cover_all_words() {
-        // Meta container is words 0..128. Verify fields are contiguous.
+    fn test_content_constants() {
+        assert_eq!(CONTENT_OFFSET, 0);
+        assert_eq!(CONTENT_WORDS, 256);
+        assert_eq!(CONTENT_BITS, 16_384);
+    }
+
+    #[test]
+    fn test_meta_fields_contiguous_to_128() {
+        // Metadata container: W0-W127 are defined fields, contiguous.
         assert_eq!(META_IDENTITY.0, 0);
         assert_eq!(META_IDENTITY.1, META_NARS.0);
-        assert_eq!(META_NARS.1, META_EDGES.0);
-        assert_eq!(META_EDGES.1, META_RUNG_RL.0);
-        assert_eq!(META_RUNG_RL.1, META_QUALIA.0);
-        assert_eq!(META_QUALIA.1, META_REPR.0);
-        assert_eq!(META_REPR.1, CONTAINER_WORDS);
+        assert_eq!(META_NARS.1, META_RUNG_LAYERS.0);
+        assert_eq!(META_RUNG_LAYERS.1, META_EDGES.0);
+        assert_eq!(META_EDGES.1, META_RL.0);
+        assert_eq!(META_RL.1, META_BLOOM.0);
+        assert_eq!(META_BLOOM.1, META_GRAPH.0);
+        assert_eq!(META_GRAPH.1, META_QUALIA.0);
+        assert_eq!(META_QUALIA.1, META_RUNG_HIST.0);
+        assert_eq!(META_RUNG_HIST.1, META_REPR.0);
+        assert_eq!(META_REPR.1, META_ADJ.0);
+        assert_eq!(META_ADJ.1, META_RESERVED.0);
+        assert_eq!(META_RESERVED.1, META_CHECKSUM.0);
+        assert_eq!(META_CHECKSUM.1, 128);
+    }
+
+    #[test]
+    fn test_qualia_at_w56() {
+        assert_eq!(META_QUALIA.0, 56);
+        assert_eq!(META_QUALIA.1, 64);
     }
 
     #[test]
     fn test_field_descriptors() {
-        assert_eq!(FIELDS.len(), 7); // 6 meta fields + 1 content
+        assert_eq!(FIELDS.len(), 14); // 13 meta fields + 1 content
         assert_eq!(FIELDS[0].name, "identity");
-        assert_eq!(FIELDS[6].name, "content");
-        assert_eq!(FIELDS[6].container, 1);
-        assert_eq!(FIELDS[6].bits, 8192);
+        assert_eq!(FIELDS[13].name, "content");
+        assert_eq!(FIELDS[13].container, 1);
+        assert_eq!(FIELDS[13].bits, 16_384);
     }
 
     #[test]
     fn test_field_byte_offsets() {
         let identity = &FIELDS[0];
         assert_eq!(identity.byte_offset(), 0);
-        assert_eq!(identity.byte_length(), 64); // 8 words × 8 bytes
+        assert_eq!(identity.byte_length(), 32); // 4 words × 8 bytes
 
-        let content = &FIELDS[6];
-        assert_eq!(content.byte_offset(), 1024); // starts at container 1
-        assert_eq!(content.byte_length(), 1024); // full container
+        let content = field("content").unwrap();
+        assert_eq!(content.byte_offset(), 2048); // starts at container 1
+        assert_eq!(content.byte_length(), 2048); // full container
     }
 
     #[test]
     fn test_field_lookup() {
         let nars = field("nars").unwrap();
-        assert_eq!(nars.word_start, 8);
-        assert_eq!(nars.word_end, 16);
+        assert_eq!(nars.word_start, 4);
+        assert_eq!(nars.word_end, 8);
+
+        let qualia = field("qualia").unwrap();
+        assert_eq!(qualia.word_start, 56);
+        assert_eq!(qualia.word_end, 64);
 
         let content = field("content").unwrap();
         assert_eq!(content.container, 1);
-        assert_eq!(content.bits, 8192);
+        assert_eq!(content.bits, 16_384);
 
         assert!(field("nonexistent").is_none());
     }
 
     #[test]
-    fn test_total_field_bits() {
-        let total: usize = FIELDS.iter().map(|f| f.bits).sum();
-        assert_eq!(total, RECORD_BITS);
+    fn test_meta_defined_bits() {
+        let meta_bits: usize = META_FIELDS.iter().map(|f| f.bits).sum();
+        // W0-W127 = 128 words = 8192 bits of defined fields
+        assert_eq!(meta_bits, 128 * 64);
     }
 }

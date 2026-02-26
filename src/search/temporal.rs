@@ -178,7 +178,7 @@ mod tests {
         let series = make_series(20, 42);
         let profile = autocorrelation_profile(&series, 5);
         assert_eq!(profile.len(), 5);
-        // Random series: autocorrelation should be ~flat (all distances ~8192)
+        // Random series: autocorrelation should be ~flat (all distances ~CONTAINER_BITS/2)
         for (lag, dist) in &profile {
             assert!(*lag >= 1 && *lag <= 5);
             assert!(*dist > 0.0);

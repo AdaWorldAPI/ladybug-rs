@@ -1,6 +1,6 @@
 //! Gestalt Frame — I/Thou/It Role Binding for Xyz Geometry
 //!
-//! Maps Martin Buber's relational ontology onto the Xyz (1+3)×8192 storage:
+//! Maps Martin Buber's relational ontology onto the Xyz (1+3)×16384 storage:
 //!
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────────────┐
