@@ -45,7 +45,7 @@ impl Default for DreamConfig {
     fn default() -> Self {
         Self {
             prune_confidence_threshold: 0.2,
-            merge_hamming_threshold: 1500, // ~18% of 8192 bits
+            merge_hamming_threshold: 3000, // ~18% of 16384 bits
             recombination_count: 5,
             permute_offset: 7,
             max_output: 0,

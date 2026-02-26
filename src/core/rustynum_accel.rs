@@ -83,7 +83,7 @@ pub fn fingerprint_dot_u8i8(a: &Fingerprint, b: &Fingerprint) -> i64 {
 }
 
 // ────────────────────────────────────────────────────────────────
-// Container operations (8192-bit = 1024 bytes = 128 u64 words)
+// Container operations (16384-bit = 2048 bytes = 256 u64 words)
 // ────────────────────────────────────────────────────────────────
 
 /// Popcount a Container using runtime-dispatched VPOPCNTDQ.

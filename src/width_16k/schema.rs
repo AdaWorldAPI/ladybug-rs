@@ -1,8 +1,11 @@
-//! Compressed 32-Word Metadata Sidecar (words 224-255)
+//! Compact 32-Word Metadata Summary (words 224-255 of Container 0).
 //!
-//! HDC-aligned: minimize non-homogeneous zone. All metadata in 2 blocks.
-//! No self_addr / parent_addr — the DN address path encodes both
-//! (path[depth-1] = self, path[depth-2] = parent).
+//! This is a compressed metadata summary packed into the upper 32 words
+//! of the metadata container (Container 0).  The canonical full-resolution
+//! metadata layout lives in `ladybug_contract::meta` (MetaView, W0-W127).
+//!
+//! The SchemaSidecar provides a compact, self-contained summary useful for
+//! quick deserialization without parsing the full MetaView fields.
 //!
 //! ## Block 14 (words 224-239): Identity + Reasoning + Learning
 //!
@@ -536,12 +539,16 @@ impl InlineEdges {
 }
 
 // ============================================================================
-// UNIFIED SIDECAR: 32 words (224-255)
+// COMPACT SIDECAR: 32 words (224-255 of metadata container)
 // ============================================================================
 
-/// Complete metadata sidecar for one 16K cognitive record.
+/// Compact metadata summary for one 16K cognitive record.
 ///
-/// 32 words = 2,048 bits. Two 1024-bit blocks:
+/// Occupies words 224-255 (32 words = 2,048 bits) of the metadata container
+/// (Container 0).  The full metadata container is 256 words; words 0-127 hold
+/// the canonical MetaView fields, and words 224-255 hold this compact summary.
+///
+/// Two 1024-bit blocks:
 /// - Block 14 (224-239): Identity + Reasoning + Learning
 /// - Block 15 (240-255): Graph + Edges
 #[derive(Clone, Debug, Default)]

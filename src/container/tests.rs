@@ -191,10 +191,10 @@ fn test_container_as_bytes() {
 
 #[test]
 fn test_container_constants() {
-    assert_eq!(CONTAINER_BITS, 8192);
-    assert_eq!(CONTAINER_WORDS, 128);
-    assert_eq!(CONTAINER_BYTES, 1024);
-    assert_eq!(CONTAINER_AVX512_ITERS, 16);
+    assert_eq!(CONTAINER_BITS, 16384);
+    assert_eq!(CONTAINER_WORDS, 256);
+    assert_eq!(CONTAINER_BYTES, 2048);
+    assert_eq!(CONTAINER_AVX512_ITERS, 32);
     assert_eq!(CONTAINER_BITS % 64, 0);
     assert_eq!(CONTAINER_WORDS % 8, 0); // AVX-512 aligned
     assert!(CONTAINER_BITS.is_power_of_two());

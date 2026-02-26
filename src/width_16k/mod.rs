@@ -1,28 +1,24 @@
 //! 16Kbit (2^14) Cognitive Record — HDC-Aligned Layout
 //!
-//! Hyperdimensional computing requires maximally homogeneous vectors.
-//! Metadata compresses into 32 words (2,048 bits = 12.5% of the record),
-//! leaving 224 words (14,336 bits = 87.5%) for Hamming resonance.
+//! Each CogRecord (container) is 16,384 bits = 256 × u64 = 2 KB.
+//! A node is composed of separate CogRecords:
 //!
-//! The four HDC hallmarks drive this layout:
-//! - **Homogeneous**: minimize non-resonance zone (32 words, not 64)
-//! - **Holographic**: metadata distributed in compact sidecar, not sprawled
-//! - **Binding**: XOR over resonance words = the universal distance/bind op
-//! - **Robust**: 14,336 resonance bits with wide noise margin
+//! - **Container 0** (Metadata): W0-W127 defined fields, W128-W255 reserved.
+//! - **Container 1** (Content): All 256 words = searchable VSA fingerprint.
+//! - **Container N** (Additional): Jina embeddings, etc.
 //!
 //! ```text
 //! ┌──────────────────────────────────────────────────────────────────────┐
-//! │  Words 0-223   (224 words = 14,336 bits)  Hamming resonance         │
-//! │    Full 16K fingerprint covers all 256 words (resonance + metadata) │
-//! │                                                                      │
-//! │  Words 224-255 ( 32 words =  2,048 bits)  Metadata sidecar          │
-//! │    Block 14 (224-239): Identity + Reasoning + Learning               │
-//! │    Block 15 (240-255): Graph topology + inline edges                 │
+//! │  Container 0: Metadata (16,384 bits = 256 words)                    │
+//! │    W0-127:  defined fields (identity, NARS, edges, qualia, ...)     │
+//! │    W128-255: reserved for future expansion                          │
+//! ├──────────────────────────────────────────────────────────────────────┤
+//! │  Container 1: Content (16,384 bits = 256 words)                     │
+//! │    W0-255:  searchable VSA fingerprint (Hamming / XOR-bind)         │
 //! └──────────────────────────────────────────────────────────────────────┘
 //! ```
 //!
-//! Distance = popcount(XOR(a[0..224], b[0..224])). Metadata excluded.
-//! No self_addr / parent_addr fields — the DN address path encodes both.
+//! Distance = popcount(XOR(a[0..256], b[0..256])) over all content words.
 
 pub mod compat;
 pub mod schema;
@@ -65,17 +61,14 @@ pub const TWO_SIGMA: u32 = 128;
 pub const THREE_SIGMA: u32 = 192;
 
 // ============================================================================
-// RESONANCE / METADATA SPLIT
+// CONTENT CONTAINER LAYOUT — all 256 words are searchable
 // ============================================================================
 
-/// Resonance words: 224 (14,336 bits = 87.5% of the record)
-pub const RESONANCE_WORDS: usize = 224;
+/// Content words: all 256 words (full container is searchable fingerprint).
+pub const CONTENT_WORDS: usize = VECTOR_WORDS; // 256
 
-/// Metadata words: 32 (2,048 bits = 12.5% of the record)
-pub const METADATA_WORDS: usize = 32;
-
-/// First word of the metadata sidecar
-pub const METADATA_WORD_START: usize = RESONANCE_WORDS; // 224
+/// Content offset: starts at word 0.
+pub const CONTENT_OFFSET: usize = 0;
 
 // ============================================================================
 // BLOCK LAYOUT: 16 blocks of 16 words (1024 bits each)
@@ -89,15 +82,6 @@ pub const NUM_BLOCKS: usize = VECTOR_WORDS / WORDS_PER_BLOCK; // 16
 
 /// Bits per block
 pub const BITS_PER_BLOCK: usize = WORDS_PER_BLOCK * 64; // 1024
-
-/// Number of resonance blocks (blocks 0-13 = 224 words = 14,336 bits)
-pub const RESONANCE_BLOCKS: usize = 14;
-
-/// First metadata block index (block 14 = word 224)
-pub const SCHEMA_BLOCK_START: usize = 14;
-
-/// Number of metadata blocks (blocks 14-15 = 32 words = 2,048 bits)
-pub const SCHEMA_BLOCK_COUNT: usize = 2;
 
 // ============================================================================
 // SIMD LAYOUT — All zero remainder
@@ -115,15 +99,19 @@ pub const AVX2_REMAINDER: usize = 0;
 pub const NEON_ITERATIONS: usize = VECTOR_WORDS / 2; // 128
 pub const NEON_REMAINDER: usize = 0;
 
-/// Resonance-only AVX-512: 224/8 = 28 iterations (exact)
-pub const RESONANCE_AVX512_ITERATIONS: usize = RESONANCE_WORDS / 8; // 28
+// ============================================================================
+// BACKWARD COMPAT — old names (deprecated, use CONTENT_WORDS)
+// ============================================================================
+
+/// Deprecated: use `CONTENT_WORDS`. Kept for compat with search/compat modules.
+pub const RESONANCE_WORDS: usize = CONTENT_WORDS;
 
 // ============================================================================
 // BELICHTUNGSMESSER SAMPLE POINTS
 // ============================================================================
 
-/// Strategic 7-point sample indices within the resonance region (words 0-223).
-pub const SAMPLE_POINTS: [usize; 7] = [0, 32, 67, 112, 149, 183, 219];
+/// Strategic 7-point sample indices within the content region (words 0-255).
+pub const SAMPLE_POINTS: [usize; 7] = [0, 37, 82, 128, 171, 213, 251];
 
 // ============================================================================
 // TESTS
@@ -148,51 +136,36 @@ mod tests {
     }
 
     #[test]
-    fn test_resonance_metadata_split() {
-        assert_eq!(RESONANCE_WORDS + METADATA_WORDS, VECTOR_WORDS);
-        assert_eq!(METADATA_WORD_START, 224);
-        assert_eq!(METADATA_WORDS, 32);
-        // 87.5% resonance
-        assert_eq!(RESONANCE_WORDS * 100 / VECTOR_WORDS, 87);
+    fn test_content_is_full_container() {
+        assert_eq!(CONTENT_WORDS, VECTOR_WORDS);
+        assert_eq!(CONTENT_WORDS, 256);
+        assert_eq!(CONTENT_OFFSET, 0);
     }
 
     #[test]
     fn test_block_layout() {
         assert_eq!(NUM_BLOCKS, 16);
         assert_eq!(NUM_BLOCKS * WORDS_PER_BLOCK, VECTOR_WORDS);
-        assert_eq!(RESONANCE_BLOCKS + SCHEMA_BLOCK_COUNT, NUM_BLOCKS);
-        assert_eq!(SCHEMA_BLOCK_START * WORDS_PER_BLOCK, METADATA_WORD_START);
     }
 
     #[test]
     fn test_simd_zero_remainder() {
         assert_eq!(VECTOR_WORDS % 8, 0);
-        assert_eq!(RESONANCE_WORDS % 8, 0);
         assert_eq!(AVX512_REMAINDER, 0);
         assert_eq!(AVX2_REMAINDER, 0);
         assert_eq!(NEON_REMAINDER, 0);
-        assert_eq!(RESONANCE_AVX512_ITERATIONS, 28);
     }
 
     #[test]
-    fn test_sample_points_in_resonance_region() {
+    fn test_sample_points_in_content_region() {
         for &p in &SAMPLE_POINTS {
-            assert!(p < RESONANCE_WORDS, "Sample point {} outside resonance", p);
+            assert!(p < CONTENT_WORDS, "Sample point {} outside content", p);
         }
     }
 
     #[test]
-    fn test_fingerprint_covers_resonance() {
-        // Fingerprint (256 words) covers full resonance (224 words) + metadata (32 words)
+    fn test_fingerprint_covers_content() {
         const { assert!(crate::FINGERPRINT_U64 >= VECTOR_WORDS) };
-        assert_eq!(VECTOR_WORDS, RESONANCE_WORDS + METADATA_WORDS);
-    }
-
-    #[test]
-    fn test_metadata_alignment() {
-        // Metadata starts at word 224 = 28 AVX-512 iterations boundary
-        assert_eq!(METADATA_WORD_START % 8, 0);
-        // Metadata region is exactly 2 blocks
-        assert_eq!(METADATA_WORDS / WORDS_PER_BLOCK, 2);
+        assert_eq!(CONTENT_WORDS, VECTOR_WORDS);
     }
 }

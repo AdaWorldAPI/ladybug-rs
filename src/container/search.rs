@@ -27,8 +27,8 @@ pub fn belichtungsmesser(a: &Container, b: &Container) -> u32 {
     for &idx in &SAMPLE_POINTS {
         estimate += (a.words[idx] ^ b.words[idx]).count_ones();
     }
-    // Scale: 7 samples × 64 bits = 448 bits sampled out of 8192
-    // Scale factor: 8192 / 448 ≈ 18.29
+    // Scale: 7 samples × 64 bits = 448 bits sampled out of CONTAINER_BITS
+    // Scale factor: CONTAINER_BITS / 448
     estimate * CONTAINER_BITS as u32 / 448
 }
 

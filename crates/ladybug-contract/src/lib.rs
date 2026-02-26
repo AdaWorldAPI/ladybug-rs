@@ -15,7 +15,7 @@
 //!
 //! | Module | Contents |
 //! |--------|----------|
-//! | [`container`] | 8192-bit `Container` with XOR, Hamming, bundle ops |
+//! | [`container`] | 16,384-bit `Container` with XOR, Hamming, bundle ops |
 //! | [`geometry`] | `ContainerGeometry` — how content containers are interpreted |
 //! | [`record`] | `CogRecord` — metadata + N content containers |
 //! | [`meta`] | `MetaView` / `MetaViewMut` — zero-copy metadata accessors |
@@ -29,7 +29,7 @@
 //! | [`delegation`] | `DelegationRequest` / `DelegationResponse` |
 //! | [`wire`] | Binary wire protocol: `CogPacket` (8+8/4096 command packets, no JSON) |
 //! | [`legacy`] | V1 JSON backward compatibility (external wire format only) |
-//! | [`schema`] | Unified 2×8192 CogRecord schema constants and field descriptors |
+//! | [`schema`] | Unified 16,384-bit CogRecord schema constants and field descriptors |
 
 pub mod container;
 pub mod wide_container;

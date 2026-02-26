@@ -594,7 +594,7 @@ mod tests {
     #[test]
     fn test_truth_from_hamming_random() {
         // ~50% distance = random noise
-        let tv = truth_from_hamming(8192, 16384);
+        let tv = truth_from_hamming(8192, 16384); // 8192 = half of 16384 = random noise
         assert!((tv.f - 0.5).abs() < 0.01);
         assert!(tv.c < 0.1, "random should have low confidence");
     }
