@@ -46,6 +46,10 @@ COPY . .
 RUN if [ ! -f vendor/rustynum/rustynum-rs/Cargo.toml ]; then \
       git clone --depth 1 https://github.com/AdaWorldAPI/rustynum vendor/rustynum; \
     fi
+# crewai-rust: path = "../crewai-rust" → resolves to /crewai-rust from /build
+RUN if [ ! -f /crewai-rust/Cargo.toml ]; then \
+      git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust /crewai-rust; \
+    fi
 
 # Features to enable (flight enables Arrow Flight gRPC)
 # NOTE: lancedb feature has API compatibility issues - enable after fixing lance module
