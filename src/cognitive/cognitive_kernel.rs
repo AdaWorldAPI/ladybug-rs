@@ -352,8 +352,8 @@ impl CognitiveKernel {
         packet: &CogPacket,
         node: &mut crate::cognitive::layer_stack::LayerNode,
     ) -> (CognitiveKernelResult, CogPacket) {
-        // Extract fingerprint from Container payload (Container = 8192 bits,
-        // BindSpace = 16384 bits — zero-pad the upper half)
+        // Extract fingerprint from Container payload (Container = 16384 bits,
+        // same width as BindSpace Fingerprint)
         let content = packet.content();
         let input_fp = container_to_fingerprint(content);
 
@@ -469,26 +469,19 @@ impl Default for CognitiveKernel {
 // CONTAINER ↔ FINGERPRINT BRIDGING
 // =============================================================================
 
-/// Convert a Container (8192 bits = 128 × u64) to a Fingerprint-compatible
-/// word array (16384 bits = 256 × u64). Upper half zero-padded.
+/// Convert a Container (16384 bits = 256 × u64) to a Fingerprint.
+/// Container and Fingerprint are now the same width — direct copy.
 fn container_to_fingerprint(container: &Container) -> Fingerprint {
     let mut words = [0u64; FINGERPRINT_WORDS];
-    for (i, &w) in container.words.iter().enumerate() {
-        words[i] = w;
-    }
-    // XOR-fold: replicate lower 128 words into upper 128 with permutation
-    // This preserves information density while filling the full 16K space
-    for i in 0..128 {
-        words[128 + i] = container.words[i].rotate_left(7);
-    }
+    words.copy_from_slice(&container.words);
     Fingerprint::from_raw(words)
 }
 
 /// Convert a BindSpace fingerprint array back to a Container.
-/// Truncates to 128 words (8192 bits).
+/// Container and Fingerprint are now the same width — direct copy.
 fn fingerprint_to_container(fp: &[u64; FINGERPRINT_WORDS]) -> Container {
-    let mut words = [0u64; 128];
-    words.copy_from_slice(&fp[..128]);
+    let mut words = [0u64; FINGERPRINT_WORDS];
+    words.copy_from_slice(fp);
     Container { words }
 }
 

@@ -1,27 +1,28 @@
-//! 8192-bit Container — the atomic unit of LadybugDB.
+//! 16,384-bit Container (CogRecord) — the atomic unit of LadybugDB.
 //!
-//! A Container is a 1 KB bit-vector: 128 × u64 = 8,192 bits.
+//! A Container is a 2 KB bit-vector: 256 × u64 = 16,384 bits.
 //! All cognitive operations (XOR bind, Hamming distance, majority-vote bundle)
-//! operate at this granularity.
+//! operate at this granularity.  Each CogRecord IS one container.
 
 /// Total bits in a single container.
-pub const CONTAINER_BITS: usize = 8_192;
+pub const CONTAINER_BITS: usize = 16_384;
 /// Number of u64 words in a container.
-pub const CONTAINER_WORDS: usize = CONTAINER_BITS / 64; // 128
+pub const CONTAINER_WORDS: usize = CONTAINER_BITS / 64; // 256
 /// Number of bytes in a container.
-pub const CONTAINER_BYTES: usize = CONTAINER_WORDS * 8; // 1024
+pub const CONTAINER_BYTES: usize = CONTAINER_WORDS * 8; // 2048
 /// AVX-512 iteration count (8 words per 512-bit register).
-pub const CONTAINER_AVX512_ITERS: usize = CONTAINER_WORDS / 8; // 16
+pub const CONTAINER_AVX512_ITERS: usize = CONTAINER_WORDS / 8; // 32
 /// Maximum content containers in a CogRecord.
 pub const MAX_CONTAINERS: usize = 255;
 /// Expected Hamming distance for two random containers.
-pub const EXPECTED_DISTANCE: u32 = (CONTAINER_BITS / 2) as u32; // 4096
+pub const EXPECTED_DISTANCE: u32 = (CONTAINER_BITS / 2) as u32; // 8192
 /// Standard deviation of Hamming distance for random containers.
-pub const SIGMA: f64 = 45.254833995939045;
+/// sqrt(16384 / 4) = sqrt(4096) = 64.0
+pub const SIGMA: f64 = 64.0;
 /// Integer approximation of sigma.
-pub const SIGMA_APPROX: u32 = 45;
+pub const SIGMA_APPROX: u32 = 64;
 
-/// 8,192-bit binary container for HDC/VSA operations.
+/// 16,384-bit binary container for HDC/VSA operations.
 ///
 /// Cache-line aligned for SIMD; `#[repr(C)]` for binary stability.
 #[derive(Clone, PartialEq, Eq)]
@@ -216,7 +217,7 @@ impl Container {
     /// Zero-copy byte view (little-endian).
     #[inline]
     pub fn as_bytes(&self) -> &[u8; CONTAINER_BYTES] {
-        // SAFETY: Container is repr(C), [u64; 128] has same layout as [u8; 1024]
+        // SAFETY: Container is repr(C), [u64; 256] has same layout as [u8; 2048]
         unsafe { &*(self.words.as_ptr() as *const [u8; CONTAINER_BYTES]) }
     }
 
@@ -229,7 +230,7 @@ impl Container {
         Self { words }
     }
 
-    /// Zero-cost borrow a `[u64; 128]` as `&Container`.
+    /// Zero-cost borrow a `[u64; 256]` as `&Container`.
     ///
     /// # Safety
     /// Caller must guarantee 64-byte alignment.
@@ -282,7 +283,7 @@ mod tests {
         let a = Container::random(42);
         let b = Container::random(99);
         let d = a.hamming(&b);
-        assert!(d > 3500 && d < 4700, "hamming={d}, expected ~4096");
+        assert!(d > 7000 && d < 9500, "hamming={d}, expected ~8192");
     }
 
     #[test]

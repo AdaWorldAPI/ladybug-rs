@@ -27,7 +27,7 @@
 //!     │
 //!     ▼  (this module)
 //! ┌─────────────────────────────────────────────────────┐
-//! │ Container (8192 bits) ← encode_axes()               │
+//! │ Container (16384 bits) ← encode_axes()               │
 //! │ GrammarTriangle[]     ← to_grammar_triangles()       │
 //! │ FramedContent (Xyz)   ← GestaltFrame::frame()        │
 //! │ GhostType[]           ← ghost resonance triggers     │
@@ -45,6 +45,7 @@
 //! because it converts TO substrate types.
 
 use crate::container::Container;
+use ladybug_contract::container::CONTAINER_WORDS;
 use crate::cognitive::{GrammarRole, GrammarTriangle, RungLevel};
 use crate::core::Fingerprint;
 
@@ -201,14 +202,12 @@ impl ParsedSpo {
     ///
     /// Produces a deterministic Container from the concatenation of
     /// subject, predicate, object — giving the SPO a location in
-    /// the 8192-bit space.
+    /// the 16,384-bit space.
     pub fn to_container(&self) -> Container {
         let content = format!("{}:{}:{}", self.subject, self.predicate, self.object);
         let fp = Fingerprint::from_content(&content);
-        // Project 10K fingerprint into 8192-bit Container
-        // Take the first 128 u64 words (8192 bits)
         let fp_raw = fp.as_raw();
-        let mut words = [0u64; 128];
+        let mut words = [0u64; CONTAINER_WORDS];
         for (i, w) in words.iter_mut().enumerate() {
             if i < fp_raw.len() {
                 *w = fp_raw[i];
@@ -301,7 +300,7 @@ pub struct FeltParse {
 }
 
 impl FeltParse {
-    /// Convert the meaning axis activations into an 8192-bit Container.
+    /// Convert the meaning axis activations into a 16,384-bit Container.
     ///
     /// This is the primary text→Container bridge: 48 semantic dimensions
     /// encoded as bit patterns. The resulting Container carries genuine
@@ -311,7 +310,7 @@ impl FeltParse {
     /// (validated in dragonfly-vsa). Binary Hamming IS semantic similarity.
     pub fn to_axis_container(&self) -> Container {
         let fp = encode_axes(&self.axes);
-        let mut words = [0u64; 128];
+        let mut words = [0u64; CONTAINER_WORDS];
         for (i, w) in words.iter_mut().enumerate() {
             if i < fp.len() {
                 *w = fp[i];

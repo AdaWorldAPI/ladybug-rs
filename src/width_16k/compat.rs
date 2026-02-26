@@ -1,6 +1,6 @@
 //! Fingerprint ↔ 16K Record Compatibility Layer
 //!
-//! Now that the core `Fingerprint` type uses 256 words (16,384 bits),
+//! Now that both `Fingerprint` and `Container` use 256 words (16,384 bits),
 //! the conversions here are identity operations. This module is retained
 //! for API compatibility and for future use if a narrower format is
 //! reintroduced (e.g., compressed wire format).
@@ -8,10 +8,9 @@
 //! Three conversion strategies:
 //! - **zero_extend**: Copy Fingerprint words into a 256-word record.
 //! - **truncate**: Extract Fingerprint from a 256-word record.
-//! - **xor_fold**: XOR surplus resonance words back into the core region.
-//!   With 16K Fingerprint this is identity (no surplus beyond resonance).
+//! - **xor_fold**: Identity (no surplus — Fingerprint = Container = 256 words).
 
-use super::RESONANCE_WORDS;
+use super::CONTENT_WORDS;
 use super::VECTOR_WORDS as WORDS_16K;
 use super::schema::SchemaSidecar;
 use crate::core::DIM_U64 as WORDS_FP;
@@ -20,7 +19,7 @@ use crate::core::Fingerprint;
 /// Extend a Fingerprint into a 16K record.
 ///
 /// With the 16K migration, Fingerprint is already 256 words, so this
-/// is a direct copy. Metadata words (224-255) are zeroed.
+/// is a direct copy.
 pub fn zero_extend(fp: &Fingerprint) -> [u64; WORDS_16K] {
     let mut record = [0u64; WORDS_16K];
     let src = fp.as_raw();
@@ -45,21 +44,17 @@ pub fn truncate(record: &[u64; WORDS_16K]) -> Fingerprint {
     Fingerprint::from_raw(words)
 }
 
-/// XOR-fold surplus resonance words back into the core region.
+/// XOR-fold surplus words back into the core region.
 ///
-/// Words beyond the Fingerprint width (WORDS_FP) up to RESONANCE_WORDS
-/// are XORed into the first WORDS_FP words. With the 16K migration
-/// where WORDS_FP == 256 >= RESONANCE_WORDS (224), the surplus range
-/// is empty and this is equivalent to `truncate`.
+/// With the 16K migration (WORDS_FP = 256 = CONTENT_WORDS), there are
+/// no surplus words and this is equivalent to `truncate`.
 pub fn xor_fold(record: &[u64; WORDS_16K]) -> Fingerprint {
     let mut words = [0u64; WORDS_FP];
     words.copy_from_slice(&record[..WORDS_FP]);
 
-    // Fold any surplus words between WORDS_FP and RESONANCE_WORDS.
-    // With 16K migration (WORDS_FP=256, RESONANCE_WORDS=224) this loop
-    // does not execute since surplus_start > surplus_end.
+    // No surplus: WORDS_FP (256) >= CONTENT_WORDS (256), loop doesn't execute.
     let surplus_start = WORDS_FP;
-    let surplus_end = RESONANCE_WORDS;
+    let surplus_end = CONTENT_WORDS;
     for i in surplus_start..surplus_end {
         let target = (i - surplus_start) % WORDS_FP;
         words[target] ^= record[i];
@@ -71,7 +66,7 @@ pub fn xor_fold(record: &[u64; WORDS_16K]) -> Fingerprint {
 /// Compute Hamming distance between a Fingerprint and a 16K record.
 ///
 /// Uses the shared WORDS_FP (256) words. With the 16K migration this
-/// covers the full record including metadata words.
+/// covers the full record.
 pub fn cross_width_distance(fp: &Fingerprint, record: &[u64; WORDS_16K]) -> u32 {
     let src = fp.as_raw();
     let mut dist = 0u32;
@@ -102,10 +97,10 @@ mod tests {
 
         let record = zero_extend_with_schema(&fp, &schema);
 
-        // Resonance zone preserved (metadata region 224-255 overwritten by schema)
+        // Content zone W0-223 preserved (schema at W224-255)
         assert_eq!(
-            &record[..super::RESONANCE_WORDS],
-            &fp.as_raw()[..super::RESONANCE_WORDS]
+            &record[..224],
+            &fp.as_raw()[..224]
         );
         // Schema written
         let recovered = SchemaSidecar::read_from_words(&record);

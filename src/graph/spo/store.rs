@@ -305,7 +305,7 @@ impl SpoStore {
 
     /// Compute chain coherence: product of normalized link coherences.
     ///
-    /// coherence_per_link = 1.0 - (hamming(Z_i, X_{i+1}) / 8192.0)
+    /// coherence_per_link = 1.0 - (hamming(Z_i, X_{i+1}) / CONTAINER_BITS)
     /// chain_coherence = product of all link coherences
     pub fn chain_coherence(&self, dns: &[u64]) -> f32 {
         if dns.len() < 2 { return 1.0; }
@@ -319,7 +319,7 @@ impl SpoStore {
             let (x_b, _, _) = match self.unpack_record(b) { Ok(v) => v, Err(_) => return 0.0 };
 
             let dist = SparseContainer::hamming_sparse(&z_a, &x_b);
-            let link_coherence = 1.0 - (dist as f32 / 8192.0);
+            let link_coherence = 1.0 - (dist as f32 / ladybug_contract::container::CONTAINER_BITS as f32);
             coherence *= link_coherence;
         }
 
@@ -357,7 +357,7 @@ impl SpoStore {
                 let (_, _, z) = match self.unpack_record(record) { Ok(v) => v, Err(_) => return TruthValue::unknown() };
                 let (x, _, _) = match self.unpack_record(next) { Ok(v) => v, Err(_) => return TruthValue::unknown() };
                 let dist = SparseContainer::hamming_sparse(&z, &x);
-                let link_coh = 1.0 - (dist as f32 / 8192.0);
+                let link_coh = 1.0 - (dist as f32 / ladybug_contract::container::CONTAINER_BITS as f32);
                 c_chain *= link_coh;
             }
         }
