@@ -1,8 +1,52 @@
 # CLAUDE.md — Ladybug-RS
 
-> **Last Updated**: 2026-02-04
-> **Branch**: claude/code-review-X0tu2
-> **Status**: Flight + CogRedis wired, Arrow zero-copy WORKING
+> **Last Updated**: 2026-02-26
+> **Branch**: claude/compare-rustynum-ndarray-5ePRn
+> **Status**: Flight + CogRedis wired, Arrow zero-copy WORKING, Vendor deps WIRED
+
+---
+
+## Single Binary Integration (JITSON)
+
+ladybug-rs is the **host binary** for the single-binary architecture.
+Vendor features link crewai-rust and n8n-rs as library crates — no HTTP proxy.
+
+### Vendor Features (Cargo.toml — now uncommented)
+
+```toml
+vendor-n8n = ["dep:n8n-core", "dep:n8n-workflow", "dep:n8n-arrow", "dep:n8n-grpc", "dep:n8n-hamming"]
+vendor-crewai = ["dep:crewai-vendor", "crewai"]
+```
+
+### Dispatch Pattern (src/bin/server.rs)
+
+```
+dispatch_crew_post() / dispatch_crew_get()
+  #[cfg(feature = "vendor-crewai")] → in-process call
+  #[cfg(not(...))] → HTTP proxy to localhost:8090
+
+dispatch_n8n_post() / dispatch_n8n_get()
+  #[cfg(feature = "vendor-n8n")] → in-process call
+  #[cfg(not(...))] → HTTP proxy to localhost:8091
+```
+
+### JITSON Integration Roadmap (n8n-rs side)
+
+| Step | Task | Status |
+|------|------|--------|
+| J.1 | jitson as dep in n8n-contract | **Done** |
+| J.3 | CompiledStyle: ThinkingStyle → ScanKernel | **Done** |
+| J.4 | WorkflowHotPath: compile routing tables | **Done** |
+| J.5 | Kernel cache in n8n-core | **Done** |
+| J.6 | activate → compile → cache → execute | **Done** |
+
+### Remaining Work
+
+| Task | Status |
+|------|--------|
+| Expose handle_request_body from crewai-rust server module | Needed for vendor-crewai |
+| Expose handle_api_post/get from n8n-grpc | Needed for vendor-n8n |
+| Migrate server.rs to async (axum) | Future — cleaner vendor bridge |
 
 ---
 
