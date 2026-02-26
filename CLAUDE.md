@@ -46,7 +46,27 @@ dispatch_n8n_post() / dispatch_n8n_get()
 |------|--------|
 | Expose handle_request_body from crewai-rust server module | Needed for vendor-crewai |
 | Expose handle_api_post/get from n8n-grpc | Needed for vendor-n8n |
+| Implement `SubstrateView` for `BindSpace` (crewai-rust bridge) | Planned |
+| Wire `BindBridge` into server startup for zero-serde awareness hydration | Planned |
+| BERT embedding model for blood-brain barrier inbound translation | Planned |
 | Migrate server.rs to async (axum) | Future — cleaner vendor bridge |
+
+### BindSpace ↔ Blackboard Bridge (2026-02-26)
+
+crewai-rust now defines a `SubstrateView` trait that ladybug-rs will implement
+for BindSpace. This enables zero-serde data flow:
+
+```
+BindSpace.hydrate() → AwarenessFrame TypedSlot → Blackboard
+Blackboard → NarsSemanticState → writeback_nars() → BindSpace meta words
+Blackboard → XOR delta → flush_deltas() → BindSpace fingerprints
+```
+
+Three-tier awareness: Core (BindSpace ↔ Blackboard) → Blood-Brain Barrier
+(MarkovBarrier XOR budget) → External (LLM APIs via n8n-rs workflows).
+
+LLMs are in the loop, NOT source of truth. NARS truth gate filters all
+external insights before they enter BindSpace.
 
 ---
 
