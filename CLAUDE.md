@@ -782,13 +782,15 @@ rustynum-core has `simd.rs` with runtime-dispatched Hamming (AVX-512/AVX2/scalar
 The vendored rustynum at `vendor/rustynum/` provides the canonical dispatch.
 Delete ladybug's simd.rs when the stable-Rust blocker is resolved.
 
-### Nightly Blocker
+### portable_simd → std::arch Port (TODO)
 
-rustynum uses `#![feature(portable_simd)]` in a few places. ladybug-rs
-builds on stable 1.93. Most rustynum kernels already use `std::arch` —
-the `portable_simd` usage is convenience in a few files. Since we own
-rustynum, replacing those uses with `std::arch` is a one-time port that
-unblocks the full integration on stable.
+The whole stack is pinned to **stable Rust 1.93, Arrow 57, DataFusion 51**.
+Nightly is NEVER used — it changes dependencies across ALL repos.
+
+rustynum uses `#![feature(portable_simd)]` in a few convenience spots.
+Most kernels already use `std::arch` intrinsics. Since we own rustynum,
+replacing the remaining `portable_simd` uses with `std::arch` is a
+one-time mechanical port. This is not a blocker — it's a TODO.
 
 ### Cross-Repo References
 
