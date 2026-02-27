@@ -696,6 +696,164 @@ across all repos that depend on it.**
 
 ---
 
+## The Rustynum Acceleration Contract (HARD-WON — 6 REWRITES)
+
+> **After 1.5M lines of code and 6 rewrites, this lesson was learned:
+> Arrow is the zero-copy backbone. Lance is the cold tier.
+> rustynum is the acceleration layer. NEVER copy Arrow buffers into owned memory.**
+
+### Why This Matters
+
+Everything goes through **BindSpace**. BindSpace needs:
+1. **rustynum** — SIMD kernels, Fingerprint types, DeltaLayer, CollapseGate
+2. **Lance/Arrow** — mmap'd zero-copy buffers for cold-tier persistence
+3. **split_at_mut / parallel_into_slices** — lock-free parallel writes to disjoint regions
+
+The dilemma: wiring rustynum's acceleration into the Lance data path
+WITHOUT breaking the zero-copy chain from Arrow mmap → BindSpace → compute.
+
+### The Zero-Copy Chain (DO NOT BREAK)
+
+```
+Lance (cold tier, disk)
+    │ mmap
+    ▼
+Arrow Buffer (64-byte aligned, zero-copy)
+    │ FingerprintBuffer.get(i) → &[u64; 256] directly into mmap
+    ▼
+BindSpace (8+8 addressing, O(1) lookup)
+    │ Container bytes = same pointer as Arrow buffer
+    ▼
+rustynum-core SIMD kernels
+    │ select_hamming_fn()(container_a, container_b) → u32
+    │ k0_probe() → k1_stats() → k2_exact() cascade
+    ▼
+Result (no allocation needed for distance computation)
+```
+
+**Where it breaks (P1 debt in rustynum-arrow):**
+
+```
+Arrow Buffer → record_batch_to_cogrecords() → .to_vec() PER ROW  ← COPIES
+CogRecord[] → CascadeIndices::build() → extend_from_slice()       ← COPIES AGAIN
+```
+
+**Fix needed:** `CogRecordView<'a>` that borrows Arrow's buffer instead of owning.
+We own rustynum — the fix is mechanical (add borrowing variants to CogRecord/NumArray).
+
+### The Acceleration Stack (What rustynum Provides)
+
+| rustynum Crate | Acceleration | For BindSpace |
+|---------------|-------------|---------------|
+| **rustynum-core** | Hamming VPOPCNTDQ, K0/K1/K2, BF16 awareness | Primary search, CollapseGate awareness |
+| **rustyblas** | 138 GFLOPS GEMM, INT8 VNNI, BF16 mixed-precision | Batch similarity, SimHash projection |
+| **rustymkl** | VML (exp, ln, sigmoid), LAPACK, FFT | NARS truth scoring, spectral analysis |
+| **jitson** | JSON config → native AVX-512 scan kernels | Per-query compiled scans on Arrow buffers |
+| **rustynum-holo** | Overlay, MultiOverlay, Gabor wavelets | Multi-agent CogRecord mutations |
+| **rustynum-clam** | CLAM tree, triangle-inequality search | Indexed cascade in rustynum-arrow |
+
+### Parallel Write Patterns (CANONICAL — From rustynum)
+
+**For contiguous byte slices (GEMM rows, Arrow columns):**
+```rust
+// split_at_mut — zero synchronization, each thread owns its rows
+parallel_into_slices(output_buf, rows_per_thread * n, |offset, chunk| {
+    // chunk is exclusively owned by this thread — no locks
+});
+```
+
+**For binary vector state (fingerprints, CogRecords):**
+```rust
+// XOR Delta Layers — ground truth is &self forever
+let mut stack = LayerStack::new(ground_truth, num_agents);
+stack.writer_mut(agent_id).write(&ground, &desired);
+// Conflict: stack.evaluate(threshold) → Flow/Hold/Block
+// Commit: stack.commit() — XOR all deltas into ground truth
+```
+
+**NEVER use `Arc<Mutex>` for parallel writes. NEVER use `&self → &mut` casts.**
+
+### What ladybug MUST NOT Duplicate
+
+ladybug-rs has `src/core/simd.rs` with its own Hamming implementation.
+rustynum-core has `simd.rs` with runtime-dispatched Hamming (AVX-512/AVX2/scalar).
+
+**Rule:** ladybug-rs should call rustynum's SIMD, not maintain a duplicate.
+The vendored rustynum at `vendor/rustynum/` provides the canonical dispatch.
+Delete ladybug's simd.rs when the stable-Rust blocker is resolved.
+
+### portable_simd → std::arch Port (TODO)
+
+The whole stack is pinned to **stable Rust 1.93, Arrow 57, DataFusion 51**.
+Nightly is NEVER used — it changes dependencies across ALL repos.
+
+rustynum uses `#![feature(portable_simd)]` in a few convenience spots.
+Most kernels already use `std::arch` intrinsics. Since we own rustynum,
+replacing the remaining `portable_simd` uses with `std::arch` is a
+one-time mechanical port. This is not a blocker — it's a TODO.
+
+### Cross-Repo References
+
+- `rustynum/CLAUDE.md` § 12 "The Lance Zero-Copy Contract"
+- `PLAN-RUSTYNUM-INTEGRATION.md` — 5-phase integration roadmap
+- `docs/LANCE_HARVEST.md` — why Lance is cold-tier only
+- `docs/BINDSPACE_UNIFICATION.md:1122` — `Buffer::from_slice_ref()` warning
+- `crewai-rust/CLAUDE.md` § "Storage Strategy"
+
+---
+
+## OPEN TODOs — Wiring Checklist (SESSION-DURABLE)
+
+> **READ THIS EVERY SESSION.** Do NOT invent new code. Wire EXISTING.
+> Mark items DONE with date. If you skip an item, explain why.
+
+### P0 — Stop Duplicating rustynum
+
+- [ ] **Delete src/core/simd.rs** (348 lines) — Duplicates rustynum's hamming_distance, hamming_avx512, hamming_avx2, HammingEngine
+  - Replace all call sites with `rustynum_core::simd::hamming_distance()` (has scalar fallback for stable)
+  - Also fix: `src/storage/bind_space.rs:1848-1855` — scalar hamming loop → use rustynum
+  - Note: rustynum's select_hamming_fn() does runtime dispatch (AVX-512 > AVX2 > scalar)
+  - Dep: vendored at `vendor/rustynum/rustynum-core`
+
+- [ ] **Wire rustynum_accel into core search** — NOT just Python FFI
+  - `src/core/rustynum_accel.rs` has `fingerprint_hamming()`, `container_hamming()`, `slice_hamming()`
+  - Currently ONLY called from `python/mod.rs:39`
+  - Wire into: `src/storage/bind_space.rs` search functions, `src/search/hdr_cascade.rs`
+
+- [ ] **Fix .to_vec() in rustynum_accel.rs:148** — container_bundle copies when it shouldn't
+  - `view_u64_as_bytes(&c.words).to_vec()` breaks zero-copy for bundle operations
+
+### P1 — Zero-Copy Pipeline (depends on rustynum P0 fixes)
+
+- [ ] **Use CogRecordView<'a>** from rustynum-arrow once it exists
+  - Eliminates 819MB/100K records copying from Arrow → CogRecord
+  - Blocked by: rustynum TODO "CogRecordView<'a>" in rustynum-arrow/arrow_bridge.rs
+
+- [ ] **Use CascadeIndices::build_from_arrow()** once it exists
+  - Eliminates second 819MB copy from CogRecord → flat arrays
+  - Blocked by: rustynum TODO "CascadeIndices::build_from_arrow()" in indexed_cascade.rs
+
+### P2 — Toolchain: Ship on Stable 1.93
+
+- [ ] **portable_simd → std::arch port** (in rustynum, not here) — Enables stable across all 4 repos
+  - Compile-tested 2026-02-27: ALL AVX-512 intrinsics available on stable 1.93.1. ZERO gaps.
+    Core (xor, popcnt, add, ternarylogic), BF16 (dpbf16_ps, cvtpbh_ps, cvtne2ps_pbh),
+    reduces (reduce_add_epi64, reduce_or_epi64), mask ops (kand/knot/kor/kxor_mask16,
+    movepi8_mask, movm_epi8) — ALL stable.
+  - ~879 call sites in rustynum to port (mechanical)
+  - After port: rustynum drops nightly, all 4 repos on same stable 1.93 toolchain
+  - ladybug-rs already builds on stable — this unblocks deleting simd.rs and using rustynum directly
+  - Full audit trail: `rustynum/CLAUDE.md` §14
+
+### DONE
+
+- [x] 2026-02-27: Added Miri job to ci-master.yml (5 min timeout)
+- [x] 2026-02-27: Documented Rustynum Acceleration Contract
+- [x] 2026-02-27: vendor/rustynum submodule wired
+- [x] 2026-02-27: Arrow zero-copy working via cascade_scan_4ch + arrow_to_flat_bytes
+
+---
+
 ## Contact
 
 **GitHub**: https://github.com/AdaWorldAPI/ladybug-rs

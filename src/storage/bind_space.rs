@@ -355,10 +355,17 @@ pub struct BindNode {
     pub sigma: u8,
     /// Whether this node is a spine (cluster centroid) in the DN tree.
     pub is_spine: bool,
+    /// Epoch millis when this node was last written/modified.
+    /// Used for age-based hot→cold tier flushing to Lance.
+    pub updated_at: u64,
 }
 
 impl BindNode {
     pub fn new(fingerprint: [u64; FINGERPRINT_WORDS]) -> Self {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
         Self {
             fingerprint,
             label: None,
@@ -370,6 +377,7 @@ impl BindNode {
             rung: 0,
             sigma: 0,
             is_spine: false,
+            updated_at: now,
         }
     }
 
@@ -407,6 +415,10 @@ impl BindNode {
     #[inline(always)]
     pub fn touch(&mut self) {
         self.access_count = self.access_count.saturating_add(1);
+        self.updated_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
     }
 
     // =========================================================================
@@ -1620,6 +1632,161 @@ impl BindSpace {
     }
 
     // =========================================================================
+    // RUSTYNUM-ACCELERATED OPERATIONS (AVX-512 VPOPCNTDQ / VNNI)
+    // All operations use runtime-dispatched SIMD via rustynum.
+    // =========================================================================
+
+    /// Hamming distance between two nodes' fingerprints.
+    /// Uses AVX-512 VPOPCNTDQ when available (32 XOR + 32 POPCNT = 64 instructions).
+    #[inline]
+    pub fn hamming(&self, a: Addr, b: Addr) -> Option<u32> {
+        let na = self.read(a)?;
+        let nb = self.read(b)?;
+        Some(hamming_distance(&na.fingerprint, &nb.fingerprint))
+    }
+
+    /// Similarity (0.0–1.0) between two nodes' fingerprints.
+    /// 1.0 = identical, 0.0 = maximally different.
+    #[inline]
+    pub fn similarity(&self, a: Addr, b: Addr) -> Option<f32> {
+        let dist = self.hamming(a, b)? as f32;
+        let total_bits = (FINGERPRINT_WORDS * 64) as f32;
+        Some(1.0 - dist / total_bits)
+    }
+
+    /// Popcount of a node's fingerprint (number of set bits).
+    /// Uses AVX-512 VPOPCNTDQ (32 instructions for 2048 bytes).
+    #[inline]
+    pub fn popcount(&self, addr: Addr) -> Option<u32> {
+        let node = self.read(addr)?;
+        Some(crate::core::rustynum_accel::slice_popcount(&node.fingerprint) as u32)
+    }
+
+    /// Signed int8 dot product between two nodes' fingerprints.
+    /// Uses AVX-512 VNNI VPDPBUSD for embedding similarity.
+    #[inline]
+    pub fn dot_i8(&self, a: Addr, b: Addr) -> Option<i64> {
+        let na = self.read(a)?;
+        let nb = self.read(b)?;
+        Some(crate::core::rustynum_accel::slice_dot_i8(&na.fingerprint, &nb.fingerprint))
+    }
+
+    /// Bundle (majority-vote) multiple nodes' fingerprints into one.
+    /// Zero-copy input via view_u64_as_bytes. Uses rustynum's AVX-512 bundle.
+    pub fn bundle(&self, addrs: &[Addr]) -> Option<[u64; FINGERPRINT_WORDS]> {
+        let nodes: Vec<&BindNode> = addrs.iter()
+            .filter_map(|a| self.read(*a))
+            .collect();
+        if nodes.is_empty() {
+            return None;
+        }
+        let slices: Vec<&[u8]> = nodes.iter()
+            .map(|n| crate::core::rustynum_accel::view_u64_as_bytes(&n.fingerprint))
+            .collect();
+        let result_bytes = rustynum_rs::NumArrayU8::bundle_byte_slices(&slices);
+        let mut fp = [0u64; FINGERPRINT_WORDS];
+        for (i, chunk) in result_bytes.chunks_exact(8).enumerate() {
+            fp[i] = u64::from_ne_bytes(chunk.try_into().unwrap());
+        }
+        Some(fp)
+    }
+
+    /// XOR-bind two nodes' fingerprints (holographic association).
+    /// A ⊗ B — reversible with A ⊗ (A ⊗ B) = B.
+    #[inline]
+    pub fn bind(&self, a: Addr, b: Addr) -> Option<[u64; FINGERPRINT_WORDS]> {
+        let na = self.read(a)?;
+        let nb = self.read(b)?;
+        let mut result = [0u64; FINGERPRINT_WORDS];
+        for i in 0..FINGERPRINT_WORDS {
+            result[i] = na.fingerprint[i] ^ nb.fingerprint[i];
+        }
+        Some(result)
+    }
+
+    /// Top-k nearest neighbors by Hamming distance.
+    /// Scans the specified prefix range using rustynum SIMD.
+    pub fn nearest(&self, query: &[u64; FINGERPRINT_WORDS], prefix_range: (u8, u8), k: usize) -> Vec<(Addr, u32)> {
+        let mut results = Vec::new();
+
+        for prefix in prefix_range.0..=prefix_range.1 {
+            for slot in 0..=255u8 {
+                let addr = Addr::new(prefix, slot);
+                if let Some(node) = self.read(addr) {
+                    let dist = hamming_distance(&node.fingerprint, query);
+                    results.push((addr, dist));
+                }
+            }
+        }
+
+        results.sort_by_key(|&(_, d)| d);
+        results.truncate(k);
+        results
+    }
+
+    /// HDR cascade search: multi-stage statistical early-exit.
+    ///
+    /// Stage 1 (1/16 sample): reject if estimate > threshold + 3σ (~99.7% elimination)
+    /// Stage 2 (1/4 sample): reject if estimate > threshold + 2σ (~95% elimination)
+    /// Stage 3 (full): exact distance
+    ///
+    /// Returns `(Addr, distance)` pairs within threshold, sorted ascending.
+    pub fn cascade_search(
+        &self,
+        query: &[u64; FINGERPRINT_WORDS],
+        prefix_range: (u8, u8),
+        threshold: u32,
+        k: usize,
+    ) -> Vec<(Addr, u32)> {
+        let query_bytes = crate::core::rustynum_accel::view_u64_as_bytes(query);
+        let total_bits = (FINGERPRINT_WORDS * 64) as u32;
+
+        // Stage 1: 1/16 sample (first 16 u64 words = 128 bytes)
+        let sample_16 = &query_bytes[..128];
+        let scale_16 = (FINGERPRINT_WORDS * 8 / 128) as u32; // 16x
+        // 3σ margin for 1/16 sample
+        let margin_16 = ((total_bits as f32).sqrt() * 3.0 * (15.0f32 / 16.0).sqrt()) as u32;
+
+        // Stage 2: 1/4 sample (first 64 u64 words = 512 bytes)
+        let sample_4 = &query_bytes[..512];
+        let scale_4 = (FINGERPRINT_WORDS * 8 / 512) as u32; // 4x
+        let margin_4 = ((total_bits as f32).sqrt() * 2.0 * (3.0f32 / 4.0).sqrt()) as u32;
+
+        let mut results = Vec::new();
+
+        for prefix in prefix_range.0..=prefix_range.1 {
+            for slot in 0..=255u8 {
+                let addr = Addr::new(prefix, slot);
+                if let Some(node) = self.read(addr) {
+                    let node_bytes = crate::core::rustynum_accel::view_u64_as_bytes(&node.fingerprint);
+
+                    // Stage 1: quick reject on 1/16 sample
+                    let est_16 = rustynum_core::simd::hamming_distance(sample_16, &node_bytes[..128]) as u32 * scale_16;
+                    if est_16 > threshold + margin_16 {
+                        continue;
+                    }
+
+                    // Stage 2: refine on 1/4 sample
+                    let est_4 = rustynum_core::simd::hamming_distance(sample_4, &node_bytes[..512]) as u32 * scale_4;
+                    if est_4 > threshold + margin_4 {
+                        continue;
+                    }
+
+                    // Stage 3: exact distance
+                    let exact = hamming_distance(&node.fingerprint, query);
+                    if exact <= threshold {
+                        results.push((addr, exact));
+                    }
+                }
+            }
+        }
+
+        results.sort_by_key(|&(_, d)| d);
+        results.truncate(k);
+        results
+    }
+
+    // =========================================================================
     // LANCE PERSISTENCE ACCESSORS
     // =========================================================================
 
@@ -1676,6 +1843,137 @@ impl BindSpace {
     /// Clear all dirty bits.
     pub fn clear_dirty(&mut self) {
         self.dirty.clear();
+    }
+
+    // =========================================================================
+    // PARALLEL BULK OPERATIONS (split_at_mut / parallel_into_slices)
+    // =========================================================================
+
+    /// Parallel write into disjoint node prefix slices — zero synchronization.
+    ///
+    /// Each thread gets exclusive `&mut` ownership of a contiguous range of
+    /// prefix chunks via `split_at_mut`. This is the canonical rustynum pattern
+    /// for lock-free parallel writes to BindSpace.
+    ///
+    /// The closure receives `(prefix_chunks, base_prefix)` where:
+    /// - `prefix_chunks` is `&mut [Box<[Option<BindNode>; 256]>]` — exclusive slice
+    /// - `base_prefix` is the first prefix in this slice (0x80 + offset)
+    ///
+    /// # Safety
+    /// Lock-free: each thread owns disjoint memory. Zero atomics, zero Mutex.
+    pub fn parallel_into_node_slices<F>(&mut self, f: F)
+    where
+        F: Fn(&mut [Box<[Option<BindNode>; CHUNK_SIZE]>], u8) + Send + Sync,
+    {
+        let n_threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
+        let chunks_per_thread = (NODE_PREFIXES / n_threads).max(1);
+        let f = &f;
+
+        std::thread::scope(|s| {
+            let mut remaining = &mut self.nodes[..];
+            let mut prefix_offset = 0u8;
+
+            while !remaining.is_empty() {
+                let take = chunks_per_thread.min(remaining.len());
+                let (chunk, rest) = remaining.split_at_mut(take);
+                remaining = rest;
+                let base_prefix = PREFIX_NODE_START + prefix_offset;
+                s.spawn(move || f(chunk, base_prefix));
+                prefix_offset += take as u8;
+            }
+        });
+    }
+
+    /// Bulk write pre-parsed nodes into BindSpace.
+    ///
+    /// Accepts `(Addr, BindNode)` pairs and writes them directly into the
+    /// appropriate chunk. Marks each address as dirty.
+    ///
+    /// For hydration from Lance/Arrow where nodes are already constructed.
+    pub fn bulk_write_nodes(&mut self, items: &[(Addr, BindNode)]) {
+        for (addr, node) in items {
+            let prefix = addr.prefix();
+            let slot = addr.slot() as usize;
+
+            if prefix <= PREFIX_SURFACE_END {
+                if let Some(c) = self.surfaces.get_mut(prefix as usize) {
+                    c[slot] = Some(node.clone());
+                    self.dirty.set(addr.0);
+                }
+            } else if prefix >= PREFIX_FLUID_START && prefix <= PREFIX_FLUID_END {
+                let chunk = (prefix - PREFIX_FLUID_START) as usize;
+                if let Some(c) = self.fluid.get_mut(chunk) {
+                    c[slot] = Some(node.clone());
+                    self.dirty.set(addr.0);
+                }
+            } else if prefix >= PREFIX_NODE_START {
+                let chunk = (prefix - PREFIX_NODE_START) as usize;
+                if let Some(c) = self.nodes.get_mut(chunk) {
+                    c[slot] = Some(node.clone());
+                    self.dirty.set(addr.0);
+                }
+            }
+        }
+    }
+
+    /// Parallel bulk hydrate node-space addresses from pre-parsed items.
+    ///
+    /// Uses `split_at_mut` on the node storage for lock-free parallel writes.
+    /// Items MUST all be in node space (prefix 0x80-0xFF). Surface and fluid
+    /// items are silently skipped.
+    ///
+    /// This is the zero-synchronization hydration path from Lance → BindSpace.
+    pub fn parallel_hydrate_nodes(&mut self, items: Vec<(Addr, BindNode)>) {
+        if items.is_empty() {
+            return;
+        }
+
+        // Group by node chunk index
+        let mut by_chunk: Vec<Vec<(u8, BindNode)>> = (0..NODE_PREFIXES).map(|_| Vec::new()).collect();
+        for (addr, node) in items {
+            let prefix = addr.prefix();
+            if prefix >= PREFIX_NODE_START {
+                let chunk = (prefix - PREFIX_NODE_START) as usize;
+                if chunk < NODE_PREFIXES {
+                    by_chunk[chunk].push((addr.slot(), node));
+                }
+            }
+        }
+
+        // Parallel write via split_at_mut — each thread owns its chunk
+        let n_threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
+        let chunks_per_thread = (NODE_PREFIXES / n_threads).max(1);
+
+        std::thread::scope(|s| {
+            let mut remaining_nodes = &mut self.nodes[..];
+            let mut remaining_items = &by_chunk[..];
+            while !remaining_nodes.is_empty() {
+                let take = chunks_per_thread.min(remaining_nodes.len());
+                let (node_slice, rest_nodes) = remaining_nodes.split_at_mut(take);
+                let (item_slice, rest_items) = remaining_items.split_at(take);
+                remaining_nodes = rest_nodes;
+                remaining_items = rest_items;
+                s.spawn(move || {
+                    for (chunk, items) in node_slice.iter_mut().zip(item_slice.iter()) {
+                        for &(slot, ref node) in items {
+                            chunk[slot as usize] = Some(node.clone());
+                        }
+                    }
+                });
+            }
+        });
+
+        // Mark all written addresses as dirty (single-threaded, cheap)
+        for (ci, items) in by_chunk.iter().enumerate() {
+            let prefix = PREFIX_NODE_START + ci as u8;
+            for &(slot, _) in items {
+                self.dirty.set(Addr::new(prefix, slot).0);
+            }
+        }
     }
 
     // =========================================================================
@@ -1747,6 +2045,357 @@ impl BindSpace {
             }
             self.dirty.set(addr.0);
         }
+    }
+
+    // =========================================================================
+    // RUSTYNUM-HOLO: Phase-space operations (transparent address delegation)
+    // All methods reference the same address, same fingerprint bytes — zero copy.
+    // =========================================================================
+
+    /// Zero-copy bytes view of a node's fingerprint.
+    #[inline(always)]
+    fn fp_bytes(&self, addr: Addr) -> Option<&[u8]> {
+        self.read(addr).map(|n| crate::core::rustynum_accel::view_u64_as_bytes(&n.fingerprint))
+    }
+
+    /// Phase bind (ADD mod 256) two nodes' fingerprints.
+    /// Reversible: `phase_unbind(result, b) == a`.
+    pub fn phase_bind(&self, a: Addr, b: Addr) -> Option<Vec<u8>> {
+        let ab = self.fp_bytes(a)?;
+        let bb = self.fp_bytes(b)?;
+        Some(rustynum_holo::phase_bind_i8(ab, bb))
+    }
+
+    /// Phase unbind (SUB mod 256): recover `a` from `bound` and `key`.
+    pub fn phase_unbind(&self, bound: Addr, key: Addr) -> Option<Vec<u8>> {
+        let bb = self.fp_bytes(bound)?;
+        let kb = self.fp_bytes(key)?;
+        Some(rustynum_holo::phase_unbind_i8(bb, kb))
+    }
+
+    /// Wasserstein (Earth Mover's) distance on sorted phase vectors.
+    /// O(N) — requires CAM-channel data that has been sort-prepared.
+    pub fn wasserstein(&self, a: Addr, b: Addr) -> Option<u64> {
+        let ab = self.fp_bytes(a)?;
+        let bb = self.fp_bytes(b)?;
+        Some(rustynum_holo::wasserstein_sorted_i8(ab, bb))
+    }
+
+    /// Circular distance for unsorted phase vectors (EMBED channel).
+    pub fn circular_distance(&self, a: Addr, b: Addr) -> Option<u64> {
+        let ab = self.fp_bytes(a)?;
+        let bb = self.fp_bytes(b)?;
+        Some(rustynum_holo::circular_distance_i8(ab, bb))
+    }
+
+    /// 16-bin spatial histogram of a node's phase vector.
+    pub fn phase_histogram(&self, addr: Addr) -> Option<[u16; 16]> {
+        let b = self.fp_bytes(addr)?;
+        Some(rustynum_holo::phase_histogram_16(b))
+    }
+
+    /// Circular-mean bundle of multiple nodes' phase vectors into output buffer.
+    pub fn phase_bundle(&self, addrs: &[Addr], out: &mut [u8]) {
+        let vecs: Vec<Vec<u8>> = addrs.iter()
+            .filter_map(|a| self.fp_bytes(*a).map(|b| b.to_vec()))
+            .collect();
+        if vecs.is_empty() { return; }
+        let refs: Vec<&[u8]> = vecs.iter().map(|v| v.as_slice()).collect();
+        rustynum_holo::phase_bundle_circular(&refs, out);
+    }
+
+    /// Sort a node's phase vector (write-time preparation for Wasserstein).
+    /// Returns (sorted_bytes, permutation).
+    pub fn sort_phase(&self, addr: Addr) -> Option<(Vec<u8>, Vec<u16>)> {
+        let b = self.fp_bytes(addr)?;
+        Some(rustynum_holo::sort_phase_vector(b))
+    }
+
+    /// L1 distance between two phase histograms (for coarse filtering).
+    pub fn histogram_distance(&self, a: Addr, b: Addr) -> Option<u32> {
+        let ha = self.phase_histogram(a)?;
+        let hb = self.phase_histogram(b)?;
+        Some(rustynum_holo::histogram_l1_distance(&ha, &hb))
+    }
+
+    // =========================================================================
+    // RUSTYNUM-HOLO: Carrier operations (frequency-domain encoding)
+    // Carrier ops work on &[i8] — we reinterpret fingerprint bytes as i8.
+    // =========================================================================
+
+    /// Reinterpret `&[u8]` as `&[i8]` (zero-copy, same bit pattern).
+    #[inline(always)]
+    fn as_i8(bytes: &[u8]) -> &[i8] {
+        // SAFETY: u8 and i8 have identical layout, alignment, and all bit patterns valid.
+        unsafe { std::slice::from_raw_parts(bytes.as_ptr() as *const i8, bytes.len()) }
+    }
+
+    /// Carrier L1 distance between two nodes' fingerprints (i8 domain).
+    pub fn carrier_distance(&self, a: Addr, b: Addr) -> Option<u64> {
+        let ab = self.fp_bytes(a)?;
+        let bb = self.fp_bytes(b)?;
+        Some(rustynum_holo::carrier_distance_l1(Self::as_i8(ab), Self::as_i8(bb)))
+    }
+
+    /// Carrier cosine correlation between two nodes (i8 domain).
+    pub fn carrier_correlation(&self, a: Addr, b: Addr) -> Option<f64> {
+        let ab = self.fp_bytes(a)?;
+        let bb = self.fp_bytes(b)?;
+        Some(rustynum_holo::carrier_correlation(Self::as_i8(ab), Self::as_i8(bb)))
+    }
+
+    /// Frequency spectrum of a node's fingerprint (16 frequency bins).
+    pub fn carrier_spectrum(&self, addr: Addr, basis: &rustynum_holo::CarrierBasis) -> Option<[f32; 16]> {
+        let b = self.fp_bytes(addr)?;
+        Some(rustynum_holo::carrier_spectrum(Self::as_i8(b), basis))
+    }
+
+    /// Spectral distance (L2) between two nodes' frequency spectra.
+    pub fn spectral_distance(&self, a: Addr, b: Addr, basis: &rustynum_holo::CarrierBasis) -> Option<f32> {
+        let sa = self.carrier_spectrum(a, basis)?;
+        let sb = self.carrier_spectrum(b, basis)?;
+        Some(rustynum_holo::spectral_distance(&sa, &sb))
+    }
+
+    // =========================================================================
+    // RUSTYNUM-HOLO: Focus-of-attention (3D spatial sub-selection)
+    // =========================================================================
+
+    /// XOR value into focused region of a node's fingerprint.
+    pub fn focus_xor(&mut self, addr: Addr, mask_x: u8, mask_y: u8, mask_z: u32, value: &[u8]) {
+        if let Some(node) = self.read_mut(addr) {
+            let mut buf = crate::core::rustynum_accel::view_u64_as_bytes(&node.fingerprint).to_vec();
+            rustynum_holo::focus_xor(&mut buf, mask_x, mask_y, mask_z, value);
+            for (i, chunk) in buf.chunks_exact(8).enumerate() {
+                node.fingerprint[i] = u64::from_ne_bytes(chunk.try_into().unwrap());
+            }
+            self.dirty.set(addr.0);
+        }
+    }
+
+    /// Read bytes from focused region of a node's fingerprint.
+    pub fn focus_read(&self, addr: Addr, mask_x: u8, mask_y: u8, mask_z: u32) -> Option<Vec<u8>> {
+        let b = self.fp_bytes(addr)?;
+        Some(rustynum_holo::focus_read(b, mask_x, mask_y, mask_z))
+    }
+
+    /// Hamming distance within focused region of two nodes.
+    /// Returns (distance, region_bits).
+    pub fn focus_hamming(&self, a: Addr, b: Addr, mask_x: u8, mask_y: u8, mask_z: u32) -> Option<(u64, u32)> {
+        let ab = self.fp_bytes(a)?;
+        let bb = self.fp_bytes(b)?;
+        Some(rustynum_holo::focus_hamming(ab, bb, mask_x, mask_y, mask_z))
+    }
+
+    /// L1 distance within focused region of two nodes.
+    /// Returns (distance, region_bytes).
+    pub fn focus_l1(&self, a: Addr, b: Addr, mask_x: u8, mask_y: u8, mask_z: u32) -> Option<(u64, u32)> {
+        let ab = self.fp_bytes(a)?;
+        let bb = self.fp_bytes(b)?;
+        Some(rustynum_holo::focus_l1(ab, bb, mask_x, mask_y, mask_z))
+    }
+
+    /// Phase bind (ADD) concept_vec into focused region of a node's fingerprint.
+    pub fn focus_bind_phase(&mut self, addr: Addr, mask_x: u8, mask_y: u8, mask_z: u32, concept_vec: &[u8]) {
+        if let Some(node) = self.read_mut(addr) {
+            let mut buf = crate::core::rustynum_accel::view_u64_as_bytes(&node.fingerprint).to_vec();
+            rustynum_holo::focus_bind_phase(&mut buf, mask_x, mask_y, mask_z, concept_vec);
+            for (i, chunk) in buf.chunks_exact(8).enumerate() {
+                node.fingerprint[i] = u64::from_ne_bytes(chunk.try_into().unwrap());
+            }
+            self.dirty.set(addr.0);
+        }
+    }
+
+    /// Phase unbind (SUB) concept_vec from focused region of a node's fingerprint.
+    pub fn focus_unbind_phase(&mut self, addr: Addr, mask_x: u8, mask_y: u8, mask_z: u32, concept_vec: &[u8]) {
+        if let Some(node) = self.read_mut(addr) {
+            let mut buf = crate::core::rustynum_accel::view_u64_as_bytes(&node.fingerprint).to_vec();
+            rustynum_holo::focus_unbind_phase(&mut buf, mask_x, mask_y, mask_z, concept_vec);
+            for (i, chunk) in buf.chunks_exact(8).enumerate() {
+                node.fingerprint[i] = u64::from_ne_bytes(chunk.try_into().unwrap());
+            }
+            self.dirty.set(addr.0);
+        }
+    }
+
+    /// Auto-generate focus mask from concept ID, then XOR value into region.
+    pub fn focus_xor_auto(&mut self, addr: Addr, mask_x: u8, mask_y: u8, mask_z: u32, value: &[u8]) {
+        if let Some(node) = self.read_mut(addr) {
+            let mut buf = crate::core::rustynum_accel::view_u64_as_bytes(&node.fingerprint).to_vec();
+            rustynum_holo::focus_xor_auto(&mut buf, mask_x, mask_y, mask_z, value);
+            for (i, chunk) in buf.chunks_exact(8).enumerate() {
+                node.fingerprint[i] = u64::from_ne_bytes(chunk.try_into().unwrap());
+            }
+            self.dirty.set(addr.0);
+        }
+    }
+
+    // =========================================================================
+    // RUSTYNUM-CLAM: Triangle-inequality search & clustering
+    // =========================================================================
+
+    /// SIMD batch Hamming distance: query vs all nodes in prefix range.
+    /// Returns (Addr, distance) for each populated node.
+    pub fn batch_hamming(
+        &self,
+        query: &[u64; FINGERPRINT_WORDS],
+        prefix_range: (u8, u8),
+    ) -> Vec<(Addr, u64)> {
+        let query_bytes = crate::core::rustynum_accel::view_u64_as_bytes(query);
+        let mut results = Vec::new();
+
+        for prefix in prefix_range.0..=prefix_range.1 {
+            for slot in 0..=255u8 {
+                let addr = Addr::new(prefix, slot);
+                if let Some(node) = self.read(addr) {
+                    let node_bytes = crate::core::rustynum_accel::view_u64_as_bytes(&node.fingerprint);
+                    let dist = rustynum_core::simd::hamming_distance(query_bytes, node_bytes);
+                    results.push((addr, dist));
+                }
+            }
+        }
+        results
+    }
+
+    /// Top-k nearest using rustynum-clam's SIMD batch distance.
+    pub fn clam_top_k(
+        &self,
+        query: &[u64; FINGERPRINT_WORDS],
+        prefix_range: (u8, u8),
+        k: usize,
+    ) -> Vec<(Addr, u64)> {
+        let mut results = self.batch_hamming(query, prefix_range);
+        results.sort_by_key(|&(_, d)| d);
+        results.truncate(k);
+        results
+    }
+
+    // =========================================================================
+    // LANCE ZERO-COPY: Transparent write-through & storage backend
+    // =========================================================================
+
+    /// Create a LanceWriteThrough adapter for prefix 0x00 (Lance surface).
+    /// The adapter provides transparent hot cache + Lance persistence.
+    pub fn lance_write_through(wal_path: std::path::PathBuf) -> super::lance_zero_copy::LanceWriteThrough {
+        let wal = std::sync::Arc::new(super::lance_zero_copy::WriteAheadLog::new(wal_path));
+        super::lance_zero_copy::LanceWriteThrough::with_defaults(wal)
+    }
+
+    /// Create a UnifiedStorage that routes reads/writes by prefix.
+    pub fn unified_storage(wal_path: std::path::PathBuf) -> super::lance_zero_copy::UnifiedStorage {
+        let wal = std::sync::Arc::new(super::lance_zero_copy::WriteAheadLog::new(wal_path));
+        super::lance_zero_copy::UnifiedStorage::new(wal)
+    }
+
+    /// Create an ArrowZeroCopy manager for zero-copy fingerprint buffer management.
+    pub fn arrow_zero_copy() -> super::lance_zero_copy::ArrowZeroCopy {
+        super::lance_zero_copy::ArrowZeroCopy::new()
+    }
+
+    /// Build an AdjacencyIndex for locality-preserving search over a FingerprintBuffer.
+    pub fn adjacency_index(buffer: &super::lance_zero_copy::FingerprintBuffer) -> super::lance_zero_copy::AdjacencyIndex {
+        super::lance_zero_copy::AdjacencyIndex::build(buffer)
+    }
+
+    /// Export all occupied node fingerprints as a FingerprintBuffer (zero-copy ownership transfer).
+    /// Returns (buffer, addr_map) where addr_map[i] = Addr of fingerprint i.
+    pub fn to_fingerprint_buffer(&self) -> (super::lance_zero_copy::FingerprintBuffer, Vec<Addr>) {
+        let mut data = Vec::new();
+        let mut addrs = Vec::new();
+
+        for (addr, node) in self.nodes_iter() {
+            data.extend_from_slice(&node.fingerprint);
+            addrs.push(addr);
+        }
+
+        let num = addrs.len();
+        let buffer = super::lance_zero_copy::FingerprintBuffer::from_vec(data, num);
+        (buffer, addrs)
+    }
+
+    // =========================================================================
+    // AGE-BASED HOT→COLD TIER FLUSHING (Lance persistence)
+    // =========================================================================
+
+    /// Collect all nodes older than `threshold_secs` seconds.
+    ///
+    /// Returns `(Addr, BindNode)` pairs for nodes whose `updated_at` timestamp
+    /// is older than `now - threshold_secs`. These should be flushed to Lance
+    /// for cold-tier persistence.
+    ///
+    /// Nodes are NOT removed from BindSpace — caller decides eviction policy.
+    pub fn collect_aged(&self, threshold_secs: u64) -> Vec<(Addr, BindNode)> {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        let cutoff_ms = now_ms.saturating_sub(threshold_secs * 1000);
+
+        let mut aged = Vec::new();
+        for (addr, node) in self.nodes_iter() {
+            if node.updated_at > 0 && node.updated_at < cutoff_ms {
+                aged.push((addr, node.clone()));
+            }
+        }
+        aged
+    }
+
+    /// Evict nodes older than `threshold_secs` from BindSpace.
+    ///
+    /// Returns the evicted `(Addr, BindNode)` pairs. Call AFTER persisting
+    /// to Lance to avoid data loss.
+    pub fn evict_aged(&mut self, threshold_secs: u64) -> Vec<(Addr, BindNode)> {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        let cutoff_ms = now_ms.saturating_sub(threshold_secs * 1000);
+
+        let mut evicted = Vec::new();
+
+        // Evict from surfaces
+        for (pi, chunk) in self.surfaces.iter_mut().enumerate() {
+            for (si, slot) in chunk.iter_mut().enumerate() {
+                if let Some(node) = slot {
+                    if node.updated_at > 0 && node.updated_at < cutoff_ms {
+                        let addr = Addr::new(pi as u8, si as u8);
+                        evicted.push((addr, node.clone()));
+                        *slot = None;
+                    }
+                }
+            }
+        }
+
+        // Evict from fluid
+        for (ci, chunk) in self.fluid.iter_mut().enumerate() {
+            let prefix = PREFIX_FLUID_START + ci as u8;
+            for (si, slot) in chunk.iter_mut().enumerate() {
+                if let Some(node) = slot {
+                    if node.updated_at > 0 && node.updated_at < cutoff_ms {
+                        let addr = Addr::new(prefix, si as u8);
+                        evicted.push((addr, node.clone()));
+                        *slot = None;
+                    }
+                }
+            }
+        }
+
+        // Evict from nodes
+        for (ci, chunk) in self.nodes.iter_mut().enumerate() {
+            let prefix = PREFIX_NODE_START + ci as u8;
+            for (si, slot) in chunk.iter_mut().enumerate() {
+                if let Some(node) = slot {
+                    if node.updated_at > 0 && node.updated_at < cutoff_ms {
+                        let addr = Addr::new(prefix, si as u8);
+                        evicted.push((addr, node.clone()));
+                        *slot = None;
+                    }
+                }
+            }
+        }
+
+        evicted
     }
 }
 impl Default for BindSpace {
@@ -1845,13 +2494,9 @@ pub fn dn_levenshtein(a: &str, b: &str) -> usize {
     prev[n]
 }
 
-/// Hamming distance
+/// Hamming distance via runtime-dispatched AVX-512 VPOPCNTDQ (rustynum).
 pub fn hamming_distance(a: &[u64; FINGERPRINT_WORDS], b: &[u64; FINGERPRINT_WORDS]) -> u32 {
-    let mut d = 0u32;
-    for i in 0..FINGERPRINT_WORDS {
-        d += (a[i] ^ b[i]).count_ones();
-    }
-    d
+    crate::core::rustynum_accel::slice_hamming(a, b) as u32
 }
 
 // =============================================================================

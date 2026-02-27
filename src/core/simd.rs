@@ -11,37 +11,12 @@ use crate::core::Fingerprint;
 
 /// Compute Hamming distance between two fingerprints.
 ///
-/// Automatically dispatches to the best SIMD implementation available.
+/// Uses runtime-dispatched SIMD via rustynum (works on any x86_64 CPU
+/// without compile-time `-C target-feature`). Detects AVX-512 VPOPCNTDQ
+/// at runtime via `is_x86_feature_detected!()`.
 #[inline]
 pub fn hamming_distance(a: &Fingerprint, b: &Fingerprint) -> u32 {
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx512vpopcntdq"))]
-    {
-        return unsafe { hamming_avx512(a, b) };
-    }
-
-    #[cfg(all(
-        target_arch = "x86_64",
-        target_feature = "avx2",
-        not(target_feature = "avx512vpopcntdq")
-    ))]
-    {
-        return unsafe { hamming_avx2(a, b) };
-    }
-
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    {
-        return unsafe { hamming_neon(a, b) };
-    }
-
-    // Scalar fallback
-    #[cfg(not(any(
-        all(target_arch = "x86_64", target_feature = "avx512vpopcntdq"),
-        all(target_arch = "x86_64", target_feature = "avx2"),
-        all(target_arch = "aarch64", target_feature = "neon"),
-    )))]
-    {
-        return hamming_scalar(a, b);
-    }
+    crate::core::rustynum_accel::fingerprint_hamming(a, b)
 }
 
 /// Scalar implementation (works everywhere)
@@ -292,21 +267,7 @@ impl Default for HammingEngine {
 
 /// Detect SIMD capability at runtime
 pub fn simd_level() -> &'static str {
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx512vpopcntdq"))]
-    return "avx512-vpopcnt";
-
-    #[cfg(all(
-        target_arch = "x86_64",
-        target_feature = "avx2",
-        not(target_feature = "avx512vpopcntdq")
-    ))]
-    return "avx2";
-
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    return "neon";
-
-    #[allow(unreachable_code)]
-    "scalar"
+    "rustynum-runtime-dispatch"
 }
 
 #[cfg(test)]
