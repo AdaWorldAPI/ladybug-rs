@@ -802,6 +802,55 @@ one-time mechanical port. This is not a blocker — it's a TODO.
 
 ---
 
+## OPEN TODOs — Wiring Checklist (SESSION-DURABLE)
+
+> **READ THIS EVERY SESSION.** Do NOT invent new code. Wire EXISTING.
+> Mark items DONE with date. If you skip an item, explain why.
+
+### P0 — Stop Duplicating rustynum
+
+- [ ] **Delete src/core/simd.rs** (348 lines) — Duplicates rustynum's hamming_distance, hamming_avx512, hamming_avx2, HammingEngine
+  - Replace all call sites with `rustynum_core::simd::hamming_distance()` (has scalar fallback for stable)
+  - Also fix: `src/storage/bind_space.rs:1848-1855` — scalar hamming loop → use rustynum
+  - Note: rustynum's select_hamming_fn() does runtime dispatch (AVX-512 > AVX2 > scalar)
+  - Dep: vendored at `vendor/rustynum/rustynum-core`
+
+- [ ] **Wire rustynum_accel into core search** — NOT just Python FFI
+  - `src/core/rustynum_accel.rs` has `fingerprint_hamming()`, `container_hamming()`, `slice_hamming()`
+  - Currently ONLY called from `python/mod.rs:39`
+  - Wire into: `src/storage/bind_space.rs` search functions, `src/search/hdr_cascade.rs`
+
+- [ ] **Fix .to_vec() in rustynum_accel.rs:148** — container_bundle copies when it shouldn't
+  - `view_u64_as_bytes(&c.words).to_vec()` breaks zero-copy for bundle operations
+
+### P1 — Zero-Copy Pipeline (depends on rustynum P0 fixes)
+
+- [ ] **Use CogRecordView<'a>** from rustynum-arrow once it exists
+  - Eliminates 819MB/100K records copying from Arrow → CogRecord
+  - Blocked by: rustynum TODO "CogRecordView<'a>" in rustynum-arrow/arrow_bridge.rs
+
+- [ ] **Use CascadeIndices::build_from_arrow()** once it exists
+  - Eliminates second 819MB copy from CogRecord → flat arrays
+  - Blocked by: rustynum TODO "CascadeIndices::build_from_arrow()" in indexed_cascade.rs
+
+### P2 — Toolchain
+
+- [ ] **portable_simd → std::arch port** — Ergonomics only, NOT performance
+  - std::arch intrinsics produce IDENTICAL machine code for Hamming/XOR/popcount
+  - portable_simd just makes code prettier (Simd<T,N>, .reduce_sum(), operator overloads)
+  - Alternatives on stable: `wide` crate, `pulp` crate, or manual `std::arch` intrinsics
+  - ~879 call sites in rustynum (rustyblas 158, rustymkl 198, rustynum-rs 523)
+  - After port: rustynum's rust-toolchain.toml can switch from nightly to stable 1.93
+
+### DONE
+
+- [x] 2026-02-27: Added Miri job to ci-master.yml (5 min timeout)
+- [x] 2026-02-27: Documented Rustynum Acceleration Contract
+- [x] 2026-02-27: vendor/rustynum submodule wired
+- [x] 2026-02-27: Arrow zero-copy working via cascade_scan_4ch + arrow_to_flat_bytes
+
+---
+
 ## Contact
 
 **GitHub**: https://github.com/AdaWorldAPI/ladybug-rs
