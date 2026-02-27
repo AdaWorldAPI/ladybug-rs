@@ -836,12 +836,14 @@ one-time mechanical port. This is not a blocker — it's a TODO.
 ### P2 — Toolchain: Ship on Stable 1.93
 
 - [ ] **portable_simd → std::arch port** (in rustynum, not here) — Enables stable across all 4 repos
-  - Stable 1.93 has EVERYTHING for AVX-512 hot path: `_mm512_xor_si512`, `_mm512_popcnt_epi64`,
-    `_mm512_ternarylogic_epi64`, `_mm512_dpbf16_ps` — all stable. Only `_mm512_reduce_add_epi64`
-    is missing (pseudo-instruction, 5-op manual reduce, irrelevant).
+  - Compile-tested 2026-02-27: ALL AVX-512 intrinsics available on stable 1.93.1. ZERO gaps.
+    Core (xor, popcnt, add, ternarylogic), BF16 (dpbf16_ps, cvtpbh_ps, cvtne2ps_pbh),
+    reduces (reduce_add_epi64, reduce_or_epi64), mask ops (kand/knot/kor/kxor_mask16,
+    movepi8_mask, movm_epi8) — ALL stable.
   - ~879 call sites in rustynum to port (mechanical)
   - After port: rustynum drops nightly, all 4 repos on same stable 1.93 toolchain
   - ladybug-rs already builds on stable — this unblocks deleting simd.rs and using rustynum directly
+  - Full audit trail: `rustynum/CLAUDE.md` §14
 
 ### DONE
 
