@@ -212,6 +212,8 @@ crewai-vendor = { package = "crewai", path = "../crewai-rust" }
 rustynum-rs = { path = "../rustynum/rustynum-rs" }
 rustynum-core = { path = "../rustynum/rustynum-core", features = ["avx512"] }
 rustynum-arrow = { path = "../rustynum/rustynum-arrow", default-features = false, features = ["arrow"] }
+rustynum-holo = { path = "../rustynum/rustynum-holo", features = ["avx512"] }
+rustynum-clam = { path = "../rustynum/rustynum-clam", features = ["avx512"] }
 
 # =============================================================================
 # DEV DEPENDENCIES
