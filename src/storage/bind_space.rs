@@ -355,10 +355,17 @@ pub struct BindNode {
     pub sigma: u8,
     /// Whether this node is a spine (cluster centroid) in the DN tree.
     pub is_spine: bool,
+    /// Epoch millis when this node was last written/modified.
+    /// Used for age-based hot→cold tier flushing to Lance.
+    pub updated_at: u64,
 }
 
 impl BindNode {
     pub fn new(fingerprint: [u64; FINGERPRINT_WORDS]) -> Self {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
         Self {
             fingerprint,
             label: None,
@@ -370,6 +377,7 @@ impl BindNode {
             rung: 0,
             sigma: 0,
             is_spine: false,
+            updated_at: now,
         }
     }
 
@@ -407,6 +415,10 @@ impl BindNode {
     #[inline(always)]
     pub fn touch(&mut self) {
         self.access_count = self.access_count.saturating_add(1);
+        self.updated_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
     }
 
     // =========================================================================
@@ -1679,6 +1691,137 @@ impl BindSpace {
     }
 
     // =========================================================================
+    // PARALLEL BULK OPERATIONS (split_at_mut / parallel_into_slices)
+    // =========================================================================
+
+    /// Parallel write into disjoint node prefix slices — zero synchronization.
+    ///
+    /// Each thread gets exclusive `&mut` ownership of a contiguous range of
+    /// prefix chunks via `split_at_mut`. This is the canonical rustynum pattern
+    /// for lock-free parallel writes to BindSpace.
+    ///
+    /// The closure receives `(prefix_chunks, base_prefix)` where:
+    /// - `prefix_chunks` is `&mut [Box<[Option<BindNode>; 256]>]` — exclusive slice
+    /// - `base_prefix` is the first prefix in this slice (0x80 + offset)
+    ///
+    /// # Safety
+    /// Lock-free: each thread owns disjoint memory. Zero atomics, zero Mutex.
+    pub fn parallel_into_node_slices<F>(&mut self, f: F)
+    where
+        F: Fn(&mut [Box<[Option<BindNode>; CHUNK_SIZE]>], u8) + Send + Sync,
+    {
+        let n_threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
+        let chunks_per_thread = (NODE_PREFIXES / n_threads).max(1);
+        let f = &f;
+
+        std::thread::scope(|s| {
+            let mut remaining = &mut self.nodes[..];
+            let mut prefix_offset = 0u8;
+
+            while !remaining.is_empty() {
+                let take = chunks_per_thread.min(remaining.len());
+                let (chunk, rest) = remaining.split_at_mut(take);
+                remaining = rest;
+                let base_prefix = PREFIX_NODE_START + prefix_offset;
+                s.spawn(move || f(chunk, base_prefix));
+                prefix_offset += take as u8;
+            }
+        });
+    }
+
+    /// Bulk write pre-parsed nodes into BindSpace.
+    ///
+    /// Accepts `(Addr, BindNode)` pairs and writes them directly into the
+    /// appropriate chunk. Marks each address as dirty.
+    ///
+    /// For hydration from Lance/Arrow where nodes are already constructed.
+    pub fn bulk_write_nodes(&mut self, items: &[(Addr, BindNode)]) {
+        for (addr, node) in items {
+            let prefix = addr.prefix();
+            let slot = addr.slot() as usize;
+
+            if prefix <= PREFIX_SURFACE_END {
+                if let Some(c) = self.surfaces.get_mut(prefix as usize) {
+                    c[slot] = Some(node.clone());
+                    self.dirty.set(addr.0);
+                }
+            } else if prefix >= PREFIX_FLUID_START && prefix <= PREFIX_FLUID_END {
+                let chunk = (prefix - PREFIX_FLUID_START) as usize;
+                if let Some(c) = self.fluid.get_mut(chunk) {
+                    c[slot] = Some(node.clone());
+                    self.dirty.set(addr.0);
+                }
+            } else if prefix >= PREFIX_NODE_START {
+                let chunk = (prefix - PREFIX_NODE_START) as usize;
+                if let Some(c) = self.nodes.get_mut(chunk) {
+                    c[slot] = Some(node.clone());
+                    self.dirty.set(addr.0);
+                }
+            }
+        }
+    }
+
+    /// Parallel bulk hydrate node-space addresses from pre-parsed items.
+    ///
+    /// Uses `split_at_mut` on the node storage for lock-free parallel writes.
+    /// Items MUST all be in node space (prefix 0x80-0xFF). Surface and fluid
+    /// items are silently skipped.
+    ///
+    /// This is the zero-synchronization hydration path from Lance → BindSpace.
+    pub fn parallel_hydrate_nodes(&mut self, items: Vec<(Addr, BindNode)>) {
+        if items.is_empty() {
+            return;
+        }
+
+        // Group by node chunk index
+        let mut by_chunk: Vec<Vec<(u8, BindNode)>> = (0..NODE_PREFIXES).map(|_| Vec::new()).collect();
+        for (addr, node) in items {
+            let prefix = addr.prefix();
+            if prefix >= PREFIX_NODE_START {
+                let chunk = (prefix - PREFIX_NODE_START) as usize;
+                if chunk < NODE_PREFIXES {
+                    by_chunk[chunk].push((addr.slot(), node));
+                }
+            }
+        }
+
+        // Parallel write via split_at_mut — each thread owns its chunk
+        let n_threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
+        let chunks_per_thread = (NODE_PREFIXES / n_threads).max(1);
+
+        std::thread::scope(|s| {
+            let mut remaining_nodes = &mut self.nodes[..];
+            let mut remaining_items = &by_chunk[..];
+            while !remaining_nodes.is_empty() {
+                let take = chunks_per_thread.min(remaining_nodes.len());
+                let (node_slice, rest_nodes) = remaining_nodes.split_at_mut(take);
+                let (item_slice, rest_items) = remaining_items.split_at(take);
+                remaining_nodes = rest_nodes;
+                remaining_items = rest_items;
+                s.spawn(move || {
+                    for (chunk, items) in node_slice.iter_mut().zip(item_slice.iter()) {
+                        for &(slot, ref node) in items {
+                            chunk[slot as usize] = Some(node.clone());
+                        }
+                    }
+                });
+            }
+        });
+
+        // Mark all written addresses as dirty (single-threaded, cheap)
+        for (ci, items) in by_chunk.iter().enumerate() {
+            let prefix = PREFIX_NODE_START + ci as u8;
+            for &(slot, _) in items {
+                self.dirty.set(Addr::new(prefix, slot).0);
+            }
+        }
+    }
+
+    // =========================================================================
     // SUBSTRATE METHODS (Phase 2 — BindSpace self-contained API)
     // =========================================================================
 
@@ -1747,6 +1890,90 @@ impl BindSpace {
             }
             self.dirty.set(addr.0);
         }
+    }
+
+    // =========================================================================
+    // AGE-BASED HOT→COLD TIER FLUSHING (Lance persistence)
+    // =========================================================================
+
+    /// Collect all nodes older than `threshold_secs` seconds.
+    ///
+    /// Returns `(Addr, BindNode)` pairs for nodes whose `updated_at` timestamp
+    /// is older than `now - threshold_secs`. These should be flushed to Lance
+    /// for cold-tier persistence.
+    ///
+    /// Nodes are NOT removed from BindSpace — caller decides eviction policy.
+    pub fn collect_aged(&self, threshold_secs: u64) -> Vec<(Addr, BindNode)> {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        let cutoff_ms = now_ms.saturating_sub(threshold_secs * 1000);
+
+        let mut aged = Vec::new();
+        for (addr, node) in self.nodes_iter() {
+            if node.updated_at > 0 && node.updated_at < cutoff_ms {
+                aged.push((addr, node.clone()));
+            }
+        }
+        aged
+    }
+
+    /// Evict nodes older than `threshold_secs` from BindSpace.
+    ///
+    /// Returns the evicted `(Addr, BindNode)` pairs. Call AFTER persisting
+    /// to Lance to avoid data loss.
+    pub fn evict_aged(&mut self, threshold_secs: u64) -> Vec<(Addr, BindNode)> {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        let cutoff_ms = now_ms.saturating_sub(threshold_secs * 1000);
+
+        let mut evicted = Vec::new();
+
+        // Evict from surfaces
+        for (pi, chunk) in self.surfaces.iter_mut().enumerate() {
+            for (si, slot) in chunk.iter_mut().enumerate() {
+                if let Some(node) = slot {
+                    if node.updated_at > 0 && node.updated_at < cutoff_ms {
+                        let addr = Addr::new(pi as u8, si as u8);
+                        evicted.push((addr, node.clone()));
+                        *slot = None;
+                    }
+                }
+            }
+        }
+
+        // Evict from fluid
+        for (ci, chunk) in self.fluid.iter_mut().enumerate() {
+            let prefix = PREFIX_FLUID_START + ci as u8;
+            for (si, slot) in chunk.iter_mut().enumerate() {
+                if let Some(node) = slot {
+                    if node.updated_at > 0 && node.updated_at < cutoff_ms {
+                        let addr = Addr::new(prefix, si as u8);
+                        evicted.push((addr, node.clone()));
+                        *slot = None;
+                    }
+                }
+            }
+        }
+
+        // Evict from nodes
+        for (ci, chunk) in self.nodes.iter_mut().enumerate() {
+            let prefix = PREFIX_NODE_START + ci as u8;
+            for (si, slot) in chunk.iter_mut().enumerate() {
+                if let Some(node) = slot {
+                    if node.updated_at > 0 && node.updated_at < cutoff_ms {
+                        let addr = Addr::new(prefix, si as u8);
+                        evicted.push((addr, node.clone()));
+                        *slot = None;
+                    }
+                }
+            }
+        }
+
+        evicted
     }
 }
 impl Default for BindSpace {

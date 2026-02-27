@@ -122,10 +122,11 @@ pub fn container_dot_i8(a: &Container, b: &Container) -> i64 {
     )
 }
 
-/// Bundle multiple Containers using rustynum's optimized ripple-carry algorithm.
+/// Bundle multiple Containers using rustynum's optimized majority-vote algorithm.
 ///
-/// For large n (> 16 vectors): ripple-carry with u64x8 SIMD + thread parallelism.
-/// Much faster than ladybug-contract's per-bit counting.
+/// Zero-copy input: uses `view_u64_as_bytes` to reinterpret Container words
+/// as byte slices without allocation. The `bundle_byte_slices` function
+/// processes the slices directly — no intermediate NumArrayU8 wrapping.
 pub fn container_bundle(items: &[&Container]) -> Container {
     if items.is_empty() {
         return Container::zero();
@@ -134,20 +135,17 @@ pub fn container_bundle(items: &[&Container]) -> Container {
         return items[0].clone();
     }
 
-    // Convert Containers to NumArrayU8 references for bundle
-    let arrays: Vec<rustynum_rs::NumArrayU8> = items
+    // Zero-copy: view each Container's words as &[u8] (no .to_vec())
+    let slices: Vec<&[u8]> = items
         .iter()
-        .map(|c| rustynum_rs::NumArrayU8::new(view_u64_as_bytes(&c.words).to_vec()))
+        .map(|c| view_u64_as_bytes(&c.words))
         .collect();
-    let refs: Vec<&rustynum_rs::NumArrayU8> = arrays.iter().collect();
 
-    let result = rustynum_rs::NumArrayU8::bundle(&refs);
-    let result_bytes = result.get_data();
+    let result_bytes = rustynum_rs::NumArrayU8::bundle_byte_slices(&slices);
 
     // Convert back to Container
     let mut container = Container::zero();
-    let word_bytes = view_u64_as_bytes(&container.words).len();
-    debug_assert_eq!(result_bytes.len(), word_bytes);
+    debug_assert_eq!(result_bytes.len(), CONTAINER_WORDS * 8);
 
     // Write bytes back into container words
     for (i, chunk) in result_bytes.chunks_exact(8).enumerate() {

@@ -77,6 +77,7 @@ fn bind_nodes_schema() -> ArrowSchema {
         Field::new("is_spine", DataType::Boolean, false),
         Field::new("dn_path", DataType::UInt64, true),
         Field::new("payload", DataType::LargeBinary, true),
+        Field::new("updated_at", DataType::UInt64, false),
     ])
 }
 
@@ -279,6 +280,7 @@ impl LancePersistence {
         let mut spines = Vec::new();
         let mut dn_paths: Vec<Option<u64>> = Vec::new();
         let mut payloads: Vec<Option<Vec<u8>>> = Vec::new();
+        let mut updated_ats = Vec::new();
 
         for (addr, node) in space.nodes_iter() {
             // Skip zero fingerprints in surface area (init-generated)
@@ -297,6 +299,7 @@ impl LancePersistence {
             spines.push(node.is_spine);
             dn_paths.push(space.dn_index.dn_for(addr).map(|dn| dn.0));
             payloads.push(node.payload.clone());
+            updated_ats.push(node.updated_at);
         }
 
         if addrs.is_empty() {
@@ -345,6 +348,8 @@ impl LancePersistence {
             .map(|p| p.as_deref())
             .collect();
 
+        let updated_at_arr = UInt64Array::from(updated_ats);
+
         let schema = Arc::new(bind_nodes_schema());
         let batch = RecordBatch::try_new(
             schema,
@@ -360,6 +365,7 @@ impl LancePersistence {
                 Arc::new(spine_arr),
                 Arc::new(dn_arr),
                 Arc::new(payload_arr),
+                Arc::new(updated_at_arr),
             ],
         )
         .map_err(|e| format!("batch build: {}", e))?;
@@ -659,6 +665,9 @@ impl LancePersistence {
             let spine_col = batch.column(8).as_any().downcast_ref::<BooleanArray>().unwrap();
             let dn_col = batch.column(9).as_any().downcast_ref::<UInt64Array>().unwrap();
             let payload_col = batch.column(10).as_any().downcast_ref::<LargeBinaryArray>().unwrap();
+            // updated_at column (index 11) — may not exist in older datasets
+            let updated_at_col = batch.column_by_name("updated_at")
+                .and_then(|c| c.as_any().downcast_ref::<UInt64Array>());
 
             for row in 0..batch.num_rows() {
                 let addr = Addr(addr_col.value(row));
@@ -680,6 +689,10 @@ impl LancePersistence {
                 if !payload_col.is_null(row) {
                     node.payload = Some(payload_col.value(row).to_vec());
                 }
+                // Restore timestamp from Lance (preserves age for tier management)
+                if let Some(ts_col) = updated_at_col {
+                    node.updated_at = ts_col.value(row);
+                }
 
                 // Write at the exact address
                 space.write_at(addr, node.fingerprint);
@@ -693,6 +706,7 @@ impl LancePersistence {
                     written.sigma = node.sigma;
                     written.is_spine = node.is_spine;
                     written.payload = node.payload;
+                    written.updated_at = node.updated_at;
                 }
 
                 // Restore DN index
@@ -771,6 +785,147 @@ impl LancePersistence {
     /// Whether persistence is operational.
     pub fn is_active(&self) -> bool {
         self.active
+    }
+
+    // =========================================================================
+    // AGE-BASED HOT→COLD TIER FLUSH (5-30 min threshold)
+    // =========================================================================
+
+    /// Flush aged nodes from BindSpace to Lance.
+    ///
+    /// Persists all nodes older than `threshold_secs` to Lance cold tier,
+    /// then evicts them from BindSpace to free memory.
+    ///
+    /// Typical thresholds: 300s (5 min) for aggressive, 1800s (30 min) for relaxed.
+    ///
+    /// Returns `(persisted_count, evicted_count)`.
+    pub async fn flush_aged(
+        &self,
+        space: &mut BindSpace,
+        threshold_secs: u64,
+    ) -> Result<(usize, usize), String> {
+        if !self.active {
+            return Ok((0, 0));
+        }
+
+        // 1. Collect aged nodes (read-only pass)
+        let aged = space.collect_aged(threshold_secs);
+        if aged.is_empty() {
+            return Ok((0, 0));
+        }
+
+        let persist_count = aged.len();
+        eprintln!(
+            "[lance-persist] Flushing {} aged nodes (threshold={}s)",
+            persist_count, threshold_secs
+        );
+
+        // 2. Build Arrow RecordBatch from aged nodes
+        let batch = self.nodes_to_batch(&aged, space)?;
+
+        // 3. Append to Lance (not overwrite — preserves existing cold data)
+        let nodes_path = self.nodes_path();
+        if nodes_path.exists() {
+            let mut params = WriteParams::default();
+            params.mode = WriteMode::Append;
+            Dataset::write(
+                batch_reader(batch),
+                nodes_path.to_str().unwrap(),
+                Some(params),
+            )
+            .await
+            .map_err(|e| format!("flush_aged append: {}", e))?;
+        } else {
+            // First flush — create table
+            Dataset::write(batch_reader(batch), nodes_path.to_str().unwrap(), None)
+                .await
+                .map_err(|e| format!("flush_aged create: {}", e))?;
+        }
+
+        // 4. Evict from BindSpace (now safely persisted)
+        let evicted = space.evict_aged(threshold_secs);
+        let evict_count = evicted.len();
+
+        eprintln!(
+            "[lance-persist] Flushed {} nodes to cold tier, evicted {} from hot",
+            persist_count, evict_count
+        );
+
+        Ok((persist_count, evict_count))
+    }
+
+    /// Convert `(Addr, BindNode)` pairs to Arrow RecordBatch.
+    fn nodes_to_batch(
+        &self,
+        items: &[(Addr, BindNode)],
+        space: &BindSpace,
+    ) -> Result<RecordBatch, String> {
+        let mut addrs = Vec::with_capacity(items.len());
+        let mut fps = Vec::with_capacity(items.len());
+        let mut labels: Vec<Option<&str>> = Vec::with_capacity(items.len());
+        let mut qidxs = Vec::with_capacity(items.len());
+        let mut parents: Vec<Option<u16>> = Vec::with_capacity(items.len());
+        let mut depths = Vec::with_capacity(items.len());
+        let mut rungs = Vec::with_capacity(items.len());
+        let mut sigmas = Vec::with_capacity(items.len());
+        let mut spines = Vec::with_capacity(items.len());
+        let mut dn_paths: Vec<Option<u64>> = Vec::with_capacity(items.len());
+        let mut payloads: Vec<Option<&[u8]>> = Vec::with_capacity(items.len());
+        let mut updated_ats = Vec::with_capacity(items.len());
+
+        for (addr, node) in items {
+            addrs.push(addr.0);
+            fps.push(fp_to_le_bytes(&node.fingerprint));
+            labels.push(node.label.as_deref());
+            qidxs.push(node.qidx);
+            parents.push(node.parent.map(|a| a.0));
+            depths.push(node.depth);
+            rungs.push(node.rung);
+            sigmas.push(node.sigma);
+            spines.push(node.is_spine);
+            dn_paths.push(space.dn_index.dn_for(*addr).map(|dn| dn.0));
+            payloads.push(node.payload.as_deref());
+            updated_ats.push(node.updated_at);
+        }
+
+        let addr_arr = UInt16Array::from(addrs);
+        let mut fp_builder = FixedSizeBinaryBuilder::new(FP_BYTES);
+        for fp in &fps {
+            fp_builder
+                .append_value(fp)
+                .map_err(|e| format!("fp append: {}", e))?;
+        }
+        let fp_arr = fp_builder.finish();
+        let label_arr: StringArray = labels.into_iter().collect();
+        let qidx_arr = UInt8Array::from(qidxs);
+        let parent_arr: UInt16Array = parents.into_iter().collect();
+        let depth_arr = UInt8Array::from(depths);
+        let rung_arr = UInt8Array::from(rungs);
+        let sigma_arr = UInt8Array::from(sigmas);
+        let spine_arr = BooleanArray::from(spines);
+        let dn_arr: UInt64Array = dn_paths.into_iter().collect();
+        let payload_arr: LargeBinaryArray = payloads.into_iter().collect();
+        let updated_at_arr = UInt64Array::from(updated_ats);
+
+        let schema = Arc::new(bind_nodes_schema());
+        RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(addr_arr),
+                Arc::new(fp_arr),
+                Arc::new(label_arr),
+                Arc::new(qidx_arr),
+                Arc::new(parent_arr),
+                Arc::new(depth_arr),
+                Arc::new(rung_arr),
+                Arc::new(sigma_arr),
+                Arc::new(spine_arr),
+                Arc::new(dn_arr),
+                Arc::new(payload_arr),
+                Arc::new(updated_at_arr),
+            ],
+        )
+        .map_err(|e| format!("batch build: {}", e))
     }
 }
 
