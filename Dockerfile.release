@@ -54,9 +54,17 @@ FROM deps AS builder
 # Copy full source
 COPY . .
 
-# --- Vendor submodules (clone if not present in build context) ---
-RUN if [ ! -f vendor/rustynum/rustynum-rs/Cargo.toml ]; then \
-      git clone --depth 1 https://github.com/AdaWorldAPI/rustynum vendor/rustynum; \
+# --- Clone sibling repos (OBLIGATORY deps) ---
+# Cargo.toml uses path = "../rustynum/...", "../crewai-rust", "../n8n-rs/..."
+# From WORKDIR /build, "../" resolves to "/", so repos go to /<name>.
+RUN if [ ! -f /rustynum/rustynum-rs/Cargo.toml ]; then \
+      git clone --depth 1 https://github.com/AdaWorldAPI/rustynum /rustynum; \
+    fi
+RUN if [ ! -f /crewai-rust/Cargo.toml ]; then \
+      git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust /crewai-rust; \
+    fi
+RUN if [ ! -f /n8n-rs/n8n-rust/crates/n8n-arrow/Cargo.toml ]; then \
+      git clone --depth 1 https://github.com/AdaWorldAPI/n8n-rs /n8n-rs; \
     fi
 
 # AVX-512 binary
