@@ -24,10 +24,23 @@ use crate::core::Fingerprint;
 use crate::FINGERPRINT_U64;
 use ladybug_contract::Container;
 use ladybug_contract::container::CONTAINER_WORDS;
-use rustynum_rs::simd_ops::avx512::{
-    dot_i8i8_dispatch, dot_u8i8_dispatch, hamming_dispatch, popcount_dispatch,
-    view_u64_as_bytes,
-};
+
+// ────────────────────────────────────────────────────────────────
+// Zero-copy reinterpretation: [u64] → [u8]
+// ────────────────────────────────────────────────────────────────
+
+/// Reinterpret a `&[u64]` slice as `&[u8]` without allocation.
+///
+/// # Safety justification
+/// u64 is valid for any bit pattern, and u64 alignment >= u8 alignment.
+/// The memory layout of `[u64; N]` is `N * 8` contiguous bytes.
+#[inline]
+pub fn view_u64_as_bytes(words: &[u64]) -> &[u8] {
+    let ptr = words.as_ptr() as *const u8;
+    let len = words.len() * 8;
+    // SAFETY: u64 has alignment >= u8, and all bit patterns are valid u8.
+    unsafe { std::slice::from_raw_parts(ptr, len) }
+}
 
 // ────────────────────────────────────────────────────────────────
 // Fingerprint operations (16384-bit = 2048 bytes = 256 u64 words)
@@ -38,7 +51,7 @@ use rustynum_rs::simd_ops::avx512::{
 /// On AVX-512 VPOPCNTDQ hardware: 32 instructions (vs 256 scalar POPCNT).
 #[inline]
 pub fn fingerprint_popcount(fp: &Fingerprint) -> u32 {
-    popcount_dispatch(view_u64_as_bytes(fp.as_raw())) as u32
+    rustynum_core::simd::popcount(view_u64_as_bytes(fp.as_raw())) as u32
 }
 
 /// Hamming distance between two Fingerprints using runtime-dispatched VPOPCNTDQ.
@@ -46,7 +59,7 @@ pub fn fingerprint_popcount(fp: &Fingerprint) -> u32 {
 /// On AVX-512 VPOPCNTDQ hardware: 32 XOR + 32 VPOPCNTDQ = 64 instructions.
 #[inline]
 pub fn fingerprint_hamming(a: &Fingerprint, b: &Fingerprint) -> u32 {
-    hamming_dispatch(
+    rustynum_core::simd::hamming_distance(
         view_u64_as_bytes(a.as_raw()),
         view_u64_as_bytes(b.as_raw()),
     ) as u32
@@ -64,19 +77,7 @@ pub fn fingerprint_similarity(a: &Fingerprint, b: &Fingerprint) -> f32 {
 /// Useful for embedding similarity in CogRecord Container 3.
 #[inline]
 pub fn fingerprint_dot_i8(a: &Fingerprint, b: &Fingerprint) -> i64 {
-    dot_i8i8_dispatch(
-        view_u64_as_bytes(a.as_raw()),
-        view_u64_as_bytes(b.as_raw()),
-    )
-}
-
-/// Unsigned u8 × signed i8 dot product on Fingerprint data.
-///
-/// Native VPDPBUSD semantics: `a` unsigned, `b` signed.
-/// Standard format for quantized embeddings (activations × weights).
-#[inline]
-pub fn fingerprint_dot_u8i8(a: &Fingerprint, b: &Fingerprint) -> i64 {
-    dot_u8i8_dispatch(
+    rustynum_core::simd::dot_i8(
         view_u64_as_bytes(a.as_raw()),
         view_u64_as_bytes(b.as_raw()),
     )
@@ -91,13 +92,13 @@ pub fn fingerprint_dot_u8i8(a: &Fingerprint, b: &Fingerprint) -> i64 {
 /// On AVX-512 VPOPCNTDQ hardware: 16 instructions (vs 128 scalar POPCNT).
 #[inline]
 pub fn container_popcount(c: &Container) -> u32 {
-    popcount_dispatch(view_u64_as_bytes(&c.words)) as u32
+    rustynum_core::simd::popcount(view_u64_as_bytes(&c.words)) as u32
 }
 
 /// Hamming distance between two Containers using runtime-dispatched VPOPCNTDQ.
 #[inline]
 pub fn container_hamming(a: &Container, b: &Container) -> u32 {
-    hamming_dispatch(
+    rustynum_core::simd::hamming_distance(
         view_u64_as_bytes(&a.words),
         view_u64_as_bytes(&b.words),
     ) as u32
@@ -115,16 +116,7 @@ pub fn container_similarity(a: &Container, b: &Container) -> f32 {
 /// For embedding containers (CogRecord Container 3).
 #[inline]
 pub fn container_dot_i8(a: &Container, b: &Container) -> i64 {
-    dot_i8i8_dispatch(
-        view_u64_as_bytes(&a.words),
-        view_u64_as_bytes(&b.words),
-    )
-}
-
-/// Unsigned u8 × signed i8 dot product on Container data.
-#[inline]
-pub fn container_dot_u8i8(a: &Container, b: &Container) -> i64 {
-    dot_u8i8_dispatch(
+    rustynum_core::simd::dot_i8(
         view_u64_as_bytes(&a.words),
         view_u64_as_bytes(&b.words),
     )
@@ -172,21 +164,21 @@ pub fn container_bundle(items: &[&Container]) -> Container {
 /// Popcount on any `&[u64]` slice (zero-copy). Works for any container size.
 #[inline]
 pub fn slice_popcount(data: &[u64]) -> u64 {
-    popcount_dispatch(view_u64_as_bytes(data))
+    rustynum_core::simd::popcount(view_u64_as_bytes(data))
 }
 
 /// Hamming distance on any two `&[u64]` slices (zero-copy).
 #[inline]
 pub fn slice_hamming(a: &[u64], b: &[u64]) -> u64 {
     debug_assert_eq!(a.len(), b.len());
-    hamming_dispatch(view_u64_as_bytes(a), view_u64_as_bytes(b))
+    rustynum_core::simd::hamming_distance(view_u64_as_bytes(a), view_u64_as_bytes(b))
 }
 
 /// Signed i8 × i8 dot product on any two `&[u64]` slices.
 #[inline]
 pub fn slice_dot_i8(a: &[u64], b: &[u64]) -> i64 {
     debug_assert_eq!(a.len(), b.len());
-    dot_i8i8_dispatch(view_u64_as_bytes(a), view_u64_as_bytes(b))
+    rustynum_core::simd::dot_i8(view_u64_as_bytes(a), view_u64_as_bytes(b))
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -312,5 +304,15 @@ mod tests {
         let a: [u64; 4] = [u64::MAX; 4];
         let b: [u64; 4] = [0; 4];
         assert_eq!(slice_hamming(&a, &b), 256);
+    }
+
+    #[test]
+    fn test_view_u64_as_bytes_roundtrip() {
+        let words: [u64; 2] = [0x0102030405060708, 0x090A0B0C0D0E0F10];
+        let bytes = view_u64_as_bytes(&words);
+        assert_eq!(bytes.len(), 16);
+        // Verify first word's bytes (native endian)
+        let first_word = u64::from_ne_bytes(bytes[0..8].try_into().unwrap());
+        assert_eq!(first_word, 0x0102030405060708);
     }
 }

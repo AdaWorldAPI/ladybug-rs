@@ -11,15 +11,26 @@ use crate::core::Fingerprint;
 
 /// Compute Hamming distance between two fingerprints.
 ///
-/// Automatically dispatches to the best SIMD implementation available.
+/// When the `rustynum` feature is enabled, uses runtime-dispatched SIMD via
+/// rustynum (works on any x86_64 CPU without compile-time `-C target-feature`).
+/// Otherwise falls back to compile-time SIMD dispatch.
 #[inline]
 pub fn hamming_distance(a: &Fingerprint, b: &Fingerprint) -> u32 {
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx512vpopcntdq"))]
+    // Runtime dispatch via rustynum: works on ANY x86_64 CPU.
+    // Detects AVX-512 VPOPCNTDQ at runtime via is_x86_feature_detected!().
+    #[cfg(feature = "rustynum")]
+    {
+        return crate::core::rustynum_accel::fingerprint_hamming(a, b);
+    }
+
+    // Compile-time dispatch (fallback when rustynum not linked)
+    #[cfg(all(not(feature = "rustynum"), target_arch = "x86_64", target_feature = "avx512vpopcntdq"))]
     {
         return unsafe { hamming_avx512(a, b) };
     }
 
     #[cfg(all(
+        not(feature = "rustynum"),
         target_arch = "x86_64",
         target_feature = "avx2",
         not(target_feature = "avx512vpopcntdq")
@@ -28,13 +39,14 @@ pub fn hamming_distance(a: &Fingerprint, b: &Fingerprint) -> u32 {
         return unsafe { hamming_avx2(a, b) };
     }
 
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    #[cfg(all(not(feature = "rustynum"), target_arch = "aarch64", target_feature = "neon"))]
     {
         return unsafe { hamming_neon(a, b) };
     }
 
     // Scalar fallback
     #[cfg(not(any(
+        feature = "rustynum",
         all(target_arch = "x86_64", target_feature = "avx512vpopcntdq"),
         all(target_arch = "x86_64", target_feature = "avx2"),
         all(target_arch = "aarch64", target_feature = "neon"),
@@ -292,17 +304,21 @@ impl Default for HammingEngine {
 
 /// Detect SIMD capability at runtime
 pub fn simd_level() -> &'static str {
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx512vpopcntdq"))]
+    #[cfg(feature = "rustynum")]
+    return "rustynum-runtime-dispatch";
+
+    #[cfg(all(not(feature = "rustynum"), target_arch = "x86_64", target_feature = "avx512vpopcntdq"))]
     return "avx512-vpopcnt";
 
     #[cfg(all(
+        not(feature = "rustynum"),
         target_arch = "x86_64",
         target_feature = "avx2",
         not(target_feature = "avx512vpopcntdq")
     ))]
     return "avx2";
 
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    #[cfg(all(not(feature = "rustynum"), target_arch = "aarch64", target_feature = "neon"))]
     return "neon";
 
     #[allow(unreachable_code)]

@@ -72,14 +72,24 @@ const DEFAULT_INHIBIT: u32 = 5000; // ~50% different
 // CORE DISTANCE OPERATIONS
 // =============================================================================
 
-/// Compute exact Hamming distance
+/// Compute exact Hamming distance.
+///
+/// When `rustynum` feature is enabled, uses runtime-dispatched AVX-512 VPOPCNTDQ.
+/// Otherwise falls back to scalar `count_ones()` loop.
 #[inline]
 pub fn hamming_distance(a: &[u64; WORDS], b: &[u64; WORDS]) -> u32 {
-    let mut dist = 0u32;
-    for i in 0..WORDS {
-        dist += (a[i] ^ b[i]).count_ones();
+    #[cfg(feature = "rustynum")]
+    {
+        return crate::core::rustynum_accel::slice_hamming(a, b) as u32;
     }
-    dist
+    #[cfg(not(feature = "rustynum"))]
+    {
+        let mut dist = 0u32;
+        for i in 0..WORDS {
+            dist += (a[i] ^ b[i]).count_ones();
+        }
+        dist
+    }
 }
 
 /// Compute 1-bit sketch: which chunks differ at all?
