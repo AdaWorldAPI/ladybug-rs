@@ -833,14 +833,15 @@ one-time mechanical port. This is not a blocker — it's a TODO.
   - Eliminates second 819MB copy from CogRecord → flat arrays
   - Blocked by: rustynum TODO "CascadeIndices::build_from_arrow()" in indexed_cascade.rs
 
-### P2 — Toolchain
+### P2 — Toolchain: Ship on Stable 1.93
 
-- [ ] **portable_simd → std::arch port** — Ergonomics only, NOT performance
-  - std::arch intrinsics produce IDENTICAL machine code for Hamming/XOR/popcount
-  - portable_simd just makes code prettier (Simd<T,N>, .reduce_sum(), operator overloads)
-  - Alternatives on stable: `wide` crate, `pulp` crate, or manual `std::arch` intrinsics
-  - ~879 call sites in rustynum (rustyblas 158, rustymkl 198, rustynum-rs 523)
-  - After port: rustynum's rust-toolchain.toml can switch from nightly to stable 1.93
+- [ ] **portable_simd → std::arch port** (in rustynum, not here) — Enables stable across all 4 repos
+  - Stable 1.93 has EVERYTHING for AVX-512 hot path: `_mm512_xor_si512`, `_mm512_popcnt_epi64`,
+    `_mm512_ternarylogic_epi64`, `_mm512_dpbf16_ps` — all stable. Only `_mm512_reduce_add_epi64`
+    is missing (pseudo-instruction, 5-op manual reduce, irrelevant).
+  - ~879 call sites in rustynum to port (mechanical)
+  - After port: rustynum drops nightly, all 4 repos on same stable 1.93 toolchain
+  - ladybug-rs already builds on stable — this unblocks deleting simd.rs and using rustynum directly
 
 ### DONE
 
