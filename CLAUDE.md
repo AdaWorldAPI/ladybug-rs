@@ -1,8 +1,8 @@
 # CLAUDE.md — Ladybug-RS
 
-> **Last Updated**: 2026-02-26
-> **Branch**: claude/compare-rustynum-ndarray-5ePRn
-> **Status**: Flight + CogRedis wired, Arrow zero-copy WORKING, Vendor deps WIRED
+> **Last Updated**: 2026-02-27
+> **Branch**: claude/check-ladybug-rs-access-yVeJG
+> **Status**: All rustynum crates BindSpace-native, Lance persistence wired, Stable 1.93
 
 ---
 
@@ -46,7 +46,7 @@ dispatch_n8n_post() / dispatch_n8n_get()
 |------|--------|
 | Expose handle_request_body from crewai-rust server module | Needed for vendor-crewai |
 | Expose handle_api_post/get from n8n-grpc | Needed for vendor-n8n |
-| Implement `SubstrateView` for `BindSpace` (crewai-rust bridge) | Planned |
+| Implement `SubstrateView` for `BindSpace` (crewai-rust bridge) | **DONE** (substrate_bridge.rs) |
 | Wire `BindBridge` into server startup for zero-serde awareness hydration | Planned |
 | BERT embedding model for blood-brain barrier inbound translation | Planned |
 | Migrate server.rs to async (axum) | Future — cleaner vendor bridge |
@@ -184,11 +184,12 @@ ARG FEATURES="simd,parallel,flight"  # ← Current production build
 
 | Module | Purpose | Dependencies | Status |
 |--------|---------|--------------|--------|
-| `bind_space.rs` | 8+8 addressing, O(1) arrays | None | ✅ Working |
+| `bind_space.rs` | 8+8 addressing, O(1) arrays, rustynum-native ops | rustynum-{core,holo,clam} | ✅ Working |
 | `cog_redis.rs` | Redis syntax (DN.*, CAM.*, DAG.*) | bind_space | ✅ Working |
 | `unified_engine.rs` | ACID + CSR + MVCC + ArrowZeroCopy | All below | ✅ Working |
 | `xor_dag.rs` | ACID transactions, XOR parity | bind_space | ✅ Working |
-| `lance_zero_copy/` | **Pure Arrow buffers** | arrow_* only | ✅ Working |
+| `lance_zero_copy/` | **Pure Arrow buffers** + write-through | arrow_* only | ✅ Working |
+| `lance_persistence.rs` | Lance cold-tier (flush_aged, hydrate) | lance, arrow | ✅ Working |
 | `lance.rs` | Direct Lance Dataset API | lance crate | ❌ API mismatch |
 | `database.rs` | Abstraction over lance.rs | lance.rs | ❌ Blocked |
 
@@ -244,7 +245,7 @@ crewai-rust/n8n-rs (Level 4).
 │                 │  0x01: SQL        0x05: Causal     0x09: Qualia           │
 │                 │  0x02: Cypher     0x06: Meta       0x0A: Memory           │
 │                 │  0x03: GraphQL    0x07: Verbs      0x0B: Learning         │
-│                 │  0x0C-0x0F: Reserved                                      │
+│                 │  0x0C: Agents  0x0D: Thinking  0x0E: Blackboard  0x0F: A2A │
 ├─────────────────┼───────────────────────────────────────────────────────────┤
 │  0x10-0x7F:XX   │  FLUID (112 prefixes × 256 = 28,672)                      │
 │                 │  Edges + Context selector + Working memory                │
@@ -268,10 +269,11 @@ let slot = (addr & 0xFF) as u8;
 ## Current State
 
 **Codebase**: ~40K lines of Rust
-**Last updated**: 2026-02-04
-**Rust**: 1.93 (edition 2024)
+**Last updated**: 2026-02-27
+**Rust**: 1.93 stable (edition 2024) — ALL repos on stable, zero nightly
 **DataFusion**: 51 (DF 52 upgrade path documented)
 **Arrow**: 57.x / arrow-flight 57 / tonic 0.14
+**rustynum**: ALL 5 crates wired (rs, core, arrow, holo, clam)
 
 ### ✅ Completed
 
@@ -291,6 +293,15 @@ let slot = (addr & 0xFF) as u8;
 | MCP Actions (DoAction) | flight/actions.rs | ✓ Working |
 | HTTP server with CogRedis | bin/server.rs | ✓ Working |
 | Flight gRPC binary | bin/flight_server.rs | ✓ Working |
+| rustynum-holo BindSpace-native | bind_space.rs | ✓ Working |
+| rustynum-clam BindSpace-native | bind_space.rs | ✓ Working |
+| lance_zero_copy write-through | bind_space.rs | ✓ Working |
+| Hot→cold tier flush (flush_aged) | lance_persistence.rs | ✓ Working |
+| Parallel bulk ops (split_at_mut) | bind_space.rs | ✓ Working |
+| SubstrateView (crewai bridge) | substrate_bridge.rs | ✓ Working |
+| 10-layer cognitive stack | layer_stack.rs | ✓ Working |
+| Tier 4 dispatch (n8n/crewai) | server.rs | ✓ Working |
+| Stable Rust 1.93 (all repos) | Cargo.toml | ✓ Working |
 
 ### ❌ Known Issues
 
@@ -302,11 +313,12 @@ let slot = (addr & 0xFF) as u8;
 ### Recent Commits
 
 ```
-f3f455f feat: Wire Flight gRPC, CogRedis DN commands, and fix deployment features
-15fb4d9 feat: Add unified storage engine with ACID, CSR, DAG, work stealing
-db22a5e fix: Replace JSON with Arrow IPC as default serialization format
-a11a0f4 feat: Add XOR DAG storage with ACID transactions and parity protection
-4a4af54 feat: Wire DN tree as CogRedis addresses for Redis-syntax tree traversal
+3610a9e Wire rustynum-holo, rustynum-clam, lance_zero_copy natively through BindSpace
+f3f83fd Wire Lance persistence + BindSpace parallel ops + age-based hot→cold flush
+1c7f274 Revert server/orchestration dispatch — keep rustynum stable integration
+afd5b09 Make rustynum/n8n-rs/crewai-rust obligatory — remove all feature gates
+a3d9307 P0: Wire rustynum_accel into simd.rs, bind_space.rs, hdr_cascade.rs
+dc446d9 Correct P2 TODO: ALL AVX-512 intrinsics stable 1.93.1, ZERO gaps
 ```
 
 ---
@@ -320,12 +332,20 @@ src/bin/
 
 src/storage/
 ├── bind_space.rs       # Universal DTO (8+8 addressing) ← THE CORE
+│                       # Now includes: rustynum-holo phase/carrier/focus ops,
+│                       # rustynum-clam batch_hamming/clam_top_k,
+│                       # lance_zero_copy write-through, parallel_into_slices,
+│                       # age-based hot→cold flush, NARS revision
 ├── cog_redis.rs        # Redis syntax adapter ← DN.*, CAM.*, DAG.*
 ├── unified_engine.rs   # Composes all storage features
 ├── xor_dag.rs          # ACID + XOR parity
 ├── lance_zero_copy/    # Pure Arrow integration (NO lance crate!) ← WORKS
-│   └── mod.rs          # ArrowZeroCopy, FingerprintBuffer, LanceView
-├── lance.rs            # Direct Lance API (BROKEN - API mismatch)
+│   └── mod.rs          # ArrowZeroCopy, FingerprintBuffer, LanceView,
+│                       # LanceWriteThrough, UnifiedStorage, StorageBackend,
+│                       # AdjacencyIndex, WAL, MVCC, Transactions
+├── lance_persistence.rs # Lance Dataset cold-tier persistence ← WORKS
+│                       # flush_aged(), persist_nodes(), hydrate_nodes()
+├── lance.rs            # Direct Lance Dataset API (BROKEN - API mismatch)
 └── database.rs         # Over lance.rs (BLOCKED)
 
 src/flight/
@@ -681,14 +701,23 @@ effectively zero-copy at the storage level.
 | BindSpace (8+8 addressing) | ladybug-rs | `src/storage/bind_space.rs` | YES |
 | CogRedis (Redis syntax) | ladybug-rs | `src/storage/cog_redis.rs` | YES |
 | ArrowZeroCopy | ladybug-rs | `src/storage/lance_zero_copy/` | YES |
+| LancePersistence | ladybug-rs | `src/storage/lance_persistence.rs` | YES |
 | CollapseGate | ladybug-rs | `src/cognitive/collapse_gate.rs` | YES |
+| 10-Layer Stack | ladybug-rs | `src/cognitive/layer_stack.rs` | YES |
 | WideMetaView | ladybug-contract | `src/wide_meta.rs` | YES |
 | Container XOR/Hamming | ladybug-contract | `src/container.rs` | YES |
-| StorageBackend trait | neo4j-rs | `src/storage/mod.rs` | YES |
+| StorageBackend trait | lance_zero_copy | `src/storage/lance_zero_copy/mod.rs` | YES |
 | SIMD dispatch | rustynum | `rustynum-core/src/simd.rs` | YES |
+| simd_compat (stable wrappers) | rustynum | `rustynum-core/src/simd_compat.rs` | YES |
 | K0/K1/K2 pipeline | rustynum | `rustynum-core/src/kernels.rs` | YES |
+| Phase/Carrier/Focus ops | rustynum | `rustynum-holo/src/{phase,carrier,focus}.rs` | YES |
+| CogRecordView<'a> | rustynum | `rustynum-arrow/src/arrow_bridge.rs` | YES |
+| CascadeIndices | rustynum | `rustynum-arrow/src/indexed_cascade.rs` | YES |
+| ClamTree / HammingSIMD | rustynum | `rustynum-clam/src/tree.rs` | YES |
+| bundle_byte_slices | rustynum | `rustynum-rs/src/num_array/hdc.rs` | YES |
 | Blackboard | crewai-rust | `src/blackboard/view.rs` | YES |
 | TypedSlots | crewai-rust | `src/blackboard/typed_slot.rs` | YES |
+| SubstrateView trait | crewai-rust | `src/blackboard/bind_bridge.rs` | YES |
 | Drivers (NARS, SPO) | crewai-rust | `src/drivers/` | YES |
 
 **"Sacred" means: do not modify the public interface without consensus
@@ -731,26 +760,29 @@ rustynum-core SIMD kernels
 Result (no allocation needed for distance computation)
 ```
 
-**Where it breaks (P1 debt in rustynum-arrow):**
+**Where it USED TO break (P1 debt — NOW FIXED in rustynum-arrow):**
 
 ```
-Arrow Buffer → record_batch_to_cogrecords() → .to_vec() PER ROW  ← COPIES
-CogRecord[] → CascadeIndices::build() → extend_from_slice()       ← COPIES AGAIN
+Arrow Buffer → record_batch_to_cogrecords() → .to_vec() PER ROW  ← FIXED
+CogRecord[] → CascadeIndices::build() → extend_from_slice()       ← FIXED
 ```
 
-**Fix needed:** `CogRecordView<'a>` that borrows Arrow's buffer instead of owning.
-We own rustynum — the fix is mechanical (add borrowing variants to CogRecord/NumArray).
+**Fix applied:** `CogRecordView<'a>` (commit b709737) borrows Arrow's buffer.
+`CascadeIndices::build_from_arrow()` builds directly from RecordBatch.
+**Remaining:** Wire CogRecordView into `hydrate_nodes()` for the full zero-copy path.
 
 ### The Acceleration Stack (What rustynum Provides)
 
-| rustynum Crate | Acceleration | For BindSpace |
-|---------------|-------------|---------------|
-| **rustynum-core** | Hamming VPOPCNTDQ, K0/K1/K2, BF16 awareness | Primary search, CollapseGate awareness |
-| **rustyblas** | 138 GFLOPS GEMM, INT8 VNNI, BF16 mixed-precision | Batch similarity, SimHash projection |
-| **rustymkl** | VML (exp, ln, sigmoid), LAPACK, FFT | NARS truth scoring, spectral analysis |
-| **jitson** | JSON config → native AVX-512 scan kernels | Per-query compiled scans on Arrow buffers |
-| **rustynum-holo** | Overlay, MultiOverlay, Gabor wavelets | Multi-agent CogRecord mutations |
-| **rustynum-clam** | CLAM tree, triangle-inequality search | Indexed cascade in rustynum-arrow |
+| rustynum Crate | Acceleration | For BindSpace | Status |
+|---------------|-------------|---------------|--------|
+| **rustynum-core** | Hamming VPOPCNTDQ, K0/K1/K2, BF16 awareness | Primary search, CollapseGate awareness | ✅ BindSpace-native |
+| **rustynum-rs** | NumArray, bundle_byte_slices, HDC ops | Binary bundle/bind, NARS truth | ✅ BindSpace-native |
+| **rustynum-arrow** | CogRecordView<'a>, CascadeIndices, Arrow bridge | Zero-copy Lance hydration | ✅ Dep wired |
+| **rustynum-holo** | Phase bind, Wasserstein, carrier, focus, Gabor | Spatial navigation, focus-of-attention | ✅ BindSpace-native |
+| **rustynum-clam** | CLAM tree, HammingSIMD, triangle-inequality | Batch Hamming, top-k nearest | ✅ BindSpace-native |
+| **rustyblas** | 138 GFLOPS GEMM, INT8 VNNI, BF16 mixed-precision | Batch similarity, SimHash projection | Indirect (via core) |
+| **rustymkl** | VML (exp, ln, sigmoid), LAPACK, FFT | NARS truth scoring, spectral analysis | Indirect (via core) |
+| **jitson** | JSON config → native AVX-512 scan kernels | Per-query compiled scans on Arrow buffers | Available |
 
 ### Parallel Write Patterns (CANONICAL — From rustynum)
 
@@ -782,15 +814,17 @@ rustynum-core has `simd.rs` with runtime-dispatched Hamming (AVX-512/AVX2/scalar
 The vendored rustynum at `vendor/rustynum/` provides the canonical dispatch.
 Delete ladybug's simd.rs when the stable-Rust blocker is resolved.
 
-### portable_simd → std::arch Port (TODO)
+### portable_simd → std::arch Port (DONE — 2026-02-27)
 
 The whole stack is pinned to **stable Rust 1.93, Arrow 57, DataFusion 51**.
 Nightly is NEVER used — it changes dependencies across ALL repos.
 
-rustynum uses `#![feature(portable_simd)]` in a few convenience spots.
-Most kernels already use `std::arch` intrinsics. Since we own rustynum,
-replacing the remaining `portable_simd` uses with `std::arch` is a
-one-time mechanical port. This is not a blocker — it's a TODO.
+**COMPLETED**: 870 `portable_simd` occurrences replaced with `std::arch` wrappers
+in `rustynum-core/src/simd_compat.rs` (~1300 lines). All 622 tests pass on
+stable 1.93.1 (commit `ebbf554`). Only remaining `portable_simd`:
+- `rustynum-archive/` — sacred, don't touch
+- `simd_avx2.rs` — non-default AVX2 fallback path
+- Doc comments in `simd_compat.rs`
 
 ### Cross-Repo References
 
@@ -809,41 +843,106 @@ one-time mechanical port. This is not a blocker — it's a TODO.
 
 ### P0 — Stop Duplicating rustynum
 
-- [ ] **Delete src/core/simd.rs** (348 lines) — Duplicates rustynum's hamming_distance, hamming_avx512, hamming_avx2, HammingEngine
-  - Replace all call sites with `rustynum_core::simd::hamming_distance()` (has scalar fallback for stable)
-  - Also fix: `src/storage/bind_space.rs:1848-1855` — scalar hamming loop → use rustynum
-  - Note: rustynum's select_hamming_fn() does runtime dispatch (AVX-512 > AVX2 > scalar)
-  - Dep: vendored at `vendor/rustynum/rustynum-core`
-
-- [ ] **Wire rustynum_accel into core search** — NOT just Python FFI
+- [x] **Wire rustynum_accel into core search** — **DONE 2026-02-27**
   - `src/core/rustynum_accel.rs` has `fingerprint_hamming()`, `container_hamming()`, `slice_hamming()`
-  - Currently ONLY called from `python/mod.rs:39`
-  - Wire into: `src/storage/bind_space.rs` search functions, `src/search/hdr_cascade.rs`
+  - NOW wired into: `src/storage/bind_space.rs` (hamming, similarity, popcount, dot_i8, bundle,
+    bind, nearest, cascade_search), `src/search/hdr_cascade.rs`
 
-- [ ] **Fix .to_vec() in rustynum_accel.rs:148** — container_bundle copies when it shouldn't
-  - `view_u64_as_bytes(&c.words).to_vec()` breaks zero-copy for bundle operations
+- [x] **Fix .to_vec() in rustynum_accel.rs** — **DONE 2026-02-27**
+  - Added `bundle_byte_slices(&[&[u8]]) → Vec<u8>` to rustynum-rs/hdc.rs
+  - Updated container_bundle to use zero-copy slices (no .to_vec())
 
-### P1 — Zero-Copy Pipeline (depends on rustynum P0 fixes)
+- [ ] **Delete src/core/simd.rs** (348 lines) — Still duplicates rustynum's hamming_distance
+  - Replace all call sites with `rustynum_core::simd::hamming_distance()` (has scalar fallback)
+  - Note: rustynum's select_hamming_fn() does runtime dispatch (AVX-512 > AVX2 > scalar)
 
-- [ ] **Use CogRecordView<'a>** from rustynum-arrow once it exists
-  - Eliminates 819MB/100K records copying from Arrow → CogRecord
-  - Blocked by: rustynum TODO "CogRecordView<'a>" in rustynum-arrow/arrow_bridge.rs
+### P1 — Zero-Copy Pipeline
 
-- [ ] **Use CascadeIndices::build_from_arrow()** once it exists
-  - Eliminates second 819MB copy from CogRecord → flat arrays
-  - Blocked by: rustynum TODO "CascadeIndices::build_from_arrow()" in indexed_cascade.rs
+- [x] **CogRecordView<'a>** exists in rustynum-arrow (commit b709737) — **DONE**
+  - 32 bytes per view vs 8192 per owned CogRecord
+  - Available via `rustynum_arrow::cogrecord_views(batch)` — borrows Arrow buffers
+
+- [x] **CascadeIndices::build_from_arrow()** exists (rustynum-arrow) — **DONE**
+  - Eliminates temp allocs — builds directly from Arrow RecordBatch
+
+- [ ] **Wire CogRecordView into BindSpace hydration path**
+  - `lance_persistence.rs:hydrate_nodes()` currently copies full records
+  - Should use CogRecordView<'a> to borrow from Arrow batch → write to BindSpace
 
 ### P2 — Toolchain: Ship on Stable 1.93
 
-- [ ] **portable_simd → std::arch port** (in rustynum, not here) — Enables stable across all 4 repos
-  - Compile-tested 2026-02-27: ALL AVX-512 intrinsics available on stable 1.93.1. ZERO gaps.
-    Core (xor, popcnt, add, ternarylogic), BF16 (dpbf16_ps, cvtpbh_ps, cvtne2ps_pbh),
-    reduces (reduce_add_epi64, reduce_or_epi64), mask ops (kand/knot/kor/kxor_mask16,
-    movepi8_mask, movm_epi8) — ALL stable.
-  - ~879 call sites in rustynum to port (mechanical)
-  - After port: rustynum drops nightly, all 4 repos on same stable 1.93 toolchain
-  - ladybug-rs already builds on stable — this unblocks deleting simd.rs and using rustynum directly
-  - Full audit trail: `rustynum/CLAUDE.md` §14
+- [x] **portable_simd → std::arch port** — **DONE 2026-02-27** (commit ebbf554)
+  - 870 occurrences replaced across rustynum-core
+  - simd_compat.rs (~1300 lines) provides stable std::arch wrappers
+  - ALL 622 tests pass on stable Rust 1.93.1
+  - Only remaining portable_simd: archive crate (sacred, don't touch),
+    simd_avx2.rs (non-default AVX2 fallback), doc comments in simd_compat.rs
+
+### P3 — BindSpace-Native rustynum Integration (NEW — 2026-02-27)
+
+All rustynum crates now permeate through BindSpace via transparent address
+delegation. Each method takes `Addr`, looks up `&[u8]` fingerprint data
+(zero-copy via `view_u64_as_bytes`), and passes the reference directly
+to the rustynum function. No duplication.
+
+**Cargo.toml deps (all OBLIGATORY, not behind feature gates):**
+```toml
+rustynum-rs = { path = "../rustynum/rustynum-rs" }
+rustynum-core = { path = "../rustynum/rustynum-core", features = ["avx512"] }
+rustynum-arrow = { path = "../rustynum/rustynum-arrow", features = ["arrow"] }
+rustynum-holo = { path = "../rustynum/rustynum-holo", features = ["avx512"] }
+rustynum-clam = { path = "../rustynum/rustynum-clam", features = ["avx512"] }
+```
+
+**BindSpace methods wired (bind_space.rs ~2050-2350):**
+
+| Category | Methods | rustynum Crate | Zero-Copy? |
+|----------|---------|---------------|------------|
+| **SIMD Core** | `hamming()`, `similarity()`, `popcount()`, `dot_i8()` | rustynum-core | ✅ `view_u64_as_bytes` |
+| **Binary HDC** | `bundle()`, `bind()`, `nearest()`, `cascade_search()` | rustynum-core | ✅ direct `&[u8]` |
+| **Phase-space** | `phase_bind()`, `phase_unbind()`, `wasserstein()`, `circular_distance()` | rustynum-holo | ✅ `fp_bytes()` |
+| **Phase util** | `phase_histogram()`, `phase_bundle()`, `sort_phase()`, `histogram_distance()` | rustynum-holo | ✅ `fp_bytes()` |
+| **Carrier** | `carrier_distance()`, `carrier_correlation()`, `carrier_spectrum()`, `spectral_distance()` | rustynum-holo | ✅ `as_i8()` reinterpret |
+| **Focus** | `focus_xor()`, `focus_read()`, `focus_hamming()`, `focus_l1()` | rustynum-holo | ✅ read path, copy-back on mut |
+| **Focus bind** | `focus_bind_phase()`, `focus_unbind_phase()`, `focus_xor_auto()` | rustynum-holo | ✅ copy-back on mut |
+| **Batch search** | `batch_hamming()`, `clam_top_k()` | rustynum-clam | ✅ SIMD Hamming via core |
+| **Lance bridge** | `lance_write_through()`, `unified_storage()`, `arrow_zero_copy()` | lance_zero_copy | ✅ hot cache + mmap |
+| **Lance export** | `adjacency_index()`, `to_fingerprint_buffer()` | lance_zero_copy | ✅ ownership transfer |
+
+**Hot→Cold tier management (bind_space.rs + lance_persistence.rs):**
+
+| Method | Location | Purpose |
+|--------|----------|---------|
+| `BindNode.updated_at` | bind_space.rs | Epoch millis timestamp per node |
+| `collect_aged(threshold_secs)` | bind_space.rs | Find nodes older than threshold |
+| `evict_aged(threshold_secs)` | bind_space.rs | Remove aged nodes after persist |
+| `flush_aged(space, secs)` | lance_persistence.rs | Append to Lance → evict from hot |
+| `nodes_to_batch()` | lance_persistence.rs | Convert (Addr, BindNode) → Arrow RecordBatch |
+| `persist_nodes()` | lance_persistence.rs | Full snapshot to Lance |
+| `hydrate_nodes()` | lance_persistence.rs | Restore from Lance → BindSpace |
+
+**Parallel bulk operations (bind_space.rs ~1860-1977):**
+
+| Method | Pattern | Purpose |
+|--------|---------|---------|
+| `parallel_into_node_slices(f)` | `split_at_mut` | Lock-free parallel write to disjoint chunks |
+| `bulk_write_nodes(items)` | Sequential | Batch insert pre-parsed nodes |
+| `parallel_hydrate_nodes(items)` | `split_at_mut` per chunk | Zero-sync Lance → BindSpace hydration |
+
+### NEXT STEPS (prioritized)
+
+| Priority | Task | Effort | Blocked by |
+|----------|------|--------|------------|
+| **N1** | Wire `BindBridge` into server startup for zero-serde awareness hydration | Medium | Nothing |
+| **N2** | Delete `src/core/simd.rs` — replace call sites with `rustynum_core::simd` | Small | Nothing |
+| **N3** | Wire CogRecordView<'a> into `hydrate_nodes()` for zero-copy Lance → BindSpace | Medium | Nothing |
+| **N4** | Expose `handle_request_body` from crewai-rust server module | Small | crewai-rust change |
+| **N5** | Expose `handle_api_post/get` from n8n-grpc | Small | n8n-rs change |
+| **N6** | Add rustynum-holo `Overlay`/`DeltaLayer`/`LayerStack` to BindSpace | Medium | Nothing |
+| **N7** | Wire rustynum-clam `ClamTree::build()` for indexed sub-linear search in BindSpace | Medium | Nothing |
+| **N8** | Wire rustynum-holo `LodIndex`/`lod_knn_search()` for hierarchical LOD pruning | Medium | N7 |
+| **N9** | Periodic `flush_aged()` timer in server.rs (every 5-30 min) | Small | Nothing |
+| **N10** | BERT embedding model for blood-brain barrier inbound translation | Large | External model |
 
 ### DONE
 
@@ -851,6 +950,18 @@ one-time mechanical port. This is not a blocker — it's a TODO.
 - [x] 2026-02-27: Documented Rustynum Acceleration Contract
 - [x] 2026-02-27: vendor/rustynum submodule wired
 - [x] 2026-02-27: Arrow zero-copy working via cascade_scan_4ch + arrow_to_flat_bytes
+- [x] 2026-02-27: portable_simd → std::arch (870 occurrences, 622 tests pass stable 1.93)
+- [x] 2026-02-27: bundle_byte_slices zero-copy entry point (rustynum-rs commit f3d65d0)
+- [x] 2026-02-27: rustynum made OBLIGATORY in ladybug-rs (not behind feature gate)
+- [x] 2026-02-27: BindSpace parallel ops (parallel_into_node_slices, bulk_write_nodes, parallel_hydrate_nodes)
+- [x] 2026-02-27: Age-based hot→cold flush (updated_at, collect_aged, evict_aged, flush_aged → Lance)
+- [x] 2026-02-27: rustynum-accel wired into BindSpace (hamming, popcount, dot_i8, bundle, bind, nearest, cascade_search)
+- [x] 2026-02-27: rustynum-holo wired into BindSpace (phase bind/unbind, wasserstein, circular, carrier, focus, spatial)
+- [x] 2026-02-27: rustynum-clam wired into BindSpace (batch_hamming, clam_top_k)
+- [x] 2026-02-27: lance_zero_copy wired into BindSpace (write-through, unified storage, adjacency index)
+- [x] 2026-02-27: SubstrateView for BindSpace (crewai-rust bridge) implemented
+- [x] 2026-02-27: 10-layer cognitive stack verified intact (L1-L10 with 7-wave processing)
+- [x] 2026-02-27: Tier 4 (n8n-rs/crewai-rust) dispatch verified intact (dispatch_crew/n8n_post/get)
 
 ---
 

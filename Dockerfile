@@ -40,17 +40,16 @@ RUN mkdir -p src/bin && \
 # --- Full source ---
 COPY . .
 
-# --- Vendor submodules (clone if not present in build context) ---
-# Cargo validates path dependencies at resolution time regardless of features,
-# so vendor repos must exist even when their features aren't enabled.
-RUN if [ ! -f vendor/rustynum/rustynum-rs/Cargo.toml ]; then \
-      git clone --depth 1 https://github.com/AdaWorldAPI/rustynum vendor/rustynum; \
+# --- Clone sibling repos (OBLIGATORY deps) ---
+# Cargo.toml uses path = "../rustynum/...", "../crewai-rust", "../n8n-rs/..."
+# From WORKDIR /build, "../" resolves to "/", so repos go to /<name>.
+# Cargo validates ALL path deps at resolution time regardless of features.
+RUN if [ ! -f /rustynum/rustynum-rs/Cargo.toml ]; then \
+      git clone --depth 1 https://github.com/AdaWorldAPI/rustynum /rustynum; \
     fi
-# crewai-rust: path = "../crewai-rust" → resolves to /crewai-rust from /build
 RUN if [ ! -f /crewai-rust/Cargo.toml ]; then \
       git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust /crewai-rust; \
     fi
-# n8n-rs: path = "../n8n-rs/n8n-rust/crates/*" → resolves to /n8n-rs from /build
 RUN if [ ! -f /n8n-rs/n8n-rust/crates/n8n-arrow/Cargo.toml ]; then \
       git clone --depth 1 https://github.com/AdaWorldAPI/n8n-rs /n8n-rs; \
     fi
