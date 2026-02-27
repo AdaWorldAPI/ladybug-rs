@@ -14,7 +14,8 @@
 //! XOR deltas       ── flush() ──→  fingerprint[i] ^= delta[i]
 //! ```
 //!
-//! crewai-rust is OBLIGATORY — always linked.
+//! This module is gated behind `#[cfg(feature = "vendor-crewai")]` so it
+//! only compiles when crewai-rust is linked as a vendored library dep.
 
 use crate::storage::bind_space::{
     Addr, BindSpace, FINGERPRINT_WORDS, PREFIX_NARS, PREFIX_NODE_END, PREFIX_NODE_START,

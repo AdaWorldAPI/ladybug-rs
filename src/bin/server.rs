@@ -3419,69 +3419,101 @@ fn read_http_response(stream: &mut TcpStream) -> Result<String, String> {
 }
 
 // =============================================================================
-// VENDOR DISPATCH — direct in-process calls (single-binary)
+// VENDOR DISPATCH — single-binary vs HTTP proxy
 // =============================================================================
 //
-// crewai-rust and n8n-rs are OBLIGATORY — always linked directly.
-// Zero HTTP overhead, one process.
+// When vendor-crewai / vendor-n8n features are enabled, these functions call
+// directly into the linked library crates (zero HTTP overhead, one process).
+// When disabled, they fall back to the HTTP proxy (multi-service mode).
 
-/// Dispatch a POST to crewai — direct in-process call.
+/// Dispatch a POST to crewai — in-process if vendor-crewai, else HTTP proxy.
 fn dispatch_crew_post(path: &str, body: &str, format: ResponseFormat) -> Vec<u8> {
-    match call_vendor_async(|| async {
-        crewai_vendor::server::handle_request_body(path, body).await
-    }) {
-        Ok(response) => match format {
-            ResponseFormat::Json => http_json(200, &response),
-            ResponseFormat::Arrow => wrap_proxy_arrow("crew", &response),
-        },
-        Err(e) => http_json(500, &format!(
-            r#"{{"error":"vendor_crewai_error","detail":"{}"}}"#, e
-        )),
+    #[cfg(feature = "vendor-crewai")]
+    {
+        // Direct in-process call to crewai-rust library.
+        // The crewai crate exposes its server module as a library.
+        // We use a thread-local tokio runtime to bridge sync → async.
+        match call_vendor_async(|| async {
+            crewai_vendor::server::handle_request_body(path, body).await
+        }) {
+            Ok(response) => match format {
+                ResponseFormat::Json => http_json(200, &response),
+                ResponseFormat::Arrow => wrap_proxy_arrow("crew", &response),
+            },
+            Err(e) => http_json(500, &format!(
+                r#"{{"error":"vendor_crewai_error","detail":"{}"}}"#, e
+            )),
+        }
+    }
+    #[cfg(not(feature = "vendor-crewai"))]
+    {
+        handle_proxy("crew", path, body, format)
     }
 }
 
 /// Dispatch a GET to crewai.
 fn dispatch_crew_get(path: &str, format: ResponseFormat) -> Vec<u8> {
-    match call_vendor_async(|| async {
-        crewai_vendor::server::handle_get(path).await
-    }) {
-        Ok(response) => match format {
-            ResponseFormat::Json => http_json(200, &response),
-            ResponseFormat::Arrow => wrap_proxy_arrow("crew", &response),
-        },
-        Err(e) => http_json(500, &format!(
-            r#"{{"error":"vendor_crewai_error","detail":"{}"}}"#, e
-        )),
+    #[cfg(feature = "vendor-crewai")]
+    {
+        match call_vendor_async(|| async {
+            crewai_vendor::server::handle_get(path).await
+        }) {
+            Ok(response) => match format {
+                ResponseFormat::Json => http_json(200, &response),
+                ResponseFormat::Arrow => wrap_proxy_arrow("crew", &response),
+            },
+            Err(e) => http_json(500, &format!(
+                r#"{{"error":"vendor_crewai_error","detail":"{}"}}"#, e
+            )),
+        }
+    }
+    #[cfg(not(feature = "vendor-crewai"))]
+    {
+        handle_proxy_get("crew", path, format)
     }
 }
 
-/// Dispatch a POST to n8n — direct in-process call.
+/// Dispatch a POST to n8n — in-process if vendor-n8n, else HTTP proxy.
 fn dispatch_n8n_post(path: &str, body: &str, format: ResponseFormat) -> Vec<u8> {
-    match call_vendor_async(|| async {
-        n8n_grpc::handle_api_post(path, body).await
-    }) {
-        Ok(response) => match format {
-            ResponseFormat::Json => http_json(200, &response),
-            ResponseFormat::Arrow => wrap_proxy_arrow("n8n", &response),
-        },
-        Err(e) => http_json(500, &format!(
-            r#"{{"error":"vendor_n8n_error","detail":"{}"}}"#, e
-        )),
+    #[cfg(feature = "vendor-n8n")]
+    {
+        match call_vendor_async(|| async {
+            n8n_grpc::handle_api_post(path, body).await
+        }) {
+            Ok(response) => match format {
+                ResponseFormat::Json => http_json(200, &response),
+                ResponseFormat::Arrow => wrap_proxy_arrow("n8n", &response),
+            },
+            Err(e) => http_json(500, &format!(
+                r#"{{"error":"vendor_n8n_error","detail":"{}"}}"#, e
+            )),
+        }
+    }
+    #[cfg(not(feature = "vendor-n8n"))]
+    {
+        handle_proxy("n8n", path, body, format)
     }
 }
 
 /// Dispatch a GET to n8n.
 fn dispatch_n8n_get(path: &str, format: ResponseFormat) -> Vec<u8> {
-    match call_vendor_async(|| async {
-        n8n_grpc::handle_api_get(path).await
-    }) {
-        Ok(response) => match format {
-            ResponseFormat::Json => http_json(200, &response),
-            ResponseFormat::Arrow => wrap_proxy_arrow("n8n", &response),
-        },
-        Err(e) => http_json(500, &format!(
-            r#"{{"error":"vendor_n8n_error","detail":"{}"}}"#, e
-        )),
+    #[cfg(feature = "vendor-n8n")]
+    {
+        match call_vendor_async(|| async {
+            n8n_grpc::handle_api_get(path).await
+        }) {
+            Ok(response) => match format {
+                ResponseFormat::Json => http_json(200, &response),
+                ResponseFormat::Arrow => wrap_proxy_arrow("n8n", &response),
+            },
+            Err(e) => http_json(500, &format!(
+                r#"{{"error":"vendor_n8n_error","detail":"{}"}}"#, e
+            )),
+        }
+    }
+    #[cfg(not(feature = "vendor-n8n"))]
+    {
+        handle_proxy_get("n8n", path, format)
     }
 }
 
@@ -3489,6 +3521,7 @@ fn dispatch_n8n_get(path: &str, format: ResponseFormat) -> Vec<u8> {
 ///
 /// Uses a thread-local tokio runtime to execute the async future.
 /// This is the sync→async bridge for the single-binary mode.
+#[cfg(any(feature = "vendor-crewai", feature = "vendor-n8n"))]
 fn call_vendor_async<F, Fut>(f: F) -> Result<String, String>
 where
     F: FnOnce() -> Fut,
@@ -3512,6 +3545,7 @@ where
 }
 
 /// Wrap a JSON string response in Arrow IPC (shared helper for vendor dispatch).
+#[cfg(any(feature = "vendor-crewai", feature = "vendor-n8n"))]
 fn wrap_proxy_arrow(service: &str, json_response: &str) -> Vec<u8> {
     let schema = Arc::new(Schema::new(vec![
         Field::new("service", DataType::Utf8, false),
