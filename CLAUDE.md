@@ -696,6 +696,110 @@ across all repos that depend on it.**
 
 ---
 
+## The Rustynum Acceleration Contract (HARD-WON — 6 REWRITES)
+
+> **After 1.5M lines of code and 6 rewrites, this lesson was learned:
+> Arrow is the zero-copy backbone. Lance is the cold tier.
+> rustynum is the acceleration layer. NEVER copy Arrow buffers into owned memory.**
+
+### Why This Matters
+
+Everything goes through **BindSpace**. BindSpace needs:
+1. **rustynum** — SIMD kernels, Fingerprint types, DeltaLayer, CollapseGate
+2. **Lance/Arrow** — mmap'd zero-copy buffers for cold-tier persistence
+3. **split_at_mut / parallel_into_slices** — lock-free parallel writes to disjoint regions
+
+The dilemma: wiring rustynum's acceleration into the Lance data path
+WITHOUT breaking the zero-copy chain from Arrow mmap → BindSpace → compute.
+
+### The Zero-Copy Chain (DO NOT BREAK)
+
+```
+Lance (cold tier, disk)
+    │ mmap
+    ▼
+Arrow Buffer (64-byte aligned, zero-copy)
+    │ FingerprintBuffer.get(i) → &[u64; 256] directly into mmap
+    ▼
+BindSpace (8+8 addressing, O(1) lookup)
+    │ Container bytes = same pointer as Arrow buffer
+    ▼
+rustynum-core SIMD kernels
+    │ select_hamming_fn()(container_a, container_b) → u32
+    │ k0_probe() → k1_stats() → k2_exact() cascade
+    ▼
+Result (no allocation needed for distance computation)
+```
+
+**Where it breaks (P1 debt in rustynum-arrow):**
+
+```
+Arrow Buffer → record_batch_to_cogrecords() → .to_vec() PER ROW  ← COPIES
+CogRecord[] → CascadeIndices::build() → extend_from_slice()       ← COPIES AGAIN
+```
+
+**Fix needed:** `CogRecordView<'a>` that borrows Arrow's buffer instead of owning.
+We own rustynum — the fix is mechanical (add borrowing variants to CogRecord/NumArray).
+
+### The Acceleration Stack (What rustynum Provides)
+
+| rustynum Crate | Acceleration | For BindSpace |
+|---------------|-------------|---------------|
+| **rustynum-core** | Hamming VPOPCNTDQ, K0/K1/K2, BF16 awareness | Primary search, CollapseGate awareness |
+| **rustyblas** | 138 GFLOPS GEMM, INT8 VNNI, BF16 mixed-precision | Batch similarity, SimHash projection |
+| **rustymkl** | VML (exp, ln, sigmoid), LAPACK, FFT | NARS truth scoring, spectral analysis |
+| **jitson** | JSON config → native AVX-512 scan kernels | Per-query compiled scans on Arrow buffers |
+| **rustynum-holo** | Overlay, MultiOverlay, Gabor wavelets | Multi-agent CogRecord mutations |
+| **rustynum-clam** | CLAM tree, triangle-inequality search | Indexed cascade in rustynum-arrow |
+
+### Parallel Write Patterns (CANONICAL — From rustynum)
+
+**For contiguous byte slices (GEMM rows, Arrow columns):**
+```rust
+// split_at_mut — zero synchronization, each thread owns its rows
+parallel_into_slices(output_buf, rows_per_thread * n, |offset, chunk| {
+    // chunk is exclusively owned by this thread — no locks
+});
+```
+
+**For binary vector state (fingerprints, CogRecords):**
+```rust
+// XOR Delta Layers — ground truth is &self forever
+let mut stack = LayerStack::new(ground_truth, num_agents);
+stack.writer_mut(agent_id).write(&ground, &desired);
+// Conflict: stack.evaluate(threshold) → Flow/Hold/Block
+// Commit: stack.commit() — XOR all deltas into ground truth
+```
+
+**NEVER use `Arc<Mutex>` for parallel writes. NEVER use `&self → &mut` casts.**
+
+### What ladybug MUST NOT Duplicate
+
+ladybug-rs has `src/core/simd.rs` with its own Hamming implementation.
+rustynum-core has `simd.rs` with runtime-dispatched Hamming (AVX-512/AVX2/scalar).
+
+**Rule:** ladybug-rs should call rustynum's SIMD, not maintain a duplicate.
+The vendored rustynum at `vendor/rustynum/` provides the canonical dispatch.
+Delete ladybug's simd.rs when the stable-Rust blocker is resolved.
+
+### Nightly Blocker
+
+rustynum uses `#![feature(portable_simd)]` in a few places. ladybug-rs
+builds on stable 1.93. Most rustynum kernels already use `std::arch` —
+the `portable_simd` usage is convenience in a few files. Since we own
+rustynum, replacing those uses with `std::arch` is a one-time port that
+unblocks the full integration on stable.
+
+### Cross-Repo References
+
+- `rustynum/CLAUDE.md` § 12 "The Lance Zero-Copy Contract"
+- `PLAN-RUSTYNUM-INTEGRATION.md` — 5-phase integration roadmap
+- `docs/LANCE_HARVEST.md` — why Lance is cold-tier only
+- `docs/BINDSPACE_UNIFICATION.md:1122` — `Buffer::from_slice_ref()` warning
+- `crewai-rust/CLAUDE.md` § "Storage Strategy"
+
+---
+
 ## Contact
 
 **GitHub**: https://github.com/AdaWorldAPI/ladybug-rs
