@@ -24,7 +24,7 @@ crate-type = ["cdylib", "rlib"]
 # =============================================================================
 
 [features]
-default = ["simd", "parallel", "lancedb", "rustynum"]
+default = ["simd", "parallel", "lancedb", "crewai"]
 
 # Core features
 simd = []                        # AVX-512 SIMD for Hamming operations
@@ -47,19 +47,19 @@ bench = []                       # Benchmark suite (comparison vs Qdrant/Milvus)
 flight = ["arrow-flight", "tonic", "prost"]  # Arrow Flight MCP server
 crewai = ["flight"]                          # crewAI orchestration (A2A, agent cards, thinking templates)
 json_fallback = []                           # Legacy JSON MCP types (backwards compat)
-rustynum = ["dep:rustynum-rs", "dep:rustynum-core"]  # AVX-512 VPOPCNTDQ + VNNI via rustynum
+# rustynum is OBLIGATORY — always included. Feature kept for test isolation only.
+rustynum = []
 
-# Vendor integrations — enable for single-binary builds.
-# Require repos cloned at sibling paths (or into vendor/).
-# See: Dockerfile.n8n, Dockerfile.crewai, Dockerfile.full
-vendor-n8n = ["dep:n8n-core", "dep:n8n-workflow", "dep:n8n-arrow", "dep:n8n-grpc", "dep:n8n-hamming"]
-vendor-crewai = ["dep:crewai-vendor", "crewai"]
+# vendor-n8n and vendor-crewai are OBLIGATORY — always included.
+# Feature flags kept as no-ops for backwards compatibility only.
+vendor-n8n = []
+vendor-crewai = []
 
 # All features
 full = [
     "simd", "parallel", "python",
     "codebook", "hologram", "spo", "compress", "quantum",
-    "lancedb", "neo4j", "redis", "rustynum"
+    "lancedb", "neo4j", "redis"
 ]
 
 # =============================================================================
@@ -176,28 +176,25 @@ pyo3 = { version = "0.23", optional = true, features = ["extension-module"] }
 # -----------------------------------------------------------------------------
 # Vendor: n8n-rs (workflow automation engine)
 # Source: https://github.com/AdaWorldAPI/n8n-rs
-# Uncommented by Dockerfile.n8n / Dockerfile.full at build time.
-# Requires: git clone https://github.com/AdaWorldAPI/n8n-rs vendor/n8n-rs
+# OBLIGATORY — always included. TIER 4 thinking styles depend on n8n-rs
+# self-orchestration. Uses sibling directory locally, vendor/ in Docker.
 # NOTE: n8n crates pin Arrow 53 / DataFusion 43. The Dockerfiles add
 # [patch.crates-io] entries to unify Arrow/DataFusion to ladybug's versions.
 # -----------------------------------------------------------------------------
-# When developing locally: use sibling directory. In Docker: use vendor/n8n-rs.
-n8n-core     = { path = "../n8n-rs/n8n-rust/crates/n8n-core",     optional = true }
-n8n-workflow = { path = "../n8n-rs/n8n-rust/crates/n8n-workflow",  optional = true }
-n8n-arrow    = { path = "../n8n-rs/n8n-rust/crates/n8n-arrow",    optional = true }
-n8n-grpc     = { path = "../n8n-rs/n8n-rust/crates/n8n-grpc",     optional = true }
-n8n-hamming  = { path = "../n8n-rs/n8n-rust/crates/n8n-hamming",  optional = true }
+n8n-core     = { path = "../n8n-rs/n8n-rust/crates/n8n-core" }
+n8n-workflow = { path = "../n8n-rs/n8n-rust/crates/n8n-workflow" }
+n8n-arrow    = { path = "../n8n-rs/n8n-rust/crates/n8n-arrow" }
+n8n-grpc     = { path = "../n8n-rs/n8n-rust/crates/n8n-grpc" }
+n8n-hamming  = { path = "../n8n-rs/n8n-rust/crates/n8n-hamming" }
 
 # -----------------------------------------------------------------------------
 # Vendor: crewai-rust (AI agent orchestration framework)
 # Source: https://github.com/AdaWorldAPI/crewai-rust
-# Uncommented by Dockerfile.crewai / Dockerfile.full at build time.
-# Requires: git clone https://github.com/AdaWorldAPI/crewai-rust vendor/crewai-rust
-# No version conflicts — crewai has no Arrow/DataFusion deps.
+# OBLIGATORY — always included. TIER 4 thinking styles depend on crewai-rust
+# self-orchestration (A2A, agent cards, thinking templates).
 # Renamed to crewai-vendor to avoid collision with ladybug's built-in crewai feature.
 # -----------------------------------------------------------------------------
-# When developing locally: use sibling directory. In Docker: use vendor/crewai-rust.
-crewai-vendor = { package = "crewai", path = "../crewai-rust", optional = true }
+crewai-vendor = { package = "crewai", path = "../crewai-rust" }
 
 # -----------------------------------------------------------------------------
 # Vendor: rustynum-rs (SIMD numerical library with AVX-512 VPOPCNTDQ + VNNI)
@@ -208,12 +205,12 @@ crewai-vendor = { package = "crewai", path = "../crewai-rust", optional = true }
 #   - Optimized bundle (ripple-carry > per-bit counting)
 #   - GEMM for batch operations
 #   - Zero-copy Container bridge: view_u64_as_bytes()
-# Requires: nightly Rust (portable_simd)
-# Requires: git clone https://github.com/AdaWorldAPI/rustynum vendor/rustynum
-#           (or: git submodule update --init vendor/rustynum)
+# Requires: stable Rust 1.93+ (AVX-512 intrinsics stabilized in 1.89)
+# OBLIGATORY — always included, not behind a feature gate.
+# Uses sibling directory locally, vendor/ in Docker.
 # -----------------------------------------------------------------------------
-rustynum-rs = { path = "vendor/rustynum/rustynum-rs", optional = true }
-rustynum-core = { path = "vendor/rustynum/rustynum-core", optional = true, features = ["avx512"] }
+rustynum-rs = { path = "../rustynum/rustynum-rs" }
+rustynum-core = { path = "../rustynum/rustynum-core", features = ["avx512"] }
 
 # =============================================================================
 # DEV DEPENDENCIES

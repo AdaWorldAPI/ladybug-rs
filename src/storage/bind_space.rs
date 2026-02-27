@@ -1845,23 +1845,9 @@ pub fn dn_levenshtein(a: &str, b: &str) -> usize {
     prev[n]
 }
 
-/// Hamming distance.
-///
-/// When `rustynum` feature is enabled, uses runtime-dispatched AVX-512 VPOPCNTDQ.
-/// Otherwise falls back to scalar `count_ones()` loop.
+/// Hamming distance via runtime-dispatched AVX-512 VPOPCNTDQ (rustynum).
 pub fn hamming_distance(a: &[u64; FINGERPRINT_WORDS], b: &[u64; FINGERPRINT_WORDS]) -> u32 {
-    #[cfg(feature = "rustynum")]
-    {
-        return crate::core::rustynum_accel::slice_hamming(a, b) as u32;
-    }
-    #[cfg(not(feature = "rustynum"))]
-    {
-        let mut d = 0u32;
-        for i in 0..FINGERPRINT_WORDS {
-            d += (a[i] ^ b[i]).count_ones();
-        }
-        d
-    }
+    crate::core::rustynum_accel::slice_hamming(a, b) as u32
 }
 
 // =============================================================================

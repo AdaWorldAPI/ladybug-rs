@@ -6,7 +6,6 @@ mod scent;
 pub mod simd;
 pub mod vsa;
 
-#[cfg(feature = "rustynum")]
 pub mod rustynum_accel;
 
 pub use buffer::BufferPool;
