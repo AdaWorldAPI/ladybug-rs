@@ -14,45 +14,34 @@ Your job: wire the SPO distance harvest, stripe shift detector, CLAM path encodi
 
 ---
 
-## MODULE PLACEMENT
-
-SPO and BNN are default-on, first-class dependencies (not experimental). New modules integrate with existing top-level modules — don't duplicate types that already exist.
+## DIRECTORY STRUCTURE
 
 ```
-EXISTING (use these, extend them, DO NOT duplicate):
-  src/nars/
-    truth.rs             ← TruthValue with revision, from_evidence() — USE THIS
-    inference.rs         ← InferenceRule trait (Deduction, Abduction, Induction)
-    evidence.rs          ← Evidence tracking
-  src/search/
-    hdr_cascade.rs       ← SigmaGate already wired (PR 158)
-    causal.rs            ← Pearl's causal ladder Rung 1/2/3 (37KB)
-  src/qualia/
-    gestalt.rs           ← Buber I/Thou/It role binding (19KB) — different from SPO gestalt
-    resonance.rs         ← Qualia resonance (34KB)
-  src/extensions/spo/
-    gestalt.rs           ← BundlingProposal, TiltReport, PlaneCalibration (PR 158, 34KB)
-    spo.rs               ← SPO encoding (53KB)
-    mod.rs               ← module declarations
-    jina_api.rs / jina_cache.rs
-  src/core/
-    simd.rs              ← 173-line thin delegator (DELETE after rustynum SIMD port)
+src/
+  core/
+    simd.rs              ← 348-line duplicate SIMD (DELETE after rustynum port lands)
     rustynum_accel.rs    ← rustynum SIMD dispatch interface
-    fingerprint.rs / scent.rs / vsa.rs
-  src/graph/
+    fingerprint.rs       ← content-addressable fingerprint
+    scent.rs             ← scent/similarity operations
+    vsa.rs               ← VSA bind/bundle/permute
+  search/
+    hdr_cascade.rs       ← adaptive cascade + SigmaGate (already wired)
+  extensions/spo/
+    gestalt.rs           ← 965 lines, committed (DO NOT rewrite)
+    spo.rs               ← existing SPO encoding (53KB)
+    mod.rs               ← module declarations
+    jina_api.rs          ← Jina embedding API
+    jina_cache.rs        ← Jina cache layer
+  graph/
     avx_engine.rs        ← fingerprint graph engine (SIMD cleaned up)
+  nars/                  ← NARS truth value types
+  cypher_bridge.rs       ← Cypher → BindSpace bridge
 
-NEW FILES — placed where they naturally belong:
-  src/search/spo_harvest.rs          ← Phase 2: SPO distance (next to hdr_cascade.rs)
-  src/search/shift_detector.rs       ← Phase 3: stripe shift (next to distribution.rs)
-  src/extensions/spo/clam_path.rs    ← Phase 5: CLAM path encoding (SPO-specific)
-  src/extensions/spo/causal_trajectory.rs ← Phase 6: resonator instrumentation
-
-CRITICAL TYPE REUSE:
-  harvest_to_nars() → MUST return crate::nars::TruthValue (already has revision rule)
-  TypedInference    → should use/extend crate::nars::InferenceRule trait
-  CausalTrajectory  → edges must be compatible with src/search/causal.rs Pearl ladder
-  ShiftDetector     → next to src/search/distribution.rs (same domain)
+NEW FILES TO CREATE (all under src/extensions/spo/):
+    spo_harvest.rs       ← Phase 2: SPO distance + harvest + NARS + inference
+    shift_detector.rs    ← Phase 3: stripe shift detector
+    clam_path.rs         ← Phase 5: CLAM path encoding
+    causal_trajectory.rs ← Phase 6: resonator instrumentation
 ```
 
 ## WHAT'S ALREADY COMMITTED
@@ -126,7 +115,7 @@ Each document is self-contained with implementation-grade code examples. This me
 
 ## PHASE 2: SPO Distance Harvest
 
-**File: `ladybug-rs/src/search/spo_harvest.rs` (NEW — next to hdr_cascade.rs)**
+**File: `ladybug-rs/src/extensions/spo/spo_harvest.rs` (NEW)**
 
 This is the cosine replacement. 238× fewer cycles, 7.3× more information per computation. The detailed spec is in `spo_distance_harvest_cosine_replacement_prompt.md`. Key deliverables:
 
@@ -152,14 +141,12 @@ impl SpoDistanceResult {
 ### 2.2 Functions to Build
 
 ```
-spo_distance(a, b) → SpoDistanceResult                     — the core 13-cycle computation
-harvest_to_nars(result) → crate::nars::TruthValue           — USE EXISTING TYPE (has revision rule)
-harvest_to_inference(result) → TypedInference                — dominant halo type → typed query action
-AccumulatedHarvest::accumulate(result)                       — EMA + nars::TruthValue revision across searches
-feed_sigma_graph(result) → Vec<SigmaEdge>                    — emit typed edges from harvest
+spo_distance(a, b) → SpoDistanceResult        — the core 13-cycle computation
+harvest_to_nars(result) → NarsTruth            — frequency from core ratio, confidence from entropy
+harvest_to_inference(result) → TypedInference   — dominant halo type → typed query action
+AccumulatedHarvest::accumulate(result)          — EMA + NARS revision across searches
+feed_sigma_graph(result) → Vec<SigmaEdge>       — emit typed edges from harvest
 ```
-
-**CRITICAL**: `harvest_to_nars()` returns `crate::nars::TruthValue`, NOT a new NarsTruth type. The existing type already has `revision()`, `from_evidence()`, `deduction()`, etc. — use them.
 
 ### 2.3 Key Constraint
 
@@ -169,7 +156,7 @@ The XOR bitmasks (`x_xor`, `y_xor`, `z_xor`) computed for distance are the SAME 
 
 ## PHASE 3: Distance Granularity + Stripe Shift Detector
 
-**Extends: `src/search/spo_harvest.rs` + new `src/search/shift_detector.rs`**
+**Extends: `src/extensions/spo/spo_harvest.rs` + new `src/extensions/spo/shift_detector.rs`**
 
 Detailed specs in `spo_distance_granularity_investigation.md` and `sigma_stripe_shift_detector_addendum.md`.
 
@@ -211,7 +198,7 @@ impl ShiftDetector {
 }
 ```
 
-**Wire into CollapseGate** (already exists in `src/extensions/spo/gestalt.rs`, also connects to `src/search/distribution.rs`):
+**Wire into CollapseGate (already exists in src/extensions/spo/gestalt.rs):
 - Shift toward noise → bias HOLD
 - Shift toward foveal → bias FLOW
 - Bimodal → speciation event
@@ -269,8 +256,6 @@ One u16. Three query types. O(log n + k):
 
 Detailed spec in `nars_causal_trajectory_hydration_prompt.md`. This is the biggest new module.
 
-**NOTE**: `src/search/causal.rs` (37KB) already implements Pearl's 3-rung causal ladder (Correlate/Intervene/Counterfact). The causal trajectory recorder should produce edges compatible with that system — Rung 1 from halo correlations, Rung 2 from BPReLU intervention asymmetry, Rung 3 from ClamPath sibling (counterfactual) queries.
-
 ### 6.1 Core Structures
 
 ```rust
@@ -320,8 +305,6 @@ FullSimultaneous — all three at once → Gestalt snap (rare)
 ## PHASE 7: Gestalt Integration
 
 **Extends existing: `ladybug-rs/src/extensions/spo/gestalt.rs` (DO NOT rewrite — add to it)**
-
-**NOTE**: There are TWO gestalt modules — `src/qualia/gestalt.rs` (Buber I/Thou/It, 19KB) and `src/extensions/spo/gestalt.rs` (BundlingProposal, 34KB). Phase 7 extends the SPO one. The qualia one maps Buber roles to Xyz geometry — it's complementary, not redundant.
 
 ### 7.1 Wire detect_bundling() Into CLAM Harvest Loop
 
