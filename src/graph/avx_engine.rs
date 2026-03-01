@@ -1,16 +1,23 @@
-//! AVX-512 Graph Engine
+//! Fingerprint Graph Engine
 //!
 //! Graph operations as pure SIMD over fingerprints.
 //! No pointers. No adjacency lists. No CSR indices.
 //! Just XOR and popcount.
 //!
+//! All SIMD dispatch is handled by rustynum-core at runtime.
+//! This module NEVER reimplements SIMD intrinsics.
+//!
+//! Dispatch path (via rustynum):
+//!   AVX-512 VPOPCNTDQ -> AVX2 Harley-Seal -> scalar POPCNT
+//!   (one binary, all CPUs, runtime CPUID detection)
+//!
 //! # Philosophy
 //!
 //! Traditional graph: nodes + pointers
-//! Fingerprint graph: everything is a 10K-bit vector
+//! Fingerprint graph: everything is a 16K-bit vector
 //!
 //! - Node = fingerprint
-//! - Edge = fingerprint (from ⊗ verb ⊗ to)
+//! - Edge = fingerprint (from XOR verb XOR to)
 //! - Query = fingerprint
 //! - Traversal = batch XOR + popcount
 //!
@@ -18,20 +25,20 @@
 //!
 //! ```text
 //! AVX-512 can process 512 bits per instruction.
-//! 10K bits = 20 AVX-512 registers
+//! 16K bits = 32 AVX-512 registers
 //!
 //! Per edge comparison:
-//!   - 20 loads (query already in registers)
-//!   - 20 XORs
-//!   - 20 popcounts (8 per instruction with vpopcntdq)
+//!   - 32 loads (query already in registers)
+//!   - 32 XORs
+//!   - 32 popcounts (8 per instruction with vpopcntdq)
 //!   - 1 reduction
-//!   ≈ 50 instructions ≈ 5-17 ns per edge
+//!   ~= 50 instructions ~= 5-17 ns per edge
 //!
 //! 1M edges full scan: ~5-17 ms
 //! 10M edges full scan: ~50-170 ms
 //!
 //! But we can batch 8 edges per pass through registers:
-//!   8 edges × 20 XORs = 160 operations
+//!   8 edges x 32 XORs = 256 operations
 //!   Amortized: ~2 ns per edge
 //!
 //! 1M edges: ~2 ms
@@ -45,107 +52,48 @@ use crate::core::Fingerprint;
 /// Number of u64 words in a 16K-bit fingerprint
 const WORDS: usize = 256; // 256 * 64 = 16384 bits
 
-/// Number of u64s per AVX-512 register
-const LANES: usize = 8; // 512 bits / 64 bits
-
-/// Full AVX-512 iterations needed
-const FULL_ITERS: usize = WORDS / LANES; // 256 / 8 = 32
-
-/// Remainder words after full iterations
-const REMAINDER: usize = WORDS % LANES; // 256 % 8 = 0
-
 // =============================================================================
-// CORE SIMD OPERATIONS
+// CORE OPERATIONS (delegated to rustynum runtime dispatch)
 // =============================================================================
 
-/// Compute Hamming distance between two 10K-bit fingerprints using AVX-512
+/// Compute Hamming distance between two fingerprint word arrays.
 ///
-/// Returns the number of differing bits (0 = identical, 10000 = maximally different)
-#[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
-#[target_feature(enable = "avx512f,avx512bw,avx512vpopcntdq")]
-pub unsafe fn hamming_distance_avx512(a: &[u64; WORDS], b: &[u64; WORDS]) -> u32 {
-    unsafe {
-        use std::arch::x86_64::*;
-
-        let mut total = _mm512_setzero_si512();
-
-        // Process 8 u64s (512 bits) at a time
-        for i in 0..FULL_ITERS {
-            let offset = i * LANES;
-            let va = _mm512_loadu_si512(a.as_ptr().add(offset) as *const __m512i);
-            let vb = _mm512_loadu_si512(b.as_ptr().add(offset) as *const __m512i);
-            let xor = _mm512_xor_si512(va, vb);
-            let pop = _mm512_popcnt_epi64(xor);
-            total = _mm512_add_epi64(total, pop);
-        }
-
-        // Handle remainder (4 u64s)
-        let mut remainder_sum: u64 = 0;
-        for i in (FULL_ITERS * LANES)..WORDS {
-            remainder_sum += (a[i] ^ b[i]).count_ones() as u64;
-        }
-
-        // Horizontal sum of 8 lanes
-        let mut result = [0u64; 8];
-        _mm512_storeu_si512(result.as_mut_ptr() as *mut __m512i, total);
-        let simd_sum: u64 = result.iter().sum();
-
-        (simd_sum + remainder_sum) as u32
-    }
+/// Delegates to rustynum's runtime-dispatched SIMD (AVX-512 -> AVX2 -> scalar).
+#[inline]
+fn hamming_words(a: &[u64; WORDS], b: &[u64; WORDS]) -> u32 {
+    crate::core::rustynum_accel::slice_hamming(a.as_slice(), b.as_slice()) as u32
 }
 
-/// Fallback for non-AVX512 systems
-#[cfg(not(all(target_arch = "x86_64", target_feature = "avx512f")))]
-pub fn hamming_distance_avx512(a: &[u64; WORDS], b: &[u64; WORDS]) -> u32 {
-    let mut sum = 0u32;
-    for i in 0..WORDS {
-        sum += (a[i] ^ b[i]).count_ones();
-    }
-    sum
-}
-
-/// Safe wrapper
+/// Compute Hamming distance between two Fingerprints.
+///
+/// Safe wrapper that converts Fingerprints to word arrays and delegates
+/// to rustynum's runtime-dispatched SIMD.
 #[inline]
 pub fn hamming_distance(a: &Fingerprint, b: &Fingerprint) -> u32 {
     let a_words = fingerprint_to_words(a);
     let b_words = fingerprint_to_words(b);
-
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
-    unsafe {
-        hamming_distance_avx512(&a_words, &b_words)
-    }
-
-    #[cfg(not(all(target_arch = "x86_64", target_feature = "avx512f")))]
-    hamming_distance_avx512(&a_words, &b_words)
+    hamming_words(&a_words, &b_words)
 }
 
-/// XOR two fingerprints (binding operation) using AVX-512
-#[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
-#[target_feature(enable = "avx512f")]
-pub unsafe fn xor_avx512(a: &[u64; WORDS], b: &[u64; WORDS], out: &mut [u64; WORDS]) {
-    unsafe {
-        use std::arch::x86_64::*;
-
-        for i in 0..FULL_ITERS {
-            let offset = i * LANES;
-            let va = _mm512_loadu_si512(a.as_ptr().add(offset) as *const __m512i);
-            let vb = _mm512_loadu_si512(b.as_ptr().add(offset) as *const __m512i);
-            let result = _mm512_xor_si512(va, vb);
-            _mm512_storeu_si512(out.as_mut_ptr().add(offset) as *mut __m512i, result);
-        }
-
-        // Remainder
-        for i in (FULL_ITERS * LANES)..WORDS {
-            out[i] = a[i] ^ b[i];
-        }
-    }
-}
-
-#[cfg(not(all(target_arch = "x86_64", target_feature = "avx512f")))]
-pub fn xor_avx512(a: &[u64; WORDS], b: &[u64; WORDS], out: &mut [u64; WORDS]) {
+/// XOR two fingerprint word arrays (binding operation).
+#[inline]
+fn xor_words(a: &[u64; WORDS], b: &[u64; WORDS], out: &mut [u64; WORDS]) {
     for i in 0..WORDS {
         out[i] = a[i] ^ b[i];
     }
+}
+
+/// Compute Hamming distances for 8 edges against one query.
+///
+/// This batching pattern amortizes function-call overhead. The actual SIMD
+/// dispatch happens inside rustynum for each individual distance call.
+#[inline]
+fn batch_hamming_8(query: &[u64; WORDS], edges: &[[u64; WORDS]; 8]) -> [u32; 8] {
+    let mut results = [0u32; 8];
+    for j in 0..8 {
+        results[j] = hamming_words(query, &edges[j]);
+    }
+    results
 }
 
 // =============================================================================
@@ -165,7 +113,7 @@ pub struct QueryMatch {
 
 /// Graph stored as flat array of edge fingerprints
 ///
-/// Each edge is encoded as: from ⊗ verb ⊗ to
+/// Each edge is encoded as: from XOR verb XOR to
 /// This allows pattern matching via XOR + popcount
 pub struct FingerprintGraph {
     /// All edges as fingerprints
@@ -198,7 +146,7 @@ impl FingerprintGraph {
 
     /// Add an edge: from --[verb]--> to
     pub fn add_edge(&mut self, from: &Fingerprint, verb: &Fingerprint, to: &Fingerprint) {
-        // Edge fingerprint = from ⊗ verb ⊗ to
+        // Edge fingerprint = from XOR verb XOR to
         let edge = from.bind(verb).bind(to);
         self.edges.push(fingerprint_to_words(&edge));
         self.edge_sources
@@ -207,18 +155,14 @@ impl FingerprintGraph {
 
     /// Query: find all edges matching a pattern
     ///
-    /// Pattern is a partial edge (e.g., from ⊗ verb for "what does X cause?")
+    /// Pattern is a partial edge (e.g., from XOR verb for "what does X cause?")
     /// Returns edges with Hamming distance < threshold
     pub fn query(&self, pattern: &Fingerprint, threshold: u32) -> Vec<QueryMatch> {
         let pattern_words = fingerprint_to_words(pattern);
         let mut matches = Vec::new();
 
         for (idx, edge) in self.edges.iter().enumerate() {
-            #[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
-            let dist = unsafe { hamming_distance_avx512(&pattern_words, edge) };
-
-            #[cfg(not(all(target_arch = "x86_64", target_feature = "avx512f")))]
-            let dist = hamming_distance_avx512(&pattern_words, edge);
+            let dist = hamming_words(&pattern_words, edge);
 
             if dist < threshold {
                 matches.push(QueryMatch {
@@ -244,11 +188,7 @@ impl FingerprintGraph {
 
         for (edge_idx, edge) in self.edges.iter().enumerate() {
             for (pattern_idx, pattern) in pattern_words.iter().enumerate() {
-                #[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
-                let dist = unsafe { hamming_distance_avx512(pattern, edge) };
-
-                #[cfg(not(all(target_arch = "x86_64", target_feature = "avx512f")))]
-                let dist = hamming_distance_avx512(pattern, edge);
+                let dist = hamming_words(pattern, edge);
 
                 if dist < threshold {
                     all_matches[pattern_idx].push(QueryMatch {
@@ -296,7 +236,7 @@ impl FingerprintGraph {
                 let from_node = &frontier[pattern_idx];
 
                 for m in matches {
-                    // Extract target: edge ⊗ from ⊗ verb = to
+                    // Extract target: edge XOR from XOR verb = to
                     let target = m.edge.bind(from_node).bind(verb);
                     let target_hash = fingerprint_hash(&target);
 
@@ -377,50 +317,10 @@ impl Default for FingerprintGraph {
 // BATCHED OPERATIONS (8 edges at once)
 // =============================================================================
 
-/// Process 8 edges simultaneously
-///
-/// This is the real performance win: amortize register loads across 8 comparisons
-#[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
-#[target_feature(enable = "avx512f,avx512vpopcntdq")]
-pub unsafe fn batch_hamming_8(query: &[u64; WORDS], edges: &[[u64; WORDS]; 8]) -> [u32; 8] {
-    unsafe {
-        use std::arch::x86_64::*;
-
-        let mut totals = [_mm512_setzero_si512(); 8];
-
-        for i in 0..FULL_ITERS {
-            let offset = i * LANES;
-            let vq = _mm512_loadu_si512(query.as_ptr().add(offset) as *const __m512i);
-
-            for j in 0..8 {
-                let ve = _mm512_loadu_si512(edges[j].as_ptr().add(offset) as *const __m512i);
-                let xor = _mm512_xor_si512(vq, ve);
-                let pop = _mm512_popcnt_epi64(xor);
-                totals[j] = _mm512_add_epi64(totals[j], pop);
-            }
-        }
-
-        // Reduce each total
-        let mut results = [0u32; 8];
-        for j in 0..8 {
-            let mut lanes = [0u64; 8];
-            _mm512_storeu_si512(lanes.as_mut_ptr() as *mut __m512i, totals[j]);
-            let sum: u64 = lanes.iter().sum();
-
-            // Add remainder
-            let mut rem_sum = 0u64;
-            for i in (FULL_ITERS * LANES)..WORDS {
-                rem_sum += (query[i] ^ edges[j][i]).count_ones() as u64;
-            }
-
-            results[j] = (sum + rem_sum) as u32;
-        }
-
-        results
-    }
-}
-
 /// Batched graph query - processes edges 8 at a time
+///
+/// Each individual Hamming distance call goes through rustynum's
+/// runtime-dispatched SIMD (AVX-512 VPOPCNTDQ -> AVX2 -> scalar).
 pub fn batched_query(
     graph: &FingerprintGraph,
     pattern: &Fingerprint,
@@ -435,18 +335,7 @@ pub fn batched_query(
 
     for (chunk_idx, chunk) in chunks.enumerate() {
         let edges: &[[u64; WORDS]; 8] = chunk.try_into().unwrap();
-
-        #[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
-        let distances = unsafe { batch_hamming_8(&pattern_words, edges) };
-
-        #[cfg(not(all(target_arch = "x86_64", target_feature = "avx512f")))]
-        let distances = {
-            let mut d = [0u32; 8];
-            for i in 0..8 {
-                d[i] = hamming_distance_avx512(&pattern_words, &edges[i]);
-            }
-            d
-        };
+        let distances = batch_hamming_8(&pattern_words, edges);
 
         for (i, &dist) in distances.iter().enumerate() {
             if dist < threshold {
@@ -463,11 +352,7 @@ pub fn batched_query(
     // Handle remainder
     let base_idx = (graph.edges.len() / 8) * 8;
     for (i, edge) in remainder.iter().enumerate() {
-        #[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
-        let dist = unsafe { hamming_distance_avx512(&pattern_words, edge) };
-
-        #[cfg(not(all(target_arch = "x86_64", target_feature = "avx512f")))]
-        let dist = hamming_distance_avx512(&pattern_words, edge);
+        let dist = hamming_words(&pattern_words, edge);
 
         if dist < threshold {
             matches.push(QueryMatch {
@@ -530,7 +415,7 @@ fn fingerprint_hash(fp: &Fingerprint) -> u64 {
 }
 
 // =============================================================================
-// SIMD VERIFICATION
+// SIMD VERIFICATION (runtime detection — correct pattern)
 // =============================================================================
 
 /// Check if AVX-512 is available at runtime

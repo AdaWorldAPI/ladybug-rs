@@ -512,29 +512,8 @@ fn timestamp() -> u64 {
         .unwrap_or(0)
 }
 
-// ========== SIMD Optimized Scent Scan ==========
-
-#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-mod simd {
-    use super::{BUCKETS, SCENT_BYTES, scent_distance};
-
-    /// SIMD-optimized scent scan (AVX2)
-    /// Compares query against 256 scents, returns matching chunk IDs
-    pub fn find_chunks_simd(
-        scents: &[[u8; SCENT_BYTES]; BUCKETS],
-        query: &[u8; SCENT_BYTES],
-        threshold: u32,
-    ) -> Vec<u8> {
-        // For now, fall back to scalar
-        // TODO: Implement AVX2 version
-        scents
-            .iter()
-            .enumerate()
-            .filter(|(_, s)| scent_distance(s, query) <= threshold)
-            .map(|(i, _)| i as u8)
-            .collect()
-    }
-}
+// NOTE: SIMD-optimized scent scan is handled via rustynum runtime dispatch.
+// No compile-time SIMD gates needed — rustynum detects AVX-512/AVX2 at runtime.
 
 #[cfg(test)]
 mod tests {
