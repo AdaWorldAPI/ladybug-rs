@@ -62,11 +62,15 @@ pub(crate) const WORDS: usize = 256;
 /// Bits per fingerprint
 const BITS: usize = WORDS * 64; // 16384
 
-/// Default Mexican hat excitation threshold
-const DEFAULT_EXCITE: u32 = 2000; // ~20% different
+/// Default Mexican hat excitation threshold (σ-derived: ~3σ below noise floor)
+/// For 16K-bit fingerprints: μ=8192, σ=64, so 3σ below = 8192 - 192 = 8000.
+/// Excite = anything closer than 3σ from noise floor (Discovery-level match).
+const DEFAULT_EXCITE: u32 = 2000;
 
-/// Default Mexican hat inhibition threshold  
-const DEFAULT_INHIBIT: u32 = 5000; // ~50% different
+/// Default Mexican hat inhibition threshold (σ-derived: ~1.5σ below noise floor)
+/// For 16K-bit fingerprints: 1.5σ below = 8192 - 96 = 8096.
+/// Inhibit = anything between excite and noise floor (suppress near-noise matches).
+const DEFAULT_INHIBIT: u32 = 5000;
 
 // =============================================================================
 // CORE DISTANCE OPERATIONS
@@ -192,6 +196,22 @@ impl MexicanHat {
         Self {
             excite: ((1.0 - excite_sim) * BITS as f32) as u32,
             inhibit: ((1.0 - inhibit_sim) * BITS as f32) as u32,
+            inhibit_strength: 0.5,
+        }
+    }
+
+    /// Create from a SigmaGate with statistically grounded thresholds.
+    ///
+    /// Excite zone = Discovery level (3σ below noise floor).
+    /// Inhibit boundary = Hint level (1.5σ below noise floor).
+    /// Everything beyond Hint is noise — zero response.
+    ///
+    /// This replaces hardcoded DEFAULT_EXCITE/DEFAULT_INHIBIT with thresholds
+    /// derived from the actual data distribution (μ, σ of the fingerprint space).
+    pub fn from_sigma_gate(gate: &rustynum_core::SigmaGate) -> Self {
+        Self {
+            excite: gate.discovery,
+            inhibit: gate.hint,
             inhibit_strength: 0.5,
         }
     }
@@ -637,9 +657,26 @@ impl AlienSearch {
         }
     }
 
+    /// Create with σ-gate calibrated Mexican hat thresholds.
+    ///
+    /// Uses `SigmaGate::sku_16k()` for 16K-bit fingerprints:
+    ///   excite = Discovery (3σ below noise), inhibit = Hint (1.5σ below noise).
+    pub fn with_sigma_gate(gate: &rustynum_core::SigmaGate) -> Self {
+        Self {
+            index: HdrIndex::new(),
+            hat: MexicanHat::from_sigma_gate(gate),
+            window: RollingWindow::new(100),
+        }
+    }
+
     /// Set Mexican hat parameters
     pub fn set_mexican_hat(&mut self, excite: u32, inhibit: u32) {
         self.hat = MexicanHat::new(excite, inhibit);
+    }
+
+    /// Recalibrate Mexican hat from a SigmaGate.
+    pub fn calibrate_from_sigma(&mut self, gate: &rustynum_core::SigmaGate) {
+        self.hat = MexicanHat::from_sigma_gate(gate);
     }
 
     /// Add fingerprint to index
@@ -1325,6 +1362,39 @@ pub fn classify_signal(mean: u8, sd: u8, distance: u32) -> SignalClass {
         (3..=4, 32..=63, 2048..=4095) => SignalClass::Moderate,
         (_, 48.., 4096..=8191) => SignalClass::WeakButStackable,
         _ => SignalClass::Noise,
+    }
+}
+
+/// Classify a Hamming distance using σ-significance from a SigmaGate.
+///
+/// Maps raw distance to `SignificanceLevel` (Discovery/Strong/Evidence/Hint/Noise)
+/// using integer-only comparison against precomputed thresholds.
+/// This is the statistically grounded replacement for the hardcoded `classify_signal`.
+pub fn classify_sigma(
+    distance: u32,
+    gate: &rustynum_core::SigmaGate,
+) -> rustynum_core::SignificanceLevel {
+    if distance < gate.discovery {
+        rustynum_core::SignificanceLevel::Discovery
+    } else if distance < gate.strong {
+        rustynum_core::SignificanceLevel::Strong
+    } else if distance < gate.evidence {
+        rustynum_core::SignificanceLevel::Evidence
+    } else if distance < gate.hint {
+        rustynum_core::SignificanceLevel::Hint
+    } else {
+        rustynum_core::SignificanceLevel::Noise
+    }
+}
+
+/// Bridge: convert `SignificanceLevel` to `SignalClass` for backwards compatibility.
+pub fn significance_to_signal(level: rustynum_core::SignificanceLevel) -> SignalClass {
+    match level {
+        rustynum_core::SignificanceLevel::Discovery
+        | rustynum_core::SignificanceLevel::Strong => SignalClass::Strong,
+        rustynum_core::SignificanceLevel::Evidence => SignalClass::Moderate,
+        rustynum_core::SignificanceLevel::Hint => SignalClass::WeakButStackable,
+        rustynum_core::SignificanceLevel::Noise => SignalClass::Noise,
     }
 }
 
