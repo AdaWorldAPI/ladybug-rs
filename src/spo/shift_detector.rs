@@ -181,7 +181,7 @@ pub fn cross_validate_shift(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::extensions::spo::spo_harvest::spo_distance;
+    use crate::spo::spo_harvest::spo_distance;
 
     fn make_gate() -> SigmaGate {
         SigmaGate::new(16_384)

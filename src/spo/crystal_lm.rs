@@ -45,7 +45,7 @@
 //! Total: ~230 built-in + ~100 learned ≈ 330 concepts
 
 use crate::core::Fingerprint;
-use crate::extensions::cognitive_codebook::{
+use crate::spo::cognitive_codebook::{
     CognitiveAddress, CognitiveCodebook, CognitiveDomain, NarsCopula, QualiaChannel, ThematicRole,
     YamlTemplate, fold_to_48,
 };
