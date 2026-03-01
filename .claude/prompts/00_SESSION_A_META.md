@@ -14,6 +14,36 @@ Your job: wire the SPO distance harvest, stripe shift detector, CLAM path encodi
 
 ---
 
+## DIRECTORY STRUCTURE
+
+```
+src/
+  core/
+    simd.rs              ← 348-line duplicate SIMD (DELETE after rustynum port lands)
+    rustynum_accel.rs    ← rustynum SIMD dispatch interface
+    fingerprint.rs       ← content-addressable fingerprint
+    scent.rs             ← scent/similarity operations
+    vsa.rs               ← VSA bind/bundle/permute
+  search/
+    hdr_cascade.rs       ← adaptive cascade + SigmaGate (already wired)
+  extensions/spo/
+    gestalt.rs           ← 965 lines, committed (DO NOT rewrite)
+    spo.rs               ← existing SPO encoding (53KB)
+    mod.rs               ← module declarations
+    jina_api.rs          ← Jina embedding API
+    jina_cache.rs        ← Jina cache layer
+  graph/
+    avx_engine.rs        ← fingerprint graph engine (SIMD cleaned up)
+  nars/                  ← NARS truth value types
+  cypher_bridge.rs       ← Cypher → BindSpace bridge
+
+NEW FILES TO CREATE (all under src/extensions/spo/):
+    spo_harvest.rs       ← Phase 2: SPO distance + harvest + NARS + inference
+    shift_detector.rs    ← Phase 3: stripe shift detector
+    clam_path.rs         ← Phase 5: CLAM path encoding
+    causal_trajectory.rs ← Phase 6: resonator instrumentation
+```
+
 ## WHAT'S ALREADY COMMITTED
 
 Branch `claude/review-rustynum-pr-80-2zNy5` in ladybug-rs — 2 commits, +1,131 / -421 lines:
@@ -85,7 +115,7 @@ Each document is self-contained with implementation-grade code examples. This me
 
 ## PHASE 2: SPO Distance Harvest
 
-**File: `ladybug-rs/src/spo_harvest.rs` (NEW)**
+**File: `ladybug-rs/src/extensions/spo/spo_harvest.rs` (NEW)**
 
 This is the cosine replacement. 238× fewer cycles, 7.3× more information per computation. The detailed spec is in `spo_distance_harvest_cosine_replacement_prompt.md`. Key deliverables:
 
@@ -126,7 +156,7 @@ The XOR bitmasks (`x_xor`, `y_xor`, `z_xor`) computed for distance are the SAME 
 
 ## PHASE 3: Distance Granularity + Stripe Shift Detector
 
-**Extends: `spo_harvest.rs` + new `shift_detector.rs`**
+**Extends: `src/extensions/spo/spo_harvest.rs` + new `src/extensions/spo/shift_detector.rs`**
 
 Detailed specs in `spo_distance_granularity_investigation.md` and `sigma_stripe_shift_detector_addendum.md`.
 
@@ -168,7 +198,7 @@ impl ShiftDetector {
 }
 ```
 
-**Wire into CollapseGate** (already exists in gestalt.rs):
+**Wire into CollapseGate (already exists in src/extensions/spo/gestalt.rs):
 - Shift toward noise → bias HOLD
 - Shift toward foveal → bias FLOW
 - Bimodal → speciation event
@@ -177,7 +207,7 @@ impl ShiftDetector {
 
 ## PHASE 5: B-tree Channel = CLAM Path
 
-**File: `ladybug-rs/src/clam_path.rs` (NEW)**
+**File: `ladybug-rs/src/extensions/spo/clam_path.rs` (NEW)**
 
 Detailed spec in `btree_clam_path_lineage_addendum.md`.
 
@@ -222,7 +252,7 @@ One u16. Three query types. O(log n + k):
 
 ## PHASE 6: Causal Trajectory Recorder
 
-**File: `ladybug-rs/src/causal_trajectory.rs` (NEW)**
+**File: `ladybug-rs/src/extensions/spo/causal_trajectory.rs` (NEW)**
 
 Detailed spec in `nars_causal_trajectory_hydration_prompt.md`. This is the biggest new module.
 
@@ -274,7 +304,7 @@ FullSimultaneous — all three at once → Gestalt snap (rare)
 
 ## PHASE 7: Gestalt Integration
 
-**Extends existing: `ladybug-rs/src/gestalt.rs` (DO NOT rewrite — add to it)**
+**Extends existing: `ladybug-rs/src/extensions/spo/gestalt.rs` (DO NOT rewrite — add to it)**
 
 ### 7.1 Wire detect_bundling() Into CLAM Harvest Loop
 
@@ -341,7 +371,7 @@ Phase 2  → Core value (SPO distance harvest — the cosine replacement)
 Phase 3  → Near-free upgrades on Phase 2 (raw popcount, histogram, stripe shift)
 Phase 5  → ClamPath encoding (type definitions, CogRecord wire)
 Phase 6  → Causal trajectory recorder (biggest module, uses Phase 2 types)
-Phase 7  → Wires Phase 2-6 into existing gestalt.rs + neo4j-rs + Redis
+Phase 7  → Wires Phase 2-6 into existing src/extensions/spo/gestalt.rs + neo4j-rs + Redis
 ```
 
 ### Minimum Viable
@@ -361,7 +391,7 @@ Everything else builds on that foundation.
 
 ```
 DO NOT modify rustynum (separate session owns it)
-DO NOT rewrite gestalt.rs (add to it, don't replace it)
+DO NOT rewrite src/extensions/spo/gestalt.rs (add to it, don't replace it)
 DO NOT touch the SIMD dispatch in avx_engine.rs (already cleaned up)
 
 KEEP: AVX-512 VPOPCNTDQ path (more specialized than CLAM's distances crate)
