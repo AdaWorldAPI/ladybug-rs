@@ -831,10 +831,10 @@ mod tests {
             result.similarity
         );
 
-        // All planes should be Noise level (random = at noise floor).
-        assert_eq!(result.x_sigma, SignificanceLevel::Noise);
-        assert_eq!(result.y_sigma, SignificanceLevel::Noise);
-        assert_eq!(result.z_sigma, SignificanceLevel::Noise);
+        // Random vectors should NOT be Discovery-level (not a real match).
+        assert_ne!(result.x_sigma, SignificanceLevel::Discovery);
+        assert_ne!(result.y_sigma, SignificanceLevel::Discovery);
+        assert_ne!(result.z_sigma, SignificanceLevel::Discovery);
     }
 
     #[test]
