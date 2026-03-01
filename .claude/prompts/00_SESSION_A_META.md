@@ -14,34 +14,53 @@ Your job: wire the SPO distance harvest, stripe shift detector, CLAM path encodi
 
 ---
 
-## DIRECTORY STRUCTURE
+## MODULE PLACEMENT
+
+SPO and BNN are unconditional, always-on dependencies. The `extensions/spo/` location is being promoted to `src/spo/` as a top-level module (see `00a_PROMOTE_SPO_FIRST_CLASS.md` — **do that first**).
 
 ```
-src/
-  core/
-    simd.rs              ← 348-line duplicate SIMD (DELETE after rustynum port lands)
+EXISTING (use these, extend them, DO NOT duplicate):
+  src/nars/
+    truth.rs             ← TruthValue with revision, from_evidence() — USE THIS
+    inference.rs         ← InferenceRule trait (Deduction, Abduction, Induction)
+    evidence.rs          ← Evidence tracking
+  src/search/
+    hdr_cascade.rs       ← SigmaGate already wired (PR 158)
+    causal.rs            ← Pearl's causal ladder Rung 1/2/3 (37KB)
+    distribution.rs      ← Distribution tracking
+  src/qualia/
+    gestalt.rs           ← Buber I/Thou/It role binding (19KB) — different from SPO gestalt
+    resonance.rs         ← Qualia resonance (34KB)
+  src/core/
+    simd.rs              ← 173-line thin delegator (DELETE after rustynum SIMD port)
     rustynum_accel.rs    ← rustynum SIMD dispatch interface
-    fingerprint.rs       ← content-addressable fingerprint
-    scent.rs             ← scent/similarity operations
-    vsa.rs               ← VSA bind/bundle/permute
-  search/
-    hdr_cascade.rs       ← adaptive cascade + SigmaGate (already wired)
-  extensions/spo/
-    gestalt.rs           ← 965 lines, committed (DO NOT rewrite)
-    spo.rs               ← existing SPO encoding (53KB)
-    mod.rs               ← module declarations
-    jina_api.rs          ← Jina embedding API
-    jina_cache.rs        ← Jina cache layer
-  graph/
-    avx_engine.rs        ← fingerprint graph engine (SIMD cleaned up)
-  nars/                  ← NARS truth value types
-  cypher_bridge.rs       ← Cypher → BindSpace bridge
+    fingerprint.rs / scent.rs / vsa.rs
 
-NEW FILES TO CREATE (all under src/extensions/spo/):
-    spo_harvest.rs       ← Phase 2: SPO distance + harvest + NARS + inference
-    shift_detector.rs    ← Phase 3: stripe shift detector
+PROMOTED TO TOP-LEVEL (Phase 0 — do this first):
+  src/spo/
+    mod.rs               ← declares all submodules, NO feature gate
+    spo.rs               ← SPO encoding (53KB)
+    gestalt.rs           ← BundlingProposal, TiltReport, PlaneCalibration (34KB)
+    spo_harvest.rs       ← SPO distance + harvest (Phase 2, already landed)
+    shift_detector.rs    ← stripe shift detector (Phase 3, already landed)
+    jina_api.rs / jina_cache.rs
+    context_crystal.rs   ← from extensions/
+    meta_resonance.rs    ← from extensions/
+    nsm_substrate.rs     ← from extensions/
+    codebook_training.rs ← from extensions/
+    deepnsm_integration.rs ← from extensions/
+    cognitive_codebook.rs  ← from extensions/
+    crystal_lm.rs        ← from extensions/
+    sentence_crystal.rs  ← from extensions/
+
+NEW FILES (create under src/spo/ after promotion):
     clam_path.rs         ← Phase 5: CLAM path encoding
     causal_trajectory.rs ← Phase 6: resonator instrumentation
+
+CRITICAL TYPE REUSE:
+  harvest_to_nars() → MUST return crate::nars::TruthValue (already has revision rule)
+  TypedInference    → should use/extend crate::nars::InferenceRule trait
+  CausalTrajectory  → edges must be compatible with src/search/causal.rs Pearl ladder
 ```
 
 ## WHAT'S ALREADY COMMITTED
@@ -115,7 +134,7 @@ Each document is self-contained with implementation-grade code examples. This me
 
 ## PHASE 2: SPO Distance Harvest
 
-**File: `ladybug-rs/src/extensions/spo/spo_harvest.rs` (NEW)**
+**File: `ladybug-rs/src/spo/spo_harvest.rs` (NEW)**
 
 This is the cosine replacement. 238× fewer cycles, 7.3× more information per computation. The detailed spec is in `spo_distance_harvest_cosine_replacement_prompt.md`. Key deliverables:
 
@@ -156,7 +175,7 @@ The XOR bitmasks (`x_xor`, `y_xor`, `z_xor`) computed for distance are the SAME 
 
 ## PHASE 3: Distance Granularity + Stripe Shift Detector
 
-**Extends: `src/extensions/spo/spo_harvest.rs` + new `src/extensions/spo/shift_detector.rs`**
+**Extends: `src/spo/spo_harvest.rs` + new `src/spo/shift_detector.rs`**
 
 Detailed specs in `spo_distance_granularity_investigation.md` and `sigma_stripe_shift_detector_addendum.md`.
 
@@ -198,7 +217,7 @@ impl ShiftDetector {
 }
 ```
 
-**Wire into CollapseGate (already exists in src/extensions/spo/gestalt.rs):
+**Wire into CollapseGate (already exists in src/spo/gestalt.rs):
 - Shift toward noise → bias HOLD
 - Shift toward foveal → bias FLOW
 - Bimodal → speciation event
@@ -207,7 +226,7 @@ impl ShiftDetector {
 
 ## PHASE 5: B-tree Channel = CLAM Path
 
-**File: `ladybug-rs/src/extensions/spo/clam_path.rs` (NEW)**
+**File: `ladybug-rs/src/spo/clam_path.rs` (NEW)**
 
 Detailed spec in `btree_clam_path_lineage_addendum.md`.
 
@@ -252,7 +271,7 @@ One u16. Three query types. O(log n + k):
 
 ## PHASE 6: Causal Trajectory Recorder
 
-**File: `ladybug-rs/src/extensions/spo/causal_trajectory.rs` (NEW)**
+**File: `ladybug-rs/src/spo/causal_trajectory.rs` (NEW)**
 
 Detailed spec in `nars_causal_trajectory_hydration_prompt.md`. This is the biggest new module.
 
@@ -304,7 +323,7 @@ FullSimultaneous — all three at once → Gestalt snap (rare)
 
 ## PHASE 7: Gestalt Integration
 
-**Extends existing: `ladybug-rs/src/extensions/spo/gestalt.rs` (DO NOT rewrite — add to it)**
+**Extends existing: `ladybug-rs/src/spo/gestalt.rs` (DO NOT rewrite — add to it)**
 
 ### 7.1 Wire detect_bundling() Into CLAM Harvest Loop
 
@@ -367,23 +386,18 @@ Embed (2KB): SPO 3-axis XOR encoding — cosine-compatible + typed halo harvest
 ## EXECUTION ORDER
 
 ```
-Phase 2  → Core value (SPO distance harvest — the cosine replacement)
-Phase 3  → Near-free upgrades on Phase 2 (raw popcount, histogram, stripe shift)
-Phase 5  → ClamPath encoding (type definitions, CogRecord wire)
-Phase 6  → Causal trajectory recorder (biggest module, uses Phase 2 types)
-Phase 7  → Wires Phase 2-6 into existing src/extensions/spo/gestalt.rs + neo4j-rs + Redis
+Phase 0  → FIRST: Promote SPO to top-level module (see 00a_PROMOTE_SPO_FIRST_CLASS.md)
+           Move spo/ → src/spo/, remove feature gates, update all paths
+Phase 2  → Core value (SPO distance harvest — already landed, now at src/spo/spo_harvest.rs)
+Phase 3  → Already landed (shift_detector.rs, now at src/spo/shift_detector.rs)
+Phase 5  → ClamPath encoding (create at src/spo/clam_path.rs)
+Phase 6  → Causal trajectory recorder (create at src/spo/causal_trajectory.rs)
+Phase 7  → Wires Phase 2-6 into existing src/spo/gestalt.rs + neo4j-rs + Redis
 ```
 
 ### Minimum Viable
 
-If time is limited: **Phase 2 + Phase 3**. That gives:
-- `spo_distance()` as cosine replacement at 238× less cost
-- `harvest_to_nars()` + `harvest_to_inference()` from every search
-- `AccumulatedHarvest` (search learns from searching)
-- Raw popcount + stripe shift detector at zero overhead
-- Wire into existing `CollapseGate` via `ShiftSignal`
-
-Everything else builds on that foundation.
+If time is limited: **Phase 0 + Phase 5 + Phase 6**. Phase 2-3 already landed. The promotion (Phase 0) must happen first — don't create new files in a deprecated location. Then ClamPath and CausalTrajectory are the remaining high-value modules.
 
 ---
 
@@ -391,7 +405,7 @@ Everything else builds on that foundation.
 
 ```
 DO NOT modify rustynum (separate session owns it)
-DO NOT rewrite src/extensions/spo/gestalt.rs (add to it, don't replace it)
+DO NOT rewrite src/spo/gestalt.rs (add to it, don't replace it)
 DO NOT touch the SIMD dispatch in avx_engine.rs (already cleaned up)
 
 KEEP: AVX-512 VPOPCNTDQ path (more specialized than CLAM's distances crate)
