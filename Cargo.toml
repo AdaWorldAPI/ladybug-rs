@@ -24,7 +24,7 @@ crate-type = ["cdylib", "rlib"]
 # =============================================================================
 
 [features]
-default = ["simd", "parallel", "lancedb", "crewai"]
+default = ["simd", "parallel", "lancedb", "crewai", "spo"]
 
 # Core features
 simd = []                        # AVX-512 SIMD for Hamming operations
@@ -40,7 +40,9 @@ redis = ["dep:redis"]            # Redis caching
 python = ["pyo3"]                # Python bindings
 codebook = []                    # Cognitive codebook (NSM, NARS, etc.)
 hologram = []                    # Holographic reduced representations
-spo = ["reqwest"]                # Subject-Predicate-Object triples
+# spo and rustynum-bnn are OBLIGATORY — always included after rustynum integration.
+# Feature flag kept as no-op for backwards compatibility only.
+spo = ["reqwest"]
 compress = ["lz4"]               # Compression support
 quantum = []                     # Quantum-inspired operators
 bench = []                       # Benchmark suite (comparison vs Qdrant/Milvus)
