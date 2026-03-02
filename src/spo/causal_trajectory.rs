@@ -402,13 +402,18 @@ impl HydratedTrajectory {
 // =============================================================================
 
 /// Convert BNN `NarsTruth` to canonical ladybug `TruthValue`.
+///
+/// Prefer using `TruthValue::from(nars)` or `nars.into()` directly —
+/// the `From` impls in `crate::nars::truth` are the canonical bridge.
 pub fn nars_to_truth(nars: &NarsTruth) -> TruthValue {
-    TruthValue::new(nars.f.clamp(0.0, 1.0), nars.c.clamp(0.0, 1.0))
+    TruthValue::from(nars)
 }
 
 /// Convert canonical ladybug `TruthValue` to BNN `NarsTruth`.
+///
+/// Prefer using `NarsTruth::from(truth)` or `truth.into()` directly.
 pub fn truth_to_nars(truth: &TruthValue) -> NarsTruth {
-    NarsTruth::new(truth.frequency, truth.confidence)
+    NarsTruth::from(truth)
 }
 
 /// Extract canonical `TruthValue` from an SPO distance harvest result.

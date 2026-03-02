@@ -4,6 +4,8 @@
 
 use std::fmt;
 
+use rustynum_bnn::causal_trajectory::NarsTruth;
+
 /// NARS truth value: <frequency, confidence>
 ///
 /// - **frequency** (f): Proportion of positive evidence (0.0 - 1.0)
@@ -246,6 +248,34 @@ impl fmt::Display for TruthValue {
 impl Default for TruthValue {
     fn default() -> Self {
         Self::unknown()
+    }
+}
+
+// =============================================================================
+// NarsTruth ↔ TruthValue bridge (R6 fix: compile-time guaranteed conversion)
+// =============================================================================
+
+impl From<NarsTruth> for TruthValue {
+    fn from(nars: NarsTruth) -> Self {
+        Self::new(nars.f.clamp(0.0, 1.0), nars.c.clamp(0.0, 1.0))
+    }
+}
+
+impl From<&NarsTruth> for TruthValue {
+    fn from(nars: &NarsTruth) -> Self {
+        Self::new(nars.f.clamp(0.0, 1.0), nars.c.clamp(0.0, 1.0))
+    }
+}
+
+impl From<TruthValue> for NarsTruth {
+    fn from(truth: TruthValue) -> Self {
+        NarsTruth::new(truth.frequency, truth.confidence)
+    }
+}
+
+impl From<&TruthValue> for NarsTruth {
+    fn from(truth: &TruthValue) -> Self {
+        NarsTruth::new(truth.frequency, truth.confidence)
     }
 }
 
