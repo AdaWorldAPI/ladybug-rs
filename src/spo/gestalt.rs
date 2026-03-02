@@ -758,11 +758,219 @@ impl AntialiasedSigma {
 }
 
 // =============================================================================
-// PHASE 7: GESTALT ENGINE — Connects harvest pipeline to decision lifecycle
+// TACTIC #23 AMP: GestaltState → InferenceRuleKind bias
 // =============================================================================
 
-use crate::nars::TruthValue;
+use crate::nars::{InferenceRuleKind, TruthValue};
 use super::spo_harvest::AccumulatedHarvest;
+
+/// Per-rule bias vector derived from GestaltState.
+///
+/// Tactic #23 (Adaptive Meta-Prompting): the gestalt state of the evidence
+/// influences which NARS inference rules are preferred.
+///
+/// ```text
+/// Crystallizing → prefer Deduction (commit forward chains)
+/// Contested     → prefer Analogy + Comparison (seek alternatives)
+/// Dissolving    → prefer Abduction (find alternative explanations)
+/// Epiphany      → prefer Induction (generalize from new evidence)
+/// ```
+impl GestaltState {
+    /// Produce a 5-element bias vector `[(rule, weight); 5]` for NARS inference.
+    ///
+    /// Positive weight = prefer this rule, negative = suppress.
+    /// Magnitudes are normalized to [-1.0, +1.0].
+    pub fn inference_biases(&self) -> [(InferenceRuleKind, f32); 5] {
+        match self {
+            GestaltState::Crystallizing => [
+                (InferenceRuleKind::Deduction, 0.8),   // commit forward chains
+                (InferenceRuleKind::Revision, 0.5),    // consolidate evidence
+                (InferenceRuleKind::Induction, 0.0),   // neutral
+                (InferenceRuleKind::Abduction, -0.3),  // suppress speculation
+                (InferenceRuleKind::Analogy, -0.2),    // suppress lateral moves
+            ],
+            GestaltState::Contested => [
+                (InferenceRuleKind::Analogy, 0.7),     // seek parallel structures
+                (InferenceRuleKind::Abduction, 0.5),   // seek alternative causes
+                (InferenceRuleKind::Revision, 0.3),    // combine conflicting evidence
+                (InferenceRuleKind::Deduction, -0.4),  // don't commit yet
+                (InferenceRuleKind::Induction, 0.0),   // neutral
+            ],
+            GestaltState::Dissolving => [
+                (InferenceRuleKind::Abduction, 0.8),   // find what went wrong
+                (InferenceRuleKind::Analogy, 0.4),     // find similar patterns
+                (InferenceRuleKind::Induction, 0.2),   // re-generalize
+                (InferenceRuleKind::Deduction, -0.6),  // don't chain from dissolving base
+                (InferenceRuleKind::Revision, -0.3),   // old evidence is suspect
+            ],
+            GestaltState::Epiphany => [
+                (InferenceRuleKind::Induction, 0.8),   // generalize from new evidence
+                (InferenceRuleKind::Revision, 0.6),    // integrate with existing
+                (InferenceRuleKind::Analogy, 0.4),     // find analogies
+                (InferenceRuleKind::Deduction, 0.0),   // neutral
+                (InferenceRuleKind::Abduction, -0.2),  // new evidence, not explaining failure
+            ],
+        }
+    }
+
+    /// Confidence modifier: how much to trust current evidence.
+    ///
+    /// Crystallizing = boost, Contested = dampen, Dissolving = heavily dampen.
+    pub fn confidence_modifier(&self) -> f32 {
+        match self {
+            GestaltState::Crystallizing => 1.2,
+            GestaltState::Contested => 0.8,
+            GestaltState::Dissolving => 0.5,
+            GestaltState::Epiphany => 1.0,
+        }
+    }
+
+    /// Chain depth delta: how deep inference chains should go.
+    ///
+    /// Crystallizing = shallow (already converging), Contested = deep (explore).
+    pub fn chain_depth_delta(&self) -> i8 {
+        match self {
+            GestaltState::Crystallizing => -1,
+            GestaltState::Contested => 2,
+            GestaltState::Dissolving => 3,
+            GestaltState::Epiphany => 1,
+        }
+    }
+}
+
+// =============================================================================
+// TACTIC #12 TCA: Temporal ordering on TruthTrajectory
+// =============================================================================
+
+impl TruthTrajectory {
+    /// Granger-style temporal ordering: does confidence monotonically increase?
+    ///
+    /// Returns the fraction of consecutive events where confidence increased.
+    /// 1.0 = perfectly monotone (strong causal signal).
+    /// 0.0 = no increase at all (no causal direction).
+    pub fn temporal_monotonicity(&self) -> f32 {
+        if self.events.len() < 2 {
+            return 0.0;
+        }
+        let increases = self
+            .events
+            .windows(2)
+            .filter(|w| w[1].nars_confidence > w[0].nars_confidence)
+            .count();
+        increases as f32 / (self.events.len() - 1) as f32
+    }
+
+    /// Temporal acceleration: is confidence gain speeding up or slowing down?
+    ///
+    /// Positive = accelerating (evidence snowball), negative = decelerating.
+    /// Uses finite difference of consecutive confidence deltas.
+    pub fn temporal_acceleration(&self) -> f32 {
+        if self.events.len() < 3 {
+            return 0.0;
+        }
+        let n = self.events.len();
+        let delta_recent = self.events[n - 1].nars_confidence - self.events[n - 2].nars_confidence;
+        let delta_prev = self.events[n - 2].nars_confidence - self.events[n - 3].nars_confidence;
+        delta_recent - delta_prev
+    }
+
+    /// Whether the trajectory shows causal temporal precedence:
+    /// evidence consistently arrives before confidence rises (Granger criterion).
+    ///
+    /// Returns true if at least 60% of evidence events are followed by
+    /// confidence increases within the next 2 events.
+    pub fn has_temporal_precedence(&self) -> bool {
+        if self.events.len() < 3 {
+            return false;
+        }
+        let mut precedence_count = 0;
+        let mut evidence_count = 0;
+
+        for i in 0..self.events.len().saturating_sub(2) {
+            if matches!(
+                self.events[i].event_type,
+                EvidenceEventType::MatchesAdded(_)
+            ) {
+                evidence_count += 1;
+                // Check if confidence rises in next 1-2 events
+                let base_conf = self.events[i].nars_confidence;
+                let rises = (i + 1..=(i + 2).min(self.events.len() - 1))
+                    .any(|j| self.events[j].nars_confidence > base_conf);
+                if rises {
+                    precedence_count += 1;
+                }
+            }
+        }
+
+        evidence_count > 0 && (precedence_count as f32 / evidence_count as f32) >= 0.6
+    }
+}
+
+// =============================================================================
+// TACTIC #21 SSR: Skepticism Schedule from confidence trend
+// =============================================================================
+
+/// Skepticism level derived from TruthTrajectory dynamics.
+///
+/// Tactic #21 (Self-Skeptical Reasoning): when confidence rises too fast,
+/// inject skepticism to prevent premature crystallization.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SkepticismLevel {
+    /// Trust the evidence: confidence is rising steadily from many events.
+    Trust,
+    /// Mild caution: confidence is rising but from few events.
+    Cautious,
+    /// Active skepticism: confidence jumped suddenly (possible artifact).
+    Skeptical,
+    /// Strong doubt: confidence is oscillating or contradictory.
+    Doubting,
+}
+
+impl SkepticismLevel {
+    /// Derive skepticism from a truth trajectory.
+    pub fn from_trajectory(trajectory: &TruthTrajectory) -> Self {
+        let n = trajectory.events.len();
+        if n < 2 {
+            return SkepticismLevel::Cautious; // not enough data
+        }
+
+        let monotonicity = trajectory.temporal_monotonicity();
+        let acceleration = trajectory.temporal_acceleration();
+        let (_, confidence) = trajectory.current_truth();
+
+        // High confidence from very few events → skeptical
+        if confidence > 0.9 && n < 5 {
+            return SkepticismLevel::Skeptical;
+        }
+
+        // Oscillating confidence (low monotonicity) → doubting
+        if monotonicity < 0.3 && n > 4 {
+            return SkepticismLevel::Doubting;
+        }
+
+        // Sharp acceleration + high confidence → skeptical (too fast)
+        if acceleration > 0.1 && confidence > 0.8 {
+            return SkepticismLevel::Skeptical;
+        }
+
+        // Steady monotone rise from many events → trust
+        if monotonicity > 0.7 && n > 5 {
+            return SkepticismLevel::Trust;
+        }
+
+        SkepticismLevel::Cautious
+    }
+
+    /// Confidence damping factor: multiply with NARS confidence before gating.
+    pub fn damping_factor(&self) -> f32 {
+        match self {
+            SkepticismLevel::Trust => 1.0,
+            SkepticismLevel::Cautious => 0.9,
+            SkepticismLevel::Skeptical => 0.7,
+            SkepticismLevel::Doubting => 0.5,
+        }
+    }
+}
 
 /// The engine that bridges AccumulatedHarvest → BundlingProposal → TruthTrajectory.
 ///
@@ -1245,6 +1453,129 @@ mod tests {
         assert_eq!(approved.len(), 1);
         assert!(engine.trajectories[idx].proposal.is_committed());
     }
+
+    // =========================================================================
+    // Tactic #23 AMP: inference biases from gestalt state
+    // =========================================================================
+
+    #[test]
+    fn test_gestalt_inference_biases() {
+        let biases = GestaltState::Crystallizing.inference_biases();
+        // Crystallizing should prefer Deduction
+        let deduction_bias = biases.iter().find(|(r, _)| *r == InferenceRuleKind::Deduction).unwrap().1;
+        let abduction_bias = biases.iter().find(|(r, _)| *r == InferenceRuleKind::Abduction).unwrap().1;
+        assert!(deduction_bias > 0.0);
+        assert!(abduction_bias < 0.0);
+
+        let biases = GestaltState::Dissolving.inference_biases();
+        // Dissolving should prefer Abduction
+        let abduction_bias = biases.iter().find(|(r, _)| *r == InferenceRuleKind::Abduction).unwrap().1;
+        let deduction_bias = biases.iter().find(|(r, _)| *r == InferenceRuleKind::Deduction).unwrap().1;
+        assert!(abduction_bias > 0.0);
+        assert!(deduction_bias < 0.0);
+    }
+
+    #[test]
+    fn test_gestalt_confidence_modifier() {
+        assert!(GestaltState::Crystallizing.confidence_modifier() > 1.0);
+        assert!(GestaltState::Contested.confidence_modifier() < 1.0);
+        assert!(GestaltState::Dissolving.confidence_modifier() < GestaltState::Contested.confidence_modifier());
+    }
+
+    // =========================================================================
+    // Tactic #12 TCA: temporal ordering tests
+    // =========================================================================
+
+    #[test]
+    fn test_temporal_monotonicity() {
+        let proposal = BundlingProposal::new_tentative(
+            "a".to_string(), "b".to_string(),
+            BundlingType::PredicateInversion,
+            200, 7500, 300, 0.5, 0.5,
+            rustynum_core::SignificanceLevel::Evidence, 10,
+        );
+        let mut trajectory = TruthTrajectory::new(proposal);
+
+        // Add monotonically increasing confidence events
+        for i in 1..=5 {
+            trajectory.record_event(EvidenceEvent {
+                timestamp_ms: i * 1000,
+                event_type: EvidenceEventType::MatchesAdded(10),
+                nars_frequency: 0.5 + i as f32 * 0.08,
+                nars_confidence: 0.5 + i as f32 * 0.08,
+                significance: rustynum_core::SignificanceLevel::Evidence,
+                evidence_count: i as u32 * 10,
+                gestalt: GestaltState::Crystallizing,
+            });
+        }
+
+        // 5 increases out of 5 windows = 1.0 (initial event confidence was 0.5)
+        let mono = trajectory.temporal_monotonicity();
+        assert!(mono > 0.8, "Expected high monotonicity, got {}", mono);
+        assert!(trajectory.has_temporal_precedence());
+    }
+
+    // =========================================================================
+    // Tactic #21 SSR: skepticism schedule tests
+    // =========================================================================
+
+    #[test]
+    fn test_skepticism_too_fast() {
+        let proposal = BundlingProposal::new_tentative(
+            "a".to_string(), "b".to_string(),
+            BundlingType::PredicateInversion,
+            200, 7500, 300, 0.95, 0.95,
+            rustynum_core::SignificanceLevel::Discovery, 3,
+        );
+        let mut trajectory = TruthTrajectory::new(proposal);
+
+        // Only 2 events but very high confidence → skeptical
+        trajectory.record_event(EvidenceEvent {
+            timestamp_ms: 1000,
+            event_type: EvidenceEventType::MatchesAdded(10),
+            nars_frequency: 0.96,
+            nars_confidence: 0.96,
+            significance: rustynum_core::SignificanceLevel::Discovery,
+            evidence_count: 13,
+            gestalt: GestaltState::Crystallizing,
+        });
+
+        let skepticism = SkepticismLevel::from_trajectory(&trajectory);
+        assert_eq!(skepticism, SkepticismLevel::Skeptical);
+        assert!(skepticism.damping_factor() < 1.0);
+    }
+
+    #[test]
+    fn test_skepticism_steady_rise() {
+        let proposal = BundlingProposal::new_tentative(
+            "a".to_string(), "b".to_string(),
+            BundlingType::PredicateInversion,
+            200, 7500, 300, 0.4, 0.4,
+            rustynum_core::SignificanceLevel::Hint, 5,
+        );
+        let mut trajectory = TruthTrajectory::new(proposal);
+
+        // Many events with steady monotone rise → trust
+        for i in 1..=8 {
+            trajectory.record_event(EvidenceEvent {
+                timestamp_ms: i * 1000,
+                event_type: EvidenceEventType::MatchesAdded(10),
+                nars_frequency: 0.4 + i as f32 * 0.06,
+                nars_confidence: 0.4 + i as f32 * 0.06,
+                significance: rustynum_core::SignificanceLevel::Evidence,
+                evidence_count: (5 + i * 10) as u32,
+                gestalt: GestaltState::Crystallizing,
+            });
+        }
+
+        let skepticism = SkepticismLevel::from_trajectory(&trajectory);
+        assert_eq!(skepticism, SkepticismLevel::Trust);
+        assert!((skepticism.damping_factor() - 1.0).abs() < f32::EPSILON);
+    }
+
+    // =========================================================================
+    // Phase 7: GestaltEngine tests
+    // =========================================================================
 
     #[test]
     fn test_engine_gestalt_summary() {
