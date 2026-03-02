@@ -24,7 +24,7 @@
 //! - `jina_api` / `jina_cache` — Jina embedding API + cache
 
 mod jina_api;
-mod jina_cache;
+pub(crate) mod jina_cache;
 pub mod gestalt;
 pub mod spo_harvest;
 pub mod shift_detector;
@@ -36,6 +36,7 @@ pub mod nsm_substrate;
 pub mod codebook_training;
 pub mod deepnsm_integration;
 pub mod cognitive_codebook;
+pub mod codebook_hydration;
 pub mod crystal_lm;
 pub mod sentence_crystal;
 mod spo;

@@ -506,13 +506,7 @@ impl Default for CognitiveCodebook {
 impl CognitiveCodebook {
     /// Create new codebook with all built-in concepts
     pub fn new() -> Self {
-        let mut codebook = Self {
-            btree: BTreeMap::new(),
-            hash_index: HashMap::new(),
-            fingerprints: HashMap::new(),
-            names: HashMap::new(),
-            total_entries: 0,
-        };
+        let mut codebook = Self::empty();
 
         codebook.init_nsm_primes();
         codebook.init_roles();
@@ -525,6 +519,17 @@ impl CognitiveCodebook {
         codebook.init_rung_levels();
 
         codebook
+    }
+
+    /// Create an empty codebook (no built-in concepts).
+    pub fn empty() -> Self {
+        Self {
+            btree: BTreeMap::new(),
+            hash_index: HashMap::new(),
+            fingerprints: HashMap::new(),
+            names: HashMap::new(),
+            total_entries: 0,
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -870,6 +875,30 @@ impl CognitiveCodebook {
         self.names.insert(name, addr);
 
         self.total_entries += 1;
+    }
+
+    /// Replace an existing entry (used by hydration to swap fingerprints).
+    ///
+    /// If the name already exists, removes the old entry first.
+    /// Otherwise acts like insert.
+    pub fn replace_entry(&mut self, name: &str, addr: CognitiveAddress, fp: Fingerprint) {
+        // Remove old entry if it exists
+        if let Some(old_addr) = self.names.remove(name) {
+            self.fingerprints.remove(&old_addr);
+            self.hash_index.remove(&old_addr.hash());
+
+            // Remove from BTree
+            if let Some(entries) = self.btree.get_mut(&old_addr.bucket()) {
+                entries.retain(|e| e.name != name);
+                if entries.is_empty() {
+                    self.btree.remove(&old_addr.bucket());
+                }
+            }
+
+            self.total_entries -= 1;
+        }
+
+        self.insert(addr, name.to_string(), fp);
     }
 
     /// Get fingerprint by address
