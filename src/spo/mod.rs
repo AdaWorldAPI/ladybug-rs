@@ -29,6 +29,7 @@ pub mod gestalt;
 pub mod spo_harvest;
 pub mod shift_detector;
 pub mod causal_trajectory;
+pub mod clam_path;
 pub mod context_crystal;
 pub mod meta_resonance;
 pub mod nsm_substrate;

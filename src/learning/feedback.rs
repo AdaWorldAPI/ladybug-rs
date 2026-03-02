@@ -393,13 +393,8 @@ pub fn apply_feedback(
 
     const W_EXT_NARS_BASE: usize = 160;
 
-    // Update decay rate (W160 hi)
+    // Update decay rate in W160 hi (lo = horizon, hi = decay)
     let decay_bits = signal.decay_rate.to_bits() as u64;
-    words[W_EXT_NARS_BASE] =
-        (words[W_EXT_NARS_BASE] & !(!0u64 << 32 << 0)) // keep hi bits
-        | (words[W_EXT_NARS_BASE] & 0xFFFF_FFFF)        // keep lo bits
-        ;
-    // Actually: W160 lo = horizon, W160 hi = decay
     words[W_EXT_NARS_BASE] =
         (words[W_EXT_NARS_BASE] & 0xFFFF_FFFF) | (decay_bits << 32);
 
