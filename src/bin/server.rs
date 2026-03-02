@@ -48,7 +48,7 @@ use arrow_ipc::writer::StreamWriter;
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
 
 use ladybug::core::Fingerprint;
-use ladybug::core::simd::{self, hamming_distance};
+use ladybug::core::rustynum_accel::{self as simd, hamming_distance};
 use ladybug::nars::TruthValue;
 use ladybug::storage::service::{CognitiveService, CpuFeatures, ServiceConfig};
 use ladybug::storage::{Addr, BindSpace, CogRedis, FINGERPRINT_WORDS, RedisResult};

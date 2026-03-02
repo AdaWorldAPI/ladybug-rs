@@ -136,7 +136,7 @@ impl Fingerprint {
     /// Hamming distance to another fingerprint
     #[inline]
     pub fn hamming(&self, other: &Fingerprint) -> u32 {
-        super::simd::hamming_distance(self, other)
+        super::rustynum_accel::hamming_distance(self, other)
     }
 
     /// Similarity (0.0 - 1.0)
