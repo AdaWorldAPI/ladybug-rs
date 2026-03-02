@@ -81,7 +81,7 @@ pub enum WhereClause {
 }
 
 /// Cypher literal value.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub enum CypherValue {
     String(String),
     Int(i64),
@@ -379,7 +379,7 @@ fn execute_match_return(
 
     for (addr, node) in bs.nodes_iter() {
         // Label filter
-        if let Some(ref lbl) = label {
+        if let Some(lbl) = &label {
             match &node.label {
                 Some(node_label) if node_label == lbl => {}
                 _ => continue,
@@ -387,7 +387,7 @@ fn execute_match_return(
         }
 
         // WHERE filter
-        if let Some(ref wc) = where_clause {
+        if let Some(wc) = &where_clause {
             if !evaluate_where(node, wc) {
                 continue;
             }

@@ -125,6 +125,6 @@ Every `#[cfg(feature = "spo")]` gate is a lie — spo is always on. Every `crate
 Only things that are genuinely optional and feature-gated:
 - `codebook/` — codebook training extensions
 - `hologram/` — hologram extensions  
-- `compress/` — compression extensions
+- `compress/` — compression extensions (**future promotion candidate**: once panCAKES compressive search is wired into the core search path, compress becomes part of the cognitive substrate, not optional infrastructure. Leave it here for now — it hasn't earned its seat yet.)
 
 Everything else moves to `src/spo/` or its natural top-level home.

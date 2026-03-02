@@ -433,7 +433,7 @@ impl SentenceCrystal {
 
         // Try Jina API if key is available
         let embedding = if let Some(ref api_key) = self.jina_api_key {
-            match super::spo::jina_embed_curl(api_key, &[text]) {
+            match super::jina_embed_curl(api_key, &[text]) {
                 Ok(embeddings) if !embeddings.is_empty() => embeddings[0].clone(),
                 _ => generate_pseudo_embedding(text),
             }

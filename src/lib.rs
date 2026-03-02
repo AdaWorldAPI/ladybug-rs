@@ -113,15 +113,15 @@ pub mod spectroscopy;
 pub mod qualia;
 pub mod mul; // Meta-Uncertainty Layer (10-layer metacognition)
 pub mod cypher_bridge; // Cypher string → BindSpace operations (neo4j-rs bridge)
+pub mod spo; // Subject-Predicate-Object — core cognitive substrate (always-on)
 
 // === Unified execution contract (crewai-rust × ada-n8n integration) ===
 pub mod contract;
 
-// === Optional extensions ===
+// === Optional extensions (codebook, hologram, compress only) ===
 #[cfg(any(
     feature = "codebook",
     feature = "hologram",
-    feature = "spo",
     feature = "compress"
 ))]
 pub mod extensions;

@@ -24,7 +24,7 @@ crate-type = ["cdylib", "rlib"]
 # =============================================================================
 
 [features]
-default = ["simd", "parallel", "lancedb", "crewai"]
+default = ["simd", "parallel", "lancedb", "crewai", "spo_jina"]
 
 # Core features
 simd = []                        # AVX-512 SIMD for Hamming operations
@@ -40,7 +40,8 @@ redis = ["dep:redis"]            # Redis caching
 python = ["pyo3"]                # Python bindings
 codebook = []                    # Cognitive codebook (NSM, NARS, etc.)
 hologram = []                    # Holographic reduced representations
-spo = ["reqwest"]                # Subject-Predicate-Object triples
+# SPO is always-on (no feature gate). Only the Jina HTTP client needs reqwest.
+spo_jina = ["reqwest"]
 compress = ["lz4"]               # Compression support
 quantum = []                     # Quantum-inspired operators
 bench = []                       # Benchmark suite (comparison vs Qdrant/Milvus)
@@ -58,7 +59,7 @@ vendor-crewai = []
 # All features
 full = [
     "simd", "parallel", "python",
-    "codebook", "hologram", "spo", "compress", "quantum",
+    "codebook", "hologram", "spo_jina", "compress", "quantum",
     "lancedb", "neo4j", "redis"
 ]
 

@@ -75,7 +75,7 @@ pub struct QualiaVector {
     pub tension: f32,   // Relaxed ↔ Tense
     pub depth: f32,     // Surface ↔ Profound
     pub certainty: f32, // Doubtful ↔ Certain
-    pub depth: f32,  // Distant ↔ Intimate
+    pub closeness: f32,  // Distant ↔ Intimate
     pub urgency: f32,   // Relaxed ↔ Urgent
     pub novelty: f32,   // Familiar ↔ Novel
 }
@@ -88,7 +88,7 @@ impl QualiaVector {
             tension: 0.5,
             depth: 0.5,
             certainty: 0.5,
-            depth: 0.5,
+            closeness: 0.5,
             urgency: 0.5,
             novelty: 0.5,
         }
