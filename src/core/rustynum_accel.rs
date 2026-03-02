@@ -180,6 +180,116 @@ pub fn slice_dot_i8(a: &[u64], b: &[u64]) -> i64 {
 }
 
 // ────────────────────────────────────────────────────────────────
+// Fingerprint-level convenience functions (formerly core::simd)
+// ────────────────────────────────────────────────────────────────
+
+/// Compute Hamming distance between two fingerprints.
+///
+/// Delegates to rustynum's runtime-dispatched SIMD (AVX-512 → AVX2 → scalar).
+#[inline]
+pub fn hamming_distance(a: &Fingerprint, b: &Fingerprint) -> u32 {
+    fingerprint_hamming(a, b)
+}
+
+/// Batch Hamming distance computation (parallel when `parallel` feature is on)
+#[cfg(feature = "parallel")]
+pub fn batch_hamming(query: &Fingerprint, corpus: &[Fingerprint]) -> Vec<u32> {
+    use rayon::prelude::*;
+    corpus
+        .par_iter()
+        .map(|fp| hamming_distance(query, fp))
+        .collect()
+}
+
+/// Non-parallel batch Hamming
+#[cfg(not(feature = "parallel"))]
+pub fn batch_hamming(query: &Fingerprint, corpus: &[Fingerprint]) -> Vec<u32> {
+    corpus
+        .iter()
+        .map(|fp| hamming_distance(query, fp))
+        .collect()
+}
+
+/// Hamming search engine with pre-allocated buffers
+pub struct HammingEngine {
+    corpus: Vec<Fingerprint>,
+    #[cfg(feature = "parallel")]
+    thread_pool: rayon::ThreadPool,
+}
+
+impl HammingEngine {
+    /// Create new engine
+    pub fn new() -> Self {
+        Self {
+            corpus: Vec::new(),
+            #[cfg(feature = "parallel")]
+            thread_pool: rayon::ThreadPoolBuilder::new()
+                .num_threads(num_cpus::get())
+                .build()
+                .unwrap(),
+        }
+    }
+
+    /// Index corpus
+    pub fn index(&mut self, corpus: Vec<Fingerprint>) {
+        self.corpus = corpus;
+    }
+
+    /// Search for k nearest neighbors
+    pub fn search(&self, query: &Fingerprint, k: usize) -> Vec<(usize, u32, f32)> {
+        let distances = batch_hamming(query, &self.corpus);
+
+        let mut indexed: Vec<(usize, u32)> = distances.into_iter().enumerate().collect();
+
+        let k = k.min(indexed.len());
+        indexed.select_nth_unstable_by_key(k.saturating_sub(1), |&(_, d)| d);
+        indexed.truncate(k);
+        indexed.sort_by_key(|&(_, d)| d);
+
+        indexed
+            .into_iter()
+            .map(|(idx, dist)| {
+                let similarity = 1.0 - (dist as f32 / crate::FINGERPRINT_BITS as f32);
+                (idx, dist, similarity)
+            })
+            .collect()
+    }
+
+    /// Search with threshold
+    pub fn search_threshold(
+        &self,
+        query: &Fingerprint,
+        threshold: f32,
+        limit: usize,
+    ) -> Vec<(usize, u32, f32)> {
+        let max_distance = ((1.0 - threshold) * crate::FINGERPRINT_BITS as f32) as u32;
+        let mut results = self.search(query, limit);
+        results.retain(|&(_, dist, _)| dist <= max_distance);
+        results
+    }
+
+    /// Corpus size
+    pub fn len(&self) -> usize {
+        self.corpus.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.corpus.is_empty()
+    }
+}
+
+impl Default for HammingEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Detect SIMD capability at runtime
+pub fn simd_level() -> &'static str {
+    "rustynum-runtime-dispatch"
+}
+
+// ────────────────────────────────────────────────────────────────
 // Tests
 // ────────────────────────────────────────────────────────────────
 

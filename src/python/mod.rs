@@ -36,7 +36,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
 
 use crate::core::Fingerprint;
-use crate::core::simd::{batch_hamming as rust_batch_hamming, hamming_distance};
+use crate::core::rustynum_accel::{batch_hamming as rust_batch_hamming, hamming_distance};
 use crate::nars::TruthValue;
 use crate::storage::Database;
 use crate::{FINGERPRINT_BITS, FINGERPRINT_BYTES};
@@ -382,7 +382,7 @@ fn open(path: &str) -> PyResult<PyDatabase> {
 /// Get SIMD level
 #[pyfunction]
 fn simd_level() -> &'static str {
-    crate::core::simd::simd_level()
+    crate::core::rustynum_accel::simd_level()
 }
 
 // =============================================================================
