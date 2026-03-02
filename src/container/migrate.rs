@@ -1,13 +1,16 @@
-//! Migration: 16K Fingerprint → 2×8K CogRecord.
+//! Migration: 16K Fingerprint → CogRecord.
+//!
+//! With CONTAINER_WORDS = 256 a single Container holds the full 16K fingerprint.
+//! The old "Extended" split into two 128-word halves is no longer needed.
 
 use super::CONTAINER_WORDS;
 use super::geometry::ContainerGeometry;
 use super::meta::MetaViewMut;
 use super::record::CogRecord;
 
-/// Convert a 16K Fingerprint ([u64; 256]) to a 2-container CogRecord (Cam geometry).
+/// Convert a 16K Fingerprint ([u64; 256]) to a CogRecord (Cam geometry).
 ///
-/// The first 128 words (highest signal density) become content container 1.
+/// All 256 words fit into the single content container (CONTAINER_WORDS = 256).
 /// If the old vector had schema sidecar data in words 208-255, it is extracted
 /// and placed into the metadata container using the new layout.
 pub fn migrate_16k(old: &[u64; 256]) -> CogRecord {
@@ -40,54 +43,10 @@ pub fn migrate_16k(old: &[u64; 256]) -> CogRecord {
     record
 }
 
-/// Convert a 16K Fingerprint to Extended geometry (two linked records).
-/// Returns the primary record (words 0..127) and secondary record (words 128..255).
-/// With single-content CogRecord, Extended geometry uses linked records.
-pub fn migrate_16k_extended(old: &[u64; 256]) -> (CogRecord, CogRecord) {
-    let mut primary = CogRecord::new(ContainerGeometry::Extended);
-    primary.content
-        .words
-        .copy_from_slice(&old[..CONTAINER_WORDS]);
-
-    {
-        let mut meta = MetaViewMut::new(&mut primary.meta.words);
-        meta.set_schema_version(1);
-        meta.set_container_count(2); // this record = meta + content
-        meta.set_geometry(ContainerGeometry::Extended);
-        meta.update_checksum();
-    }
-
-    let mut secondary = CogRecord::new(ContainerGeometry::Extended);
-    secondary.content
-        .words
-        .copy_from_slice(&old[CONTAINER_WORDS..2 * CONTAINER_WORDS]);
-
-    {
-        let mut meta = MetaViewMut::new(&mut secondary.meta.words);
-        meta.set_schema_version(1);
-        meta.set_container_count(2);
-        meta.set_geometry(ContainerGeometry::Extended);
-        meta.update_checksum();
-    }
-
-    (primary, secondary)
-}
-
 /// Convert a single CogRecord back to 16K Fingerprint ([u64; 256]).
-/// The content fills words 0..127; words 128..255 are zero.
-/// For Extended/Xyz with linked records, use `to_16k_linked` instead.
 pub fn to_16k(record: &CogRecord) -> [u64; 256] {
     let mut out = [0u64; 256];
     out[..CONTAINER_WORDS].copy_from_slice(&record.content.words);
-    out
-}
-
-/// Convert a pair of linked CogRecords (Extended geometry) back to 16K Fingerprint.
-/// Primary content → words 0..127, secondary content → words 128..255.
-pub fn to_16k_linked(primary: &CogRecord, secondary: &CogRecord) -> [u64; 256] {
-    let mut out = [0u64; 256];
-    out[..CONTAINER_WORDS].copy_from_slice(&primary.content.words);
-    out[CONTAINER_WORDS..2 * CONTAINER_WORDS].copy_from_slice(&secondary.content.words);
     out
 }
 

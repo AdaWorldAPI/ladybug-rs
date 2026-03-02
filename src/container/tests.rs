@@ -887,18 +887,15 @@ fn test_migration_16k_to_container() {
 }
 
 #[test]
-fn test_migration_extended_roundtrip() {
+fn test_migration_roundtrip() {
+    // With CONTAINER_WORDS=256, a single CogRecord holds the full fingerprint.
     let mut old = [0u64; 256];
     for i in 0..256 {
         old[i] = (i as u64 + 1).wrapping_mul(0x0101_0101_0101_0101);
     }
 
-    let (primary, secondary) = migrate::migrate_16k_extended(&old);
-    assert_eq!(primary.geometry(), ContainerGeometry::Extended);
-    assert_eq!(secondary.geometry(), ContainerGeometry::Extended);
-
-    // Roundtrip using linked records
-    let back = migrate::to_16k_linked(&primary, &secondary);
+    let record = migrate::migrate_16k(&old);
+    let back = migrate::to_16k(&record);
     assert_eq!(back, old);
 }
 
