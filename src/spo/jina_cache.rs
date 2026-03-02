@@ -2,96 +2,71 @@
 //!
 //! Strategy:
 //! 1. Exact match in HashMap → use cached (0 API calls)
-//! 2. Near match (Hamming < 0.15) → use closest cached (0 API calls)  
+//! 2. Near match (Hamming < 0.15) → use closest cached (0 API calls)
 //! 3. Cache miss → call Jina API, then cache result
 //!
 //! For typical knowledge graphs with repeated entities,
 //! this reduces Jina API calls by 90%+
 
 use std::collections::HashMap;
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
-use std::path::Path;
 
-// Same fingerprint structure as main.rs
-const N: usize = 16_384;
-const N64: usize = 256;
+use crate::core::Fingerprint;
+use crate::FINGERPRINT_BITS;
+
 const NEAR_THRESHOLD: u32 = 2458; // 0.15 * 16384 = 15% Hamming distance
 
-#[repr(align(64))]
-#[derive(Clone)]
-pub struct Fingerprint {
-    pub data: [u64; N64],
-}
+/// Convert from f32 Jina embedding (1024D) to binary fingerprint (16Kbit).
+///
+/// Each of 1024 dimensions maps to ~10 bits. Bits above/below median
+/// are set with strength proportional to absolute distance from median.
+pub fn fingerprint_from_jina_embedding(embedding: &[f32]) -> Fingerprint {
+    let mut fp = Fingerprint::zero();
+    let words = fp.as_raw_mut();
 
-impl Fingerprint {
-    pub fn zero() -> Self {
-        Self { data: [0u64; N64] }
-    }
+    let mut sorted: Vec<f32> = embedding.to_vec();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let median = sorted[512];
 
-    #[inline]
-    pub fn hamming(&self, other: &Fingerprint) -> u32 {
-        let mut t = 0u32;
-        for i in 0..N64 {
-            t += (self.data[i] ^ other.data[i]).count_ones();
-        }
-        t
-    }
+    for (i, &val) in embedding.iter().enumerate() {
+        let base_bit = i * 10; // 1024 * 10 = 10240 < 16384, fits
 
-    pub fn similarity(&self, other: &Fingerprint) -> f64 {
-        1.0 - (self.hamming(other) as f64 / N as f64)
-    }
+        let strength = ((val - median).abs() * 5.0).min(5.0) as usize;
 
-    /// Convert from f32 Jina embedding (1024D) to binary fingerprint (10Kbit)
-    pub fn from_jina_embedding(embedding: &[f32]) -> Self {
-        let mut fp = Fingerprint::zero();
+        for j in 0..strength {
+            let bit_pos = (base_bit + j) % FINGERPRINT_BITS;
+            let word_idx = bit_pos / 64;
+            let bit_idx = bit_pos % 64;
 
-        // Method: threshold at median, then expand to 10K bits
-        // Each of 1024 dimensions maps to ~10 bits
-        let mut sorted: Vec<f32> = embedding.to_vec();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let median = sorted[512];
-
-        for (i, &val) in embedding.iter().enumerate() {
-            let base_bit = i * 10; // 1024 * 10 = 10240 < 16384, fits without wrap
-
-            // Set multiple bits based on value relative to median
-            let strength = ((val - median).abs() * 5.0).min(5.0) as usize;
-
-            for j in 0..strength {
-                let bit_pos = (base_bit + j) % N;
-                let word_idx = bit_pos / 64;
-                let bit_idx = bit_pos % 64;
-
-                if val > median {
-                    fp.data[word_idx] |= 1 << bit_idx;
-                }
+            if val > median {
+                words[word_idx] |= 1 << bit_idx;
             }
         }
-
-        fp
     }
 
-    /// Serialize to bytes
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(N64 * 8);
-        for word in &self.data {
-            bytes.extend_from_slice(&word.to_le_bytes());
-        }
-        bytes
-    }
+    fp
+}
 
-    /// Deserialize from bytes
-    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() != N64 * 8 {
-            return None;
-        }
-        let mut fp = Fingerprint::zero();
-        for (i, chunk) in bytes.chunks(8).enumerate() {
-            fp.data[i] = u64::from_le_bytes(chunk.try_into().ok()?);
-        }
-        Some(fp)
+/// Serialize a Fingerprint to owned byte vec (for disk persistence).
+fn fingerprint_to_bytes(fp: &Fingerprint) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(fp.as_raw().len() * 8);
+    for word in fp.as_raw() {
+        bytes.extend_from_slice(&word.to_le_bytes());
     }
+    bytes
+}
+
+/// Deserialize a Fingerprint from bytes (for disk persistence).
+fn fingerprint_from_le_bytes(bytes: &[u8]) -> Option<Fingerprint> {
+    if bytes.len() != 256 * 8 {
+        return None;
+    }
+    let mut data = [0u64; 256];
+    for (i, chunk) in bytes.chunks(8).enumerate() {
+        data[i] = u64::from_le_bytes(chunk.try_into().ok()?);
+    }
+    Some(Fingerprint::from_raw(data))
 }
 
 /// Cache entry with original text and fingerprint
@@ -172,7 +147,7 @@ impl JinaCache {
         }
 
         // 2. Near match (linear scan - could use ANN for large caches)
-        let query_lower = text.to_lowercase();
+        let _query_lower = text.to_lowercase();
         for entry in &self.entries {
             // Quick string similarity check first
             if string_similar(&entry.text, text) {
@@ -184,7 +159,7 @@ impl JinaCache {
         // 3. API call needed
         self.stats.api_calls += 1;
         let embedding = self.call_jina_api(text)?;
-        let fingerprint = Fingerprint::from_jina_embedding(&embedding);
+        let fingerprint = fingerprint_from_jina_embedding(&embedding);
 
         // Cache it
         let entry = CacheEntry {
@@ -240,7 +215,7 @@ impl JinaCache {
 
             for ((i, text), embedding) in to_fetch.into_iter().zip(embeddings.into_iter()) {
                 self.stats.api_calls += 1;
-                let fingerprint = Fingerprint::from_jina_embedding(&embedding);
+                let fingerprint = fingerprint_from_jina_embedding(&embedding);
 
                 let entry = CacheEntry {
                     text: text.to_string(),
@@ -263,10 +238,9 @@ impl JinaCache {
     pub fn find_near_matches(&self, text: &str, threshold: f64) -> Vec<(String, f64)> {
         let mut matches = Vec::new();
 
-        // Get fingerprint for query (without caching)
         if let Some(entry) = self.exact.get(text) {
             for other in &self.entries {
-                let sim = entry.fingerprint.similarity(&other.fingerprint);
+                let sim = entry.fingerprint.similarity(&other.fingerprint) as f64;
                 if sim >= threshold && other.text != text {
                     matches.push((other.text.clone(), sim));
                 }
@@ -293,7 +267,6 @@ impl JinaCache {
             if let Ok(file) = File::create(path) {
                 let mut writer = BufWriter::new(file);
 
-                // Simple format: count, then (text_len, text, fingerprint_bytes) for each
                 let count = self.entries.len() as u32;
                 let _ = writer.write_all(&count.to_le_bytes());
 
@@ -302,7 +275,7 @@ impl JinaCache {
                     let text_len = text_bytes.len() as u32;
                     let _ = writer.write_all(&text_len.to_le_bytes());
                     let _ = writer.write_all(text_bytes);
-                    let _ = writer.write_all(&entry.fingerprint.to_bytes());
+                    let _ = writer.write_all(&fingerprint_to_bytes(&entry.fingerprint));
                 }
             }
         }
@@ -332,12 +305,12 @@ impl JinaCache {
                     }
                     let text = String::from_utf8_lossy(&text_bytes).to_string();
 
-                    let mut fp_bytes = vec![0u8; N64 * 8];
+                    let mut fp_bytes = vec![0u8; 256 * 8];
                     if reader.read_exact(&mut fp_bytes).is_err() {
                         break;
                     }
 
-                    if let Some(fingerprint) = Fingerprint::from_bytes(&fp_bytes) {
+                    if let Some(fingerprint) = fingerprint_from_le_bytes(&fp_bytes) {
                         let entry = CacheEntry {
                             text: text.clone(),
                             fingerprint,
@@ -435,7 +408,6 @@ fn pseudo_embedding(text: &str) -> Vec<f32> {
 
     let mut embedding = vec![0.0f32; 1024];
 
-    // Deterministic pseudo-random based on text
     for (i, chunk) in text.as_bytes().chunks(4).enumerate() {
         let mut hasher = DefaultHasher::new();
         chunk.hash(&mut hasher);
@@ -449,7 +421,6 @@ fn pseudo_embedding(text: &str) -> Vec<f32> {
         }
     }
 
-    // Normalize
     let norm: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
     if norm > 0.0 {
         for x in &mut embedding {
