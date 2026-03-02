@@ -758,6 +758,198 @@ impl AntialiasedSigma {
 }
 
 // =============================================================================
+// PHASE 7: GESTALT ENGINE — Connects harvest pipeline to decision lifecycle
+// =============================================================================
+
+use crate::nars::TruthValue;
+use super::spo_harvest::AccumulatedHarvest;
+
+/// The engine that bridges AccumulatedHarvest → BundlingProposal → TruthTrajectory.
+///
+/// Phase 7 integration: takes evidence from the harvest pipeline (Phases 2-6)
+/// and manages the lifecycle of bundling proposals through the CollapseGate.
+///
+/// ```text
+/// AccumulatedHarvest.accumulate(result)
+///   → GestaltEngine.evaluate_harvest()
+///     → BundlingProposal (if evidence crosses threshold)
+///       → TruthTrajectory (tracks from proposal to decision)
+///         → CollapseGate decision (Flow/Hold/Block)
+/// ```
+pub struct GestaltEngine {
+    /// Operational mode: Research (auto), Production (semi-auto), Regulated (manual).
+    pub mode: CollapseMode,
+
+    /// Per-plane calibration (adjusts σ thresholds per axis).
+    pub calibration: PlaneCalibration,
+
+    /// Active truth trajectories keyed by trajectory_id.
+    pub trajectories: Vec<TruthTrajectory>,
+
+    /// Confidence threshold for auto-bundling proposals.
+    /// Below this, evidence is accumulated silently.
+    pub bundling_evidence_threshold: u64,
+}
+
+impl GestaltEngine {
+    /// Create with default thresholds and Production mode.
+    pub fn new(mode: CollapseMode, calibration: PlaneCalibration) -> Self {
+        Self {
+            mode,
+            calibration,
+            trajectories: Vec::new(),
+            bundling_evidence_threshold: 10,
+        }
+    }
+
+    /// Evaluate an AccumulatedHarvest and optionally create a BundlingProposal.
+    ///
+    /// Returns `Some(trajectory_index)` if a new proposal was created,
+    /// or `None` if evidence is below threshold.
+    pub fn evaluate_harvest(
+        &mut self,
+        harvest: &AccumulatedHarvest,
+        branch_a: &str,
+        branch_b: &str,
+    ) -> Option<usize> {
+        // Need enough searches to form an opinion
+        if harvest.num_searches < self.bundling_evidence_threshold {
+            return None;
+        }
+
+        // Confidence must meet the mode's proposal threshold
+        let confidence = harvest.accumulated_truth.confidence;
+        if confidence < self.mode.proposal_threshold() {
+            return None;
+        }
+
+        // Determine bundling type from dominant halo
+        let bundling_type = match harvest.dominant_inference() {
+            rustynum_bnn::HaloType::SO => BundlingType::PredicateInversion,
+            rustynum_bnn::HaloType::PO => BundlingType::AgentConvergence,
+            rustynum_bnn::HaloType::SP => BundlingType::TargetDivergence,
+            _ => return None, // Core/S/P/O/Noise don't trigger bundling
+        };
+
+        // Derive σ-significance from accumulated confidence
+        let significance = if confidence > 0.95 {
+            rustynum_core::SignificanceLevel::Discovery
+        } else if confidence > 0.85 {
+            rustynum_core::SignificanceLevel::Strong
+        } else if confidence > 0.70 {
+            rustynum_core::SignificanceLevel::Evidence
+        } else {
+            rustynum_core::SignificanceLevel::Hint
+        };
+
+        // CollapseGate decision from mode
+        let gate = self.mode.decide(confidence);
+
+        let mut proposal = BundlingProposal::new_tentative(
+            branch_a.to_string(),
+            branch_b.to_string(),
+            bundling_type,
+            0, 0, 0, // distances filled by caller with per-plane data
+            harvest.accumulated_truth.frequency,
+            confidence,
+            significance,
+            harvest.num_searches as u32,
+        );
+
+        // If Research mode auto-approved, mark it
+        if matches!(gate, rustynum_core::CollapseGate::Flow) {
+            proposal.approve("auto".to_string(), "Research mode auto-approval".to_string());
+        }
+
+        let trajectory = TruthTrajectory::new(proposal);
+        let idx = self.trajectories.len();
+        self.trajectories.push(trajectory);
+        Some(idx)
+    }
+
+    /// Feed new evidence into an existing trajectory.
+    pub fn feed_evidence(
+        &mut self,
+        trajectory_idx: usize,
+        harvest: &AccumulatedHarvest,
+        gestalt: GestaltState,
+    ) {
+        if let Some(trajectory) = self.trajectories.get_mut(trajectory_idx) {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+
+            let confidence = harvest.accumulated_truth.confidence;
+            let significance = if confidence > 0.95 {
+                rustynum_core::SignificanceLevel::Discovery
+            } else if confidence > 0.85 {
+                rustynum_core::SignificanceLevel::Strong
+            } else if confidence > 0.70 {
+                rustynum_core::SignificanceLevel::Evidence
+            } else {
+                rustynum_core::SignificanceLevel::Hint
+            };
+
+            trajectory.record_event(EvidenceEvent {
+                timestamp_ms: now,
+                event_type: EvidenceEventType::MatchesAdded(harvest.num_searches as u32),
+                nars_frequency: harvest.accumulated_truth.frequency,
+                nars_confidence: confidence,
+                significance,
+                evidence_count: harvest.num_searches as u32,
+                gestalt,
+            });
+        }
+    }
+
+    /// Get the current tilt report from calibration.
+    pub fn tilt_report(&self) -> TiltReport {
+        self.calibration.tilt()
+    }
+
+    /// Check if any trajectory has auto-approval conditions met.
+    /// Returns indices of trajectories that should be auto-approved.
+    pub fn check_auto_approvals(&mut self) -> Vec<usize> {
+        let threshold = self.mode.auto_threshold();
+        let mut approved = Vec::new();
+
+        for (idx, trajectory) in self.trajectories.iter_mut().enumerate() {
+            if !trajectory.proposal.is_tentative() {
+                continue;
+            }
+            let (_, confidence) = trajectory.current_truth();
+            if confidence >= threshold {
+                trajectory.proposal.approve(
+                    "auto".to_string(),
+                    format!("Confidence {:.3} >= threshold {:.3}", confidence, threshold),
+                );
+                approved.push(idx);
+            }
+        }
+
+        approved
+    }
+
+    /// Count trajectories by gestalt state.
+    pub fn gestalt_summary(&self) -> (usize, usize, usize, usize) {
+        let mut cryst = 0;
+        let mut contest = 0;
+        let mut dissolve = 0;
+        let mut epiphany = 0;
+        for t in &self.trajectories {
+            match t.current_gestalt() {
+                GestaltState::Crystallizing => cryst += 1,
+                GestaltState::Contested => contest += 1,
+                GestaltState::Dissolving => dissolve += 1,
+                GestaltState::Epiphany => epiphany += 1,
+            }
+        }
+        (cryst, contest, dissolve, epiphany)
+    }
+}
+
+// =============================================================================
 // TESTS
 // =============================================================================
 
@@ -963,5 +1155,121 @@ mod tests {
         assert_eq!(trajectory.event_count(), 3);
         assert_eq!(trajectory.current_gestalt(), GestaltState::Contested);
         assert!(trajectory.confidence_trend() < 0.0); // confidence dropped
+    }
+
+    // =========================================================================
+    // Phase 7: GestaltEngine tests
+    // =========================================================================
+
+    #[test]
+    fn test_engine_below_threshold() {
+        let gate = rustynum_core::SigmaGate::sku_16k();
+        let calibration = PlaneCalibration::uniform(gate);
+        let mut engine = GestaltEngine::new(CollapseMode::Production, calibration);
+
+        // Too few searches: no proposal
+        let mut harvest = AccumulatedHarvest::new();
+        for _ in 0..5 {
+            harvest.num_searches += 1;
+        }
+        harvest.accumulated_truth = TruthValue::new(0.8, 0.9);
+
+        let result = engine.evaluate_harvest(&harvest, "a", "b");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_engine_creates_proposal() {
+        let gate = rustynum_core::SigmaGate::sku_16k();
+        let calibration = PlaneCalibration::uniform(gate);
+        let mut engine = GestaltEngine::new(CollapseMode::Production, calibration);
+
+        // Enough searches + high confidence + SO halo → should create proposal
+        let mut harvest = AccumulatedHarvest::new();
+        harvest.num_searches = 20;
+        harvest.accumulated_truth = TruthValue::new(0.85, 0.88);
+        // Set SO as dominant by making SO count highest
+        harvest.type_counts[2] = 100; // SO index
+
+        let result = engine.evaluate_harvest(&harvest, "branch_x", "branch_y");
+        assert!(result.is_some());
+
+        let idx = result.unwrap();
+        let trajectory = &engine.trajectories[idx];
+        assert_eq!(trajectory.proposal.bundling_type, BundlingType::PredicateInversion);
+        assert!(trajectory.proposal.is_tentative()); // Production mode: Hold
+    }
+
+    #[test]
+    fn test_engine_research_auto_approves() {
+        let gate = rustynum_core::SigmaGate::sku_16k();
+        let calibration = PlaneCalibration::uniform(gate);
+        let mut engine = GestaltEngine::new(CollapseMode::Research, calibration);
+
+        let mut harvest = AccumulatedHarvest::new();
+        harvest.num_searches = 50;
+        harvest.accumulated_truth = TruthValue::new(0.95, 0.97);
+        harvest.type_counts[3] = 200; // PO index → AgentConvergence
+
+        let result = engine.evaluate_harvest(&harvest, "a", "b");
+        assert!(result.is_some());
+
+        let idx = result.unwrap();
+        assert!(engine.trajectories[idx].proposal.is_committed()); // auto-approved
+    }
+
+    #[test]
+    fn test_engine_feed_evidence_and_auto_approve() {
+        let gate = rustynum_core::SigmaGate::sku_16k();
+        let calibration = PlaneCalibration::uniform(gate);
+        let mut engine = GestaltEngine::new(CollapseMode::Research, calibration);
+        engine.bundling_evidence_threshold = 5;
+
+        // Initial harvest: low confidence → tentative
+        let mut harvest = AccumulatedHarvest::new();
+        harvest.num_searches = 10;
+        harvest.accumulated_truth = TruthValue::new(0.8, 0.85);
+        harvest.type_counts[2] = 50; // SO
+
+        let idx = engine.evaluate_harvest(&harvest, "a", "b").unwrap();
+        assert!(engine.trajectories[idx].proposal.is_tentative());
+
+        // Feed more evidence → confidence rises
+        harvest.accumulated_truth = TruthValue::new(0.9, 0.96);
+        harvest.num_searches = 30;
+        engine.feed_evidence(idx, &harvest, GestaltState::Crystallizing);
+        assert_eq!(engine.trajectories[idx].event_count(), 2);
+
+        // Auto-approval check
+        let approved = engine.check_auto_approvals();
+        assert_eq!(approved.len(), 1);
+        assert!(engine.trajectories[idx].proposal.is_committed());
+    }
+
+    #[test]
+    fn test_engine_gestalt_summary() {
+        let gate = rustynum_core::SigmaGate::sku_16k();
+        let calibration = PlaneCalibration::uniform(gate);
+        let mut engine = GestaltEngine::new(CollapseMode::Research, calibration);
+        engine.bundling_evidence_threshold = 5;
+
+        // Create two proposals
+        let mut h1 = AccumulatedHarvest::new();
+        h1.num_searches = 10;
+        h1.accumulated_truth = TruthValue::new(0.8, 0.85);
+        h1.type_counts[2] = 50;
+
+        let mut h2 = AccumulatedHarvest::new();
+        h2.num_searches = 10;
+        h2.accumulated_truth = TruthValue::new(0.7, 0.82);
+        h2.type_counts[3] = 50;
+
+        engine.evaluate_harvest(&h1, "a", "b");
+        engine.evaluate_harvest(&h2, "c", "d");
+
+        // Both start as Epiphany
+        let (cryst, contest, dissolve, epiphany) = engine.gestalt_summary();
+        assert_eq!(epiphany, 2);
+        assert_eq!(cryst + contest + dissolve, 0);
     }
 }
