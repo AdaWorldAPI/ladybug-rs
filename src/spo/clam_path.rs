@@ -1,4 +1,4 @@
-//! ClamPath — CLAM tree path as B-tree key for lineage/structural/causal queries.
+//! ClamPath + MerkleRoot — CLAM tree path as B-tree key with content-addressed identity.
 //!
 //! Each ClamPath encodes the root-to-leaf traversal of a CLAM binary tree.
 //! Each bit is a bipolar split decision: 0 = left pole, 1 = right pole.
@@ -10,6 +10,22 @@
 //! - **Causality**: cause→mediator→effect — range scan = causal chain
 //!
 //! Depth of a CLAM tree on 1024 items ≈ 10-12 levels, so u16 has room to spare.
+//!
+//! ## Eineindeutigkeit Resolution
+//!
+//! CogRecord8K word[0] packs ClamPath(24 bits) + MerkleRoot(40 bits) = 64 bits:
+//!
+//! ```text
+//! ┌────────────────────┬────────────────────────────────────┐
+//! │  ClamPath (24 bits) │  MerkleRoot (40 bits)             │
+//! │  HOW you got here   │  WHAT lives here                  │
+//! │  navigation/lineage │  identity/canonical address        │
+//! └────────────────────┴────────────────────────────────────┘
+//! ```
+//!
+//! ClamPath alone is path-dependent (same concept gets different addresses).
+//! MerkleRoot alone has no lineage or subtree queries.
+//! Together: navigate via ClamPath, resolve identity via MerkleRoot.
 
 /// CLAM path as B-tree key.
 ///
@@ -228,6 +244,43 @@ impl ClamPath {
     pub fn btree_key(&self) -> u16 {
         self.bits
     }
+
+    // =========================================================================
+    // U24 PACKING (for combined ClamPath + MerkleRoot in word[0])
+    // =========================================================================
+
+    /// Pack bits (u16) + depth (u8) into 24 bits.
+    #[inline]
+    pub fn to_u24(&self) -> u32 {
+        ((self.depth as u32) << 16) | (self.bits as u32)
+    }
+
+    /// Unpack from 24 bits.
+    #[inline]
+    pub fn from_u24(packed: u32) -> Self {
+        let bits = (packed & 0xFFFF) as u16;
+        let depth = ((packed >> 16) & 0xFF) as u8;
+        Self::from_raw(bits, depth)
+    }
+
+    /// Pack ClamPath (24 bits) + MerkleRoot (40 bits) into a single u64.
+    ///
+    /// This is the canonical encoding for CogRecord8K index.words[0].
+    /// ClamPath in upper 24 bits, MerkleRoot in lower 40 bits.
+    #[inline]
+    pub fn pack_with_merkle(&self, root: MerkleRoot) -> u64 {
+        let clam_bits = self.to_u24() as u64;
+        let merkle_bits = root.0 & MerkleRoot::MASK;
+        (clam_bits << 40) | merkle_bits
+    }
+
+    /// Unpack ClamPath + MerkleRoot from word[0].
+    #[inline]
+    pub fn unpack_with_merkle(word0: u64) -> (ClamPath, MerkleRoot) {
+        let clam_bits = (word0 >> 40) as u32;
+        let merkle_bits = word0 & MerkleRoot::MASK;
+        (ClamPath::from_u24(clam_bits), MerkleRoot(merkle_bits))
+    }
 }
 
 impl std::fmt::Debug for ClamPath {
@@ -260,27 +313,130 @@ pub enum DensityHint {
 }
 
 // =============================================================================
+// MERKLE ROOT — CONTENT-ADDRESSED CANONICAL IDENTITY
+// =============================================================================
+
+/// Truncated Merkle root for content-addressed identity.
+///
+/// 40 bits = ~1 trillion collision space. Sufficient for BindSpace.
+/// Derived deterministically from three-plane binary fingerprints via blake3.
+///
+/// Same concept = same fingerprint = same root = same Redis key.
+/// Self-healing: if Redis evicts the key, recompute from fingerprints.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MerkleRoot(pub u64); // only lower 40 bits used
+
+impl MerkleRoot {
+    /// Bitmask for 40-bit truncation.
+    pub const MASK: u64 = 0xFF_FFFF_FFFF;
+
+    /// Zero root (placeholder / uninitialized).
+    pub const ZERO: MerkleRoot = MerkleRoot(0);
+
+    /// Derive from three-plane binary fingerprints (S, P, O).
+    ///
+    /// Each plane is a 16,384-bit (2,048-byte) binary fingerprint.
+    /// Hash each plane separately with blake3, then combine:
+    /// `blake3(S_hash || P_hash || O_hash)` — order is canonical (S < P < O).
+    pub fn from_planes(
+        s_binary: &[u8; 2048],
+        p_binary: &[u8; 2048],
+        o_binary: &[u8; 2048],
+    ) -> Self {
+        let s_hash = blake3::hash(s_binary);
+        let p_hash = blake3::hash(p_binary);
+        let o_hash = blake3::hash(o_binary);
+
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(s_hash.as_bytes());
+        hasher.update(p_hash.as_bytes());
+        hasher.update(o_hash.as_bytes());
+        let root = hasher.finalize();
+
+        Self::from_hash_bytes(root.as_bytes())
+    }
+
+    /// Derive from single composite fingerprint (backward compat).
+    ///
+    /// Used when planes aren't separated yet.
+    pub fn from_fingerprint(fp: &[u8; 2048]) -> Self {
+        let hash = blake3::hash(fp);
+        Self::from_hash_bytes(hash.as_bytes())
+    }
+
+    /// Extract 40-bit truncated root from hash bytes.
+    #[inline]
+    fn from_hash_bytes(bytes: &[u8; 32]) -> Self {
+        let val = u64::from_le_bytes([
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], 0, 0, 0,
+        ]);
+        MerkleRoot(val & Self::MASK)
+    }
+
+    /// The Redis key for this concept's canonical address.
+    pub fn redis_key(&self) -> String {
+        format!("ada:bind:{:010x}", self.0)
+    }
+
+    /// Check if this is an uninitialized / zero root.
+    pub fn is_zero(&self) -> bool {
+        self.0 == 0
+    }
+}
+
+impl std::fmt::Debug for MerkleRoot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "MerkleRoot({:010x})", self.0)
+    }
+}
+
+impl std::fmt::Display for MerkleRoot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:010x}", self.0)
+    }
+}
+
+// =============================================================================
 // COGRECORD8K INTEGRATION
 // =============================================================================
 
-/// Extension trait for CogRecord8K to read/write ClamPath in the INDEX container.
+/// Extension trait for CogRecord8K to read/write ClamPath + MerkleRoot in the INDEX container.
 ///
-/// The ClamPath occupies word[0] of the index container.
+/// word[0] = ClamPath(24 bits) + MerkleRoot(40 bits).
 /// Remaining words (1..255) are available for edge adjacency, spine cache, etc.
 pub trait ClamPathExt {
-    /// Store a ClamPath into the INDEX container (word 0).
+    /// Store ClamPath + MerkleRoot into INDEX container word[0].
+    fn set_clam_path_merkle(&mut self, path: ClamPath, root: MerkleRoot);
+    /// Read ClamPath + MerkleRoot from INDEX container word[0].
+    fn clam_path_merkle(&self) -> (ClamPath, MerkleRoot);
+
+    /// Store ClamPath only (MerkleRoot set to zero). Backward compat.
     fn set_clam_path(&mut self, path: ClamPath);
-    /// Read the ClamPath from the INDEX container (word 0).
+    /// Read ClamPath only (ignores MerkleRoot). Backward compat.
     fn clam_path(&self) -> ClamPath;
+    /// Read MerkleRoot only (ignores ClamPath).
+    fn merkle_root(&self) -> MerkleRoot;
 }
 
 impl ClamPathExt for ladybug_contract::CogRecord8K {
+    fn set_clam_path_merkle(&mut self, path: ClamPath, root: MerkleRoot) {
+        self.index.words[0] = path.pack_with_merkle(root);
+    }
+
+    fn clam_path_merkle(&self) -> (ClamPath, MerkleRoot) {
+        ClamPath::unpack_with_merkle(self.index.words[0])
+    }
+
     fn set_clam_path(&mut self, path: ClamPath) {
-        self.index.words[0] = path.to_word();
+        self.set_clam_path_merkle(path, MerkleRoot::ZERO);
     }
 
     fn clam_path(&self) -> ClamPath {
-        ClamPath::from_word(self.index.words[0])
+        self.clam_path_merkle().0
+    }
+
+    fn merkle_root(&self) -> MerkleRoot {
+        self.clam_path_merkle().1
     }
 }
 
@@ -481,5 +637,107 @@ mod tests {
         let cp = ClamPath::from_tree_traversal(&[true, false, true]);
         assert_eq!(format!("{:?}", cp), "ClamPath(RLR, d=3)");
         assert_eq!(format!("{}", cp), "101");
+    }
+
+    // =========================================================================
+    // MerkleRoot tests
+    // =========================================================================
+
+    #[test]
+    fn test_u24_roundtrip() {
+        let cp = ClamPath::from_tree_traversal(&[true, false, true, true, false]);
+        let packed = cp.to_u24();
+        let cp2 = ClamPath::from_u24(packed);
+        assert_eq!(cp, cp2);
+    }
+
+    #[test]
+    fn test_merkle_root_from_fingerprint() {
+        let fp = [0xABu8; 2048];
+        let root = MerkleRoot::from_fingerprint(&fp);
+        assert_ne!(root, MerkleRoot::ZERO);
+        assert_eq!(root.0 & !MerkleRoot::MASK, 0, "upper bits must be zero");
+    }
+
+    #[test]
+    fn test_merkle_root_deterministic() {
+        let fp = [0x42u8; 2048];
+        let r1 = MerkleRoot::from_fingerprint(&fp);
+        let r2 = MerkleRoot::from_fingerprint(&fp);
+        assert_eq!(r1, r2, "same content must produce same root");
+    }
+
+    #[test]
+    fn test_merkle_root_from_planes() {
+        let s = [0x11u8; 2048];
+        let p = [0x22u8; 2048];
+        let o = [0x33u8; 2048];
+        let root = MerkleRoot::from_planes(&s, &p, &o);
+        assert_ne!(root, MerkleRoot::ZERO);
+
+        // Same planes → same root
+        let root2 = MerkleRoot::from_planes(&s, &p, &o);
+        assert_eq!(root, root2);
+
+        // Different planes → different root
+        let o2 = [0x44u8; 2048];
+        let root3 = MerkleRoot::from_planes(&s, &p, &o2);
+        assert_ne!(root, root3);
+    }
+
+    #[test]
+    fn test_merkle_root_redis_key() {
+        let root = MerkleRoot(0x12_3456_789A);
+        assert_eq!(root.redis_key(), "ada:bind:123456789a");
+    }
+
+    #[test]
+    fn test_pack_with_merkle_roundtrip() {
+        let cp = ClamPath::from_tree_traversal(&[true, false, true, true]);
+        let root = MerkleRoot(0xAB_CDEF_0123);
+
+        let packed = cp.pack_with_merkle(root);
+        let (cp2, root2) = ClamPath::unpack_with_merkle(packed);
+        assert_eq!(cp, cp2);
+        assert_eq!(root, root2);
+    }
+
+    #[test]
+    fn test_pack_with_merkle_no_overlap() {
+        // ClamPath in upper 24 bits must not corrupt MerkleRoot in lower 40
+        let cp = ClamPath::from_raw(0xFFFF, 16); // all bits set
+        let root = MerkleRoot(MerkleRoot::MASK); // all 40 bits set
+
+        let packed = cp.pack_with_merkle(root);
+        let (cp2, root2) = ClamPath::unpack_with_merkle(packed);
+        assert_eq!(cp, cp2);
+        assert_eq!(root, root2);
+    }
+
+    #[test]
+    fn test_cogrecord8k_merkle_integration() {
+        let mut record = ladybug_contract::CogRecord8K::new();
+        let path = ClamPath::from_tree_traversal(&[true, false, true]);
+        let fp = [0x77u8; 2048];
+        let root = MerkleRoot::from_fingerprint(&fp);
+
+        record.set_clam_path_merkle(path, root);
+        let (p2, r2) = record.clam_path_merkle();
+        assert_eq!(p2, path);
+        assert_eq!(r2, root);
+
+        // Backward compat: clam_path() still works
+        assert_eq!(record.clam_path(), path);
+        assert_eq!(record.merkle_root(), root);
+    }
+
+    #[test]
+    fn test_cogrecord8k_clam_path_only_compat() {
+        // set_clam_path (no merkle) → MerkleRoot reads as ZERO
+        let mut record = ladybug_contract::CogRecord8K::new();
+        let path = ClamPath::from_tree_traversal(&[false, true]);
+        record.set_clam_path(path);
+        assert_eq!(record.clam_path(), path);
+        assert_eq!(record.merkle_root(), MerkleRoot::ZERO);
     }
 }
