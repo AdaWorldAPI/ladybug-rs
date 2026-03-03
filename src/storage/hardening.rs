@@ -746,6 +746,21 @@ impl HardenedBindSpace {
     ) -> Vec<u16> {
         self.metrics.writes.fetch_add(1, Ordering::Relaxed);
 
+        // WAL FIRST — write-ahead, not write-behind.
+        // If we crash after WAL but before memory update, replay recovers.
+        // If we crash after memory update but before WAL, data is lost.
+        if let Some(ref wal) = self.wal {
+            if let Ok(mut wal) = wal.lock() {
+                let entry = WalEntry::Write {
+                    addr: addr.0,
+                    fingerprint: *fingerprint,
+                    label: label.map(|s| s.to_string()),
+                };
+                let _ = wal.append(&entry);
+                self.metrics.wal_writes.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+
         let prefix = addr.prefix();
         let mut to_evict = Vec::new();
 
@@ -784,25 +799,21 @@ impl HardenedBindSpace {
             }
         }
 
-        // WAL
-        if let Some(ref wal) = self.wal {
-            if let Ok(mut wal) = wal.lock() {
-                let entry = WalEntry::Write {
-                    addr: addr.0,
-                    fingerprint: *fingerprint,
-                    label: label.map(|s| s.to_string()),
-                };
-                let _ = wal.append(&entry);
-                self.metrics.wal_writes.fetch_add(1, Ordering::Relaxed);
-            }
-        }
-
         to_evict
     }
 
     /// Record a delete
     pub fn on_delete(&self, addr: Addr) {
         self.metrics.deletes.fetch_add(1, Ordering::Relaxed);
+
+        // WAL FIRST — durable record before in-memory mutation
+        if let Some(ref wal) = self.wal {
+            if let Ok(mut wal) = wal.lock() {
+                let entry = WalEntry::Delete { addr: addr.0 };
+                let _ = wal.append(&entry);
+                self.metrics.wal_writes.fetch_add(1, Ordering::Relaxed);
+            }
+        }
 
         let prefix = addr.prefix();
         if prefix >= PREFIX_FLUID_START && prefix <= PREFIX_FLUID_END {
@@ -815,15 +826,6 @@ impl HardenedBindSpace {
         } else if prefix >= PREFIX_NODE_START {
             if let Ok(mut lru) = self.node_lru.lock() {
                 lru.remove(addr.0);
-            }
-        }
-
-        // WAL
-        if let Some(ref wal) = self.wal {
-            if let Ok(mut wal) = wal.lock() {
-                let entry = WalEntry::Delete { addr: addr.0 };
-                let _ = wal.append(&entry);
-                self.metrics.wal_writes.fetch_add(1, Ordering::Relaxed);
             }
         }
     }

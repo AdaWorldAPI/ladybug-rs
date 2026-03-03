@@ -276,5 +276,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Fingerprint dimensions (16K = 2^14, exact u64 alignment, no partial word)
 pub const FINGERPRINT_BITS: usize = 16_384;
-pub const FINGERPRINT_U64: usize = 256; // 16384/64, exact
+/// Alias for `FINGERPRINT_WORDS` — kept for backwards compatibility.
+/// Prefer `storage::bind_space::FINGERPRINT_WORDS` for new code.
+pub const FINGERPRINT_U64: usize = crate::storage::bind_space::FINGERPRINT_WORDS;
 pub const FINGERPRINT_BYTES: usize = 2048; // 256×8
