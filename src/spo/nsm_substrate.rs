@@ -390,7 +390,7 @@ impl NsmCodebook {
         let mut result = fp.clone();
 
         // Project out each prime that has high correlation
-        for (_, prime_fp) in &self.primes {
+        for prime_fp in self.primes.values() {
             let sim = result.similarity(prime_fp);
             if sim > 0.7 {
                 // Flip overlapping bits probabilistically
@@ -399,7 +399,7 @@ impl NsmCodebook {
         }
 
         // Project out learned concepts too
-        for (_, (learned_fp, _)) in &self.learned {
+        for (learned_fp, _) in self.learned.values() {
             let sim = result.similarity(learned_fp);
             if sim > 0.7 {
                 result = project_out(&result, learned_fp, 0.3);

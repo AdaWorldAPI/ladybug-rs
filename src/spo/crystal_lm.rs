@@ -46,8 +46,7 @@
 
 use crate::core::Fingerprint;
 use crate::spo::cognitive_codebook::{
-    CognitiveAddress, CognitiveCodebook, CognitiveDomain, NarsCopula, QualiaChannel, ThematicRole,
-    YamlTemplate, fold_to_48,
+    CognitiveCodebook, CognitiveDomain, fold_to_48,
 };
 use std::collections::HashMap;
 

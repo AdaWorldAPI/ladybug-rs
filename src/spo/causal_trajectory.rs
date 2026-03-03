@@ -34,16 +34,16 @@
 //! DN mutation guidance, and warm-start capability.
 
 use rustynum_bnn::causal_trajectory::{
-    CausalArrow, CausalChain, CausalDirection, CausalLink, CausalRelation, CausalSaliency,
-    CausalTrajectory, DominantPlane, EwmCorrection, EwmTier, HaloTransition,
-    NarsCausalStatement, NarsTruth, ResonatorSnapshot, RifDiff, SigmaEdge, SigmaNode,
+    CausalArrow, CausalChain, CausalDirection, CausalRelation, CausalSaliency,
+    CausalTrajectory, DominantPlane,
+    NarsCausalStatement, NarsTruth, ResonatorSnapshot, SigmaEdge,
 };
-use rustynum_bnn::{GrowthPath, HaloType, InferenceMode, MutationOp};
-use rustynum_core::{CollapseGate, SigmaGate, SignificanceLevel};
+use rustynum_bnn::{GrowthPath, InferenceMode, MutationOp};
+use rustynum_core::{CollapseGate, SigmaGate};
 
 use crate::nars::TruthValue;
 use super::gestalt::GestaltState;
-use super::spo_harvest::{Plane, SpoDistanceResult, TypedHalo};
+use super::spo_harvest::{Plane, SpoDistanceResult};
 use super::shift_detector::SpoShiftDetector;
 
 // =============================================================================
@@ -201,7 +201,7 @@ impl TrajectoryHydrator {
                 edge: edge.clone(),
                 truth: nars_to_truth(&edge.truth),
                 growth_path: Some(growth_path),
-                gestalt: gestalt.clone(),
+                gestalt,
             })
             .collect();
 

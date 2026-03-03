@@ -1257,7 +1257,7 @@ fn build_search_result_data(
 ) -> Vec<(u16, [u64; FINGERPRINT_WORDS], Option<String>, u32, f32, u8)> {
     results
         .iter()
-        .filter_map(|(idx, dist)| {
+        .map(|(idx, dist)| {
             // Get fingerprint from HDR index
             // Note: We don't have direct address mapping, so we use index as pseudo-address
             // In a real implementation, HDR index would store (addr, fingerprint) pairs
@@ -1272,14 +1272,14 @@ fn build_search_result_data(
             };
 
             // Return placeholder fingerprint - real impl would look up from index
-            Some((
+            (
                 addr,
                 [0u64; FINGERPRINT_WORDS],
                 None,
                 *dist,
                 similarity,
                 cascade_level,
-            ))
+            )
         })
         .collect()
 }

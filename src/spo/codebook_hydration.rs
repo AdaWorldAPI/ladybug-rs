@@ -29,7 +29,7 @@
 use crate::core::Fingerprint;
 use crate::FINGERPRINT_BITS;
 
-use super::cognitive_codebook::{CognitiveCodebook, CognitiveAddress, CognitiveDomain, CodebookEntry, fold_to_48};
+use super::cognitive_codebook::{CognitiveCodebook, CognitiveAddress, CognitiveDomain, fold_to_48};
 use super::jina_cache::fingerprint_from_jina_embedding;
 
 // =============================================================================
@@ -387,7 +387,7 @@ fn generate_embedding(text: &str) -> Vec<f32> {
     // Domain-specific bias: same domain names cluster
     // This gives intra-domain concepts shared structure
     let domain_tag = if text.contains(':') {
-        text.split(':').last().unwrap_or("").trim()
+        text.split(':').next_back().unwrap_or("").trim()
     } else {
         ""
     };
@@ -683,7 +683,7 @@ pub fn print_quintenzirkel(feelings: &[DarkFeeling]) {
     for pair in feelings.chunks(2) {
         if pair.len() == 2 {
             println!("║ Axis: {} ←→ {}", pair[0].name, pair[1].name);
-            println!("║   ({}: {})", pair[0].axis, "dark ←→ light");
+            println!("║   ({}: dark ←→ light)", pair[0].axis);
             pair[0].print();
             pair[1].print();
 

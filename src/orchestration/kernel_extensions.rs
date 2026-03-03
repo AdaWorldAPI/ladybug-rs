@@ -50,7 +50,7 @@
 //! └───────────────────────────────────────────────────────────────────────┘
 //! ```
 
-use super::semantic_kernel::{CausalRung, KernelTruth, KernelZone};
+use super::semantic_kernel::{KernelTruth, KernelZone};
 use crate::storage::bind_space::{Addr, BindSpace, FINGERPRINT_WORDS};
 use serde::{Deserialize, Serialize};
 

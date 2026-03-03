@@ -1683,7 +1683,8 @@ impl BindSpace {
         let slices: Vec<&[u8]> = nodes.iter()
             .map(|n| crate::core::rustynum_accel::view_u64_as_bytes(&n.fingerprint))
             .collect();
-        let result_bytes = rustynum_rs::NumArrayU8::bundle_byte_slices(&slices);
+        let result_bytes = rustynum_rs::NumArrayU8::try_bundle_byte_slices(&slices)
+            .expect("bundle_byte_slices: all slices same length");
         let mut fp = [0u64; FINGERPRINT_WORDS];
         for (i, chunk) in result_bytes.chunks_exact(8).enumerate() {
             fp[i] = u64::from_ne_bytes(chunk.try_into().unwrap());

@@ -8,9 +8,7 @@
 //! - 3D cubic popcount for tensor similarity
 
 use rand::prelude::*;
-use rayon::prelude::*;
 use std::collections::HashMap;
-use std::time::Instant;
 
 // ============================================================================
 // Constants
@@ -40,7 +38,7 @@ impl Fingerprint {
         let mut rng = rand::rng();
         let mut data = [0u64; N64];
         for w in &mut data {
-            *w = rng.r#gen();
+            *w = rng.random();
         }
         Self { data }
     }
@@ -49,7 +47,7 @@ impl Fingerprint {
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
         let mut data = [0u64; N64];
         for w in &mut data {
-            *w = rng.r#gen();
+            *w = rng.random();
         }
         Self { data }
     }
@@ -131,7 +129,7 @@ impl Fingerprint {
         let mut rng = rand::rng();
         for i in 0..N64 {
             for bit in 0..64 {
-                if (overlap.data[i] >> bit) & 1 == 1 && rng.r#gen::<f64>() < flip_prob {
+                if (overlap.data[i] >> bit) & 1 == 1 && rng.random::<f64>() < flip_prob {
                     result.data[i] ^= 1 << bit;
                 }
             }
@@ -406,7 +404,7 @@ impl TruthValue {
 
     /// Expectation: weighted frequency
     fn expectation(&self) -> f64 {
-        (self.confidence * self.frequency + (1.0 - self.confidence) * 0.5)
+        self.confidence * self.frequency + (1.0 - self.confidence) * 0.5
     }
 
     /// Revision: combine two truth values about same statement
@@ -1558,7 +1556,7 @@ fn test_jina_cache() {
     println!();
 
     // Show efficiency
-    let unique_count = 12; // Actual unique base entities
+    let _unique_count = 12; // Actual unique base entities
     let total_lookups = entities.len();
     println!("  Without cache:  {} API calls", total_lookups);
     println!("  With cache:     {} API calls", cache.stats.api_calls);

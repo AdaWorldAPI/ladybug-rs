@@ -330,8 +330,7 @@ impl LancePersistence {
         let qidx_arr = UInt8Array::from(qidxs);
 
         let parent_arr: UInt16Array = parents
-            .iter()
-            .map(|p| *p)
+            .iter().copied()
             .collect();
         let depth_arr = UInt8Array::from(depths);
         let rung_arr = UInt8Array::from(rungs);
@@ -339,8 +338,7 @@ impl LancePersistence {
         let spine_arr = BooleanArray::from(spines);
 
         let dn_arr: UInt64Array = dn_paths
-            .iter()
-            .map(|d| *d)
+            .iter().copied()
             .collect();
 
         let payload_arr: LargeBinaryArray = payloads
@@ -371,8 +369,7 @@ impl LancePersistence {
         .map_err(|e| format!("batch build: {}", e))?;
 
         // Overwrite (full snapshot)
-        let mut params = WriteParams::default();
-        params.mode = WriteMode::Overwrite;
+        let params = WriteParams { mode: WriteMode::Overwrite, ..Default::default() };
         Dataset::write(
             batch_reader(batch),
             nodes_path.to_str().unwrap(),
@@ -426,8 +423,7 @@ impl LancePersistence {
         )
         .map_err(|e| format!("edge batch: {}", e))?;
 
-        let mut params = WriteParams::default();
-        params.mode = WriteMode::Overwrite;
+        let params = WriteParams { mode: WriteMode::Overwrite, ..Default::default() };
         Dataset::write(
             batch_reader(batch),
             edges_path.to_str().unwrap(),
@@ -457,8 +453,7 @@ impl LancePersistence {
         )
         .map_err(|e| format!("state batch: {}", e))?;
 
-        let mut params = WriteParams::default();
-        params.mode = WriteMode::Overwrite;
+        let params = WriteParams { mode: WriteMode::Overwrite, ..Default::default() };
         Dataset::write(
             batch_reader(batch),
             state_path.to_str().unwrap(),
@@ -526,8 +521,7 @@ impl LancePersistence {
         )
         .map_err(|e| format!("index batch: {}", e))?;
 
-        let mut params = WriteParams::default();
-        params.mode = WriteMode::Overwrite;
+        let params = WriteParams { mode: WriteMode::Overwrite, ..Default::default() };
         Dataset::write(
             batch_reader(batch),
             index_path.to_str().unwrap(),
@@ -826,8 +820,7 @@ impl LancePersistence {
         // 3. Append to Lance (not overwrite — preserves existing cold data)
         let nodes_path = self.nodes_path();
         if nodes_path.exists() {
-            let mut params = WriteParams::default();
-            params.mode = WriteMode::Append;
+            let params = WriteParams { mode: WriteMode::Append, ..Default::default() };
             Dataset::write(
                 batch_reader(batch),
                 nodes_path.to_str().unwrap(),

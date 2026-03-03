@@ -34,16 +34,16 @@
 
 use super::a2a::{A2AMessage, A2AProtocol, DeliveryStatus};
 use super::agent_card::{AgentCard, AgentRegistry};
-use super::blackboard_agent::{AgentBlackboard, BlackboardRegistry};
+use super::blackboard_agent::BlackboardRegistry;
 use super::handover::{HandoverDecision, HandoverPolicy};
 use super::kernel_extensions::{
     FilterPipeline, KernelGuardrail, MemoryBank, ObservabilityManager, VerificationEngine,
 };
 use super::meta_orchestrator::MetaOrchestrator;
-use super::persona::{Persona, PersonaRegistry};
+use super::persona::PersonaRegistry;
 use super::semantic_kernel::SemanticKernel;
 use super::thinking_template::{ThinkingTemplate, ThinkingTemplateRegistry};
-use crate::storage::bind_space::{Addr, BindSpace, FINGERPRINT_WORDS};
+use crate::storage::bind_space::{Addr, BindSpace};
 use serde::{Deserialize, Serialize};
 
 /// Task status in the dispatch pipeline

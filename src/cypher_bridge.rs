@@ -470,7 +470,7 @@ fn properties_to_fingerprint(
     let mut content = label.to_string();
     // Sort properties for determinism
     let mut sorted: Vec<_> = properties.iter().collect();
-    sorted.sort_by_key(|(k, _)| k.clone());
+    sorted.sort_by_key(|(k, _)| *k);
     for (k, v) in sorted {
         content.push(':');
         content.push_str(k);
@@ -618,12 +618,10 @@ fn parse_where_clause(s: &str) -> Result<WhereClause, String> {
 /// Extract label from a MATCH/MERGE/CREATE pattern like "(n:System {...})"
 fn extract_label(cypher: &str) -> Option<String> {
     // Find first (variable:Label pattern
-    let mut in_parens = false;
     let chars: Vec<char> = cypher.chars().collect();
     let mut i = 0;
     while i < chars.len() {
         if chars[i] == '(' {
-            in_parens = true;
             i += 1;
             // Skip whitespace
             while i < chars.len() && chars[i].is_whitespace() { i += 1; }
@@ -661,7 +659,7 @@ fn parse_node_pattern(cypher: &str) -> Result<(Vec<String>, HashMap<String, Cyph
     let label_part = &inner[..brace_start];
 
     for part in label_part.split(':').skip(1) {
-        let label = part.trim().split_whitespace().next().unwrap_or("").to_string();
+        let label = part.split_whitespace().next().unwrap_or("").to_string();
         if !label.is_empty() {
             labels.push(label);
         }

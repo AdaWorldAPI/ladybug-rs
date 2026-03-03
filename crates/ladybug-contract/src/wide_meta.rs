@@ -355,8 +355,8 @@ impl<'a> WideMetaView<'a> {
     /// Read all 10 layer activations.
     pub fn layer_activations(&self) -> [f64; 10] {
         let mut out = [0.0f64; 10];
-        for i in 0..10 {
-            out[i] = f64::from_bits(self.words[W_LAYER10_BASE + i]);
+        for (i, slot) in out.iter_mut().enumerate() {
+            *slot = f64::from_bits(self.words[W_LAYER10_BASE + i]);
         }
         out
     }
@@ -632,9 +632,7 @@ impl<'a> WideMetaViewMut<'a> {
             self.words[W_SPINE_BASE + i] = 0;
         }
         let n = ancestors.len().min(MAX_SPINE_DEPTH);
-        for i in 0..n {
-            self.words[W_SPINE_BASE + i] = ancestors[i];
-        }
+        self.words[W_SPINE_BASE..W_SPINE_BASE + n].copy_from_slice(&ancestors[..n]);
     }
 
     // ====================================================================

@@ -64,20 +64,18 @@ fn tactics_t03_debate_improves_truth() {
 
     let pro_args = vec![
         Argument {
-            fingerprint: Fingerprint::from_content("symmetry_approach")
-                .as_raw()
-                .clone(),
+            fingerprint: *Fingerprint::from_content("symmetry_approach").as_raw(),
             truth: TruthValue::new(0.8, 0.7),
             is_pro: true,
         },
         Argument {
-            fingerprint: Fingerprint::from_content("group_theory").as_raw().clone(),
+            fingerprint: *Fingerprint::from_content("group_theory").as_raw(),
             truth: TruthValue::new(0.75, 0.6),
             is_pro: true,
         },
     ];
     let con_args = vec![Argument {
-        fingerprint: Fingerprint::from_content("brute_force").as_raw().clone(),
+        fingerprint: *Fingerprint::from_content("brute_force").as_raw(),
         truth: TruthValue::new(0.4, 0.5),
         is_pro: false,
     }];

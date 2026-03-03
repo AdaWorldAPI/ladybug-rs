@@ -30,7 +30,7 @@ use rustynum_bnn::{
 use rustynum_bnn::causal_trajectory::{
     CausalRelation, SigmaEdge, SigmaNode,
 };
-use rustynum_core::{CollapseGate, SigmaGate, SignificanceLevel};
+use rustynum_core::{SigmaGate, SignificanceLevel};
 
 use crate::nars::TruthValue;
 

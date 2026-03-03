@@ -255,8 +255,7 @@ impl LanceStore {
 
         if self.nodes.is_some() {
             // Append to existing
-            let mut params = WriteParams::default();
-            params.mode = WriteMode::Append;
+            let params = WriteParams { mode: WriteMode::Append, ..Default::default() };
             Dataset::write(batch_reader(batch), &table_path, Some(params)).await?;
             // Invalidate cache to reload
             self.nodes = None;
@@ -276,8 +275,7 @@ impl LanceStore {
         let table_path = format!("{}/nodes.lance", self.path);
         let batch = NodeRecord::batch_to_record_batch(nodes)?;
 
-        let mut params = WriteParams::default();
-        params.mode = WriteMode::Append;
+        let params = WriteParams { mode: WriteMode::Append, ..Default::default() };
         Dataset::write(batch_reader(batch), &table_path, Some(params)).await?;
         self.nodes = None;
 
@@ -318,8 +316,7 @@ impl LanceStore {
         let table_path = format!("{}/edges.lance", self.path);
         let batch = edge.to_record_batch()?;
 
-        let mut params = WriteParams::default();
-        params.mode = WriteMode::Append;
+        let params = WriteParams { mode: WriteMode::Append, ..Default::default() };
         Dataset::write(batch_reader(batch), &table_path, Some(params)).await?;
         self.edges = None;
 
