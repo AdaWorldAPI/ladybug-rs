@@ -4,7 +4,7 @@
 //! Edges:  X = BIND(src, permute(verb,1)), Y = verb, Z = BIND(tgt, permute(verb,2))
 //! Meta:   X = BUNDLE(chain X axes), Y = CHAIN_DISCOVERED, Z = BUNDLE(chain Z axes)
 
-use ladybug_contract::container::Container;
+use ladybug_contract::container::{Container, CONTAINER_WORDS};
 use ladybug_contract::nars::TruthValue;
 use ladybug_contract::record::CogRecord;
 
@@ -45,7 +45,7 @@ impl SpoBuilder {
         x_components.extend(prop_refs.iter());
 
         let x_dense = if x_components.is_empty() {
-            Container::random(dn) // deterministic from DN if no properties
+            label_fp(&format!("dn_{:x}", dn)) // sparse deterministic fallback
         } else {
             Container::bundle(&x_components)
         };
@@ -118,8 +118,8 @@ impl SpoBuilder {
         let z_refs: Vec<&Container> = z_denses.iter().collect();
 
         let x_dense = Container::bundle(&x_refs);
-        // Y axis: deterministic "chain discovered" marker
-        let y_dense = Container::random(0xCHA1_D15C); // CHAIN_DISCOVERED seed
+        // Y axis: deterministic "chain discovered" marker (sparse)
+        let y_dense = label_fp("CHAIN_DISCOVERED");
         let z_dense = Container::bundle(&z_refs);
 
         let x = SparseContainer::from_dense(&x_dense);
@@ -187,15 +187,30 @@ impl SpoBuilder {
 // CONVENIENCE FUNCTIONS
 // ============================================================================
 
-/// Create a deterministic fingerprint from a string label (for testing/seeding).
+/// Create a deterministic sparse fingerprint from a string label (for testing/seeding).
+///
+/// Produces ~25% density: enough information to distinguish labels,
+/// sparse enough that three axes fit in one content Container via pack_axes().
 pub fn label_fp(label: &str) -> Container {
-    // Simple hash: sum bytes with mixing
     let mut seed = 0u64;
     for (i, b) in label.bytes().enumerate() {
         seed ^= (b as u64).wrapping_mul(0x9e3779b97f4a7c15);
         seed = seed.rotate_left((i as u32) % 64);
     }
-    Container::random(seed)
+    let dense = Container::random(seed);
+    // Sparsify: keep ~11% of words (1/9) so XOR/bundle results still fit
+    // in pack_axes (3 axes + 3 bitmaps must fit in CONTAINER_WORDS=256).
+    // Edge XOR produces ~2d(1-d) ≈ 20% density → 3 axes ≈ 51+28+51+12 = 142.
+    let mut sparse = Container::zero();
+    for i in 0..CONTAINER_WORDS {
+        // Mix seed with position via golden-ratio multiply (no mod-64 repeat).
+        let mix = seed.wrapping_add((i as u64).wrapping_mul(0x517cc1b727220a95));
+        let phase = (mix >> 3) % 9;
+        if phase == 0 {
+            sparse.words[i] = dense.words[i];
+        }
+    }
+    sparse
 }
 
 /// Create a deterministic DN hash from a string (for testing).
@@ -254,9 +269,9 @@ mod tests {
 
     #[test]
     fn test_build_edge_three_axes() {
-        let src = Container::random(1); // Jan
-        let verb = Container::random(2); // KNOWS
-        let tgt = Container::random(3); // Ada
+        let src = label_fp("Jan");
+        let verb = label_fp("KNOWS");
+        let tgt = label_fp("Ada");
 
         let record = SpoBuilder::build_edge(
             dn_hash("jan_knows_ada"),
@@ -283,11 +298,11 @@ mod tests {
 
     #[test]
     fn test_build_meta_awareness() {
-        let src = Container::random(10);
-        let verb1 = Container::random(20);
-        let tgt1 = Container::random(30);
-        let verb2 = Container::random(40);
-        let tgt2 = Container::random(50);
+        let src = label_fp("source");
+        let verb1 = label_fp("verb1");
+        let tgt1 = label_fp("target1");
+        let verb2 = label_fp("verb2");
+        let tgt2 = label_fp("target2");
 
         let edge1 = SpoBuilder::build_edge(
             dn_hash("e1"), &src, &verb1, &tgt1,

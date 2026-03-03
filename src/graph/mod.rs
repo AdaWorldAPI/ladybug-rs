@@ -12,6 +12,7 @@ pub use cognitive::{CogEdge, CogGraph, CogNode, NodeType, Verb, VerbCategory};
 pub use edge::{Edge, EdgeType};
 pub use traversal::Traversal;
 
+pub mod spo;
 pub mod avx_engine;
 pub use avx_engine::{
     FingerprintGraph, QueryMatch, avx512_available, batched_query, hamming_distance, simd_info,
