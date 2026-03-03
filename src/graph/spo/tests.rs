@@ -345,4 +345,5 @@ mod tests {
             convergence_dist
         );
     }
+
 }

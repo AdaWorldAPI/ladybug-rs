@@ -127,8 +127,9 @@ pub use cog_redis::{
 
 // BindSpace exports (universal DTO)
 pub use bind_space::{
-    Addr, BindEdge, BindNode, BindSpace, BindSpaceStats, ChunkContext, FINGERPRINT_WORDS,
-    QueryAdapter, QueryResult, QueryValue, hamming_distance,
+    Addr, BindEdge, BindNode, BindSpace, BindSpaceStats, ChunkContext, Epoch,
+    FINGERPRINT_WORDS, IntegrityResult, QueryAdapter, QueryResult, QueryValue,
+    hamming_distance,
 };
 
 // Hardening exports (production-ready features)
