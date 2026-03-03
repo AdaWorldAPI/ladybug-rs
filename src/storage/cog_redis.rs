@@ -2744,7 +2744,7 @@ fn fp_to_words(fp: &Fingerprint) -> [u64; 256] {
 fn words_to_fp(words: &[u64; 256]) -> Fingerprint {
     use crate::FINGERPRINT_U64;
     let mut data = [0u64; FINGERPRINT_U64];
-    data[..256].copy_from_slice(words);
+    data[..FINGERPRINT_U64].copy_from_slice(words);
     Fingerprint::from_raw(data)
 }
 
