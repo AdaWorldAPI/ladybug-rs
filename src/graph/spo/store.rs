@@ -38,6 +38,86 @@ pub enum QueryAxis {
 }
 
 // ============================================================================
+// NARS TRUTH GATING
+// ============================================================================
+
+/// Gate that filters SPO hits by NARS truth value thresholds.
+///
+/// Records whose frequency < min_frequency OR confidence < min_confidence
+/// are skipped before the expensive Hamming distance computation.
+#[derive(Clone, Debug)]
+pub struct TruthGate {
+    pub min_frequency: f32,
+    pub min_confidence: f32,
+}
+
+impl TruthGate {
+    /// A gate that passes everything (no filtering).
+    pub fn open() -> Self {
+        Self { min_frequency: 0.0, min_confidence: 0.0 }
+    }
+
+    /// Check if a truth value passes this gate.
+    #[inline]
+    pub fn passes(&self, tv: &TruthValue) -> bool {
+        tv.frequency >= self.min_frequency && tv.confidence >= self.min_confidence
+    }
+}
+
+impl Default for TruthGate {
+    fn default() -> Self { Self::open() }
+}
+
+// ============================================================================
+// SPO HIT (enriched query result)
+// ============================================================================
+
+/// Query hit enriched with NARS truth value.
+#[derive(Clone, Debug)]
+pub struct SpoHit {
+    pub dn: u64,
+    pub distance: u32,
+    pub axis: QueryAxis,
+    pub truth: TruthValue,
+}
+
+// ============================================================================
+// SPO SEMIRING (chain combination)
+// ============================================================================
+
+/// Semiring for combining SPO hits across chain hops.
+///
+/// - frequency:  product (AND semantics)
+/// - confidence: product × link coherence (deduction with attenuation)
+pub struct SpoSemiring;
+
+impl SpoSemiring {
+    /// Combine two truth values with a link coherence factor.
+    ///
+    /// f_out = f1 × f2
+    /// c_out = c1 × c2 × coherence
+    #[inline]
+    pub fn combine(a: &TruthValue, b: &TruthValue, coherence: f32) -> TruthValue {
+        TruthValue::new(
+            (a.frequency * b.frequency).clamp(0.0, 1.0),
+            (a.confidence * b.confidence * coherence).clamp(0.0, 1.0),
+        )
+    }
+
+    /// Fold a chain of (TruthValue, coherence) pairs into a single truth value.
+    pub fn fold_chain(steps: &[(TruthValue, f32)]) -> TruthValue {
+        if steps.is_empty() { return TruthValue::unknown(); }
+        let mut f = 1.0f32;
+        let mut c = 1.0f32;
+        for (tv, coh) in steps {
+            f *= tv.frequency;
+            c *= tv.confidence * coh;
+        }
+        TruthValue::new(f.clamp(0.0, 1.0), c.clamp(0.0, 1.0))
+    }
+}
+
+// ============================================================================
 // SPO STORE
 // ============================================================================
 
@@ -388,6 +468,121 @@ impl SpoStore {
                 }
             })
             .collect()
+    }
+
+    // ========================================================================
+    // SCENT-PRUNED PROJECTIONS (Module 4)
+    // ========================================================================
+
+    /// S × P → O: Forward projection with scent pre-filter and NARS gating.
+    ///
+    /// Accepts sparse containers directly — no `from_dense()` on query side.
+    /// 1. Gate on NARS truth value (skip below threshold).
+    /// 2. Pre-filter via per-axis scent distance (skip incompatible profiles).
+    /// 3. Full Hamming only on candidates passing both filters.
+    pub fn sxp2o(
+        &self,
+        s: &SparseContainer,
+        p: &SparseContainer,
+        radius: u32,
+        gate: &TruthGate,
+    ) -> Vec<SpoHit> {
+        let q_scent = NibbleScent::from_axes(s, p, &SparseContainer::zero());
+        let mut hits = Vec::new();
+
+        for (&dn, record) in &self.records {
+            // Gate 1: NARS truth threshold
+            let truth = self.read_nars(record);
+            if !gate.passes(&truth) { continue; }
+
+            // Gate 2: Scent pre-filter (per-axis L1 as cheap lower bound)
+            let rec_scent = self.read_scent(record);
+            let (sx, sy, _) = rec_scent.axis_distances(&q_scent);
+            if sx.saturating_add(sy) > radius { continue; }
+
+            // Gate 3: Full Hamming on X + Y axes
+            if let Ok((x, y, _z)) = self.unpack_record(record) {
+                let dx = SparseContainer::hamming_sparse(s, &x);
+                let dy = SparseContainer::hamming_sparse(p, &y);
+                let combined = dx.saturating_add(dy) / 2;
+                if combined <= radius {
+                    hits.push(SpoHit { dn, distance: combined, axis: QueryAxis::XY, truth });
+                }
+            }
+        }
+
+        hits.sort_by_key(|h| h.distance);
+        hits
+    }
+
+    /// S × O → P: Relation projection — "How are S and O related?"
+    ///
+    /// Scans X + Z axes, returns predicate matches.
+    pub fn sxo2p(
+        &self,
+        s: &SparseContainer,
+        o: &SparseContainer,
+        radius: u32,
+        gate: &TruthGate,
+    ) -> Vec<SpoHit> {
+        let q_scent = NibbleScent::from_axes(s, &SparseContainer::zero(), o);
+        let mut hits = Vec::new();
+
+        for (&dn, record) in &self.records {
+            let truth = self.read_nars(record);
+            if !gate.passes(&truth) { continue; }
+
+            let rec_scent = self.read_scent(record);
+            let (sx, _, sz) = rec_scent.axis_distances(&q_scent);
+            if sx.saturating_add(sz) > radius { continue; }
+
+            if let Ok((x, _y, z)) = self.unpack_record(record) {
+                let dx = SparseContainer::hamming_sparse(s, &x);
+                let dz = SparseContainer::hamming_sparse(o, &z);
+                let combined = dx.saturating_add(dz) / 2;
+                if combined <= radius {
+                    hits.push(SpoHit { dn, distance: combined, axis: QueryAxis::XZ, truth });
+                }
+            }
+        }
+
+        hits.sort_by_key(|h| h.distance);
+        hits
+    }
+
+    /// P × O → S: Reverse projection — "Who <verb>s <tgt>?"
+    ///
+    /// Scans Y + Z axes, returns subject matches.
+    pub fn pxo2s(
+        &self,
+        p: &SparseContainer,
+        o: &SparseContainer,
+        radius: u32,
+        gate: &TruthGate,
+    ) -> Vec<SpoHit> {
+        let q_scent = NibbleScent::from_axes(&SparseContainer::zero(), p, o);
+        let mut hits = Vec::new();
+
+        for (&dn, record) in &self.records {
+            let truth = self.read_nars(record);
+            if !gate.passes(&truth) { continue; }
+
+            let rec_scent = self.read_scent(record);
+            let (_, sy, sz) = rec_scent.axis_distances(&q_scent);
+            if sy.saturating_add(sz) > radius { continue; }
+
+            if let Ok((_x, y, z)) = self.unpack_record(record) {
+                let dy = SparseContainer::hamming_sparse(p, &y);
+                let dz = SparseContainer::hamming_sparse(o, &z);
+                let combined = dy.saturating_add(dz) / 2;
+                if combined <= radius {
+                    hits.push(SpoHit { dn, distance: combined, axis: QueryAxis::YZ, truth });
+                }
+            }
+        }
+
+        hits.sort_by_key(|h| h.distance);
+        hits
     }
 
     // ========================================================================

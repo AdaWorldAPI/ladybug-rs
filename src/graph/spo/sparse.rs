@@ -1,9 +1,13 @@
 //! Sparse Container — bitmap + non-zero words encoding of a Container.
 //!
 //! At 30% density (typical), stores 320 bytes instead of 1024.
-//! Three sparse containers fit in one content Container (960 bytes < 1024).
+//! Three sparse containers fit in one content Container (960 bytes < 2048).
 
 use ladybug_contract::container::{Container, CONTAINER_WORDS};
+
+/// Number of u64 words needed for the presence bitmap.
+/// One bit per Container word → CONTAINER_WORDS / 64.
+const BITMAP_WORDS: usize = CONTAINER_WORDS / 64; // 4 for 256-word containers
 
 /// Error types for SPO operations.
 #[derive(Clone, Debug)]
@@ -44,21 +48,21 @@ impl std::error::Error for SpoError {}
 /// Sparse encoding of a Container: bitmap (which words are non-zero) + only those words.
 ///
 /// # Invariants
-/// - `bitmap[0].count_ones() + bitmap[1].count_ones() == words.len()`
+/// - `bitmap.iter().map(|w| w.count_ones()).sum() == words.len()`
 /// - `to_dense()` produces exact original Container (lossless)
 /// - `hamming_sparse(a, b) == a.to_dense().hamming(&b.to_dense())`
 #[derive(Clone, Debug)]
 pub struct SparseContainer {
-    /// 128 bits: bit i set ↔ Container word i is non-zero and stored.
-    pub bitmap: [u64; 2],
+    /// CONTAINER_WORDS bits: bit i set ↔ Container word i is non-zero and stored.
+    pub bitmap: [u64; BITMAP_WORDS],
     /// Only the non-zero words, ordered by bit position.
     pub words: Vec<u64>,
 }
 
 impl SparseContainer {
     /// Construct with validation.
-    pub fn new(bitmap: [u64; 2], words: Vec<u64>) -> Result<Self, SpoError> {
-        let expected = bitmap[0].count_ones() + bitmap[1].count_ones();
+    pub fn new(bitmap: [u64; BITMAP_WORDS], words: Vec<u64>) -> Result<Self, SpoError> {
+        let expected: u32 = bitmap.iter().map(|w| w.count_ones()).sum();
         if words.len() != expected as usize {
             return Err(SpoError::BitmapWordMismatch {
                 bitmap_ones: expected,
@@ -70,7 +74,7 @@ impl SparseContainer {
 
     /// Empty sparse container (all zeros).
     pub fn zero() -> Self {
-        Self { bitmap: [0; 2], words: Vec::new() }
+        Self { bitmap: [0; BITMAP_WORDS], words: Vec::new() }
     }
 
     /// Number of stored (non-zero) words.
@@ -89,9 +93,9 @@ impl SparseContainer {
     #[inline]
     pub fn has_word(&self, index: usize) -> bool {
         debug_assert!(index < CONTAINER_WORDS);
-        let half = index / 64;
+        let chunk = index / 64;
         let bit = index % 64;
-        self.bitmap[half] & (1u64 << bit) != 0
+        self.bitmap[chunk] & (1u64 << bit) != 0
     }
 
     /// Get the value of Container word `index`. Returns 0 if not stored.
@@ -101,28 +105,28 @@ impl SparseContainer {
             return 0;
         }
         // Count how many bits are set before this position = index into words vec.
-        let half = index / 64;
+        let chunk = index / 64;
         let bit = index % 64;
         let mut rank = 0u32;
-        if half > 0 {
-            rank += self.bitmap[0].count_ones();
+        for c in 0..chunk {
+            rank += self.bitmap[c].count_ones();
         }
-        // Count bits set before `bit` in bitmap[half]
+        // Count bits set before `bit` in bitmap[chunk]
         let mask = if bit == 0 { 0 } else { (1u64 << bit) - 1 };
-        rank += (self.bitmap[half] & mask).count_ones();
+        rank += (self.bitmap[chunk] & mask).count_ones();
         self.words[rank as usize]
     }
 
     /// Lossless conversion FROM dense Container.
     pub fn from_dense(container: &Container) -> Self {
-        let mut bitmap = [0u64; 2];
+        let mut bitmap = [0u64; BITMAP_WORDS];
         let mut words = Vec::new();
 
         for i in 0..CONTAINER_WORDS {
             if container.words[i] != 0 {
-                let half = i / 64;
+                let chunk = i / 64;
                 let bit = i % 64;
-                bitmap[half] |= 1u64 << bit;
+                bitmap[chunk] |= 1u64 << bit;
                 words.push(container.words[i]);
             }
         }
@@ -135,9 +139,9 @@ impl SparseContainer {
         let mut word_idx = 0;
 
         for i in 0..CONTAINER_WORDS {
-            let half = i / 64;
+            let chunk = i / 64;
             let bit = i % 64;
-            if self.bitmap[half] & (1u64 << bit) != 0 {
+            if self.bitmap[chunk] & (1u64 << bit) != 0 {
                 container.words[i] = self.words[word_idx];
                 word_idx += 1;
             }
@@ -153,39 +157,23 @@ impl SparseContainer {
     pub fn hamming_sparse(a: &SparseContainer, b: &SparseContainer) -> u32 {
         let mut dist = 0u32;
 
-        // Words in both
-        let both_0 = a.bitmap[0] & b.bitmap[0];
-        let both_1 = a.bitmap[1] & b.bitmap[1];
-
-        // Words in only A
-        let only_a_0 = a.bitmap[0] & !b.bitmap[0];
-        let only_a_1 = a.bitmap[1] & !b.bitmap[1];
-
-        // Words in only B
-        let only_b_0 = b.bitmap[0] & !a.bitmap[0];
-        let only_b_1 = b.bitmap[1] & !a.bitmap[1];
-
-        // Process shared words: XOR and count
-        for i in 0..128 {
-            let half = i / 64;
+        for i in 0..CONTAINER_WORDS {
+            let chunk = i / 64;
             let bit = i % 64;
-            let in_both = if half == 0 { both_0 } else { both_1 };
-            if in_both & (1u64 << bit) != 0 {
-                let wa = a.get_word(i);
-                let wb = b.get_word(i);
-                dist += (wa ^ wb).count_ones();
-            }
+            let a_has = a.bitmap[chunk] & (1u64 << bit) != 0;
+            let b_has = b.bitmap[chunk] & (1u64 << bit) != 0;
 
-            // Words only in A: all bits differ from B's zero
-            let only_a = if half == 0 { only_a_0 } else { only_a_1 };
-            if only_a & (1u64 << bit) != 0 {
-                dist += a.get_word(i).count_ones();
-            }
-
-            // Words only in B
-            let only_b = if half == 0 { only_b_0 } else { only_b_1 };
-            if only_b & (1u64 << bit) != 0 {
-                dist += b.get_word(i).count_ones();
+            match (a_has, b_has) {
+                (true, true) => {
+                    dist += (a.get_word(i) ^ b.get_word(i)).count_ones();
+                }
+                (true, false) => {
+                    dist += a.get_word(i).count_ones();
+                }
+                (false, true) => {
+                    dist += b.get_word(i).count_ones();
+                }
+                (false, false) => {}
             }
         }
 
@@ -194,36 +182,14 @@ impl SparseContainer {
 
     /// XOR bind in sparse domain.
     pub fn bind_sparse(a: &SparseContainer, b: &SparseContainer) -> SparseContainer {
-        // Union of bitmaps
-        let bitmap = [a.bitmap[0] | b.bitmap[0], a.bitmap[1] | b.bitmap[1]];
-        let mut words = Vec::new();
-
-        for i in 0..128 {
-            let half = i / 64;
-            let bit = i % 64;
-            if bitmap[half] & (1u64 << bit) != 0 {
-                let wa = if a.has_word(i) { a.get_word(i) } else { 0 };
-                let wb = if b.has_word(i) { b.get_word(i) } else { 0 };
-                let xor = wa ^ wb;
-                if xor != 0 {
-                    words.push(xor);
-                } else {
-                    // XOR cancelled out — clear bitmap bit
-                    // (handled below by rebuilding)
-                }
-            }
+        // Use dense path for correctness (XOR can cancel words)
+        let mut c = Container::zero();
+        let da = a.to_dense();
+        let db = b.to_dense();
+        for i in 0..CONTAINER_WORDS {
+            c.words[i] = da.words[i] ^ db.words[i];
         }
-
-        // Rebuild bitmap to reflect actual non-zero words after XOR
-        SparseContainer::from_dense(&{
-            let mut c = Container::zero();
-            let da = a.to_dense();
-            let db = b.to_dense();
-            for i in 0..CONTAINER_WORDS {
-                c.words[i] = da.words[i] ^ db.words[i];
-            }
-            c
-        })
+        SparseContainer::from_dense(&c)
     }
 }
 
@@ -246,18 +212,18 @@ impl Eq for SparseContainer {}
 // ============================================================================
 
 /// Maximum content words available for sparse axis data.
-/// 128 total words - 6 bitmap words (2 per axis) = 122.
-pub const MAX_AXIS_CONTENT_WORDS: usize = 122;
+/// CONTAINER_WORDS total - 3 × BITMAP_WORDS bitmap words.
+pub const MAX_AXIS_CONTENT_WORDS: usize = CONTAINER_WORDS - 3 * BITMAP_WORDS;
 
 /// Pack three sparse axes into one Container.
 ///
-/// Layout: [X_bmp(2)] [X_words(Nx)] [Y_bmp(2)] [Y_words(Ny)] [Z_bmp(2)] [Z_words(Nz)] [pad]
+/// Layout: [X_bmp(BITMAP_WORDS)] [X_words(Nx)] [Y_bmp(BITMAP_WORDS)] [Y_words(Ny)] [Z_bmp(BITMAP_WORDS)] [Z_words(Nz)] [pad]
 pub fn pack_axes(
     x: &SparseContainer,
     y: &SparseContainer,
     z: &SparseContainer,
 ) -> Result<(Container, AxisDescriptors), SpoError> {
-    let total = x.word_count() + y.word_count() + z.word_count() + 6;
+    let total = x.word_count() + y.word_count() + z.word_count() + 3 * BITMAP_WORDS;
     if total > CONTAINER_WORDS {
         return Err(SpoError::AxesOverflow {
             total,
@@ -270,9 +236,10 @@ pub fn pack_axes(
 
     // X axis
     let x_offset = offset;
-    container.words[offset] = x.bitmap[0];
-    container.words[offset + 1] = x.bitmap[1];
-    offset += 2;
+    for bw in 0..BITMAP_WORDS {
+        container.words[offset + bw] = x.bitmap[bw];
+    }
+    offset += BITMAP_WORDS;
     for &w in &x.words {
         container.words[offset] = w;
         offset += 1;
@@ -280,9 +247,10 @@ pub fn pack_axes(
 
     // Y axis
     let y_offset = offset;
-    container.words[offset] = y.bitmap[0];
-    container.words[offset + 1] = y.bitmap[1];
-    offset += 2;
+    for bw in 0..BITMAP_WORDS {
+        container.words[offset + bw] = y.bitmap[bw];
+    }
+    offset += BITMAP_WORDS;
     for &w in &y.words {
         container.words[offset] = w;
         offset += 1;
@@ -290,9 +258,10 @@ pub fn pack_axes(
 
     // Z axis
     let z_offset = offset;
-    container.words[offset] = z.bitmap[0];
-    container.words[offset + 1] = z.bitmap[1];
-    offset += 2;
+    for bw in 0..BITMAP_WORDS {
+        container.words[offset + bw] = z.bitmap[bw];
+    }
+    offset += BITMAP_WORDS;
     for &w in &z.words {
         container.words[offset] = w;
         offset += 1;
@@ -328,8 +297,11 @@ fn unpack_one_axis(
     offset: usize,
     count: usize,
 ) -> Result<SparseContainer, SpoError> {
-    let bitmap = [content.words[offset], content.words[offset + 1]];
-    let words: Vec<u64> = content.words[offset + 2..offset + 2 + count].to_vec();
+    let mut bitmap = [0u64; BITMAP_WORDS];
+    for bw in 0..BITMAP_WORDS {
+        bitmap[bw] = content.words[offset + bw];
+    }
+    let words: Vec<u64> = content.words[offset + BITMAP_WORDS..offset + BITMAP_WORDS + count].to_vec();
     SparseContainer::new(bitmap, words)
 }
 
@@ -404,13 +376,13 @@ mod tests {
     fn test_sparse_zero_is_empty() {
         let sparse = SparseContainer::from_dense(&Container::zero());
         assert_eq!(sparse.word_count(), 0);
-        assert_eq!(sparse.bitmap, [0, 0]);
+        assert_eq!(sparse.bitmap, [0; BITMAP_WORDS]);
     }
 
     #[test]
     fn test_sparse_bitmap_consistency() {
         let sparse = SparseContainer::from_dense(&Container::random(99));
-        let ones = sparse.bitmap[0].count_ones() + sparse.bitmap[1].count_ones();
+        let ones: u32 = sparse.bitmap.iter().map(|w| w.count_ones()).sum();
         assert_eq!(ones as usize, sparse.words.len());
     }
 
@@ -446,17 +418,11 @@ mod tests {
 
     #[test]
     fn test_pack_unpack_roundtrip() {
-        let x = SparseContainer::from_dense(&Container::random(1));
-        let y = SparseContainer::from_dense(&Container::random(2));
-        let z = SparseContainer::from_dense(&Container::random(3));
-
-        // Full random containers are too dense to pack (128 words each)
-        // Use sparse ones instead
+        // Create ~30% density containers (must fit all 3 in CONTAINER_WORDS)
         let mut sx = SparseContainer::zero();
         let mut sy = SparseContainer::zero();
         let mut sz = SparseContainer::zero();
 
-        // Create ~30% density containers
         for i in 0..38 {
             sx.bitmap[0] |= 1u64 << i;
             sx.words.push(0xDEAD_0000 + i as u64);
@@ -490,11 +456,11 @@ mod tests {
         let desc = AxisDescriptors {
             x_offset: 0,
             x_count: 38,
-            y_offset: 40,
+            y_offset: 42,
             y_count: 38,
-            z_offset: 80,
+            z_offset: 84,
             z_count: 38,
-            total_words: 120,
+            total_words: 126,
             flags: 0b10, // is_meta_awareness
         };
         let words = desc.to_words();

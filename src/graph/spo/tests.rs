@@ -177,14 +177,15 @@ mod tests {
     fn test_4_cam_content_lookup() {
         let mut store = SpoStore::new();
 
-        // Insert 100 nodes with different names
+        // Insert 100 nodes — each with a unique label fingerprint as its sole label.
+        // (Majority-vote bundle of 1 item = the item itself → X axis IS the entity fp.)
         for i in 0..100 {
             let name = format!("entity_{}", i);
             let name_fp = label_fp(&name);
             let node = SpoBuilder::build_node(
                 dn_hash(&name),
-                &[&label_fp("Thing")],
-                &[(&label_fp("name"), &name_fp)],
+                &[&name_fp],
+                &[], // no properties — keeps X = label_fp("entity_N")
                 TruthValue::new(1.0, 0.9),
             ).unwrap();
             store.insert(node).unwrap();
@@ -192,7 +193,7 @@ mod tests {
 
         assert_eq!(store.len(), 100);
 
-        // Query for a specific entity by its content fingerprint
+        // Query for entity_42 by its content fingerprint (direct CAM lookup)
         let target_fp = label_fp("entity_42");
         let hits = store.query_content(&target_fp, 3500);
 
@@ -344,5 +345,145 @@ mod tests {
             "Meta Z should converge toward original content, got distance {}",
             convergence_dist
         );
+    }
+
+    // ========================================================================
+    // TEST 7: SCENT-PRUNED PROJECTIONS (Module 4)
+    // ========================================================================
+
+    use crate::graph::spo::store::{TruthGate, SpoHit, SpoSemiring};
+
+    #[test]
+    fn test_7_sxp2o_forward_projection() {
+        let mut store = SpoStore::new();
+
+        let bob_fp = label_fp("Bob");
+        let alice_fp = label_fp("Alice");
+        let knows_fp = label_fp("KNOWS");
+
+        let edge = SpoBuilder::build_edge(
+            dn_hash("bob_knows_alice"),
+            &bob_fp, &knows_fp, &alice_fp,
+            TruthValue::new(0.8, 0.9),
+        ).unwrap();
+        store.insert(edge).unwrap();
+
+        // sxp2o: query with sparse containers (no from_dense on query side)
+        let s_sparse = SparseContainer::from_dense(&bob_fp);
+        let p_sparse = SparseContainer::from_dense(&knows_fp);
+        let gate = TruthGate::open();
+
+        let hits = store.sxp2o(&s_sparse, &p_sparse, 4000, &gate);
+        assert!(!hits.is_empty(), "sxp2o must find the edge");
+
+        let found = hits.iter().any(|h| h.dn == dn_hash("bob_knows_alice"));
+        assert!(found, "sxp2o must find bob_knows_alice edge");
+
+        // Verify truth value is attached
+        let hit = hits.iter().find(|h| h.dn == dn_hash("bob_knows_alice")).unwrap();
+        assert!((hit.truth.frequency - 0.8).abs() < 0.01);
+        assert!((hit.truth.confidence - 0.9).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_7_pxo2s_reverse_projection() {
+        let mut store = SpoStore::new();
+
+        let alice_fp = label_fp("Alice");
+        let bob_fp = label_fp("Bob");
+        let knows_fp = label_fp("KNOWS");
+
+        let edge = SpoBuilder::build_edge(
+            dn_hash("alice_knows_bob"),
+            &alice_fp, &knows_fp, &bob_fp,
+            TruthValue::new(0.8, 0.9),
+        ).unwrap();
+        store.insert(edge).unwrap();
+
+        // pxo2s: reverse — "Who knows Bob?"
+        let p_sparse = SparseContainer::from_dense(&knows_fp);
+        let o_sparse = SparseContainer::from_dense(&bob_fp);
+        let gate = TruthGate::open();
+
+        let hits = store.pxo2s(&p_sparse, &o_sparse, 4000, &gate);
+        assert!(!hits.is_empty(), "pxo2s must find the edge");
+
+        let found = hits.iter().any(|h| h.dn == dn_hash("alice_knows_bob"));
+        assert!(found, "pxo2s must find alice_knows_bob edge");
+    }
+
+    #[test]
+    fn test_7_sxo2p_relation_projection() {
+        let mut store = SpoStore::new();
+
+        let alice_fp = label_fp("Alice");
+        let bob_fp = label_fp("Bob");
+        let knows_fp = label_fp("KNOWS");
+
+        let edge = SpoBuilder::build_edge(
+            dn_hash("alice_knows_bob"),
+            &alice_fp, &knows_fp, &bob_fp,
+            TruthValue::new(0.8, 0.9),
+        ).unwrap();
+        store.insert(edge).unwrap();
+
+        // sxo2p: relation — "How are Alice and Bob related?"
+        let s_sparse = SparseContainer::from_dense(&alice_fp);
+        let o_sparse = SparseContainer::from_dense(&bob_fp);
+        let gate = TruthGate::open();
+
+        let hits = store.sxo2p(&s_sparse, &o_sparse, 4000, &gate);
+        assert!(!hits.is_empty(), "sxo2p must find the edge");
+
+        let found = hits.iter().any(|h| h.dn == dn_hash("alice_knows_bob"));
+        assert!(found, "sxo2p must find alice_knows_bob edge");
+    }
+
+    #[test]
+    fn test_7_truth_gate_filters() {
+        let mut store = SpoStore::new();
+
+        let a_fp = label_fp("A");
+        let b_fp = label_fp("B");
+        let rel_fp = label_fp("REL");
+
+        // Insert edge with low confidence
+        let edge = SpoBuilder::build_edge(
+            dn_hash("low_conf"),
+            &a_fp, &rel_fp, &b_fp,
+            TruthValue::new(0.3, 0.2),
+        ).unwrap();
+        store.insert(edge).unwrap();
+
+        let s = SparseContainer::from_dense(&a_fp);
+        let p = SparseContainer::from_dense(&rel_fp);
+
+        // Open gate — should find it
+        let open = TruthGate::open();
+        let hits = store.sxp2o(&s, &p, 4000, &open);
+        let found_open = hits.iter().any(|h| h.dn == dn_hash("low_conf"));
+        assert!(found_open, "Open gate must pass everything");
+
+        // High gate — should filter it out
+        let strict = TruthGate { min_frequency: 0.5, min_confidence: 0.5 };
+        let hits = store.sxp2o(&s, &p, 4000, &strict);
+        let found_strict = hits.iter().any(|h| h.dn == dn_hash("low_conf"));
+        assert!(!found_strict, "Strict gate must filter low-confidence records");
+    }
+
+    #[test]
+    fn test_7_semiring_combine() {
+        let a = TruthValue::new(0.8, 0.9);
+        let b = TruthValue::new(0.7, 0.8);
+        let coherence = 0.95;
+
+        let result = SpoSemiring::combine(&a, &b, coherence);
+        assert!((result.frequency - 0.56).abs() < 0.01);
+        assert!((result.confidence - 0.684).abs() < 0.01); // 0.9 * 0.8 * 0.95
+
+        // Fold chain
+        let chain = vec![(a, 1.0), (b, coherence)];
+        let folded = SpoSemiring::fold_chain(&chain);
+        assert!((folded.frequency - 0.56).abs() < 0.01);
     }
 }

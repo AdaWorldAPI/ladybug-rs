@@ -16,8 +16,11 @@ pub mod scent;
 pub mod store;
 pub mod builder;
 
+#[cfg(test)]
+mod tests;
+
 // Re-exports
 pub use sparse::{SparseContainer, SpoError, AxisDescriptors, pack_axes, unpack_axes};
 pub use scent::NibbleScent;
-pub use store::{SpoStore, QueryHit, QueryAxis};
+pub use store::{SpoStore, QueryHit, QueryAxis, TruthGate, SpoHit, SpoSemiring};
 pub use builder::{SpoBuilder, label_fp, dn_hash};
