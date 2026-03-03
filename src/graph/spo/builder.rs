@@ -119,7 +119,7 @@ impl SpoBuilder {
 
         let x_dense = Container::bundle(&x_refs);
         // Y axis: deterministic "chain discovered" marker
-        let y_dense = Container::random(0xCHA1_D15C); // CHAIN_DISCOVERED seed
+        let y_dense = Container::random(0xC4A1_D15C); // CHAIN_DISCOVERED seed
         let z_dense = Container::bundle(&z_refs);
 
         let x = SparseContainer::from_dense(&x_dense);

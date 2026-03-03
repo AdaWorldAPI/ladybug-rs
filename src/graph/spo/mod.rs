@@ -15,9 +15,15 @@ pub mod sparse;
 pub mod scent;
 pub mod store;
 pub mod builder;
+pub mod semiring;
+pub mod merkle;
+pub mod case_insensitive;
 
 // Re-exports
-pub use sparse::{SparseContainer, SpoError, AxisDescriptors, pack_axes, unpack_axes};
+pub use sparse::{SparseContainer, SpoError, AxisDescriptors, pack_axes, unpack_axes, spo_err};
 pub use scent::NibbleScent;
-pub use store::{SpoStore, QueryHit, QueryAxis};
+pub use store::{SpoStore, QueryHit, QueryAxis, SpoHit, TruthGate};
 pub use builder::{SpoBuilder, label_fp, dn_hash};
+pub use semiring::{SpoSemiring, XorBundle, HammingMin, SimilarityMax, Reachability};
+pub use merkle::{SpoMerkle, MerkleHash, MerkleError, AuthenticatedResult, InclusionProof, MerkleEpoch, TrajectoryStep, TrajectoryKind};
+pub use case_insensitive::CaseInsensitiveLookup;

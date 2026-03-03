@@ -7,6 +7,7 @@
 pub mod cognitive;
 mod edge;
 mod traversal;
+pub mod spo;
 
 pub use cognitive::{CogEdge, CogGraph, CogNode, NodeType, Verb, VerbCategory};
 pub use edge::{Edge, EdgeType};

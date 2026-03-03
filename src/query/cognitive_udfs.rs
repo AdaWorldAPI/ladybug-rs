@@ -39,27 +39,13 @@ pub const FP_BYTES: usize = crate::FINGERPRINT_BYTES;
 // HELPER FUNCTIONS
 // =============================================================================
 
-/// Compute Hamming distance between two byte slices
+/// Compute Hamming distance between two byte slices.
+///
+/// Delegates to rustynum-core's SIMD kernel which uses AVX-512 VPOPCNTDQ
+/// when available (64 bytes/iteration), falling back to scalar POPCNT.
 #[inline]
 pub fn hamming_bytes(a: &[u8], b: &[u8]) -> u32 {
-    let min_len = a.len().min(b.len());
-    let mut dist: u32 = 0;
-
-    // Process 8 bytes at a time
-    let chunks = min_len / 8;
-    for i in 0..chunks {
-        let offset = i * 8;
-        let a_u64 = u64::from_le_bytes(a[offset..offset + 8].try_into().unwrap());
-        let b_u64 = u64::from_le_bytes(b[offset..offset + 8].try_into().unwrap());
-        dist += (a_u64 ^ b_u64).count_ones();
-    }
-
-    // Remaining bytes
-    for i in (chunks * 8)..min_len {
-        dist += (a[i] ^ b[i]).count_ones();
-    }
-
-    dist
+    rustynum_core::simd::hamming_distance(a, b) as u32
 }
 
 /// Compute similarity from Hamming distance
