@@ -484,9 +484,13 @@ impl CypherParser {
                 }
                 let num_str: String = chars[start..i].iter().collect();
                 if has_decimal {
-                    tokens.push(Token::FloatLit(num_str.parse().unwrap()));
+                    tokens.push(Token::FloatLit(num_str.parse().map_err(|e| {
+                        Error::Query(format!("invalid float literal '{}': {}", num_str, e))
+                    })?));
                 } else {
-                    tokens.push(Token::IntLit(num_str.parse().unwrap()));
+                    tokens.push(Token::IntLit(num_str.parse().map_err(|e| {
+                        Error::Query(format!("invalid int literal '{}': {}", num_str, e))
+                    })?));
                 }
                 continue;
             }
