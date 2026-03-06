@@ -46,7 +46,6 @@ pub mod lance_parser;
 pub mod dn_tree_provider;
 pub mod error;
 pub mod fingerprint_table;
-pub mod lance_parser;
 pub mod graph_provider;
 pub mod hybrid;
 pub mod scent_scan;
