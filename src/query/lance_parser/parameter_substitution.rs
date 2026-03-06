@@ -2,10 +2,23 @@ use super::ast::*;
 use super::super::error::{QueryError, Result};
 use std::collections::HashMap;
 
+/// Query parameter value — no JSON, no Python, no serialization.
+/// Comes from MCP tool input or BindSpace property lookup.
+///
+/// If a parameter isn't set, it's not in the HashMap. No Null variant.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParamValue {
+    String(String),
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    List(Vec<ParamValue>),
+}
+
 /// Substitute parameters with literal values in the AST
 pub fn substitute_parameters(
     query: &mut CypherQuery,
-    parameters: &HashMap<String, serde_json::Value>,
+    parameters: &HashMap<String, ParamValue>,
 ) -> Result<()> {
     // Substitute in READING clauses
     for reading_clause in &mut query.reading_clauses {
@@ -45,7 +58,7 @@ pub fn substitute_parameters(
 
 fn substitute_in_reading_clause(
     clause: &mut ReadingClause,
-    parameters: &HashMap<String, serde_json::Value>,
+    parameters: &HashMap<String, ParamValue>,
 ) -> Result<()> {
     match clause {
         ReadingClause::Match(match_clause) => {
@@ -62,7 +75,7 @@ fn substitute_in_reading_clause(
 
 fn substitute_in_graph_pattern(
     pattern: &mut GraphPattern,
-    parameters: &HashMap<String, serde_json::Value>,
+    parameters: &HashMap<String, ParamValue>,
 ) -> Result<()> {
     match pattern {
         GraphPattern::Node(node) => {
@@ -83,7 +96,7 @@ fn substitute_in_graph_pattern(
 
 fn substitute_in_node_pattern(
     node: &mut NodePattern,
-    parameters: &HashMap<String, serde_json::Value>,
+    parameters: &HashMap<String, ParamValue>,
 ) -> Result<()> {
     for value in node.properties.values_mut() {
         substitute_in_property_value(value, parameters)?;
@@ -93,7 +106,7 @@ fn substitute_in_node_pattern(
 
 fn substitute_in_relationship_pattern(
     rel: &mut RelationshipPattern,
-    parameters: &HashMap<String, serde_json::Value>,
+    parameters: &HashMap<String, ParamValue>,
 ) -> Result<()> {
     for value in rel.properties.values_mut() {
         substitute_in_property_value(value, parameters)?;
@@ -103,7 +116,7 @@ fn substitute_in_relationship_pattern(
 
 fn substitute_in_property_value(
     value: &mut PropertyValue,
-    parameters: &HashMap<String, serde_json::Value>,
+    parameters: &HashMap<String, ParamValue>,
 ) -> Result<()> {
     if let PropertyValue::Parameter(name) = value {
         let param_value =
@@ -114,21 +127,21 @@ fn substitute_in_property_value(
                     location: snafu::Location::new(file!(), line!(), column!()),
                 })?;
 
-        *value = json_to_property_value(param_value)?;
+        *value = param_to_property_value(param_value)?;
     }
     Ok(())
 }
 
 fn substitute_in_where_clause(
     where_clause: &mut WhereClause,
-    parameters: &HashMap<String, serde_json::Value>,
+    parameters: &HashMap<String, ParamValue>,
 ) -> Result<()> {
     substitute_in_boolean_expression(&mut where_clause.expression, parameters)
 }
 
 fn substitute_in_with_clause(
     with_clause: &mut WithClause,
-    parameters: &HashMap<String, serde_json::Value>,
+    parameters: &HashMap<String, ParamValue>,
 ) -> Result<()> {
     for item in &mut with_clause.items {
         substitute_in_value_expression(&mut item.expression, parameters)?;
@@ -141,7 +154,7 @@ fn substitute_in_with_clause(
 
 fn substitute_in_return_clause(
     return_clause: &mut ReturnClause,
-    parameters: &HashMap<String, serde_json::Value>,
+    parameters: &HashMap<String, ParamValue>,
 ) -> Result<()> {
     for item in &mut return_clause.items {
         substitute_in_value_expression(&mut item.expression, parameters)?;
@@ -151,7 +164,7 @@ fn substitute_in_return_clause(
 
 fn substitute_in_order_by_clause(
     order_by: &mut OrderByClause,
-    parameters: &HashMap<String, serde_json::Value>,
+    parameters: &HashMap<String, ParamValue>,
 ) -> Result<()> {
     for item in &mut order_by.items {
         substitute_in_value_expression(&mut item.expression, parameters)?;
@@ -161,7 +174,7 @@ fn substitute_in_order_by_clause(
 
 fn substitute_in_boolean_expression(
     expr: &mut BooleanExpression,
-    parameters: &HashMap<String, serde_json::Value>,
+    parameters: &HashMap<String, ParamValue>,
 ) -> Result<()> {
     match expr {
         BooleanExpression::Comparison { left, right, .. } => {
@@ -197,7 +210,7 @@ fn substitute_in_boolean_expression(
 
 fn substitute_in_value_expression(
     expr: &mut ValueExpression,
-    parameters: &HashMap<String, serde_json::Value>,
+    parameters: &HashMap<String, ParamValue>,
 ) -> Result<()> {
     match expr {
         ValueExpression::Parameter(name) => {
@@ -209,20 +222,22 @@ fn substitute_in_value_expression(
                         location: snafu::Location::new(file!(), line!(), column!()),
                     })?;
 
-            // Check for array to VectorLiteral conversion
-            if let serde_json::Value::Array(arr) = param_value {
+            // Check for float list → VectorLiteral conversion
+            if let ParamValue::List(items) = param_value {
                 let mut floats = Vec::new();
-                for v in arr {
-                    if let Some(f) = v.as_f64() {
-                        floats.push(f as f32);
-                    } else {
-                        return Err(QueryError::PlanError {
-                            message: format!(
-                                "Parameter ${} is a list but contains non-numeric values. Only float vectors are supported as list parameters currently.",
-                                name
-                            ),
-                            location: snafu::Location::new(file!(), line!(), column!()),
-                        });
+                for v in items {
+                    match v {
+                        ParamValue::Float(f) => floats.push(*f as f32),
+                        ParamValue::Int(i) => floats.push(*i as f32),
+                        _ => {
+                            return Err(QueryError::PlanError {
+                                message: format!(
+                                    "Parameter ${} is a list but contains non-numeric values. Only float vectors are supported as list parameters currently.",
+                                    name
+                                ),
+                                location: snafu::Location::new(file!(), line!(), column!()),
+                            });
+                        }
                     }
                 }
                 *expr = ValueExpression::VectorLiteral(floats);
@@ -230,7 +245,7 @@ fn substitute_in_value_expression(
             }
 
             // Scalar conversion
-            let prop_val = json_to_property_value(param_value)?;
+            let prop_val = param_to_property_value(param_value)?;
             *expr = ValueExpression::Literal(prop_val);
         }
         ValueExpression::ScalarFunction { args, .. }
@@ -253,26 +268,15 @@ fn substitute_in_value_expression(
     Ok(())
 }
 
-fn json_to_property_value(value: &serde_json::Value) -> Result<PropertyValue> {
+fn param_to_property_value(value: &ParamValue) -> Result<PropertyValue> {
     match value {
-        serde_json::Value::Null => Ok(PropertyValue::Null),
-        serde_json::Value::Bool(b) => Ok(PropertyValue::Boolean(*b)),
-        serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Ok(PropertyValue::Integer(i))
-            } else if let Some(f) = n.as_f64() {
-                Ok(PropertyValue::Float(f))
-            } else {
-                Err(QueryError::PlanError {
-                    message: format!("Number parameter could not be converted to i64 or f64: {}", n),
-                    location: snafu::Location::new(file!(), line!(), column!()),
-                })
-            }
-        }
-        serde_json::Value::String(s) => Ok(PropertyValue::String(s.clone())),
-        serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+        ParamValue::Bool(b) => Ok(PropertyValue::Boolean(*b)),
+        ParamValue::Int(i) => Ok(PropertyValue::Integer(*i)),
+        ParamValue::Float(f) => Ok(PropertyValue::Float(*f)),
+        ParamValue::String(s) => Ok(PropertyValue::String(s.clone())),
+        ParamValue::List(_) => {
             Err(QueryError::PlanError {
-                message: "Complex types (List, Map) are not fully supported as parameters yet (except float vectors).".to_string(),
+                message: "List parameters are only supported as float vectors in value expressions.".to_string(),
                 location: snafu::Location::new(file!(), line!(), column!()),
             })
         }

@@ -74,7 +74,7 @@ impl SemanticAnalyzer {
     pub fn analyze(
         &mut self,
         query: &CypherQuery,
-        parameters: &HashMap<String, serde_json::Value>,
+        parameters: &HashMap<String, super::parameter_substitution::ParamValue>,
     ) -> Result<SemanticResult> {
         // Clone the query to perform parameter substitution
         let mut analyzed_query = query.clone();
@@ -747,7 +747,7 @@ impl SemanticAnalyzer {
     fn substitute_parameters(
         &self,
         query: &mut CypherQuery,
-        parameters: &HashMap<String, serde_json::Value>,
+        parameters: &HashMap<String, super::parameter_substitution::ParamValue>,
     ) -> Result<()> {
         super::parameter_substitution::substitute_parameters(query, parameters)
     }
@@ -1200,7 +1200,7 @@ mod tests {
         };
 
         let mut parameters = HashMap::new();
-        parameters.insert("min_age".to_string(), serde_json::json!(18));
+        parameters.insert("min_age".to_string(), crate::query::lance_parser::ParamValue::Int(18));
 
         let mut analyzer = SemanticAnalyzer::new(test_config());
         let result = analyzer

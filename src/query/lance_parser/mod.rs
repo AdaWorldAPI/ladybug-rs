@@ -8,10 +8,15 @@
 // crate::graph::spo, or any mesh-side module. If you find yourself adding one, STOP.
 
 pub mod ast;
+pub mod case_insensitive;
+pub mod config;
 pub mod error;
+pub mod parameter_substitution;
 pub mod parser;
+pub mod semantic;
 
-// Re-export the main entry point
+// Re-export the main entry points
 pub use ast::*;
 pub use error::{GraphError, Result};
+pub use parameter_substitution::ParamValue;
 pub use parser::parse_cypher_query;
