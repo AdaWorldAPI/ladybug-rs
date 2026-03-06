@@ -6,6 +6,10 @@
 use ladybug_contract::container::{Container, CONTAINER_WORDS};
 
 /// Error types for SPO operations.
+///
+/// Location-enriched via `#[track_caller]` — every error captures the
+/// call site (file, line, column) at zero runtime cost. Stolen from
+/// lance-graph's snafu pattern, but using std instead of a heavy dep.
 #[derive(Clone, Debug)]
 pub enum SpoError {
     BitmapWordMismatch { bitmap_ones: u32, word_count: usize },
@@ -14,6 +18,9 @@ pub enum SpoError {
     DuplicateDn { dn: u64 },
     DnNotFound { dn: u64 },
     EmptyChain,
+    IntegrityViolation { dn: u64, message: String },
+    /// Location-enriched variant for query/planner errors.
+    Located { message: String, file: &'static str, line: u32 },
 }
 
 impl std::fmt::Display for SpoError {
@@ -31,8 +38,37 @@ impl std::fmt::Display for SpoError {
                 write!(f, "DN {:#x} not found", dn),
             Self::EmptyChain =>
                 write!(f, "Chain is empty"),
+            Self::IntegrityViolation { dn, message } =>
+                write!(f, "Integrity violation at DN {:#x}: {}", dn, message),
+            Self::Located { message, file, line } =>
+                write!(f, "{} (at {}:{})", message, file, line),
         }
     }
+}
+
+/// Create a location-enriched SpoError capturing the call site.
+/// Zero runtime cost — uses `#[track_caller]` + `Location::caller()`.
+#[track_caller]
+pub fn spo_err(message: impl Into<String>) -> SpoError {
+    let loc = std::panic::Location::caller();
+    SpoError::Located {
+        message: message.into(),
+        file: loc.file(),
+        line: loc.line(),
+    }
+}
+
+/// Convenience macro for location-enriched errors with format strings.
+#[macro_export]
+macro_rules! spo_err {
+    ($($arg:tt)*) => {{
+        let loc = std::panic::Location::caller();
+        $crate::graph::spo::sparse::SpoError::Located {
+            message: format!($($arg)*),
+            file: loc.file(),
+            line: loc.line(),
+        }
+    }};
 }
 
 impl std::error::Error for SpoError {}

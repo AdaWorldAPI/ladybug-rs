@@ -42,7 +42,9 @@ mod builder;
 pub mod cognitive_udfs;
 mod cypher;
 mod datafusion;
+pub mod lance_parser;
 pub mod dn_tree_provider;
+pub mod error;
 pub mod fingerprint_table;
 pub mod graph_provider;
 pub mod hybrid;
@@ -70,12 +72,4 @@ pub use scent_scan::{
     SimilarityUdf as ScentSimilarityUdf,
 };
 
-#[derive(thiserror::Error, Debug)]
-pub enum QueryError {
-    #[error("Parse error: {0}")]
-    Parse(String),
-    #[error("Execution error: {0}")]
-    Execution(String),
-    #[error("Transpile error: {0}")]
-    Transpile(String),
-}
+pub use error::QueryError;

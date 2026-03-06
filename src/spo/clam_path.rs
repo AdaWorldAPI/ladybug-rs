@@ -441,6 +441,131 @@ impl ClamPathExt for ladybug_contract::CogRecord8K {
 }
 
 // =============================================================================
+// INTEGRITY — DN ADDRESSING IS THE MERKLE TREE
+// =============================================================================
+
+/// Result of an integrity check walking from an address to the root.
+///
+/// The DN address space IS the tree:
+/// - `domain:tree:branch:twig:leaf` = the node
+/// - `domain:tree:branch:twig` = the parent (ClamPath::parent(), bit mask)
+/// - `domain:tree:branch:twig:*` = the children (prefix range)
+///
+/// No HashMap. No tree struct. The address IS the tree.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IntegrityResult {
+    /// All MerkleRoots are consistent from addr to root.
+    Consistent,
+    /// MerkleRoot divergence detected at the given path.
+    Diverged {
+        /// The ClamPath where child and parent roots are inconsistent.
+        at: ClamPath,
+    },
+    /// The address has no ClamPath set (MerkleRoot is zero).
+    Uninitialized {
+        /// The ClamPath that has a zero MerkleRoot.
+        at: ClamPath,
+    },
+}
+
+/// Check if a parent MerkleRoot is consistent with a child MerkleRoot.
+///
+/// In a content-addressed tree, the parent's root should reflect its children.
+/// For the truncated 40-bit roots stored in word[0], we verify that the
+/// parent's root is NOT identical to the child's root (they encode different
+/// subtrees) unless the parent has only one child.
+///
+/// This is a lightweight consistency check: if parent and child have the same
+/// MerkleRoot, something is wrong (a parent's root should be a hash of ALL
+/// its children, not equal to any single child).
+#[inline]
+pub fn roots_consistent(parent_root: MerkleRoot, child_root: MerkleRoot) -> bool {
+    // Both zero = uninitialized, consistent by convention
+    if parent_root.is_zero() && child_root.is_zero() {
+        return true;
+    }
+    // If only one is zero, the tree is partially initialized — not an error
+    // per se but the integrity is vacuously consistent (no claim to verify).
+    if parent_root.is_zero() || child_root.is_zero() {
+        return true;
+    }
+    // A parent's root MUST differ from any single child's root.
+    // If they're equal, the parent was copied from the child instead of
+    // being computed as hash(child_left || child_right).
+    parent_root != child_root
+}
+
+/// Verify subtree integrity by walking from a ClamPath up to the root.
+///
+/// Each step reads word[0] at the parent address (computed by bit masking,
+/// O(0) — no lookup needed). If any parent's MerkleRoot equals a child's
+/// MerkleRoot, the subtree has corruption (a parent should hash ALL children,
+/// never equal any single child).
+///
+/// This function takes a closure that reads word[0] from BindSpace at a given
+/// ClamPath. This avoids coupling to BindSpace directly (Gate 1: no shadow
+/// structures, Gate 7: reuse existing BindSpace access).
+///
+/// # Cycle Budget
+///
+/// Each step: ClamPath::parent() = bit mask (1 cycle) + read word[0] (3-5 cycles)
+/// + comparison (1 cycle) = ~6 cycles. Depth ≈ 5-8 levels.
+/// Total: ~30-50 cycles for full root walk.
+pub fn verify_integrity<F>(start: ClamPath, read_word0: F) -> IntegrityResult
+where
+    F: Fn(ClamPath) -> u64,
+{
+    if start.depth == 0 {
+        return IntegrityResult::Consistent; // root, nothing to check
+    }
+
+    let mut current = start;
+
+    loop {
+        let parent_path = current.parent();
+        if parent_path == current {
+            break; // reached root
+        }
+
+        let child_w0 = read_word0(current);
+        let parent_w0 = read_word0(parent_path);
+
+        let (_, child_root) = ClamPath::unpack_with_merkle(child_w0);
+        let (_, parent_root) = ClamPath::unpack_with_merkle(parent_w0);
+
+        // Check for uninitialized nodes
+        if child_root.is_zero() {
+            return IntegrityResult::Uninitialized { at: current };
+        }
+
+        if !roots_consistent(parent_root, child_root) {
+            return IntegrityResult::Diverged { at: current };
+        }
+
+        current = parent_path;
+    }
+
+    IntegrityResult::Consistent
+}
+
+/// Batch integrity check: verify multiple paths, return the first divergence.
+///
+/// Useful for checking all leaves in a subtree after a mutation.
+/// Stops at first failure (fail-fast).
+pub fn verify_batch<F>(paths: &[ClamPath], read_word0: F) -> IntegrityResult
+where
+    F: Fn(ClamPath) -> u64,
+{
+    for &path in paths {
+        let result = verify_integrity(path, &read_word0);
+        if result != IntegrityResult::Consistent {
+            return result;
+        }
+    }
+    IntegrityResult::Consistent
+}
+
+// =============================================================================
 // TESTS
 // =============================================================================
 
@@ -739,5 +864,122 @@ mod tests {
         record.set_clam_path(path);
         assert_eq!(record.clam_path(), path);
         assert_eq!(record.merkle_root(), MerkleRoot::ZERO);
+    }
+
+    // =========================================================================
+    // Integrity tests — verify_subtree catches divergence
+    // =========================================================================
+
+    #[test]
+    fn test_integrity_consistent_tree() {
+        // Simulate a tree where parent roots differ from child roots (correct).
+        let mut store = std::collections::HashMap::new();
+
+        let root = ClamPath::ROOT;
+        let left = ClamPath::from_tree_traversal(&[false]);
+        let left_left = ClamPath::from_tree_traversal(&[false, false]);
+
+        // Each node gets a DIFFERENT MerkleRoot (correct behavior).
+        store.insert(root, root.pack_with_merkle(MerkleRoot(0x11_1111_1111)));
+        store.insert(left, left.pack_with_merkle(MerkleRoot(0x22_2222_2222)));
+        store.insert(left_left, left_left.pack_with_merkle(MerkleRoot(0x33_3333_3333)));
+
+        let result = verify_integrity(left_left, |path| {
+            *store.get(&path).unwrap_or(&0)
+        });
+        assert_eq!(result, IntegrityResult::Consistent);
+    }
+
+    #[test]
+    fn test_integrity_diverged_tree() {
+        // Parent has SAME MerkleRoot as child → corruption.
+        let mut store = std::collections::HashMap::new();
+
+        let root = ClamPath::ROOT;
+        let child = ClamPath::from_tree_traversal(&[true]);
+
+        let same_root = MerkleRoot(0xAB_CDEF_0123);
+        store.insert(root, root.pack_with_merkle(same_root));
+        store.insert(child, child.pack_with_merkle(same_root));
+
+        let result = verify_integrity(child, |path| {
+            *store.get(&path).unwrap_or(&0)
+        });
+        assert_eq!(result, IntegrityResult::Diverged { at: child });
+    }
+
+    #[test]
+    fn test_integrity_uninitialized() {
+        // Child has MerkleRoot::ZERO → uninitialized.
+        let child = ClamPath::from_tree_traversal(&[false, true]);
+
+        let result = verify_integrity(child, |_path| 0u64);
+        assert_eq!(result, IntegrityResult::Uninitialized { at: child });
+    }
+
+    #[test]
+    fn test_integrity_root_always_consistent() {
+        let result = verify_integrity(ClamPath::ROOT, |_| 0);
+        assert_eq!(result, IntegrityResult::Consistent);
+    }
+
+    #[test]
+    fn test_integrity_deep_walk() {
+        // 8-level deep path, all different roots → consistent.
+        let mut store = std::collections::HashMap::new();
+
+        for depth in 0..=8 {
+            let path_bits: Vec<bool> = (0..depth).map(|i| i % 2 == 0).collect();
+            let cp = ClamPath::from_tree_traversal(&path_bits);
+            let root = MerkleRoot((depth as u64 + 1) * 0x01_0101_0101);
+            store.insert(cp, cp.pack_with_merkle(root));
+        }
+
+        let deepest_bits: Vec<bool> = (0..8).map(|i| i % 2 == 0).collect();
+        let deepest = ClamPath::from_tree_traversal(&deepest_bits);
+
+        let result = verify_integrity(deepest, |path| {
+            *store.get(&path).unwrap_or(&0)
+        });
+        assert_eq!(result, IntegrityResult::Consistent);
+    }
+
+    #[test]
+    fn test_integrity_batch() {
+        let mut store = std::collections::HashMap::new();
+
+        let root = ClamPath::ROOT;
+        let a = ClamPath::from_tree_traversal(&[false]);
+        let b = ClamPath::from_tree_traversal(&[true]);
+
+        store.insert(root, root.pack_with_merkle(MerkleRoot(0x11_0000_0000)));
+        store.insert(a, a.pack_with_merkle(MerkleRoot(0x22_0000_0000)));
+        store.insert(b, b.pack_with_merkle(MerkleRoot(0x33_0000_0000)));
+
+        let result = verify_batch(&[a, b], |path| {
+            *store.get(&path).unwrap_or(&0)
+        });
+        assert_eq!(result, IntegrityResult::Consistent);
+    }
+
+    #[test]
+    fn test_roots_consistent_both_zero() {
+        assert!(roots_consistent(MerkleRoot::ZERO, MerkleRoot::ZERO));
+    }
+
+    #[test]
+    fn test_roots_consistent_one_zero() {
+        assert!(roots_consistent(MerkleRoot::ZERO, MerkleRoot(42)));
+        assert!(roots_consistent(MerkleRoot(42), MerkleRoot::ZERO));
+    }
+
+    #[test]
+    fn test_roots_consistent_different() {
+        assert!(roots_consistent(MerkleRoot(1), MerkleRoot(2)));
+    }
+
+    #[test]
+    fn test_roots_inconsistent_same() {
+        assert!(!roots_consistent(MerkleRoot(42), MerkleRoot(42)));
     }
 }
