@@ -761,7 +761,7 @@ impl AntialiasedSigma {
 // TACTIC #23 AMP: GestaltState → InferenceRuleKind bias
 // =============================================================================
 
-use crate::nars::InferenceRuleKind;
+use crate::nars::{InferenceRuleKind, TruthValue};
 use super::spo_harvest::AccumulatedHarvest;
 
 /// Per-rule bias vector derived from GestaltState.

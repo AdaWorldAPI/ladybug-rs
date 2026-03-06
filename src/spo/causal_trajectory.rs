@@ -34,16 +34,16 @@
 //! DN mutation guidance, and warm-start capability.
 
 use rustynum_bnn::causal_trajectory::{
-    CausalArrow, CausalChain, CausalDirection, CausalRelation, CausalSaliency,
+    CausalArrow, CausalChain, CausalDirection, CausalLink, CausalRelation, CausalSaliency,
     CausalTrajectory, DominantPlane,
     NarsCausalStatement, NarsTruth, ResonatorSnapshot, SigmaEdge,
 };
 use rustynum_bnn::{GrowthPath, InferenceMode, MutationOp};
-use rustynum_core::{CollapseGate, SigmaGate};
+use rustynum_core::{CollapseGate, SigmaGate, SignificanceLevel};
 
 use crate::nars::TruthValue;
 use super::gestalt::GestaltState;
-use super::spo_harvest::{Plane, SpoDistanceResult};
+use super::spo_harvest::{Plane, SpoDistanceResult, TypedHalo};
 use super::shift_detector::SpoShiftDetector;
 
 // =============================================================================
