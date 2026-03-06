@@ -7,7 +7,7 @@
 //! It supports a subset of Cypher syntax focused on graph pattern matching and property access.
 
 use super::ast::*;
-use super::super::error::{QueryError, Result};
+use super::error::{GraphError, Result};
 use nom::{
     branch::alt,
     bytes::complete::{tag, tag_no_case, take_while1},
@@ -21,14 +21,14 @@ use std::collections::HashMap;
 
 /// Parse a complete Cypher query
 pub fn parse_cypher_query(input: &str) -> Result<CypherQuery> {
-    let (remaining, query) = cypher_query(input).map_err(|e| QueryError::ParseError {
+    let (remaining, query) = cypher_query(input).map_err(|e| GraphError::ParseError {
         message: format!("Failed to parse Cypher query: {}", e),
         position: 0,
         location: snafu::Location::new(file!(), line!(), column!()),
     })?;
 
     if !remaining.trim().is_empty() {
-        return Err(QueryError::ParseError {
+        return Err(GraphError::ParseError {
             message: format!("Unexpected input after query: {}", remaining),
             position: input.len() - remaining.len(),
             location: snafu::Location::new(file!(), line!(), column!()),
@@ -638,7 +638,7 @@ fn function_call(input: &str) -> IResult<&str, ValueExpression> {
     let (input, _) = char(')')(input)?;
 
     // Route based on function type
-    use crate::query::lance_parser::ast::{classify_function, FunctionType};
+    use super::ast::{classify_function, FunctionType};
     match classify_function(name) {
         FunctionType::Aggregate => Ok((
             input,
@@ -1034,7 +1034,6 @@ fn length_range(input: &str) -> IResult<&str, LengthRange> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::lance_parser::ast::{BooleanExpression, ComparisonOperator, PropertyValue, ValueExpression};
 
     #[test]
     fn test_parse_simple_node_query() {

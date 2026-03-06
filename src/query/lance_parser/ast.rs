@@ -1,11 +1,11 @@
+// Stolen from lance-graph/crates/lance-graph/src/ast.rs
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright The Lance Authors
 
 //! Abstract Syntax Tree for Cypher queries
 //!
-//! This module defines the AST nodes for representing parsed Cypher queries.
-//! The AST is designed to capture the essential graph patterns while being
-//! simple enough to translate to SQL efficiently.
+//! Stolen from lance-graph. Pure data types — no mesh coupling.
+//! Only depends on serde + std.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -37,7 +37,6 @@ impl CypherQuery {
     /// Extract all node labels referenced in the query
     pub fn get_node_labels(&self) -> Vec<String> {
         let mut labels = Vec::new();
-        // Iterate all match clauses directly
         for clause in &self.reading_clauses {
             if let ReadingClause::Match(match_clause) = clause {
                 for pattern in &match_clause.patterns {
@@ -317,13 +316,11 @@ pub enum ValueExpression {
     /// Literal value
     Literal(PropertyValue),
     /// Scalar function call (toLower, upper, etc.)
-    /// These are row-level functions that operate on individual values
     ScalarFunction {
         name: String,
         args: Vec<ValueExpression>,
     },
     /// Aggregate function call (COUNT, SUM, AVG, MIN, MAX, COLLECT)
-    /// These functions operate across multiple rows and support DISTINCT
     AggregateFunction {
         name: String,
         args: Vec<ValueExpression>,
@@ -337,14 +334,12 @@ pub enum ValueExpression {
         right: Box<ValueExpression>,
     },
     /// Vector distance function: vector_distance(left, right, metric)
-    /// Returns the distance as a float (lower = more similar for L2/Cosine)
     VectorDistance {
         left: Box<ValueExpression>,
         right: Box<ValueExpression>,
         metric: DistanceMetric,
     },
     /// Vector similarity function: vector_similarity(left, right, metric)
-    /// Returns the similarity score as a float (higher = more similar)
     VectorSimilarity {
         left: Box<ValueExpression>,
         right: Box<ValueExpression>,
@@ -353,7 +348,6 @@ pub enum ValueExpression {
     /// Parameter reference for query parameters (e.g., $query_vector)
     Parameter(String),
     /// Vector literal: [0.1, 0.2, 0.3]
-    /// Represents an inline vector for similarity search
     VectorLiteral(Vec<f32>),
 }
 
@@ -373,7 +367,6 @@ pub fn classify_function(name: &str) -> FunctionType {
     match name.to_lowercase().as_str() {
         "count" | "sum" | "avg" | "min" | "max" | "collect" => FunctionType::Aggregate,
         "tolower" | "lower" | "toupper" | "upper" => FunctionType::Scalar,
-        // Vector functions are handled separately as special variants
         _ => FunctionType::Unknown,
     }
 }
@@ -389,9 +382,6 @@ pub enum ArithmeticOperator {
 }
 
 /// WITH clause for intermediate projections/aggregations
-///
-/// WITH acts as a query stage boundary, projecting results that become
-/// the input for subsequent clauses.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WithClause {
     /// Items to project (similar to RETURN)

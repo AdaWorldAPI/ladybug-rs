@@ -42,6 +42,7 @@ mod builder;
 pub mod cognitive_udfs;
 mod cypher;
 mod datafusion;
+pub mod lance_parser;
 pub mod dn_tree_provider;
 pub mod error;
 pub mod fingerprint_table;

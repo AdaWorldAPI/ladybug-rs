@@ -1,17 +1,17 @@
-//! Lance-graph Cypher parser — extracted from lance-graph crate.
-//!
-//! Provides nom-based Cypher parsing, AST, semantic analysis, and config types.
-//! This is a standalone copy with imports rewired to ladybug's query::error types.
+// Stolen from lance-graph — hardened Cypher parser (the bouncer).
+//
+// This module sits OUTSIDE the door. It validates syntax, rejects garbage,
+// and hands off clean resolved ASTs. It does NOT know about BindSpace,
+// Containers, fingerprints, SPO, or qualia. It checks IDs at the door.
+//
+// REGIME BOUNDARY: No imports from crate::spo, crate::storage, crate::container,
+// crate::graph::spo, or any mesh-side module. If you find yourself adding one, STOP.
 
 pub mod ast;
-pub mod case_insensitive;
-pub mod config;
-pub mod parameter_substitution;
+pub mod error;
 pub mod parser;
-pub mod semantic;
 
-// Re-exports for convenience
-pub use ast::CypherQuery;
-pub use config::GraphConfig;
+// Re-export the main entry point
+pub use ast::*;
+pub use error::{GraphError, Result};
 pub use parser::parse_cypher_query;
-pub use semantic::SemanticAnalyzer;
