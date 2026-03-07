@@ -11,6 +11,7 @@ pub mod ast;
 pub mod case_insensitive;
 pub mod config;
 pub mod error;
+pub mod logical_plan;
 pub mod parameter_substitution;
 pub mod parser;
 pub mod semantic;
@@ -18,5 +19,6 @@ pub mod semantic;
 // Re-export the main entry points
 pub use ast::*;
 pub use error::{GraphError, Result};
+pub use logical_plan::LogicalOperator;
 pub use parameter_substitution::ParamValue;
 pub use parser::parse_cypher_query;

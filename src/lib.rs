@@ -256,7 +256,7 @@ pub enum Error {
 
 impl From<query::QueryError> for Error {
     fn from(e: query::QueryError) -> Self {
-        Error::Query(e.to_string())
+        Error::Query(format!("{}", e)) // snafu Display includes location
     }
 }
 
