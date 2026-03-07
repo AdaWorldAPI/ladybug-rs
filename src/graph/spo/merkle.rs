@@ -17,12 +17,11 @@
 //!            ╱     ╲           ╱     ╲
 //!       H(leaf₁) H(leaf₂) H(leaf₃) H(leaf₄)
 //!
-//! Where H(node) = SHA256(dn ‖ fingerprint ‖ nars_truth ‖ H(child₁) ⊕ H(child₂) ⊕ ...)
+//! Where H(node) = blake3(dn ‖ fingerprint ‖ nars_truth ‖ H(child₁) ⊕ H(child₂) ⊕ ...)
 //! ```
-
-use std::collections::{HashMap, HashSet};
-
-use sha2::{Digest, Sha256};
+//!
+//! All data structures use flat arrays indexed by DN (u16 address space, 65K slots).
+//! No HashMap — O(1) array indexing at 3-5 cycles, L2-resident.
 
 use super::store::QueryHit;
 
@@ -31,6 +30,120 @@ pub type MerkleHash = [u8; 32];
 
 /// Zero hash (identity for XOR).
 pub const ZERO_HASH: MerkleHash = [0u8; 32];
+
+/// DN address space size (16-bit: 65,536 slots).
+const DN_SPACE: usize = 65_536;
+
+/// Bitset word count: 65536 / 64 = 1024.
+const BITSET_WORDS: usize = DN_SPACE / 64;
+
+/// Sentinel: slot has no parent.
+const NO_PARENT: u16 = u16::MAX;
+
+// ============================================================================
+// DN BITSET — 65K-bit flat bitset (8 KB, fits in L1)
+// ============================================================================
+
+/// A 65,536-bit set for DN addresses.
+#[derive(Clone)]
+pub struct DnBitSet {
+    words: Vec<u64>,
+}
+
+impl DnBitSet {
+    fn new() -> Self {
+        Self { words: vec![0u64; BITSET_WORDS] }
+    }
+
+    #[inline]
+    pub fn set(&mut self, dn: u16) {
+        self.words[dn as usize / 64] |= 1u64 << (dn as usize % 64);
+    }
+
+    #[inline]
+    pub fn clear_bit(&mut self, dn: u16) {
+        self.words[dn as usize / 64] &= !(1u64 << (dn as usize % 64));
+    }
+
+    #[inline]
+    pub fn contains(&self, dn: u16) -> bool {
+        self.words[dn as usize / 64] & (1u64 << (dn as usize % 64)) != 0
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.words.iter().all(|&w| w == 0)
+    }
+
+    pub fn len(&self) -> usize {
+        self.words.iter().map(|w| w.count_ones() as usize).sum()
+    }
+
+    fn clear_all(&mut self) {
+        self.words.fill(0);
+    }
+
+    /// Take contents and reset to empty.
+    fn take(&mut self) -> Self {
+        let taken = Self { words: std::mem::take(&mut self.words) };
+        self.words = vec![0u64; BITSET_WORDS];
+        taken
+    }
+
+    /// Iterate over all set DN values.
+    pub fn iter(&self) -> DnBitSetIter<'_> {
+        DnBitSetIter {
+            words: &self.words,
+            word_idx: 0,
+            current: if BITSET_WORDS > 0 { self.words[0] } else { 0 },
+            base: 0,
+        }
+    }
+}
+
+impl std::fmt::Debug for DnBitSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let dns: Vec<u16> = self.iter().take(32).collect();
+        let count = self.len();
+        if count <= 32 {
+            write!(f, "DnBitSet({dns:?})")
+        } else {
+            write!(f, "DnBitSet({dns:?}... +{} more)", count - 32)
+        }
+    }
+}
+
+/// Iterator over set bits in a DnBitSet.
+pub struct DnBitSetIter<'a> {
+    words: &'a [u64],
+    word_idx: usize,
+    current: u64,
+    base: u16,
+}
+
+impl Iterator for DnBitSetIter<'_> {
+    type Item = u16;
+
+    #[inline]
+    fn next(&mut self) -> Option<u16> {
+        loop {
+            if self.current != 0 {
+                let bit = self.current.trailing_zeros() as u16;
+                self.current &= self.current - 1; // clear lowest set bit
+                return Some(self.base + bit);
+            }
+            self.word_idx += 1;
+            if self.word_idx >= self.words.len() {
+                return None;
+            }
+            self.current = self.words[self.word_idx];
+            self.base = (self.word_idx * 64) as u16;
+        }
+    }
+}
+
+// ============================================================================
+// XOR HASH OPERATIONS
+// ============================================================================
 
 /// XOR two Merkle hashes (order-independent combination).
 #[inline]
@@ -44,63 +157,76 @@ pub fn xor_hash(a: &MerkleHash, b: &MerkleHash) -> MerkleHash {
 
 /// Compute leaf hash from DN + fingerprint bytes + NARS truth values.
 pub fn leaf_hash(dn: u64, fingerprint: &[u8], freq: f32, conf: f32) -> MerkleHash {
-    let mut hasher = Sha256::new();
-    hasher.update(dn.to_le_bytes());
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(&dn.to_le_bytes());
     hasher.update(fingerprint);
-    hasher.update(freq.to_le_bytes());
-    hasher.update(conf.to_le_bytes());
-    hasher.finalize().into()
+    hasher.update(&freq.to_le_bytes());
+    hasher.update(&conf.to_le_bytes());
+    *hasher.finalize().as_bytes()
+}
+
+/// Convert u64 DN to flat-array index. Debug-asserts 16-bit range.
+#[inline]
+fn dn_idx(dn: u64) -> usize {
+    debug_assert!(
+        dn < DN_SPACE as u64,
+        "DN {dn:#x} exceeds 16-bit address space"
+    );
+    dn as usize
 }
 
 // ============================================================================
 // SPO MERKLE TREE
 // ============================================================================
 
-/// XOR-Merkle tree over the DN tree (4096 address space).
+/// XOR-Merkle tree over the DN address space (65,536 slots).
+///
+/// All data structures are flat arrays indexed by DN. No HashMap.
+/// Total memory: ~4.3 MB (2×2MB hash arrays + 128KB parents + 8KB bitsets).
 ///
 /// Properties:
-/// - Leaf = SHA256(dn ‖ fingerprint ‖ nars_truth)
+/// - Leaf = blake3(dn ‖ fingerprint ‖ nars_truth)
 /// - Interior = XOR of children's hashes (order-independent)
 /// - O(1) insert/update (rehash leaf + XOR-flip up to root)
 /// - O(log n) proof of inclusion
 /// - O(1) integrity check (compare root hashes)
 pub struct SpoMerkle {
-    /// dn → leaf hash
-    leaves: HashMap<u64, MerkleHash>,
-    /// dn → XOR accumulation of direct children's hashes
-    children_xor: HashMap<u64, MerkleHash>,
-    /// dn → parent dn (for walking up)
-    parents: HashMap<u64, u64>,
-    /// dn → set of direct child DNs
-    children: HashMap<u64, HashSet<u64>>,
-    /// DNs modified since last snapshot (for incremental truth recomputation)
-    dirty_since_last_snapshot: HashSet<u64>,
-    /// Root DN (0 for synthetic root)
-    root_dn: u64,
+    /// DN → leaf hash. ZERO_HASH if slot is unoccupied.
+    leaves: Vec<MerkleHash>,
+    /// Which slots have leaves.
+    occupied: DnBitSet,
+    /// DN → XOR accumulation of direct children's hashes.
+    children_xor: Vec<MerkleHash>,
+    /// DN → parent DN. NO_PARENT if none.
+    parents: Vec<u16>,
+    /// DN → direct child DNs.
+    children: Vec<Vec<u16>>,
+    /// DNs modified since last snapshot.
+    dirty: DnBitSet,
+    /// Number of occupied leaf slots.
+    leaf_count: usize,
+    /// Root DN.
+    root_dn: u16,
 }
 
 impl SpoMerkle {
-    /// Create a new empty Merkle tree.
+    /// Create a new empty Merkle tree with root at DN 0.
     pub fn new() -> Self {
-        Self {
-            leaves: HashMap::new(),
-            children_xor: HashMap::new(),
-            parents: HashMap::new(),
-            children: HashMap::new(),
-            dirty_since_last_snapshot: HashSet::new(),
-            root_dn: 0,
-        }
+        Self::with_root(0)
     }
 
     /// Create with a specific root DN.
     pub fn with_root(root_dn: u64) -> Self {
+        let root = dn_idx(root_dn) as u16;
         Self {
-            leaves: HashMap::new(),
-            children_xor: HashMap::new(),
-            parents: HashMap::new(),
-            children: HashMap::new(),
-            dirty_since_last_snapshot: HashSet::new(),
-            root_dn,
+            leaves: vec![ZERO_HASH; DN_SPACE],
+            occupied: DnBitSet::new(),
+            children_xor: vec![ZERO_HASH; DN_SPACE],
+            parents: vec![NO_PARENT; DN_SPACE],
+            children: vec![Vec::new(); DN_SPACE],
+            dirty: DnBitSet::new(),
+            leaf_count: 0,
+            root_dn: root,
         }
     }
 
@@ -114,89 +240,111 @@ impl SpoMerkle {
         conf: f32,
     ) -> (MerkleHash, MerkleHash) {
         let old_root = self.root_hash();
+        let idx = dn_idx(dn) as u16;
+        let parent_idx = dn_idx(parent_dn) as u16;
         let new_leaf = leaf_hash(dn, fingerprint, freq, conf);
 
         // If leaf already exists, XOR out old hash from parent's accumulator
-        if let Some(old_leaf) = self.leaves.get(&dn).copied() {
-            // Remove from old parent's children set
-            if let Some(&old_parent) = self.parents.get(&dn) {
-                if let Some(kids) = self.children.get_mut(&old_parent) {
-                    kids.remove(&dn);
-                }
+        if self.occupied.contains(idx) {
+            let old_leaf = self.leaves[idx as usize];
+            // Remove from old parent's children list
+            let old_parent = self.parents[idx as usize];
+            if old_parent != NO_PARENT {
+                self.children[old_parent as usize].retain(|&c| c != idx);
             }
-            self.flip_up(parent_dn, &old_leaf);
+            self.flip_up(parent_idx, &old_leaf);
+        } else {
+            self.leaf_count += 1;
         }
 
         // Store new leaf and parent pointer
-        self.leaves.insert(dn, new_leaf);
-        self.parents.insert(dn, parent_dn);
+        self.leaves[idx as usize] = new_leaf;
+        self.occupied.set(idx);
+        self.parents[idx as usize] = parent_idx;
 
         // Track parent → child relationship
-        self.children.entry(parent_dn).or_default().insert(dn);
+        let kids = &mut self.children[parent_idx as usize];
+        if !kids.contains(&idx) {
+            kids.push(idx);
+        }
 
         // Mark as dirty for truth trajectory
-        self.dirty_since_last_snapshot.insert(dn);
+        self.dirty.set(idx);
 
-        // XOR new hash into parent's accumulator
-        self.flip_up(parent_dn, &new_leaf);
+        // XOR new hash into parent's accumulator and propagate to root
+        self.flip_up(parent_idx, &new_leaf);
 
         let new_root = self.root_hash();
         (old_root, new_root)
     }
 
-    /// Remove a leaf. O(1) XOR-flip up to root.
+    /// Remove a leaf. XOR-flip up to root.
     pub fn remove(&mut self, dn: u64) -> Option<MerkleHash> {
-        if let Some(hash) = self.leaves.remove(&dn) {
-            if let Some(parent) = self.parents.remove(&dn) {
-                self.flip_up(parent, &hash);
-                if let Some(kids) = self.children.get_mut(&parent) {
-                    kids.remove(&dn);
-                }
-            }
-            self.dirty_since_last_snapshot.insert(dn);
-            Some(hash)
-        } else {
-            None
+        let idx = dn_idx(dn) as u16;
+        if !self.occupied.contains(idx) {
+            return None;
         }
+
+        let hash = self.leaves[idx as usize];
+        let parent = self.parents[idx as usize];
+
+        if parent != NO_PARENT {
+            self.flip_up(parent, &hash);
+            self.children[parent as usize].retain(|&c| c != idx);
+        }
+
+        self.leaves[idx as usize] = ZERO_HASH;
+        self.occupied.clear_bit(idx);
+        self.parents[idx as usize] = NO_PARENT;
+        self.leaf_count -= 1;
+        self.dirty.set(idx);
+
+        Some(hash)
     }
 
     /// Root hash — the single value that summarizes the entire SPO store.
+    #[inline]
     pub fn root_hash(&self) -> MerkleHash {
-        self.children_xor
-            .get(&self.root_dn)
-            .copied()
-            .unwrap_or(ZERO_HASH)
+        self.children_xor[self.root_dn as usize]
     }
 
     /// Number of leaves in the tree.
     pub fn len(&self) -> usize {
-        self.leaves.len()
+        self.leaf_count
     }
 
     /// Is the tree empty?
     pub fn is_empty(&self) -> bool {
-        self.leaves.is_empty()
+        self.leaf_count == 0
     }
 
     /// Verify a leaf's integrity against the stored hash.
     pub fn verify(&self, dn: u64, fingerprint: &[u8], freq: f32, conf: f32) -> bool {
+        let idx = dn_idx(dn);
+        if !self.occupied.contains(idx as u16) {
+            return false;
+        }
         let expected = leaf_hash(dn, fingerprint, freq, conf);
-        self.leaves.get(&dn) == Some(&expected)
+        self.leaves[idx] == expected
     }
 
     /// Generate inclusion proof: path of (dn, sibling_xor) from leaf to root.
     pub fn proof(&self, dn: u64) -> Option<InclusionProof> {
-        let leaf = self.leaves.get(&dn).copied()?;
-        let mut path = Vec::new();
-        let mut current = dn;
+        let idx = dn_idx(dn) as u16;
+        if !self.occupied.contains(idx) {
+            return None;
+        }
 
-        while let Some(&parent) = self.parents.get(&current) {
-            if let Some(&children_hash) = self.children_xor.get(&parent) {
-                path.push(ProofStep {
-                    node_dn: parent,
-                    children_xor: children_hash,
-                });
-            }
+        let leaf = self.leaves[idx as usize];
+        let mut path = Vec::new();
+        let mut current = idx;
+
+        while self.parents[current as usize] != NO_PARENT {
+            let parent = self.parents[current as usize];
+            path.push(ProofStep {
+                node_dn: parent as u64,
+                children_xor: self.children_xor[parent as usize],
+            });
             if parent == self.root_dn {
                 break;
             }
@@ -224,9 +372,14 @@ impl SpoMerkle {
         for (i, &dn) in dns.iter().enumerate() {
             let (freq, conf) = truths[i];
             if !self.verify(dn, fingerprints[i], freq, conf) {
+                let idx = dn_idx(dn);
                 return Err(MerkleError::IntegrityViolation {
                     dn,
-                    expected: self.leaves.get(&dn).copied(),
+                    expected: if self.occupied.contains(idx as u16) {
+                        Some(self.leaves[idx])
+                    } else {
+                        None
+                    },
                 });
             }
         }
@@ -243,21 +396,23 @@ impl SpoMerkle {
     // ========================================================================
 
     /// Direct children of a DN in the Merkle tree.
-    pub fn children_of(&self, dn: u64) -> Option<&HashSet<u64>> {
-        self.children.get(&dn)
+    pub fn children_of(&self, dn: u64) -> Option<&[u16]> {
+        let kids = &self.children[dn_idx(dn)];
+        if kids.is_empty() { None } else { Some(kids) }
     }
 
     /// Number of direct children of a DN.
     pub fn child_count(&self, dn: u64) -> usize {
-        self.children.get(&dn).map_or(0, |c| c.len())
+        self.children[dn_idx(dn)].len()
     }
 
     /// Depth of a DN from root. O(depth) walk.
     pub fn depth_of(&self, dn: u64) -> usize {
         let mut depth = 0;
-        let mut current = dn;
-        while let Some(&parent) = self.parents.get(&current) {
-            if parent == current || parent == self.root_dn {
+        let mut current = dn_idx(dn) as u16;
+        loop {
+            let parent = self.parents[current as usize];
+            if parent == NO_PARENT || parent == current || parent == self.root_dn {
                 break;
             }
             depth += 1;
@@ -273,12 +428,11 @@ impl SpoMerkle {
     /// Take a snapshot of the current Merkle state. Returns the epoch and
     /// clears the dirty set for the next cycle.
     pub fn snapshot(&mut self) -> MerkleEpoch {
-        let epoch = MerkleEpoch {
+        MerkleEpoch {
             root_hash: self.root_hash(),
-            leaf_count: self.leaves.len(),
-            dirty_dns: std::mem::take(&mut self.dirty_since_last_snapshot),
-        };
-        epoch
+            leaf_count: self.leaf_count,
+            dirty_dns: self.dirty.take(),
+        }
     }
 
     /// Compute truth trajectory between two epochs: which DNs changed,
@@ -287,10 +441,10 @@ impl SpoMerkle {
         let mut steps = Vec::new();
 
         // DNs that changed in the `after` epoch
-        for &dn in &after.dirty_dns {
-            let was_dirty_before = before.dirty_dns.contains(&dn);
+        for dn in after.dirty_dns.iter() {
+            let was_dirty_before = before.dirty_dns.contains(dn);
             steps.push(TrajectoryStep {
-                dn,
+                dn: dn as u64,
                 kind: if was_dirty_before {
                     TrajectoryKind::Updated
                 } else {
@@ -300,10 +454,10 @@ impl SpoMerkle {
         }
 
         // DNs that were dirty in `before` but not in `after` may have been removed
-        for &dn in &before.dirty_dns {
-            if !after.dirty_dns.contains(&dn) {
+        for dn in before.dirty_dns.iter() {
+            if !after.dirty_dns.contains(dn) {
                 steps.push(TrajectoryStep {
-                    dn,
+                    dn: dn as u64,
                     kind: TrajectoryKind::Stabilized,
                 });
             }
@@ -313,20 +467,30 @@ impl SpoMerkle {
     }
 
     /// DNs modified since last snapshot (for incremental NARS recomputation).
-    pub fn dirty_dns(&self) -> &HashSet<u64> {
-        &self.dirty_since_last_snapshot
+    pub fn dirty_dns(&self) -> &DnBitSet {
+        &self.dirty
     }
 
-    /// XOR a hash into the interior node and propagate up to root.
-    fn flip_up(&mut self, dn: u64, hash: &MerkleHash) {
-        let acc = self.children_xor.entry(dn).or_insert(ZERO_HASH);
-        *acc = xor_hash(acc, hash);
+    /// XOR a hash into the interior node at `start` and propagate up to root.
+    ///
+    /// In an XOR-Merkle tree, when a child's hash changes by delta H,
+    /// the same delta H propagates to every ancestor up to root because
+    /// each level's accumulator is the XOR of its children.
+    fn flip_up(&mut self, start: u16, hash: &MerkleHash) {
+        let mut idx = start as usize;
+        loop {
+            let acc = &mut self.children_xor[idx];
+            *acc = xor_hash(acc, hash);
 
-        // Propagate: walk parent pointers up to root
-        // For the XOR-Merkle, each level's accumulator IS the combination
-        // of all children's hashes, so flipping propagates naturally.
-        // We don't need to rehash interior nodes separately because the
-        // XOR-accumulator IS the authenticator.
+            if idx == self.root_dn as usize {
+                break;
+            }
+            let parent = self.parents[idx];
+            if parent == NO_PARENT {
+                break;
+            }
+            idx = parent as usize;
+        }
     }
 }
 
@@ -374,13 +538,13 @@ pub struct MerkleEpoch {
     /// Number of leaves at snapshot time.
     pub leaf_count: usize,
     /// DNs that were modified in this epoch (since previous snapshot).
-    pub dirty_dns: HashSet<u64>,
+    pub dirty_dns: DnBitSet,
 }
 
 impl MerkleEpoch {
     /// Was this DN modified in this epoch?
     pub fn is_dirty(&self, dn: u64) -> bool {
-        self.dirty_dns.contains(&dn)
+        self.dirty_dns.contains(dn as u16)
     }
 
     /// Number of changes in this epoch.
@@ -691,6 +855,39 @@ mod tests {
     }
 
     // ====================================================================
+    // P0-2: DEPTH-3 ROOT PROPAGATION TEST
+    // ====================================================================
+
+    #[test]
+    fn test_depth3_grandchild_changes_root() {
+        // Build a depth-3 tree: root(0) → A(1) → B(2) → C(3)
+        let mut m = SpoMerkle::new();
+
+        // Insert A as child of root
+        m.insert(1, 0, &dummy_fp(1), 0.9, 0.8);
+        // Insert B as child of A
+        m.insert(2, 1, &dummy_fp(2), 0.7, 0.6);
+        let root_before = m.root_hash();
+
+        // Insert C as grandchild (child of B, depth 3 from root)
+        m.insert(3, 2, &dummy_fp(3), 0.5, 0.4);
+        let root_after = m.root_hash();
+
+        // Root MUST change when a grandchild is inserted
+        assert_ne!(
+            root_before, root_after,
+            "root_hash must change when grandchild is inserted (flip_up must propagate to root)"
+        );
+
+        // Removing the grandchild must restore the root
+        m.remove(3);
+        assert_eq!(
+            m.root_hash(), root_before,
+            "root_hash must restore when grandchild is removed"
+        );
+    }
+
+    // ====================================================================
     // TRUTH TRAJECTORY TESTS
     // ====================================================================
 
@@ -700,7 +897,7 @@ mod tests {
         assert!(m.dirty_dns().is_empty());
 
         m.insert(1, 0, &dummy_fp(1), 0.9, 0.8);
-        assert!(m.dirty_dns().contains(&1));
+        assert!(m.dirty_dns().contains(1));
         assert_eq!(m.dirty_dns().len(), 1);
 
         m.insert(2, 0, &dummy_fp(2), 0.7, 0.6);
@@ -765,5 +962,40 @@ mod tests {
         let root_at_snapshot = m.root_hash();
         let epoch = m.snapshot();
         assert_eq!(epoch.root_hash, root_at_snapshot);
+    }
+
+    // ====================================================================
+    // DN BITSET TESTS
+    // ====================================================================
+
+    #[test]
+    fn test_bitset_basic() {
+        let mut bs = DnBitSet::new();
+        assert!(bs.is_empty());
+        assert_eq!(bs.len(), 0);
+
+        bs.set(0);
+        bs.set(100);
+        bs.set(65535);
+        assert!(!bs.is_empty());
+        assert_eq!(bs.len(), 3);
+        assert!(bs.contains(0));
+        assert!(bs.contains(100));
+        assert!(bs.contains(65535));
+        assert!(!bs.contains(1));
+
+        bs.clear_bit(100);
+        assert_eq!(bs.len(), 2);
+        assert!(!bs.contains(100));
+    }
+
+    #[test]
+    fn test_bitset_iter() {
+        let mut bs = DnBitSet::new();
+        bs.set(5);
+        bs.set(3);
+        bs.set(200);
+        let vals: Vec<u16> = bs.iter().collect();
+        assert_eq!(vals, vec![3, 5, 200]);
     }
 }
