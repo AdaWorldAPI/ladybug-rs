@@ -15,8 +15,16 @@ pub mod parameter_substitution;
 pub mod parser;
 pub mod semantic;
 
-// Re-export the main entry points
-pub use ast::*;
+// Re-export the main entry points.
+// NOTE: ast::CypherQuery deliberately excluded to avoid collision with
+// cypher.rs::CypherQuery. Use lance_parser::ast::CypherQuery if needed.
+pub use ast::{
+    ArithmeticOperator, BooleanExpression, ComparisonOperator, DistanceMetric,
+    FunctionType, GraphPattern, LengthRange, MatchClause, NodePattern, OrderByClause,
+    OrderByItem, PathPattern, PathSegment, PropertyRef, PropertyValue, ReadingClause,
+    RelationshipDirection, RelationshipPattern, ReturnClause, ReturnItem, SortDirection,
+    UnwindClause, ValueExpression, WhereClause, WithClause, classify_function,
+};
 pub use error::{GraphError, Result};
 pub use parameter_substitution::ParamValue;
 pub use parser::parse_cypher_query;

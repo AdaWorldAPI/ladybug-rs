@@ -152,6 +152,48 @@ impl From<datafusion::error::DataFusionError> for QueryError {
     }
 }
 
+impl From<crate::graph::spo::sparse::SpoError> for QueryError {
+    fn from(source: crate::graph::spo::sparse::SpoError) -> Self {
+        Self::SpoError {
+            message: source.to_string(),
+            location: Location::new(file!(), line!(), column!()),
+        }
+    }
+}
+
+impl From<crate::query::lance_parser::error::GraphError> for QueryError {
+    fn from(source: crate::query::lance_parser::error::GraphError) -> Self {
+        use crate::query::lance_parser::error::GraphError;
+        match source {
+            GraphError::ParseError { message, position, location } => Self::ParseError {
+                message,
+                position,
+                location,
+            },
+            GraphError::PlanError { message, location } => Self::PlanError {
+                message,
+                location,
+            },
+            GraphError::ExecutionError { message, location } => Self::ExecutionError {
+                message,
+                location,
+            },
+            GraphError::ConfigError { message, location } => Self::PlanError {
+                message,
+                location,
+            },
+            GraphError::UnsupportedFeature { feature, location } => Self::UnsupportedFeature {
+                feature,
+                location,
+            },
+            GraphError::InvalidPattern { message, location } => Self::InvalidPattern {
+                message,
+                location,
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

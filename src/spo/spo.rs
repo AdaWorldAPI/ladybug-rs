@@ -638,7 +638,7 @@ impl FieldCloseness {
             }
         }
 
-        resonant.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap());
+        resonant.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
 
         Self {
             similarity,
@@ -709,7 +709,7 @@ impl CellStorage {
         self.triples
             .iter()
             .map(|(fp, idx)| (*idx, query.similarity(fp)))
-            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
     }
 
     /// Find all matching above threshold
@@ -860,7 +860,7 @@ impl SPOCrystal {
         }
 
         // Deduplicate and sort
-        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         results.dedup_by(|a, b| a.0 == b.0);
         results
     }
@@ -895,7 +895,7 @@ impl SPOCrystal {
             }
         }
 
-        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         results.dedup_by(|a, b| a.0 == b.0);
         results
     }
@@ -930,7 +930,7 @@ impl SPOCrystal {
             }
         }
 
-        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         results.dedup_by(|a, b| a.0 == b.0);
         results
     }
@@ -978,7 +978,7 @@ impl SPOCrystal {
             }
         }
 
-        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         results
     }
 

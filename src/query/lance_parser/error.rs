@@ -79,7 +79,6 @@ pub fn exec_err_at(message: String) -> GraphError {
 /// ```ignore
 /// let err = lance_plan_err!("Cannot join {} to {}", left, right);
 /// ```
-#[macro_export]
 macro_rules! lance_plan_err {
     ($($arg:tt)*) => {
         $crate::query::lance_parser::error::plan_err_at(format!($($arg)*))
@@ -87,7 +86,6 @@ macro_rules! lance_plan_err {
 }
 
 /// Create a ConfigError with zero-cost location capture.
-#[macro_export]
 macro_rules! lance_config_err {
     ($($arg:tt)*) => {
         $crate::query::lance_parser::error::config_err_at(format!($($arg)*))
@@ -95,7 +93,6 @@ macro_rules! lance_config_err {
 }
 
 /// Create an ExecutionError with zero-cost location capture.
-#[macro_export]
 macro_rules! lance_exec_err {
     ($($arg:tt)*) => {
         $crate::query::lance_parser::error::exec_err_at(format!($($arg)*))
