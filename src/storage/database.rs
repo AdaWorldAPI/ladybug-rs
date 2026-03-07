@@ -9,11 +9,10 @@
 
 use crate::cognitive::Thought;
 use crate::core::{Fingerprint, HammingEngine};
-use crate::graph::{Edge, Traversal};
-use crate::nars::TruthValue;
-use crate::query::{Query, QueryBuilder, QueryResult, SqlEngine, cypher_to_sql};
+use crate::graph::Traversal;
+use crate::query::{QueryBuilder, SqlEngine, cypher_to_sql};
 use crate::storage::{EdgeRecord, LanceStore, NodeRecord};
-use crate::{Error, Result};
+use crate::Result;
 
 use arrow::record_batch::RecordBatch;
 use parking_lot::RwLock;

@@ -141,7 +141,8 @@ pub fn container_bundle(items: &[&Container]) -> Container {
         .map(|c| view_u64_as_bytes(&c.words))
         .collect();
 
-    let result_bytes = rustynum_rs::NumArrayU8::bundle_byte_slices(&slices);
+    let result_bytes = rustynum_rs::NumArrayU8::try_bundle_byte_slices(&slices)
+        .expect("bundle_byte_slices: all slices same length");
 
     // Convert back to Container
     let mut container = Container::zero();

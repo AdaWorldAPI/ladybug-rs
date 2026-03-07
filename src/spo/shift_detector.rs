@@ -22,9 +22,9 @@
 use rustynum_bnn::causal_trajectory::{
     ShiftDetector as BnnShiftDetector, ShiftDirection, ShiftSignal, StripeHistogram,
 };
-use rustynum_core::{CollapseGate, SigmaGate, SignificanceLevel};
+use rustynum_core::{CollapseGate, SigmaGate};
 
-use super::spo_harvest::{Plane, SpoDistanceResult};
+use super::spo_harvest::SpoDistanceResult;
 
 // =============================================================================
 // SPO SHIFT DETECTOR — wraps BNN ShiftDetector with SPO-specific logic

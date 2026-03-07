@@ -489,7 +489,7 @@ pub fn execute_crew_action(
         "persona.attach_yaml" => {
             let yaml = std::str::from_utf8(body).map_err(|e| format!("Invalid UTF-8: {}", e))?;
 
-            let persona = crate::orchestration::persona::Persona::from_yaml(yaml)?;
+            let _persona = crate::orchestration::persona::Persona::from_yaml(yaml)?;
             // Extract agent_slot from first line comment or separate field
             // For now, require JSON wrapper with agent_slot
             #[derive(serde::Deserialize)]

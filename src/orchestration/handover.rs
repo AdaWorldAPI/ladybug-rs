@@ -23,7 +23,7 @@
 //! 4. **Dunning-Kruger guard** — agents with low coherence but high
 //!    confidence are flagged for metacognitive review
 
-use crate::cognitive::{GateState, ThinkingStyle};
+use crate::cognitive::GateState;
 use serde::{Deserialize, Serialize};
 
 // =============================================================================

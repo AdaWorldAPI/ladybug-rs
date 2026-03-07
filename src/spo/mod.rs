@@ -43,4 +43,3 @@ mod spo;
 
 pub use jina_api::{JinaClient, jina_embed_curl};
 pub use jina_cache::JinaCache;
-pub use spo::*;

@@ -190,7 +190,7 @@ impl WideContainer {
             return items[0].clone();
         }
         let threshold = items.len() / 2;
-        let even = items.len() % 2 == 0;
+        let even = items.len().is_multiple_of(2);
         let mut result = WideContainer::zero();
         for word in 0..WIDE_WORDS {
             let mut out = 0u64;

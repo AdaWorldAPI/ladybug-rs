@@ -55,9 +55,8 @@
 //!                    └─────────────────────────────────────────┘
 //! ```
 
-use super::nsm_substrate::{MetacognitiveSubstrate, NSM_CATEGORIES, NsmCodebook, ROLES};
+use super::nsm_substrate::MetacognitiveSubstrate;
 use crate::core::Fingerprint;
-use crate::nars::TruthValue;
 use std::collections::HashMap;
 
 // =============================================================================

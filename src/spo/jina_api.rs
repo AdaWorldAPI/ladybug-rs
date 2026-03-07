@@ -2,8 +2,6 @@
 //!
 //! Actual API integration for jina-embeddings-v3
 
-use std::io::{Read, Write};
-use std::net::TcpStream;
 
 const JINA_API_URL: &str = "api.jina.ai";
 const JINA_EMBED_ENDPOINT: &str = "/v1/embeddings";
@@ -43,7 +41,7 @@ impl JinaClient {
         );
 
         // HTTP request (simplified - in production use reqwest or similar)
-        let request = format!(
+        let _request = format!(
             "POST {} HTTP/1.1\r\n\
              Host: {}\r\n\
              Authorization: Bearer {}\r\n\

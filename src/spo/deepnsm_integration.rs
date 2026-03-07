@@ -376,7 +376,8 @@ impl ExplicationParser {
         for word in ["place", "places", "where", "somewhere"] {
             surface_to_prime.insert(word.to_string(), "PLACE".to_string());
         }
-        for word in ["here"] {
+        {
+            let word = "here";
             surface_to_prime.insert(word.to_string(), "HERE".to_string());
         }
         for word in ["above", "over"] {
@@ -416,7 +417,8 @@ impl ExplicationParser {
         for word in ["two", "2"] {
             surface_to_prime.insert(word.to_string(), "TWO".to_string());
         }
-        for word in ["some"] {
+        {
+            let word = "some";
             surface_to_prime.insert(word.to_string(), "SOME".to_string());
         }
         for word in ["all", "every", "everything"] {
@@ -430,7 +432,8 @@ impl ExplicationParser {
         for word in ["very", "really"] {
             surface_to_prime.insert(word.to_string(), "VERY".to_string());
         }
-        for word in ["more"] {
+        {
+            let word = "more";
             surface_to_prime.insert(word.to_string(), "MORE".to_string());
         }
 
@@ -438,7 +441,8 @@ impl ExplicationParser {
         for word in ["like", "similar"] {
             surface_to_prime.insert(word.to_string(), "LIKE".to_string());
         }
-        for word in ["same"] {
+        {
+            let word = "same";
             surface_to_prime.insert(word.to_string(), "THE_SAME".to_string());
         }
         for word in ["other", "another", "else"] {

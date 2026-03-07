@@ -35,10 +35,10 @@
 
 use rustynum_bnn::causal_trajectory::{
     CausalArrow, CausalChain, CausalDirection, CausalLink, CausalRelation, CausalSaliency,
-    CausalTrajectory, DominantPlane, EwmCorrection, EwmTier, HaloTransition,
-    NarsCausalStatement, NarsTruth, ResonatorSnapshot, RifDiff, SigmaEdge, SigmaNode,
+    CausalTrajectory, DominantPlane,
+    NarsCausalStatement, NarsTruth, ResonatorSnapshot, SigmaEdge,
 };
-use rustynum_bnn::{GrowthPath, HaloType, InferenceMode, MutationOp};
+use rustynum_bnn::{GrowthPath, InferenceMode, MutationOp};
 use rustynum_core::{CollapseGate, SigmaGate, SignificanceLevel};
 
 use crate::nars::TruthValue;
@@ -201,7 +201,7 @@ impl TrajectoryHydrator {
                 edge: edge.clone(),
                 truth: nars_to_truth(&edge.truth),
                 growth_path: Some(growth_path),
-                gestalt: gestalt.clone(),
+                gestalt,
             })
             .collect();
 
