@@ -26,55 +26,26 @@ use super::sparse::{unpack_axes, AxisDescriptors, SparseContainer, SpoError};
 // BELICHTUNG PREFILTER
 // ============================================================================
 
-/// Estimate Hamming distance from up to 7 sampled words. Returns true if the
+/// 7 prime-spaced sample points across the 128-word bitmap range.
+/// 14 cycles to estimate Hamming distance ± 15%. Rejects ~90% of candidates.
+/// (SparseContainer bitmap is [u64; 2] = 128 bits, so indices must be < 128.)
+const BELICHTUNG_SAMPLES: [usize; 7] = [0, 17, 37, 59, 79, 101, 123];
+
+/// Estimate Hamming distance from 7 sampled words. Returns true if the
 /// estimated distance exceeds `threshold`, meaning this candidate should
 /// be rejected without computing full Hamming distance.
 ///
-/// Samples from BITMAP POSITIONS (words that actually contain data) rather
-/// than fixed indices. For a SparseContainer with 30 stored words, sampling
-/// from fixed positions like [0, 17, 37, 59, 79, 101, 123] would mostly
-/// hit zeros and produce a useless estimate. Sampling from the union of
-/// both containers' bitmaps ensures every sample is informative.
+/// Scale factor: 7 words out of 128 → multiply by 128/7 ≈ 18.3.
+/// Use 18 (conservative, slight underestimate) to avoid false negatives.
 #[inline]
 fn belichtung_reject(a: &SparseContainer, b: &SparseContainer, threshold: u32) -> bool {
-    // Union of occupied positions in both containers
-    let union_bm = [a.bitmap[0] | b.bitmap[0], a.bitmap[1] | b.bitmap[1]];
-    let total = (union_bm[0].count_ones() + union_bm[1].count_ones()) as usize;
-
-    if total == 0 {
-        return false; // both empty → distance 0
-    }
-
-    // Step: skip this many set bits between samples. max(1, total/7)
-    let step = (total / 7).max(1);
-
     let mut sample_diff = 0u32;
-    let mut sampled = 0u32;
-    let mut nth = 0usize;
-
-    for half in 0..2usize {
-        let mut w = union_bm[half];
-        while w != 0 {
-            let bit = w.trailing_zeros() as usize;
-            w &= w - 1; // clear lowest set bit
-
-            if nth % step == 0 && sampled < 7 {
-                let pos = half * 64 + bit;
-                let wa = a.get_word(pos);
-                let wb = b.get_word(pos);
-                sample_diff += (wa ^ wb).count_ones();
-                sampled += 1;
-            }
-            nth += 1;
-        }
+    for &idx in &BELICHTUNG_SAMPLES {
+        let wa = a.get_word(idx);
+        let wb = b.get_word(idx);
+        sample_diff += (wa ^ wb).count_ones();
     }
-
-    if sampled == 0 {
-        return false;
-    }
-
-    // Scale: sampled words out of 128 → estimated full distance
-    (sample_diff as u64 * 128 / sampled as u64) as u32 > threshold
+    (sample_diff * 18) > threshold
 }
 
 // ============================================================================
@@ -479,27 +450,14 @@ impl SpoStore {
         let mut chain = Vec::new();
         let mut frontier: Vec<(u64, S::Value)> = vec![(start.meta.words[0], init)];
 
-        // Reusable buffer — avoids 2KB Container::zero() + to_dense() per iteration.
-        let mut edge_buf = Container::zero();
-
         for _ in 0..depth {
             let mut next_level = Vec::new();
             for (dn, value) in &frontier {
                 if let Some(record) = self.get(*dn) {
                     // Get the edge fingerprint (Z axis = what this record feeds)
                     if let Ok((_x, _y, z)) = self.unpack_record(record) {
-                        // Write sparse into reusable buffer (zero-alloc)
-                        edge_buf.words.fill(0);
-                        let mut wi = 0;
-                        for i in 0..CONTAINER_WORDS {
-                            let half = i / 64;
-                            let bit = i % 64;
-                            if z.bitmap[half] & (1u64 << bit) != 0 {
-                                edge_buf.words[i] = z.words[wi];
-                                wi += 1;
-                            }
-                        }
-                        let new_value = semiring.multiply(&edge_buf, value);
+                        let edge_fp = z.to_dense();
+                        let new_value = semiring.multiply(&edge_fp, value);
 
                         // Find successors: records whose X resonates with our Z
                         let successors = self.causal_successors(record, radius);
