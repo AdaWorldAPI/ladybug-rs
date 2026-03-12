@@ -33,6 +33,13 @@ MANDATORY READS (in order):
   → Net effect: -7894 deleted, +1650 written, codebase shrinks.
 
 .claude/prompts/17a_spo_rosetta_stone_addendum.md
+  → P4 opcode enum maps 1:1 to spo.rs methods. No executor exists.
+
+.claude/prompts/19_hot_cold_separation_constraint.md
+  → THE ARCHITECTURAL INVARIANT. Hot path thinks, cold path watches.
+  → Merkle seal is the implicit hot/cold gate. One-way projection.
+  → Bouncer must enforce: no cold→hot feedback. Ever.
+  → Overrides prompt 18 BOUNCER agent (N1-N5) with native rewrite.
   → spo.rs is PRIVATE (mod spo, not pub mod spo). The Rosetta Stone behind a locked door.
   → 5 text→fingerprint encoders, none called from Cypher.
   → 3 TruthValue implementations. P2 execute_match does O(N) scan not O(25) SPO lookup.
