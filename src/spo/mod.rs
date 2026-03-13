@@ -39,7 +39,8 @@ pub mod cognitive_codebook;
 pub mod codebook_hydration;
 pub mod crystal_lm;
 pub mod sentence_crystal;
-mod spo;
+pub(crate) mod spo;
+pub(crate) mod crystal_api;
 
 pub use jina_api::{JinaClient, jina_embed_curl};
 pub use jina_cache::JinaCache;

@@ -452,7 +452,7 @@ fn weighted_bundle(fps: &[(Fingerprint, f32)]) -> Fingerprint {
         return Fingerprint::zero();
     }
 
-    let mut counts = [0.0f32; 16384];
+    let mut counts = vec![0.0f32; 16384];
     let mut total_weight = 0.0f32;
 
     for (fp, weight) in fps {
@@ -486,7 +486,7 @@ fn bundle_majority(fps: &[Fingerprint]) -> Fingerprint {
         return Fingerprint::zero();
     }
 
-    let mut counts = [0i32; 16384];
+    let mut counts = vec![0i32; 16384];
 
     for fp in fps {
         for i in 0..16384 {
@@ -569,8 +569,8 @@ pub struct MetacognitiveSubstrate {
     /// The NSM codebook
     pub codebook: NsmCodebook,
 
-    /// The 5×5×5 crystal for context
-    crystal: [[[Fingerprint; 5]; 5]; 5],
+    /// The 5×5×5 crystal for context (boxed to avoid 256KB stack allocation)
+    crystal: Box<[[[Fingerprint; 5]; 5]; 5]>,
 
     /// Concepts learned from resonance patterns
     concepts: HashMap<String, MetaConcept>,
@@ -589,9 +589,9 @@ impl MetacognitiveSubstrate {
     pub fn new() -> Self {
         Self {
             codebook: NsmCodebook::new(),
-            crystal: core::array::from_fn(|_| {
+            crystal: Box::new(core::array::from_fn(|_| {
                 core::array::from_fn(|_| core::array::from_fn(|_| Fingerprint::zero()))
-            }),
+            })),
             concepts: HashMap::new(),
             tick: 0,
         }

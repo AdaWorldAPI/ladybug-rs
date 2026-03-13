@@ -233,13 +233,13 @@ fn bundle_weighted(items: &[(Fingerprint, f64)]) -> Fingerprint {
 // Orthogonal Codebook with Gram-Schmidt-like Cleaning
 // ============================================================================
 
-struct OrthogonalCodebook {
+pub(crate) struct OrthogonalCodebook {
     symbols: HashMap<String, Fingerprint>,
     vectors: Vec<(String, Fingerprint)>, // Ordered for orthogonalization
 }
 
 impl OrthogonalCodebook {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             symbols: HashMap::new(),
             vectors: Vec::new(),
@@ -247,7 +247,7 @@ impl OrthogonalCodebook {
     }
 
     /// Add symbol, making it quasi-orthogonal to existing symbols
-    fn add_orthogonal(&mut self, name: &str) -> Fingerprint {
+    pub(crate) fn add_orthogonal(&mut self, name: &str) -> Fingerprint {
         if let Some(fp) = self.symbols.get(name) {
             return fp.clone();
         }
@@ -268,12 +268,12 @@ impl OrthogonalCodebook {
         fp
     }
 
-    fn get(&self, name: &str) -> Option<Fingerprint> {
+    pub(crate) fn get(&self, name: &str) -> Option<Fingerprint> {
         self.symbols.get(name).cloned()
     }
 
     /// Resonance lookup: find closest symbol above threshold
-    fn resonate(&self, query: &Fingerprint, threshold: f64) -> Option<(String, f64)> {
+    pub(crate) fn resonate(&self, query: &Fingerprint, threshold: f64) -> Option<(String, f64)> {
         let mut best: Option<(String, f64)> = None;
 
         for (name, fp) in &self.symbols {
@@ -288,7 +288,7 @@ impl OrthogonalCodebook {
     }
 
     /// Iterative cleanup: resonate → get clean vector → resonate again
-    fn cleanup(&self, noisy: &Fingerprint, iterations: usize) -> Option<(String, f64)> {
+    pub(crate) fn cleanup(&self, noisy: &Fingerprint, iterations: usize) -> Option<(String, f64)> {
         let mut current = noisy.clone();
 
         for _ in 0..iterations {
@@ -308,7 +308,7 @@ impl OrthogonalCodebook {
         self.resonate(&current, 0.0)
     }
 
-    fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.symbols.len()
     }
 }
@@ -318,19 +318,19 @@ impl OrthogonalCodebook {
 // ============================================================================
 
 #[derive(Clone)]
-struct Qualia {
+pub(crate) struct Qualia {
     /// Activation: calm ↔ excited (0.0 - 1.0)
-    activation: f64,
+    pub(crate) activation: f64,
     /// Valence: negative ↔ positive (0.0 - 1.0)
-    valence: f64,
+    pub(crate) valence: f64,
     /// Tension: relaxed ↔ tense (0.0 - 1.0)
-    tension: f64,
+    pub(crate) tension: f64,
     /// Depth: surface ↔ profound (0.0 - 1.0)
-    depth: f64,
+    pub(crate) depth: f64,
 }
 
 impl Qualia {
-    fn neutral() -> Self {
+    pub(crate) fn neutral() -> Self {
         Self {
             activation: 0.5,
             valence: 0.5,
@@ -339,7 +339,7 @@ impl Qualia {
         }
     }
 
-    fn new(activation: f64, valence: f64, tension: f64, depth: f64) -> Self {
+    pub(crate) fn new(activation: f64, valence: f64, tension: f64, depth: f64) -> Self {
         Self {
             activation,
             valence,
@@ -349,7 +349,7 @@ impl Qualia {
     }
 
     /// Encode qualia as fingerprint modification
-    fn to_fingerprint(&self) -> Fingerprint {
+    pub(crate) fn to_fingerprint(&self) -> Fingerprint {
         // Each dimension maps to a different bit pattern
         let activation_seed = (self.activation * 1000.0) as u64;
         let valence_seed = (self.valence * 1000.0) as u64 + 10000;
@@ -365,7 +365,7 @@ impl Qualia {
     }
 
     /// Distance between qualia states
-    fn distance(&self, other: &Qualia) -> f64 {
+    pub(crate) fn distance(&self, other: &Qualia) -> f64 {
         let da = self.activation - other.activation;
         let dv = self.valence - other.valence;
         let dt = self.tension - other.tension;
@@ -424,16 +424,16 @@ impl TruthValue {
 // ============================================================================
 
 #[derive(Clone)]
-struct Triple {
-    subject: String,
-    predicate: String,
-    object: String,
-    qualia: Qualia,
-    truth: TruthValue,
+pub(crate) struct Triple {
+    pub(crate) subject: String,
+    pub(crate) predicate: String,
+    pub(crate) object: String,
+    pub(crate) qualia: Qualia,
+    pub(crate) truth: TruthValue,
 }
 
 impl Triple {
-    fn new(s: &str, p: &str, o: &str) -> Self {
+    pub(crate) fn new(s: &str, p: &str, o: &str) -> Self {
         Self {
             subject: s.to_string(),
             predicate: p.to_string(),
@@ -443,7 +443,7 @@ impl Triple {
         }
     }
 
-    fn with_qualia(mut self, q: Qualia) -> Self {
+    pub(crate) fn with_qualia(mut self, q: Qualia) -> Self {
         self.qualia = q;
         self
     }
@@ -726,7 +726,7 @@ impl CellStorage {
 // SPO Crystal: The Main Data Structure
 // ============================================================================
 
-struct SPOCrystal {
+pub(crate) struct SPOCrystal {
     // 3D cell storage (index + individual triples)
     cells: Box<[[[CellStorage; GRID]; GRID]; GRID]>,
 
@@ -750,7 +750,7 @@ struct SPOCrystal {
 }
 
 impl SPOCrystal {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         // Initialize cells array with macro
         let cells = Box::new(std::array::from_fn(|_| {
             std::array::from_fn(|_| std::array::from_fn(|_| CellStorage::new()))
@@ -772,7 +772,7 @@ impl SPOCrystal {
     }
 
     /// Encode a triple as a single fingerprint
-    fn encode_triple(&mut self, triple: &Triple) -> Fingerprint {
+    pub(crate) fn encode_triple(&mut self, triple: &Triple) -> Fingerprint {
         let vs = self.subjects.add_orthogonal(&triple.subject);
         let vp = self.predicates.add_orthogonal(&triple.predicate);
         let vo = self.objects.add_orthogonal(&triple.object);
@@ -803,7 +803,7 @@ impl SPOCrystal {
     }
 
     /// Insert a triple into the crystal
-    fn insert(&mut self, triple: Triple) {
+    pub(crate) fn insert(&mut self, triple: Triple) {
         let vs = self.subjects.add_orthogonal(&triple.subject);
         let vp = self.predicates.add_orthogonal(&triple.predicate);
         let vo = self.objects.add_orthogonal(&triple.object);
@@ -822,7 +822,7 @@ impl SPOCrystal {
     }
 
     /// Query: (S, P, ?) → find O
-    fn query_object(&self, subject: &str, predicate: &str) -> Vec<(String, f64, Qualia)> {
+    pub(crate) fn query_object(&self, subject: &str, predicate: &str) -> Vec<(String, f64, Qualia)> {
         let vs = match self.subjects.get(subject) {
             Some(v) => v,
             None => return vec![],
@@ -866,7 +866,7 @@ impl SPOCrystal {
     }
 
     /// Query: (?, P, O) → find S
-    fn query_subject(&self, predicate: &str, object: &str) -> Vec<(String, f64)> {
+    pub(crate) fn query_subject(&self, predicate: &str, object: &str) -> Vec<(String, f64)> {
         let vp = match self.predicates.get(predicate) {
             Some(v) => v,
             None => return vec![],
@@ -901,7 +901,7 @@ impl SPOCrystal {
     }
 
     /// Query: (S, ?, O) → find P
-    fn query_predicate(&self, subject: &str, object: &str) -> Vec<(String, f64)> {
+    pub(crate) fn query_predicate(&self, subject: &str, object: &str) -> Vec<(String, f64)> {
         let vs = match self.subjects.get(subject) {
             Some(v) => v,
             None => return vec![],
@@ -936,7 +936,7 @@ impl SPOCrystal {
     }
 
     /// Resonance query: find all triples matching a pattern via VSA similarity
-    fn resonate_spo(
+    pub(crate) fn resonate_spo(
         &self,
         s: Option<&str>,
         p: Option<&str>,

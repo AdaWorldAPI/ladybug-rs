@@ -5,7 +5,7 @@
 //!
 //! ## Quick Start
 //! ```rust,ignore
-//! use ladybug::{Database, Thought, NodeRecord, cypher_to_sql};
+//! use ladybug::{Database, Thought, NodeRecord};
 //!
 //! // Open database
 //! let db = Database::open("./mydb").await?;
@@ -51,8 +51,6 @@
 //! └─────────────────────────────────────────────────────────────────┘
 //! ```
 
-// portable_simd requires nightly - use fallback popcount instead
-// #![cfg_attr(feature = "simd", feature(portable_simd))]
 #![allow(dead_code)]
 // Clippy: allow stylistic lints across the codebase
 #![allow(
@@ -162,7 +160,7 @@ pub use crate::graph::{Edge, EdgeType, Traversal};
 pub use crate::world::{Change, Counterfactual, World};
 
 // Query engine
-pub use crate::query::{Query, QueryBuilder, QueryResult, SqlEngine, cypher_to_sql};
+pub use crate::query::{Query, QueryBuilder, QueryResult, SqlEngine};
 
 // Storage
 #[cfg(feature = "lancedb")]
@@ -261,8 +259,8 @@ impl From<query::QueryError> for Error {
 }
 
 #[cfg(feature = "lancedb")]
-impl From<lance::Error> for Error {
-    fn from(e: lance::Error) -> Self {
+impl From<lancedb::Error> for Error {
+    fn from(e: lancedb::Error) -> Self {
         Error::Storage(e.to_string())
     }
 }

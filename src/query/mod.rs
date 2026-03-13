@@ -40,7 +40,7 @@
 
 mod builder;
 pub mod cognitive_udfs;
-mod cypher;
+pub mod cte_builder;
 mod datafusion;
 pub mod lance_parser;
 pub mod dn_tree_provider;
@@ -56,7 +56,8 @@ pub use cognitive_udfs::{
     NarsDeductionUdf, NarsInductionUdf, NarsRevisionUdf, PopcountUdf, ScentDistanceUdf,
     SimilarityUdf, XorBindUdf, all_cognitive_udfs, register_cognitive_udfs,
 };
-pub use cypher::{CypherParser, CypherQuery, CypherTranspiler, cypher_to_sql};
+pub use lance_parser::ast::CypherQuery;
+pub use lance_parser::parser::parse_cypher_query;
 pub use datafusion::{QueryBuilder, SqlEngine};
 pub use dn_tree_provider::{DnTreeExt, DnTreeTableProvider};
 pub use fingerprint_table::{BindSpaceExt, BindSpaceScan, FingerprintTableProvider};
