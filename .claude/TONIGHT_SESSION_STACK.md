@@ -1,205 +1,197 @@
-# TONIGHT_SESSION_STACK.md (v2 — CORRECTED)
+# TONIGHT_SESSION_STACK.md (v3 — REFACTOR, NOT BRIDGE)
 
-## ⚠ CORRECTION FROM v1
-
-**v1 said delete lance_parser (P3, 5532 lines). WRONG.**
-lance_parser IS the production Cypher parser. It's a correctly adapted
-port of lance-graph's nom parser with proper ladybug-rs error type integration.
-The "divergence" in semantic.rs is correct QueryError adaptation, not drift.
-
-**Session 1 now deletes ONLY P1 (cypher.rs, 1560 lines).**
+## 4 Hours. No Bridges. No Adapters. Refactor Properly.
 
 ---
 
-## ⚠ REPO FOCUS RULES
+## SESSION 1: Kill P1, Refactor P2 to Consume P3 AST Directly [REPO: ladybug-rs]
 
+**Read COMPLETELY before writing:**
 ```
-EVERY TASK IS TAGGED WITH A REPO.
-DO NOT touch files in a different repo than the current tag.
-When switching repos: STOP. Read that repo's CLAUDE.md FIRST.
-
-Current repo names (DO NOT RENAME ANYTHING TONIGHT):
-  ladybug-rs     ← main surgery target
-  rustynum       ← READ ONLY from ladybug-rs sessions
+src/query/lance_parser/ast.rs        (532 lines — the AST types)
+src/cypher_bridge.rs                 (897 lines — the executor)
+src/query/cypher.rs                  (1560 lines — the thing being deleted)
+src/bin/server.rs lines 1621-1655    (the /cypher endpoint)
 ```
 
----
+**The refactor:**
 
-## SESSION 1: Delete P1 Only [REPO: ladybug-rs]
+P2's `execute_cypher()` takes `&[CypherOp]`. CypherOp is a flat enum with 5 variants
+(MergeNode, CreateNode, CreateEdge, SetProperty, MatchReturn).
 
-**Read first:** `CLAUDE.md`, `src/query/cypher.rs` (skim — understand what's being removed)
+P3's parser produces `lance_parser::ast::CypherQuery` with rich tree types
+(ReadingClause, MatchClause, GraphPattern, NodePattern, PathPattern, etc.).
 
-```
-1. Save CTE generator FIRST:
-   cp src/query/cypher.rs /tmp/cypher_backup.rs
-   Extract lines 1253-1361 → src/query/cte_builder.rs
-   (Recursive CTE for variable-length paths — UNIQUE, neither P3 nor P5 has it)
+**DO NOT create an ast_bridge.rs. Rewrite cypher_bridge.rs to take P3 types directly:**
 
-2. Delete src/query/cypher.rs
+```rust
+// BEFORE (current cypher_bridge.rs):
+pub fn execute_cypher(bs: &mut BindSpace, ops: &[CypherOp]) -> Result<CypherResult, String>
 
-3. Update src/query/mod.rs:
-   Remove: pub mod cypher;
-   Remove: pub use cypher::{CypherParser, CypherQuery, CypherTranspiler, cypher_to_sql};
-   
-4. Fix broken references:
-   server.rs:1625 calls cypher_to_sql — this will break. COMMENT IT OUT for now:
-     // TODO: wire lance_parser + cypher_bridge (session 2)
-     http_error(501, "cypher_not_implemented", "being rewired", format)
-
-   hybrid.rs:20 imports CypherParser — comment out or remove usage
-
-5. cargo check --no-default-features --features "simd"
-
-6. Rename in src/learning/cam_ops.rs:
-   CypherOp → CypherInstruction
-   Update all references within src/learning/
-   
-7. cargo check again
+// AFTER (refactored):
+pub fn execute_cypher(bs: &mut BindSpace, query: &lance_parser::ast::CypherQuery) -> Result<CypherResult, String>
 ```
 
-**-1560 lines deleted. lance_parser UNTOUCHED.**
+The internal `CypherOp` enum DISAPPEARS. The execute functions work directly on the AST:
 
-**Commit:** `chore: delete P1 cypher.rs (hand-rolled transpiler) — rescue CTE builder`
+```rust
+// BEFORE:
+CypherOp::MergeNode { labels, properties } => execute_merge_node(bs, labels, properties, &mut result)?
 
----
+// AFTER:
+for clause in &query.reading_clauses {
+    match clause {
+        ReadingClause::Match(m) => execute_match(bs, m, &query.where_clause, &query.return_clause, &mut result)?,
+        ReadingClause::Unwind(u) => execute_unwind(bs, u, &mut result)?,
+    }
+}
+// CREATE/MERGE/SET handled from query.update_clauses (or however P3 structures writes)
+```
 
-## SESSION 2: Build AST→CypherOp Bridge + Wire Server [REPO: ladybug-rs]
+Keep P2's execution LOGIC (find_node_by_label_and_name, evaluate_where, MERGE semantics).
+Replace P2's TYPES (CypherOp, NodeRef, WhereClause, CypherValue) with P3's types.
+Delete P2's parse_cypher() (P3's parse_cypher_query replaces it).
+Keep P2's execute_* functions, rewrite their signatures to take P3 AST nodes.
 
-**Read first:** 
-- `src/query/lance_parser/ast.rs` (the AST types P3 produces)
-- `src/cypher_bridge.rs` (the CypherOp types P2 consumes)
+**Steps:**
 
 ```
-1. Create src/query/ast_bridge.rs (~100-150 lines):
-   Convert lance_parser AST → cypher_bridge CypherOp
-   
-   use crate::query::lance_parser::ast::{CypherQuery as ParsedQuery, ...};
-   use crate::cypher_bridge::{CypherOp, NodeRef, CypherValue};
-   
-   pub fn ast_to_ops(parsed: &ParsedQuery) -> Result<Vec<CypherOp>, String> {
-       // Walk the AST, produce CypherOp list
-       // MATCH clause → CypherOp::MatchReturn
-       // CREATE clause → CypherOp::CreateNode / CreateEdge
-       // MERGE → CypherOp::MergeNode
-       // SET → CypherOp::SetProperty
-   }
+1. Delete src/query/cypher.rs
+   - Save lines 1253-1361 to src/query/cte_builder.rs first
+   - Remove from query/mod.rs
 
-2. Wire server.rs /cypher endpoint:
-   Replace the commented-out TODO from session 1:
+2. Rewrite src/cypher_bridge.rs:
+   - Remove: CypherOp enum, NodeRef enum, WhereClause enum, CypherValue enum
+   - Remove: parse_cypher() function
+   - Change: execute_cypher signature to take &CypherQuery (P3 type)
+   - Change: execute_merge_node to take &NodePattern (P3 type)
+   - Change: execute_create_edge to take &PathPattern (P3 type)
+   - Change: execute_match_return to take &MatchClause + &WhereClause (P3 types)
+   - Change: evaluate_where to take &BooleanExpression (P3 type)
+   - Keep: CypherResult (it's the output format, not input)
+   - Keep: find_node_by_label_and_name (working scan logic)
+   - Keep: MERGE upsert semantics
    
+   Map P3's PropertyValue → to the value types execute_* needs
+   Map P3's BooleanExpression → to what evaluate_where checks
+   This is INLINE refactoring, not a bridge module.
+
+3. Wire server.rs:
    use ladybug::query::lance_parser::parse_cypher_query;
-   use ladybug::query::ast_bridge::ast_to_ops;
    use ladybug::cypher_bridge::execute_cypher;
    
    match parse_cypher_query(&query) {
-     Ok(parsed) => {
-       // Validate via semantic analyzer (P3 has this!)
-       match ast_to_ops(&parsed) {
-         Ok(ops) => {
-           let bs = db.cog_redis.bind_space_mut();
-           match execute_cypher(bs, &ops) {
-             Ok(result) => serialize result as JSON
-             Err(e) => http_error(500, ...)
-           }
-         }
-         Err(e) => http_error(400, "ast_conversion", &e, format)
-       }
+     Ok(ast) => match execute_cypher(&mut bs, &ast) {
+       Ok(result) => serialize
+       Err(e) => error
      }
-     Err(e) => http_error(400, "cypher_parse", &e.to_string(), format)
+     Err(e) => parse error
    }
 
-3. cargo check
-4. Test: curl /cypher with MERGE → node created
-5. Test: curl /cypher with MATCH → results returned
+4. Rename cam_ops CypherOp → CypherInstruction
+
+5. cargo check --no-default-features --features "simd"
 ```
 
-**~150 lines new. Full parse→validate→execute pipeline working.**
-
-**Commit:** `feat: wire lance_parser → ast_bridge → cypher_bridge → server.rs /cypher`
+**Exit gate:** `/cypher` endpoint calls P3 parser → refactored P2 executor. Zero bridge types.
 
 ---
 
-## SESSION 3: Unlock spo.rs [REPO: ladybug-rs]
+## SESSION 2: Unlock spo.rs Properly [REPO: ladybug-rs]
 
-**Read first:** `src/spo/spo.rs` (ENTIRE FILE, 1568 lines. No skimming.)
+**Read COMPLETELY:** `src/spo/spo.rs` (all 1568 lines, every function, every type)
 
 ```
-1. src/spo/mod.rs: change `mod spo;` → `pub(crate) mod spo;`
+1. src/spo/mod.rs: `mod spo` → `pub(crate) mod spo`
 
-2. Add to core/fingerprint.rs:
-   project_out() — Gram-Schmidt from spo.rs lines 116-140
-   dot_bipolar() — from spo.rs lines 109-115
+2. In spo.rs itself: make key types pub(crate)
+   pub(crate) struct SPOCrystal
+   pub(crate) struct OrthogonalCodebook  
+   pub(crate) fn bundle()
+   pub(crate) fn bundle_weighted()
+   Keep private: internal helpers, Fingerprint (use core::Fingerprint instead)
+
+3. Add to core/fingerprint.rs:
+   pub fn project_out(&self, other: &Fingerprint) -> Fingerprint
+   pub fn dot_bipolar(&self, other: &Fingerprint) -> i64
+   (Port from spo.rs, adapt to core::Fingerprint layout)
+
+4. In spo.rs: replace internal Fingerprint usage with core::Fingerprint
+   where signatures cross module boundary.
+   Keep internal Fingerprint for private functions if easier —
+   but crystal_api RETURNS core::Fingerprint.
+
+5. Create src/spo/crystal_api.rs — NOT a facade. Direct re-export + helpers:
+   pub use super::spo::{SPOCrystal, OrthogonalCodebook};
    
-3. Create src/spo/crystal_api.rs (~200 lines):
-   Public facade wrapping private SPOCrystal.
+   Plus convenience constructors that use core types:
+   pub fn new_crystal() -> SPOCrystal
+   pub fn encode_and_insert(crystal: &mut SPOCrystal, s: &str, p: &str, o: &str)
+   pub fn query_object(crystal: &SPOCrystal, s: &str, p: &str) -> Vec<QueryHit>
    
-4. Add to src/spo/mod.rs: pub mod crystal_api;
+   These are THIN — they call spo.rs methods directly, not wrap them.
 
-5. cargo check
+6. cargo check
 ```
 
-**Commit:** `feat: unlock spo.rs — pub(crate), crystal_api facade, project_out`
+**Exit gate:** `use crate::spo::crystal_api::SPOCrystal` works from server.rs.
 
 ---
 
-## SESSION 4: Wire Crystal to Cypher Bridge [REPO: ladybug-rs]
+## SESSION 3: Wire Crystal Into Cypher Execute [REPO: ladybug-rs]
 
-**Read:** `src/cypher_bridge.rs` lines 370-420, `src/spo/crystal_api.rs`
+**Read:** refactored cypher_bridge.rs (from session 1) + crystal_api.rs (from session 2)
 
 ```
-1. Add CrystalQuery to server DatabaseState
-2. In cypher_bridge execute_match: try crystal_api first, fall back to nodes_iter
-3. cargo check
+1. Add SPOCrystal to DatabaseState in server.rs
+
+2. In cypher_bridge execute_match (the read path):
+   REPLACE bs.nodes_iter() full scan
+   WITH crystal.resonate_spo() for queries that have S and/or P
+   
+   KEEP nodes_iter as fallback for label-only queries without SPO terms
+   
+   This is refactoring execute_match, not adding a layer.
+
+3. In cypher_bridge execute_merge/create:
+   AFTER writing to BindSpace, ALSO insert into SPOCrystal
+   Both stores get the data. Crystal is the fast index.
+   BindSpace is the source of truth.
+
+4. cargo check + test with curl
 ```
 
-**Commit:** `feat: MATCH queries use SPO Crystal O(25) lookup with nodes_iter fallback`
+**Exit gate:** MATCH with subject+predicate hits Crystal (O(25)), not scan (O(N)).
 
 ---
 
-## SESSION 5: CI Triage [REPO: ladybug-rs, then rustynum if needed]
+## SESSION 4: CI + Stale PRs [REPO: ladybug-rs, maybe rustynum]
 
 ```
-⚠ REPO SWITCH possible. Read each CLAUDE.md before touching.
-Focus: get cargo check green, not cargo test (tests can wait).
-```
+1. cargo check --all-features (or closest working feature set)
+   Fix what breaks. Don't add features.
 
----
+2. Close PRs #11-#33, #54
+   Evaluate #168, #169 against #170
 
-## SESSION 6: Close Stale PRs [REPO: ladybug-rs]
-
-```
-Close #11-#33, #54 with "superceded by main"
-Evaluate #168, #169 against merged #170
-Target: open PRs ≤ 5
+3. If rustynum CI blocks ladybug-rs:
+   ⚠ SWITCH REPO — read rustynum CLAUDE.md first
+   Fix the minimum needed for cargo check to pass
 ```
 
 ---
 
-## SESSION 7 (STRETCH): Harvest lance-graph truth.rs [REPO: ladybug-rs]
+## TIMING
 
 ```
-READ lance-graph truth.rs (175 lines). 
-MERGE into ladybug-rs graph/spo/.
-ADD walk_chain_forward from lance-graph store.rs.
+SESSION   EST.        PRIORITY
+1         90 min      P0 (the big refactor)
+2         60 min      P0
+3         45 min      P1
+4         30 min      P2
+TOTAL     ~4 hours
 ```
 
 ---
 
-## SESSION ORDER
-
-```
-SESSION   WHAT                    EST. TIME   PRIORITY
-1         Delete P1 only          20-30 min   P0
-2         Bridge P3→P2 + server   45-60 min   P0
-3         Unlock spo.rs           45-60 min   P0
-4         Crystal → Cypher        30-45 min   P1
-5         CI triage               30-60 min   P1
-6         Close stale PRs         15 min      P2
-7         Harvest truth.rs        30 min      P2 (stretch)
-```
-
-**Minimum tonight:** Sessions 1-3 (delete P1, bridge P3→P2, unlock spo.rs).
-
----
-
-*"Read first. All of it. Then decide."*
+*"No bridges. No adapters. No facades. Refactor the types. Inline the logic."*
