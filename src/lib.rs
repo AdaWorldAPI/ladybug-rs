@@ -51,8 +51,6 @@
 //! └─────────────────────────────────────────────────────────────────┘
 //! ```
 
-// portable_simd requires nightly - use fallback popcount instead
-// #![cfg_attr(feature = "simd", feature(portable_simd))]
 #![allow(dead_code)]
 // Clippy: allow stylistic lints across the codebase
 #![allow(

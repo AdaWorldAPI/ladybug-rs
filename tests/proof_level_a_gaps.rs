@@ -20,7 +20,7 @@ use ladybug::cognitive::{
 use ladybug::container::search::cascade_search;
 use ladybug::container::{CONTAINER_BITS, Container};
 use ladybug::core::Fingerprint;
-use ladybug::core::simd::{hamming_distance, hamming_scalar};
+use ladybug::core::{hamming_distance, hamming_scalar};
 use ladybug::nars::TruthValue;
 use ladybug::storage::{FINGERPRINT_WORDS, WalEntry};
 
