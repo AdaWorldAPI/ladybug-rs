@@ -70,7 +70,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.93.0"
+          toolchain: "1.93.1"
       - uses: Swatinem/rust-cache@v2
       - name: cargo check
         run: cargo check --lib --tests
@@ -99,7 +99,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.93.0"
+          toolchain: "1.93.1"
       - uses: Swatinem/rust-cache@v2
       - name: Run foundation proofs
         run: cargo test --test proof_foundation -- --test-threads=1 --show-output
@@ -128,7 +128,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.93.0"
+          toolchain: "1.93.1"
       - uses: Swatinem/rust-cache@v2
       - name: Run reasoning ladder proofs
         run: cargo test --test proof_reasoning_ladder -- --test-threads=1 --show-output
@@ -157,7 +157,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.93.0"
+          toolchain: "1.93.1"
       - uses: Swatinem/rust-cache@v2
       - name: Run tactics proofs
         run: cargo test --test proof_tactics -- --test-threads=1 --show-output
@@ -186,7 +186,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.93.0"
+          toolchain: "1.93.1"
       - uses: Swatinem/rust-cache@v2
       - name: Run level A gap proofs
         run: cargo test --test proof_level_a_gaps -- --test-threads=1
@@ -215,7 +215,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.93.0"
+          toolchain: "1.93.1"
       - uses: Swatinem/rust-cache@v2
       - name: Run all unit tests
         run: cargo test --lib -- --test-threads=4

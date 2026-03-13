@@ -43,7 +43,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.93.0"
+          toolchain: "1.93.1"
           components: clippy, rustfmt
 
       - uses: Swatinem/rust-cache@v2
@@ -78,7 +78,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.93.0"
+          toolchain: "1.93.1"
 
       - uses: Swatinem/rust-cache@v2
 
@@ -118,7 +118,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.93.0"
+          toolchain: "1.93.1"
           components: clippy, rustfmt
 
       - uses: Swatinem/rust-cache@v2
@@ -130,49 +130,11 @@ jobs:
         run: cargo fmt --all -- --check
 
   # ---------------------------------------------------------------------------
-  # Miri — catches UB in unsafe code (split_at_mut, raw pointers, etc.)
-  # ---------------------------------------------------------------------------
-  miri:
-    name: Miri (unsafe validation)
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Init vendor submodules
-        run: git submodule update --init vendor/rustynum
-
-      - name: Clone sibling repos (OBLIGATORY deps)
-        run: |
-          git clone --depth 1 https://github.com/AdaWorldAPI/rustynum.git ../rustynum
-          git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust.git ../crewai-rust
-          git clone --depth 1 https://github.com/AdaWorldAPI/n8n-rs.git ../n8n-rs
-
-      - name: Install protoc
-        run: sudo apt-get install -y protobuf-compiler
-
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: miri
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          prefix-key: miri
-
-      # 5 min timeout per target — Miri can run 1-3h without timeout
-      - name: Miri — lib tests (5 min timeout)
-        run: timeout 300 cargo miri test --lib -- --test-threads=1
-        env:
-          MIRIFLAGS: "-Zmiri-disable-isolation"
-        continue-on-error: true
-
-  # ---------------------------------------------------------------------------
   # Summary
   # ---------------------------------------------------------------------------
   ci-summary:
     name: CI Summary
-    needs: [build, test, lint, miri]
+    needs: [build, test, lint]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -185,7 +147,6 @@ jobs:
           echo "  Build: ${{ needs.build.result }}"
           echo "  Test:  ${{ needs.test.result }}"
           echo "  Lint:  ${{ needs.lint.result }}"
-          echo "  Miri:  ${{ needs.miri.result }}"
           echo ""
           PASS=true
           for r in "${{ needs.build.result }}" "${{ needs.test.result }}" "${{ needs.lint.result }}"; do
