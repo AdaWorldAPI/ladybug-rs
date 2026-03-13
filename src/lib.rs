@@ -261,8 +261,8 @@ impl From<query::QueryError> for Error {
 }
 
 #[cfg(feature = "lancedb")]
-impl From<lance::Error> for Error {
-    fn from(e: lance::Error) -> Self {
+impl From<lancedb::Error> for Error {
+    fn from(e: lancedb::Error) -> Self {
         Error::Storage(e.to_string())
     }
 }

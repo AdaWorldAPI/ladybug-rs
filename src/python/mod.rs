@@ -292,10 +292,13 @@ impl PyDatabase {
 
     /// Create in-memory database
     #[staticmethod]
-    fn memory() -> Self {
-        Self {
-            inner: Database::memory(),
-        }
+    fn memory() -> PyResult<Self> {
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        let db = rt
+            .block_on(Database::memory())
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        Ok(Self { inner: db })
     }
 
     /// Execute SQL query

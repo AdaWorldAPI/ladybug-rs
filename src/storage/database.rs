@@ -64,14 +64,15 @@ impl Database {
     }
 
     /// Connect to in-memory database
-    pub fn memory() -> Self {
-        Self {
+    pub async fn memory() -> Result<Self> {
+        let lance = LanceStore::memory().await?;
+        Ok(Self {
             path: ":memory:".to_string(),
-            lance: Arc::new(tokio::sync::RwLock::new(LanceStore::memory())),
+            lance: Arc::new(tokio::sync::RwLock::new(lance)),
             sql_engine: Arc::new(tokio::sync::RwLock::new(SqlEngine::default())),
             hamming: Arc::new(RwLock::new(HammingEngine::new())),
             version: 0,
-        }
+        })
     }
 
     // =========================================================================
@@ -380,15 +381,15 @@ pub fn open<P: AsRef<Path>>(path: P) -> Result<Database> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_open_memory() {
-        let db = Database::memory();
+    #[tokio::test]
+    async fn test_open_memory() {
+        let db = Database::memory().await.unwrap();
         assert_eq!(db.path(), ":memory:");
     }
 
-    #[test]
-    fn test_resonate() {
-        let db = Database::memory();
+    #[tokio::test]
+    async fn test_resonate() {
+        let db = Database::memory().await.unwrap();
 
         // Index some fingerprints
         let fps: Vec<Fingerprint> = (0..100)
@@ -405,9 +406,9 @@ mod tests {
         assert!(results[0].1 > 0.99);
     }
 
-    #[test]
-    fn test_fork() {
-        let db = Database::memory();
+    #[tokio::test]
+    async fn test_fork() {
+        let db = Database::memory().await.unwrap();
         let forked = db.fork();
 
         assert_eq!(forked.version(), db.version() + 1);
