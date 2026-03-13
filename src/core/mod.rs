@@ -6,6 +6,7 @@ mod scent;
 pub mod vsa;
 
 pub mod rustynum_accel;
+pub mod simd;
 
 pub use buffer::BufferPool;
 pub use fingerprint::Fingerprint;

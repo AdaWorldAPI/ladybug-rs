@@ -240,6 +240,47 @@ impl Fingerprint {
         }
         Fingerprint { data: result }
     }
+
+    /// Dot product in bipolar space: +1 for matching bits, -1 for mismatching.
+    ///
+    /// Returns `FINGERPRINT_BITS - 2 * hamming(self, other)`.
+    pub fn dot_bipolar(&self, other: &Fingerprint) -> i64 {
+        FINGERPRINT_BITS as i64 - 2 * self.hamming(other) as i64
+    }
+
+    /// Project out component: reduce correlation with `other`.
+    ///
+    /// In binary VSA this flips overlapping bits with probability proportional
+    /// to the correlation strength, but only when correlation exceeds 0.6 × N.
+    pub fn project_out(&self, other: &Fingerprint) -> Fingerprint {
+        let dot = self.dot_bipolar(other);
+        let threshold = (FINGERPRINT_BITS as f64 * 0.6) as i64;
+
+        if dot.abs() < threshold {
+            return self.clone();
+        }
+
+        // Flip bits to reduce correlation
+        let mut result = self.clone();
+        let overlap = self.and(other);
+        let flip_prob = (dot.abs() as f64 / FINGERPRINT_BITS as f64).min(0.3);
+
+        // Use a simple deterministic PRNG seeded from the dot product
+        let mut state = dot.unsigned_abs().wrapping_mul(0x9E3779B97F4A7C15);
+        for i in 0..FINGERPRINT_U64 {
+            for bit in 0..64 {
+                if (overlap.as_raw()[i] >> bit) & 1 == 1 {
+                    // Simple LCG for deterministic pseudo-random
+                    state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                    let rand_val = (state >> 33) as f64 / (u32::MAX as f64);
+                    if rand_val < flip_prob {
+                        result.as_raw_mut()[i] ^= 1 << bit;
+                    }
+                }
+            }
+        }
+        result
+    }
 }
 
 impl PartialEq for Fingerprint {
