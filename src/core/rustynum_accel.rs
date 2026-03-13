@@ -192,20 +192,6 @@ pub fn hamming_distance(a: &Fingerprint, b: &Fingerprint) -> u32 {
     fingerprint_hamming(a, b)
 }
 
-/// Pure-scalar reference Hamming distance (no SIMD intrinsics).
-///
-/// Used by proof tests to verify SIMD-dispatched results match.
-#[inline]
-pub fn hamming_scalar(a: &Fingerprint, b: &Fingerprint) -> u32 {
-    let a_raw = a.as_raw();
-    let b_raw = b.as_raw();
-    let mut total = 0u32;
-    for i in 0..a_raw.len() {
-        total += (a_raw[i] ^ b_raw[i]).count_ones();
-    }
-    total
-}
-
 /// Batch Hamming distance computation (parallel when `parallel` feature is on)
 #[cfg(feature = "parallel")]
 pub fn batch_hamming(query: &Fingerprint, corpus: &[Fingerprint]) -> Vec<u32> {

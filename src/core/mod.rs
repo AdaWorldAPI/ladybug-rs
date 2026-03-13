@@ -11,7 +11,7 @@ pub mod simd;
 pub use buffer::BufferPool;
 pub use fingerprint::Fingerprint;
 pub use scent::*;
-pub use rustynum_accel::{HammingEngine, batch_hamming, hamming_distance, hamming_scalar, simd_level};
+pub use rustynum_accel::{HammingEngine, batch_hamming, hamming_distance, simd_level};
 pub use vsa::VsaOps;
 
 /// Dense embedding vector
