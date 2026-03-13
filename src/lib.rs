@@ -5,7 +5,7 @@
 //!
 //! ## Quick Start
 //! ```rust,ignore
-//! use ladybug::{Database, Thought, NodeRecord, cypher_to_sql};
+//! use ladybug::{Database, Thought, NodeRecord};
 //!
 //! // Open database
 //! let db = Database::open("./mydb").await?;
@@ -162,7 +162,7 @@ pub use crate::graph::{Edge, EdgeType, Traversal};
 pub use crate::world::{Change, Counterfactual, World};
 
 // Query engine
-pub use crate::query::{Query, QueryBuilder, QueryResult, SqlEngine, cypher_to_sql};
+pub use crate::query::{Query, QueryBuilder, QueryResult, SqlEngine};
 
 // Storage
 #[cfg(feature = "lancedb")]

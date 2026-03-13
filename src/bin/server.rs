@@ -697,7 +697,7 @@ fn route(
         ("POST", "/api/v1/sql") | ("POST", "/sql") => handle_sql(body, state, format),
 
         // Cypher endpoint
-        ("POST", "/api/v1/cypher") | ("POST", "/cypher") => handle_cypher(body, format),
+        ("POST", "/api/v1/cypher") | ("POST", "/cypher") => handle_cypher(body, state, format),
 
         // CogRedis text protocol - always uses Redis wire protocol
         ("POST", "/redis") => handle_redis_command(body, state),
@@ -1618,39 +1618,56 @@ fn handle_sql(body: &str, _state: &SharedState, format: ResponseFormat) -> Vec<u
     }
 }
 
-// Cypher handler
-fn handle_cypher(body: &str, format: ResponseFormat) -> Vec<u8> {
+// Cypher handler — parses via lance_parser, executes against BindSpace via cypher_bridge
+fn handle_cypher(body: &str, state: &SharedState, format: ResponseFormat) -> Vec<u8> {
     let query = extract_json_str(body, "query").unwrap_or_default();
 
-    match ladybug::query::cypher_to_sql(&query) {
-        Ok(sql) => match format {
-            ResponseFormat::Arrow => {
-                let schema = Arc::new(Schema::new(vec![
-                    Field::new("cypher", DataType::Utf8, false),
-                    Field::new("transpiled_sql", DataType::Utf8, false),
-                    Field::new("status", DataType::Utf8, false),
-                ]));
-                let batch = RecordBatch::try_new(
-                    schema,
-                    vec![
-                        Arc::new(StringArray::from(vec![query.as_str()])) as ArrayRef,
-                        Arc::new(StringArray::from(vec![sql.as_str()])) as ArrayRef,
-                        Arc::new(StringArray::from(vec!["transpiled"])) as ArrayRef,
-                    ],
-                )
-                .unwrap();
-                http_arrow(200, &batch)
+    // Parse with lance_parser (P3)
+    let ast = match ladybug::query::parse_cypher_query(&query) {
+        Ok(ast) => ast,
+        Err(e) => return http_error(400, "cypher_parse_error", &format!("{}", e), format),
+    };
+
+    // Execute against BindSpace via cypher_bridge
+    let mut db = state.write().unwrap();
+    let bs = db.cog_redis.bind_space_mut();
+    match ladybug::cypher_bridge::execute_cypher(bs, &ast) {
+        Ok(result) => {
+            let result_json = serde_json::json!({
+                "columns": result.columns,
+                "rows": result.rows,
+                "stats": {
+                    "nodes_created": result.nodes_created,
+                    "relationships_created": result.relationships_created,
+                    "properties_set": result.properties_set,
+                }
+            });
+            match format {
+                ResponseFormat::Arrow => {
+                    let schema = Arc::new(Schema::new(vec![
+                        Field::new("cypher", DataType::Utf8, false),
+                        Field::new("result", DataType::Utf8, false),
+                        Field::new("status", DataType::Utf8, false),
+                    ]));
+                    let result_str = serde_json::to_string(&result_json).unwrap_or_default();
+                    let batch = RecordBatch::try_new(
+                        schema,
+                        vec![
+                            Arc::new(StringArray::from(vec![query.as_str()])) as ArrayRef,
+                            Arc::new(StringArray::from(vec![result_str.as_str()])) as ArrayRef,
+                            Arc::new(StringArray::from(vec!["executed"])) as ArrayRef,
+                        ],
+                    )
+                    .unwrap();
+                    http_arrow(200, &batch)
+                }
+                ResponseFormat::Json => {
+                    let json = serde_json::to_string(&result_json).unwrap_or_default();
+                    http_json(200, &json)
+                }
             }
-            ResponseFormat::Json => {
-                let json = format!(
-                    r#"{{"cypher":"{}","transpiled_sql":"{}","status":"transpiled"}}"#,
-                    query.replace('"', "'"),
-                    sql.replace('"', "'")
-                );
-                http_json(200, &json)
-            }
-        },
-        Err(e) => http_error(400, "cypher_parse_error", &e.to_string(), format),
+        }
+        Err(e) => http_error(400, "cypher_execution_error", &e, format),
     }
 }
 
@@ -3065,7 +3082,7 @@ fn handle_unified_command(body: &str, state: &SharedState, format: ResponseForma
         handle_sql(query, state, format)
     } else if first_word == "CYPHER" {
         let query = cmd.get(7..).unwrap_or("").trim();
-        handle_cypher(query, format)
+        handle_cypher(query, state, format)
     } else if first_word.starts_with("CREW.") || first_word.starts_with("AGENT.") {
         handle_crew_command(cmd, format)
     } else if first_word.starts_with("WF.") || first_word.starts_with("EXEC.") {
