@@ -5,11 +5,11 @@ started: "2026-03-12"
 orchestration_prompt: ".claude/prompts/18_brain_surgery_orchestration.md"
 
 surgeon:
-  S1_delete_P1: PENDING
-  S2_delete_P3: PENDING
+  S1_delete_P1: DONE       # Deleted src/query/cypher.rs (1560 lines)
+  S2_delete_P3: SKIPPED    # P3 (lance_parser) is the PRODUCTION parser — kept
   S3_stale_prs: PENDING
   S4_ci_green: PENDING
-  S5_rename_p4: PENDING
+  S5_rename_p4: DONE       # CypherOp → CypherInstruction in cam_ops.rs
 
 locksmith:
   L1_project_out: PENDING
@@ -22,7 +22,7 @@ bridge:
   B1_match_spo: PENDING
   B2_merge_spo: PENDING
   B3_edge_spo: PENDING
-  B4_server_cypher: PENDING
+  B4_server_cypher: DONE    # /cypher now: parse_cypher_query → execute_cypher → BindSpace
   B5_crystal_state: PENDING
 
 bouncer:
@@ -40,7 +40,11 @@ seal:
   K5_register: PENDING
 
 blocking_issues: []
-decisions_made: []
+decisions_made:
+  - "P3 (lance_parser) is the production parser. S2_delete_P3 skipped — it was misnamed."
+  - "cypher_bridge.rs rewritten: CypherOp/NodeRef/WhereClause/CypherValue removed. Takes P3 AST directly."
+  - "CypherResult.rows changed from HashMap<String, CypherValue> to HashMap<String, serde_json::Value> (no more CypherValue)."
+  - "server.rs /cypher now EXECUTES against BindSpace (was: transpile-only stub)."
 notes: |
   Read .claude/prompts/18_brain_surgery_orchestration.md for full context.
   Read prompts 15, 16, 17, 17a BEFORE starting any work.

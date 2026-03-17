@@ -42,7 +42,7 @@ pub mod dream;
 
 pub use blackboard::{Blackboard, Decision, IceCakedLayer};
 pub use cam_ops::{
-    CypherOp, HammingOp, LanceOp, LearnOp, OpCategory, OpContext, OpDictionary, OpMeta, OpParam,
+    CypherInstruction, HammingOp, LanceOp, LearnOp, OpCategory, OpContext, OpDictionary, OpMeta, OpParam,
     OpResult, OpSignature, OpType, SqlOp, bundle_fingerprints, fold_to_48,
 };
 pub use cognitive_frameworks::{

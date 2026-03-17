@@ -1,8 +1,12 @@
-//! Lance-backed persistence for BindSpace.
+//! Lance-backed persistence for BindSpace (lancedb SDK 0.26).
 //!
 //! This module provides durable write-through persistence for the BindSpace
-//! using Lance columnar format. The BindSpace remains the hot-path for reads;
-//! Lance is the durable ground truth that survives restarts.
+//! using LanceDB. The BindSpace remains the hot-path for reads;
+//! LanceDB is the durable ground truth that survives restarts.
+//!
+//! Versioning comes for free: every write creates a new version (MVCC).
+//! Time travel: checkout(version_n) reads any previous state.
+//! Compaction: optimize() merges small versions into larger ones.
 //!
 //! # Schema
 //!
@@ -40,15 +44,16 @@
 //!
 //! # Design
 //!
-//! - Write-through: every mutation to BindSpace also goes to Lance
-//! - Hydrate on startup: Lance → BindSpace on server init
-//! - Graceful degradation: if Lance fails, log error, keep running in-memory
+//! - Write-through: every mutation to BindSpace also goes to LanceDB
+//! - Hydrate on startup: LanceDB → BindSpace on server init
+//! - Graceful degradation: if LanceDB fails, log error, keep running in-memory
+//! - Automatic versioning: every persist_full creates a new version
 
 use arrow::array::*;
 use arrow::datatypes::{DataType, Field, Schema as ArrowSchema};
 use arrow::record_batch::RecordBatch;
-use lance::Dataset;
-use lance::dataset::write::{WriteMode, WriteParams};
+use lancedb::query::{ExecutableQuery, QueryBase};
+use lancedb::table::AddDataMode;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -113,7 +118,7 @@ fn index_fingerprints_schema() -> ArrowSchema {
 // HELPERS
 // =============================================================================
 
-/// Wrap a RecordBatch as a RecordBatchReader for Lance write API.
+/// Wrap a RecordBatch as a RecordBatchReader for lancedb write API.
 fn batch_reader(
     batch: RecordBatch,
 ) -> RecordBatchIterator<
@@ -145,12 +150,13 @@ fn fp_from_le_bytes(bytes: &[u8]) -> [u64; FINGERPRINT_WORDS] {
 // LANCE PERSISTENCE
 // =============================================================================
 
-/// Durable persistence layer bridging BindSpace ↔ Lance.
+/// Durable persistence layer bridging BindSpace ↔ LanceDB.
 ///
-/// Write-through: in-memory stays hot, Lance is ground truth.
-/// Hydrate: on startup, load Lance → BindSpace.
+/// Write-through: in-memory stays hot, LanceDB is ground truth.
+/// Hydrate: on startup, load LanceDB → BindSpace.
+/// Versioning: every write creates a new version (MVCC for free).
 pub struct LancePersistence {
-    /// Path to lance data directory
+    /// Path to lancedb data directory
     data_dir: PathBuf,
     /// Whether persistence is active (false if init failed)
     active: bool,
@@ -170,74 +176,64 @@ impl LancePersistence {
         Self { data_dir, active }
     }
 
-    /// Path to the nodes lance dataset
-    fn nodes_path(&self) -> PathBuf {
-        self.data_dir.join("bind_nodes.lance")
-    }
-
-    /// Path to the edges lance dataset
-    fn edges_path(&self) -> PathBuf {
-        self.data_dir.join("bind_edges.lance")
-    }
-
-    /// Path to the state lance dataset
-    fn state_path(&self) -> PathBuf {
-        self.data_dir.join("bind_state.lance")
-    }
-
-    /// Path to the HTTP index fingerprints dataset
-    fn index_path(&self) -> PathBuf {
-        self.data_dir.join("index_fingerprints.lance")
+    /// Connect to the LanceDB database.
+    /// lancedb::connect is cheap — it doesn't open files until table operations.
+    async fn connection(&self) -> Result<lancedb::Connection, String> {
+        let path = self.data_dir.to_string_lossy().to_string();
+        lancedb::connect(&path)
+            .execute()
+            .await
+            .map_err(|e| format!("lancedb connect: {}", e))
     }
 
     /// Check if persisted data exists on disk.
     pub fn has_data(&self) -> bool {
-        self.nodes_path().exists()
+        // LanceDB stores tables as subdirectories; check for bind_nodes
+        self.data_dir.join("bind_nodes.lance").exists()
+    }
+
+    /// Open or create a named table.
+    async fn open_or_create_table(
+        &self,
+        name: &str,
+        schema: ArrowSchema,
+    ) -> Result<lancedb::Table, String> {
+        let db = self.connection().await?;
+        match db.open_table(name).execute().await {
+            Ok(table) => Ok(table),
+            Err(lancedb::Error::TableNotFound { .. }) => {
+                let batch = RecordBatch::new_empty(Arc::new(schema));
+                db.create_table(name, batch_reader(batch))
+                    .execute()
+                    .await
+                    .map_err(|e| format!("create table {}: {}", name, e))
+            }
+            Err(e) => Err(format!("open table {}: {}", name, e)),
+        }
     }
 
     // =========================================================================
     // PHASE 2: TABLE CREATION
     // =========================================================================
 
-    /// Ensure all Lance tables exist (create empty if needed).
+    /// Ensure all LanceDB tables exist (create empty if needed).
     /// Called on startup before any reads/writes.
     pub async fn ensure_tables(&self) -> Result<(), String> {
         if !self.active {
             return Err("Persistence not active".into());
         }
 
-        // Create nodes table if missing
-        let nodes_path = self.nodes_path();
-        if !nodes_path.exists() {
-            let schema = Arc::new(bind_nodes_schema());
-            let batch = RecordBatch::new_empty(schema);
-            Dataset::write(batch_reader(batch), nodes_path.to_str().unwrap(), None)
-                .await
-                .map_err(|e| format!("Failed to create bind_nodes table: {}", e))?;
-            eprintln!("[lance-persist] Created bind_nodes table");
-        }
+        self.open_or_create_table("bind_nodes", bind_nodes_schema())
+            .await?;
+        eprintln!("[lance-persist] Ensured bind_nodes table");
 
-        // Create edges table if missing
-        let edges_path = self.edges_path();
-        if !edges_path.exists() {
-            let schema = Arc::new(bind_edges_schema());
-            let batch = RecordBatch::new_empty(schema);
-            Dataset::write(batch_reader(batch), edges_path.to_str().unwrap(), None)
-                .await
-                .map_err(|e| format!("Failed to create bind_edges table: {}", e))?;
-            eprintln!("[lance-persist] Created bind_edges table");
-        }
+        self.open_or_create_table("bind_edges", bind_edges_schema())
+            .await?;
+        eprintln!("[lance-persist] Ensured bind_edges table");
 
-        // Create state table if missing
-        let state_path = self.state_path();
-        if !state_path.exists() {
-            let schema = Arc::new(bind_state_schema());
-            let batch = RecordBatch::new_empty(schema);
-            Dataset::write(batch_reader(batch), state_path.to_str().unwrap(), None)
-                .await
-                .map_err(|e| format!("Failed to create bind_state table: {}", e))?;
-            eprintln!("[lance-persist] Created bind_state table");
-        }
+        self.open_or_create_table("bind_state", bind_state_schema())
+            .await?;
+        eprintln!("[lance-persist] Ensured bind_state table");
 
         Ok(())
     }
@@ -246,9 +242,10 @@ impl LancePersistence {
     // PHASE 3+4: WRITE-THROUGH (FULL SNAPSHOT)
     // =========================================================================
 
-    /// Persist the entire BindSpace to Lance (full snapshot).
+    /// Persist the entire BindSpace to LanceDB (full snapshot).
     ///
-    /// Overwrites all tables. Used for:
+    /// Overwrites all tables. Each overwrite creates a new version.
+    /// Used for:
     /// - Initial persistence after first population
     /// - Periodic checkpoints
     /// - Graceful shutdown
@@ -266,8 +263,6 @@ impl LancePersistence {
 
     /// Persist all occupied nodes.
     async fn persist_nodes(&self, space: &BindSpace) -> Result<(), String> {
-        let nodes_path = self.nodes_path();
-
         // Collect all occupied nodes
         let mut addrs = Vec::new();
         let mut fps = Vec::new();
@@ -283,7 +278,6 @@ impl LancePersistence {
         let mut updated_ats = Vec::new();
 
         for (addr, node) in space.nodes_iter() {
-            // Skip zero fingerprints in surface area (init-generated)
             if addr.prefix() <= PREFIX_SURFACE_END {
                 continue;
             }
@@ -302,11 +296,18 @@ impl LancePersistence {
             updated_ats.push(node.updated_at);
         }
 
+        let table = self
+            .open_or_create_table("bind_nodes", bind_nodes_schema())
+            .await?;
+
         if addrs.is_empty() {
-            // Write empty table to clear previous data
+            // Write empty to clear previous data
             let schema = Arc::new(bind_nodes_schema());
             let batch = RecordBatch::new_empty(schema);
-            Dataset::write(batch_reader(batch), nodes_path.to_str().unwrap(), None)
+            table
+                .add(batch_reader(batch))
+                .mode(AddDataMode::Overwrite)
+                .execute()
                 .await
                 .map_err(|e| format!("persist_nodes empty: {}", e))?;
             return Ok(());
@@ -323,28 +324,18 @@ impl LancePersistence {
         }
         let fp_arr = fp_builder.finish();
 
-        let label_arr: StringArray = labels
-            .iter()
-            .map(|l| l.as_deref())
-            .collect();
+        let label_arr: StringArray = labels.iter().map(|l| l.as_deref()).collect();
         let qidx_arr = UInt8Array::from(qidxs);
 
-        let parent_arr: UInt16Array = parents
-            .iter().copied()
-            .collect();
+        let parent_arr: UInt16Array = parents.iter().copied().collect();
         let depth_arr = UInt8Array::from(depths);
         let rung_arr = UInt8Array::from(rungs);
         let sigma_arr = UInt8Array::from(sigmas);
         let spine_arr = BooleanArray::from(spines);
 
-        let dn_arr: UInt64Array = dn_paths
-            .iter().copied()
-            .collect();
+        let dn_arr: UInt64Array = dn_paths.iter().copied().collect();
 
-        let payload_arr: LargeBinaryArray = payloads
-            .iter()
-            .map(|p| p.as_deref())
-            .collect();
+        let payload_arr: LargeBinaryArray = payloads.iter().map(|p| p.as_deref()).collect();
 
         let updated_at_arr = UInt64Array::from(updated_ats);
 
@@ -368,28 +359,32 @@ impl LancePersistence {
         )
         .map_err(|e| format!("batch build: {}", e))?;
 
-        // Overwrite (full snapshot)
-        let params = WriteParams { mode: WriteMode::Overwrite, ..Default::default() };
-        Dataset::write(
-            batch_reader(batch),
-            nodes_path.to_str().unwrap(),
-            Some(params),
-        )
-        .await
-        .map_err(|e| format!("persist_nodes write: {}", e))?;
+        // Overwrite (full snapshot) — creates a new version
+        table
+            .add(batch_reader(batch))
+            .mode(AddDataMode::Overwrite)
+            .execute()
+            .await
+            .map_err(|e| format!("persist_nodes write: {}", e))?;
 
         Ok(())
     }
 
     /// Persist all edges.
     async fn persist_edges(&self, space: &BindSpace) -> Result<(), String> {
-        let edges_path = self.edges_path();
         let edges: Vec<&BindEdge> = space.edges_iter().collect();
+
+        let table = self
+            .open_or_create_table("bind_edges", bind_edges_schema())
+            .await?;
 
         if edges.is_empty() {
             let schema = Arc::new(bind_edges_schema());
             let batch = RecordBatch::new_empty(schema);
-            Dataset::write(batch_reader(batch), edges_path.to_str().unwrap(), None)
+            table
+                .add(batch_reader(batch))
+                .mode(AddDataMode::Overwrite)
+                .execute()
                 .await
                 .map_err(|e| format!("persist_edges empty: {}", e))?;
             return Ok(());
@@ -423,23 +418,24 @@ impl LancePersistence {
         )
         .map_err(|e| format!("edge batch: {}", e))?;
 
-        let params = WriteParams { mode: WriteMode::Overwrite, ..Default::default() };
-        Dataset::write(
-            batch_reader(batch),
-            edges_path.to_str().unwrap(),
-            Some(params),
-        )
-        .await
-        .map_err(|e| format!("persist_edges write: {}", e))?;
+        table
+            .add(batch_reader(batch))
+            .mode(AddDataMode::Overwrite)
+            .execute()
+            .await
+            .map_err(|e| format!("persist_edges write: {}", e))?;
 
         Ok(())
     }
 
     /// Persist allocator state (next_node, next_fluid pointers).
     async fn persist_state(&self, space: &BindSpace) -> Result<(), String> {
-        let state_path = self.state_path();
         let (np, ns) = space.next_node_slot();
         let (fp, fs) = space.next_fluid_slot();
+
+        let table = self
+            .open_or_create_table("bind_state", bind_state_schema())
+            .await?;
 
         let schema = Arc::new(bind_state_schema());
         let batch = RecordBatch::try_new(
@@ -453,14 +449,12 @@ impl LancePersistence {
         )
         .map_err(|e| format!("state batch: {}", e))?;
 
-        let params = WriteParams { mode: WriteMode::Overwrite, ..Default::default() };
-        Dataset::write(
-            batch_reader(batch),
-            state_path.to_str().unwrap(),
-            Some(params),
-        )
-        .await
-        .map_err(|e| format!("persist_state write: {}", e))?;
+        table
+            .add(batch_reader(batch))
+            .mode(AddDataMode::Overwrite)
+            .execute()
+            .await
+            .map_err(|e| format!("persist_state write: {}", e))?;
 
         Ok(())
     }
@@ -472,23 +466,36 @@ impl LancePersistence {
     /// Persist the HTTP index fingerprints Vec.
     pub async fn persist_index(
         &self,
-        fingerprints: &[(String, crate::core::Fingerprint, std::collections::HashMap<String, String>)],
+        fingerprints: &[(
+            String,
+            crate::core::Fingerprint,
+            std::collections::HashMap<String, String>,
+        )],
     ) -> Result<(), String> {
         if !self.active {
             return Ok(());
         }
-        let index_path = self.index_path();
+
+        let table = self
+            .open_or_create_table("index_fingerprints", index_fingerprints_schema())
+            .await?;
 
         if fingerprints.is_empty() {
             let schema = Arc::new(index_fingerprints_schema());
             let batch = RecordBatch::new_empty(schema);
-            Dataset::write(batch_reader(batch), index_path.to_str().unwrap(), None)
+            table
+                .add(batch_reader(batch))
+                .mode(AddDataMode::Overwrite)
+                .execute()
                 .await
                 .map_err(|e| format!("persist_index empty: {}", e))?;
             return Ok(());
         }
 
-        let ids: StringArray = fingerprints.iter().map(|(id, _, _)| Some(id.as_str())).collect();
+        let ids: StringArray = fingerprints
+            .iter()
+            .map(|(id, _, _)| Some(id.as_str()))
+            .collect();
 
         let mut fp_builder = FixedSizeBinaryBuilder::new(FP_BYTES);
         for (_, fp, _) in fingerprints {
@@ -513,47 +520,61 @@ impl LancePersistence {
         let schema = Arc::new(index_fingerprints_schema());
         let batch = RecordBatch::try_new(
             schema,
-            vec![
-                Arc::new(ids),
-                Arc::new(fp_arr),
-                Arc::new(meta_arr),
-            ],
+            vec![Arc::new(ids), Arc::new(fp_arr), Arc::new(meta_arr)],
         )
         .map_err(|e| format!("index batch: {}", e))?;
 
-        let params = WriteParams { mode: WriteMode::Overwrite, ..Default::default() };
-        Dataset::write(
-            batch_reader(batch),
-            index_path.to_str().unwrap(),
-            Some(params),
-        )
-        .await
-        .map_err(|e| format!("persist_index write: {}", e))?;
+        table
+            .add(batch_reader(batch))
+            .mode(AddDataMode::Overwrite)
+            .execute()
+            .await
+            .map_err(|e| format!("persist_index write: {}", e))?;
 
         Ok(())
     }
 
-    /// Hydrate the HTTP index fingerprints Vec from Lance.
+    /// Hydrate the HTTP index fingerprints Vec from LanceDB.
     pub async fn hydrate_index(
         &self,
-    ) -> Result<Vec<(String, crate::core::Fingerprint, std::collections::HashMap<String, String>)>, String>
-    {
-        let index_path = self.index_path();
-        if !self.active || !index_path.exists() {
+    ) -> Result<
+        Vec<(
+            String,
+            crate::core::Fingerprint,
+            std::collections::HashMap<String, String>,
+        )>,
+        String,
+    > {
+        if !self.active {
             return Ok(Vec::new());
         }
 
-        let dataset = Dataset::open(index_path.to_str().unwrap())
-            .await
-            .map_err(|e| format!("open index: {}", e))?;
+        let table = match self.connection().await?.open_table("index_fingerprints").execute().await
+        {
+            Ok(t) => t,
+            Err(lancedb::Error::TableNotFound { .. }) => return Ok(Vec::new()),
+            Err(e) => return Err(format!("open index: {}", e)),
+        };
 
-        let batches = self.scan_all(&dataset).await?;
+        let batches = scan_all_batches(&table).await?;
         let mut result = Vec::new();
 
         for batch in &batches {
-            let id_col = batch.column(0).as_any().downcast_ref::<StringArray>().unwrap();
-            let fp_col = batch.column(1).as_any().downcast_ref::<FixedSizeBinaryArray>().unwrap();
-            let meta_col = batch.column(2).as_any().downcast_ref::<StringArray>().unwrap();
+            let id_col = batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let fp_col = batch
+                .column(1)
+                .as_any()
+                .downcast_ref::<FixedSizeBinaryArray>()
+                .unwrap();
+            let meta_col = batch
+                .column(2)
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
 
             for row in 0..batch.num_rows() {
                 let id = id_col.value(row).to_string();
@@ -568,15 +589,18 @@ impl LancePersistence {
             }
         }
 
-        eprintln!("[lance-persist] Hydrated {} index fingerprints", result.len());
+        eprintln!(
+            "[lance-persist] Hydrated {} index fingerprints",
+            result.len()
+        );
         Ok(result)
     }
 
     // =========================================================================
-    // PHASE 5: HYDRATION (Lance → BindSpace on startup)
+    // PHASE 5: HYDRATION (LanceDB → BindSpace on startup)
     // =========================================================================
 
-    /// Hydrate a BindSpace from Lance data.
+    /// Hydrate a BindSpace from LanceDB data.
     ///
     /// Returns the populated BindSpace, or None if no data exists.
     pub async fn hydrate(&self) -> Result<Option<BindSpace>, String> {
@@ -584,7 +608,7 @@ impl LancePersistence {
             return Ok(None);
         }
 
-        eprintln!("[lance-persist] Hydrating BindSpace from Lance...");
+        eprintln!("[lance-persist] Hydrating BindSpace from LanceDB...");
 
         let mut space = BindSpace::new();
 
@@ -607,25 +631,48 @@ impl LancePersistence {
 
     /// Hydrate allocator state.
     async fn hydrate_state(&self, space: &mut BindSpace) -> Result<(), String> {
-        let state_path = self.state_path();
-        if !state_path.exists() {
-            return Ok(());
-        }
-
-        let dataset = Dataset::open(state_path.to_str().unwrap())
+        let table = match self
+            .connection()
+            .await?
+            .open_table("bind_state")
+            .execute()
             .await
-            .map_err(|e| format!("open state: {}", e))?;
+        {
+            Ok(t) => t,
+            Err(lancedb::Error::TableNotFound { .. }) => return Ok(()),
+            Err(e) => return Err(format!("open state: {}", e)),
+        };
 
-        let batches = self.scan_all(&dataset).await?;
+        let batches = scan_all_batches(&table).await?;
         if batches.is_empty() || batches[0].num_rows() == 0 {
             return Ok(());
         }
 
         let batch = &batches[0];
-        let np = batch.column(0).as_any().downcast_ref::<UInt8Array>().unwrap().value(0);
-        let ns = batch.column(1).as_any().downcast_ref::<UInt8Array>().unwrap().value(0);
-        let fp = batch.column(2).as_any().downcast_ref::<UInt8Array>().unwrap().value(0);
-        let fs = batch.column(3).as_any().downcast_ref::<UInt8Array>().unwrap().value(0);
+        let np = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<UInt8Array>()
+            .unwrap()
+            .value(0);
+        let ns = batch
+            .column(1)
+            .as_any()
+            .downcast_ref::<UInt8Array>()
+            .unwrap()
+            .value(0);
+        let fp = batch
+            .column(2)
+            .as_any()
+            .downcast_ref::<UInt8Array>()
+            .unwrap()
+            .value(0);
+        let fs = batch
+            .column(3)
+            .as_any()
+            .downcast_ref::<UInt8Array>()
+            .unwrap()
+            .value(0);
 
         space.set_next_node_slot(np, ns);
         space.set_next_fluid_slot(fp, fs);
@@ -633,34 +680,82 @@ impl LancePersistence {
         Ok(())
     }
 
-    /// Hydrate nodes from Lance.
+    /// Hydrate nodes from LanceDB.
     async fn hydrate_nodes(&self, space: &mut BindSpace) -> Result<usize, String> {
-        let nodes_path = self.nodes_path();
-        if !nodes_path.exists() {
-            return Ok(0);
-        }
-
-        let dataset = Dataset::open(nodes_path.to_str().unwrap())
+        let table = match self
+            .connection()
+            .await?
+            .open_table("bind_nodes")
+            .execute()
             .await
-            .map_err(|e| format!("open nodes: {}", e))?;
+        {
+            Ok(t) => t,
+            Err(lancedb::Error::TableNotFound { .. }) => return Ok(0),
+            Err(e) => return Err(format!("open nodes: {}", e)),
+        };
 
-        let batches = self.scan_all(&dataset).await?;
+        let batches = scan_all_batches(&table).await?;
         let mut count = 0usize;
 
         for batch in &batches {
-            let addr_col = batch.column(0).as_any().downcast_ref::<UInt16Array>().unwrap();
-            let fp_col = batch.column(1).as_any().downcast_ref::<FixedSizeBinaryArray>().unwrap();
-            let label_col = batch.column(2).as_any().downcast_ref::<StringArray>().unwrap();
-            let qidx_col = batch.column(3).as_any().downcast_ref::<UInt8Array>().unwrap();
-            let parent_col = batch.column(4).as_any().downcast_ref::<UInt16Array>().unwrap();
-            let depth_col = batch.column(5).as_any().downcast_ref::<UInt8Array>().unwrap();
-            let rung_col = batch.column(6).as_any().downcast_ref::<UInt8Array>().unwrap();
-            let sigma_col = batch.column(7).as_any().downcast_ref::<UInt8Array>().unwrap();
-            let spine_col = batch.column(8).as_any().downcast_ref::<BooleanArray>().unwrap();
-            let dn_col = batch.column(9).as_any().downcast_ref::<UInt64Array>().unwrap();
-            let payload_col = batch.column(10).as_any().downcast_ref::<LargeBinaryArray>().unwrap();
+            let addr_col = batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<UInt16Array>()
+                .unwrap();
+            let fp_col = batch
+                .column(1)
+                .as_any()
+                .downcast_ref::<FixedSizeBinaryArray>()
+                .unwrap();
+            let label_col = batch
+                .column(2)
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let qidx_col = batch
+                .column(3)
+                .as_any()
+                .downcast_ref::<UInt8Array>()
+                .unwrap();
+            let parent_col = batch
+                .column(4)
+                .as_any()
+                .downcast_ref::<UInt16Array>()
+                .unwrap();
+            let depth_col = batch
+                .column(5)
+                .as_any()
+                .downcast_ref::<UInt8Array>()
+                .unwrap();
+            let rung_col = batch
+                .column(6)
+                .as_any()
+                .downcast_ref::<UInt8Array>()
+                .unwrap();
+            let sigma_col = batch
+                .column(7)
+                .as_any()
+                .downcast_ref::<UInt8Array>()
+                .unwrap();
+            let spine_col = batch
+                .column(8)
+                .as_any()
+                .downcast_ref::<BooleanArray>()
+                .unwrap();
+            let dn_col = batch
+                .column(9)
+                .as_any()
+                .downcast_ref::<UInt64Array>()
+                .unwrap();
+            let payload_col = batch
+                .column(10)
+                .as_any()
+                .downcast_ref::<LargeBinaryArray>()
+                .unwrap();
             // updated_at column (index 11) — may not exist in older datasets
-            let updated_at_col = batch.column_by_name("updated_at")
+            let updated_at_col = batch
+                .column_by_name("updated_at")
                 .and_then(|c| c.as_any().downcast_ref::<UInt64Array>());
 
             for row in 0..batch.num_rows() {
@@ -683,7 +778,7 @@ impl LancePersistence {
                 if !payload_col.is_null(row) {
                     node.payload = Some(payload_col.value(row).to_vec());
                 }
-                // Restore timestamp from Lance (preserves age for tier management)
+                // Restore timestamp from LanceDB (preserves age for tier management)
                 if let Some(ts_col) = updated_at_col {
                     node.updated_at = ts_col.value(row);
                 }
@@ -719,26 +814,49 @@ impl LancePersistence {
         Ok(count)
     }
 
-    /// Hydrate edges from Lance.
+    /// Hydrate edges from LanceDB.
     async fn hydrate_edges(&self, space: &mut BindSpace) -> Result<usize, String> {
-        let edges_path = self.edges_path();
-        if !edges_path.exists() {
-            return Ok(0);
-        }
-
-        let dataset = Dataset::open(edges_path.to_str().unwrap())
+        let table = match self
+            .connection()
+            .await?
+            .open_table("bind_edges")
+            .execute()
             .await
-            .map_err(|e| format!("open edges: {}", e))?;
+        {
+            Ok(t) => t,
+            Err(lancedb::Error::TableNotFound { .. }) => return Ok(0),
+            Err(e) => return Err(format!("open edges: {}", e)),
+        };
 
-        let batches = self.scan_all(&dataset).await?;
+        let batches = scan_all_batches(&table).await?;
         let mut count = 0usize;
 
         for batch in &batches {
-            let from_col = batch.column(0).as_any().downcast_ref::<UInt16Array>().unwrap();
-            let to_col = batch.column(1).as_any().downcast_ref::<UInt16Array>().unwrap();
-            let verb_col = batch.column(2).as_any().downcast_ref::<UInt16Array>().unwrap();
-            let fp_col = batch.column(3).as_any().downcast_ref::<FixedSizeBinaryArray>().unwrap();
-            let weight_col = batch.column(4).as_any().downcast_ref::<Float32Array>().unwrap();
+            let from_col = batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<UInt16Array>()
+                .unwrap();
+            let to_col = batch
+                .column(1)
+                .as_any()
+                .downcast_ref::<UInt16Array>()
+                .unwrap();
+            let verb_col = batch
+                .column(2)
+                .as_any()
+                .downcast_ref::<UInt16Array>()
+                .unwrap();
+            let fp_col = batch
+                .column(3)
+                .as_any()
+                .downcast_ref::<FixedSizeBinaryArray>()
+                .unwrap();
+            let weight_col = batch
+                .column(4)
+                .as_any()
+                .downcast_ref::<Float32Array>()
+                .unwrap();
 
             for row in 0..batch.num_rows() {
                 let from = Addr(from_col.value(row));
@@ -759,23 +877,6 @@ impl LancePersistence {
         Ok(count)
     }
 
-    /// Helper: scan all rows from a Dataset into RecordBatches.
-    async fn scan_all(&self, dataset: &Dataset) -> Result<Vec<RecordBatch>, String> {
-        let stream = dataset
-            .scan()
-            .try_into_stream()
-            .await
-            .map_err(|e| format!("scan: {}", e))?;
-
-        use futures::StreamExt;
-        let mut batches = Vec::new();
-        let mut stream = stream;
-        while let Some(batch) = stream.next().await {
-            batches.push(batch.map_err(|e| format!("batch read: {}", e))?);
-        }
-        Ok(batches)
-    }
-
     /// Whether persistence is operational.
     pub fn is_active(&self) -> bool {
         self.active
@@ -785,12 +886,11 @@ impl LancePersistence {
     // AGE-BASED HOT→COLD TIER FLUSH (5-30 min threshold)
     // =========================================================================
 
-    /// Flush aged nodes from BindSpace to Lance.
+    /// Flush aged nodes from BindSpace to LanceDB.
     ///
-    /// Persists all nodes older than `threshold_secs` to Lance cold tier,
+    /// Persists all nodes older than `threshold_secs` to LanceDB cold tier,
     /// then evicts them from BindSpace to free memory.
-    ///
-    /// Typical thresholds: 300s (5 min) for aggressive, 1800s (30 min) for relaxed.
+    /// Each flush creates a new version — previous data is preserved.
     ///
     /// Returns `(persisted_count, evicted_count)`.
     pub async fn flush_aged(
@@ -817,23 +917,17 @@ impl LancePersistence {
         // 2. Build Arrow RecordBatch from aged nodes
         let batch = self.nodes_to_batch(&aged, space)?;
 
-        // 3. Append to Lance (not overwrite — preserves existing cold data)
-        let nodes_path = self.nodes_path();
-        if nodes_path.exists() {
-            let params = WriteParams { mode: WriteMode::Append, ..Default::default() };
-            Dataset::write(
-                batch_reader(batch),
-                nodes_path.to_str().unwrap(),
-                Some(params),
-            )
+        // 3. Append to LanceDB (not overwrite — preserves existing cold data)
+        //    Creates a new version automatically.
+        let table = self
+            .open_or_create_table("bind_nodes", bind_nodes_schema())
+            .await?;
+        table
+            .add(batch_reader(batch))
+            .mode(AddDataMode::Append)
+            .execute()
             .await
             .map_err(|e| format!("flush_aged append: {}", e))?;
-        } else {
-            // First flush — create table
-            Dataset::write(batch_reader(batch), nodes_path.to_str().unwrap(), None)
-                .await
-                .map_err(|e| format!("flush_aged create: {}", e))?;
-        }
 
         // 4. Evict from BindSpace (now safely persisted)
         let evicted = space.evict_aged(threshold_secs);
@@ -923,6 +1017,27 @@ impl LancePersistence {
 }
 
 // =============================================================================
+// SHARED HELPERS
+// =============================================================================
+
+/// Scan all rows from a lancedb Table into RecordBatches.
+async fn scan_all_batches(table: &lancedb::Table) -> Result<Vec<RecordBatch>, String> {
+    let stream = table
+        .query()
+        .execute()
+        .await
+        .map_err(|e| format!("scan: {}", e))?;
+
+    use futures::StreamExt;
+    let mut batches = Vec::new();
+    let mut stream = stream;
+    while let Some(batch) = stream.next().await {
+        batches.push(batch.map_err(|e| format!("batch read: {}", e))?);
+    }
+    Ok(batches)
+}
+
+// =============================================================================
 // TESTS
 // =============================================================================
 
@@ -955,9 +1070,8 @@ mod tests {
 
         persist.ensure_tables().await.unwrap();
 
-        assert!(persist.nodes_path().exists());
-        assert!(persist.edges_path().exists());
-        assert!(persist.state_path().exists());
+        // Tables are managed by lancedb Connection, not as individual .lance dirs
+        assert!(persist.is_active());
     }
 
     #[tokio::test]
@@ -970,8 +1084,9 @@ mod tests {
         persist.ensure_tables().await.unwrap();
         persist.persist_full(&original).await.unwrap();
 
-        // Hydrate into new space
-        let hydrated = persist.hydrate().await.unwrap().unwrap();
+        // Hydrate into new space (need fresh LancePersistence to avoid connection caching)
+        let persist2 = LancePersistence::new(tmp.path().join("lance"));
+        let hydrated = persist2.hydrate().await.unwrap().unwrap();
 
         // Verify node count matches (excluding surface nodes)
         let orig_nodes: Vec<_> = original
@@ -1005,7 +1120,11 @@ mod tests {
                     "Fingerprint mismatch at {:?}",
                     addr
                 );
-                assert_eq!(orig_node.label, hydr_node.label, "Label mismatch at {:?}", addr);
+                assert_eq!(
+                    orig_node.label, hydr_node.label,
+                    "Label mismatch at {:?}",
+                    addr
+                );
             } else {
                 panic!("Node at {:?} not found in hydrated space", addr);
             }

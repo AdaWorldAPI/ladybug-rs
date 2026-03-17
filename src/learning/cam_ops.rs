@@ -322,7 +322,7 @@ pub enum SqlOp {
 
 #[repr(u16)]
 #[derive(Clone, Copy, Debug)]
-pub enum CypherOp {
+pub enum CypherInstruction {
     // Match patterns (0x200-0x21F)
     MatchNode = 0x200,
     MatchEdge = 0x201,
@@ -1752,9 +1752,9 @@ pub trait LanceDbOps: Send + Sync {
 /// Same as SQL: we HAVE SQL semantics over LanceDB via DuckDB.
 ///
 /// Example:
-///   CypherOp::MatchNode → finds nodes in LanceDB nodes table
-///   CypherOp::Traverse  → recursive CTE over edges table
-///   CypherOp::ShortestPath → Dijkstra via SQL window functions
+///   CypherInstruction::MatchNode → finds nodes in LanceDB nodes table
+///   CypherInstruction::Traverse  → recursive CTE over edges table
+///   CypherInstruction::ShortestPath → Dijkstra via SQL window functions
 ///
 /// This is the "All for One" principle: one substrate (LanceDB),
 /// multiple query languages (SQL, Cypher, Vector, Hamming).
@@ -1974,7 +1974,7 @@ impl OpDictionary {
 
     fn register_cypher_ops(&mut self) {
         self.register(
-            CypherOp::MatchSimilar as u16,
+            CypherInstruction::MatchSimilar as u16,
             "CYPHER_MATCH_SIMILAR",
             OpSignature {
                 inputs: vec![OpType::Fingerprint, OpType::Scalar],
@@ -2016,7 +2016,7 @@ impl OpDictionary {
         );
 
         self.register(
-            CypherOp::PageRank as u16,
+            CypherInstruction::PageRank as u16,
             "CYPHER_PAGERANK",
             OpSignature {
                 inputs: vec![OpType::Fingerprint, OpType::Scalar],

@@ -1,14 +1,17 @@
-//! LanceDB Storage Substrate (Lance 2.1 API)
+//! LanceDB Storage Substrate (lancedb SDK 0.26)
 //!
-//! Provides the persistent storage layer using Lance columnar format.
-//! All data (nodes, edges, fingerprints) stored in Lance tables
+//! Provides the persistent storage layer using LanceDB.
+//! All data (nodes, edges, fingerprints) stored in LanceDB tables
 //! with native vector/Hamming index support.
+//!
+//! Versioning comes for free: every write creates a new version.
+//! Time travel: table.checkout(version_n) reads any previous state.
 //!
 //! # Architecture
 //!
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────────┐
-//! │                     LANCE SUBSTRATE                              │
+//! │                     LANCEDB SUBSTRATE                            │
 //! ├─────────────────────────────────────────────────────────────────┤
 //! │                                                                  │
 //! │   nodes table     → id, label, fingerprint, embedding, props    │
@@ -26,8 +29,8 @@
 use arrow::array::*;
 use arrow::datatypes::{DataType, Field, Schema as ArrowSchema, TimeUnit};
 use arrow::record_batch::RecordBatch;
-use lance::Dataset;
-use lance::dataset::write::{WriteMode, WriteParams};
+use lancedb::query::{ExecutableQuery, QueryBase};
+use lancedb::table::AddDataMode;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -42,20 +45,6 @@ pub const EMBEDDING_DIM: usize = 1024;
 
 /// Thinking style vector dimension (7 axes)
 pub const THINKING_STYLE_DIM: usize = 7;
-
-// =============================================================================
-// HELPERS
-// =============================================================================
-
-/// Wrap a single RecordBatch as a RecordBatchReader for Lance 2.1 API.
-fn batch_reader(
-    batch: RecordBatch,
-) -> RecordBatchIterator<
-    std::vec::IntoIter<std::result::Result<RecordBatch, arrow::error::ArrowError>>,
-> {
-    let schema = batch.schema();
-    RecordBatchIterator::new(vec![Ok(batch)].into_iter(), schema)
-}
 
 // =============================================================================
 // SCHEMA DEFINITIONS
@@ -147,260 +136,276 @@ pub fn sessions_schema() -> ArrowSchema {
 }
 
 // =============================================================================
+// HELPERS
+// =============================================================================
+
+/// Wrap a single RecordBatch as a RecordBatchReader for lancedb APIs.
+fn batch_reader(
+    batch: RecordBatch,
+) -> RecordBatchIterator<
+    std::vec::IntoIter<std::result::Result<RecordBatch, arrow::error::ArrowError>>,
+> {
+    let schema = batch.schema();
+    RecordBatchIterator::new(vec![Ok(batch)].into_iter(), schema)
+}
+
+// =============================================================================
 // LANCE STORE
 // =============================================================================
 
-/// LanceDB-backed storage for LadybugDB
+/// LanceDB-backed storage for LadybugDB.
+///
+/// Uses the lancedb SDK which wraps Lance 2.x with automatic versioning,
+/// time travel, and compaction.
 pub struct LanceStore {
-    /// Path to database directory
-    path: String,
-    /// Nodes dataset (lazy-loaded)
-    nodes: Option<Dataset>,
-    /// Edges dataset (lazy-loaded)
-    edges: Option<Dataset>,
-    /// Sessions dataset (lazy-loaded)
-    sessions: Option<Dataset>,
+    /// LanceDB connection (manages all tables in a directory)
+    db: lancedb::Connection,
 }
 
 impl LanceStore {
-    /// Open or create a Lance store at the given path
+    /// Open or create a LanceDB store at the given path.
     pub async fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path_str = path.as_ref().to_string_lossy().to_string();
 
         // Create directory if needed
         std::fs::create_dir_all(&path_str)?;
 
-        Ok(Self {
-            path: path_str,
-            nodes: None,
-            edges: None,
-            sessions: None,
-        })
+        let db = lancedb::connect(&path_str)
+            .execute()
+            .await
+            .map_err(|e| Error::Storage(format!("lancedb connect: {}", e)))?;
+
+        Ok(Self { db })
     }
 
-    /// Create in-memory store (for testing)
-    pub fn memory() -> Self {
-        Self {
-            path: ":memory:".to_string(),
-            nodes: None,
-            edges: None,
-            sessions: None,
-        }
+    /// Create in-memory store (for testing).
+    pub async fn memory() -> Result<Self> {
+        let db = lancedb::connect("memory://ladybug")
+            .execute()
+            .await
+            .map_err(|e| Error::Storage(format!("lancedb memory connect: {}", e)))?;
+        Ok(Self { db })
     }
 
     // -------------------------------------------------------------------------
     // TABLE MANAGEMENT
     // -------------------------------------------------------------------------
 
-    /// Get or create the nodes table
-    pub async fn nodes(&mut self) -> Result<&Dataset> {
-        if self.nodes.is_none() {
-            let table_path = format!("{}/nodes.lance", self.path);
-
-            self.nodes = Some(if Path::new(&table_path).exists() {
-                Dataset::open(&table_path).await?
-            } else {
-                // Create empty table with schema
+    /// Get or create the nodes table.
+    async fn nodes_table(&self) -> Result<lancedb::Table> {
+        match self.db.open_table("nodes").execute().await {
+            Ok(table) => Ok(table),
+            Err(lancedb::Error::TableNotFound { .. }) => {
                 let schema = Arc::new(nodes_schema());
-                let batch = RecordBatch::new_empty(schema);
-                Dataset::write(batch_reader(batch), &table_path, None).await?
-            });
+                let batch = RecordBatch::new_empty(schema.clone());
+                let table = self
+                    .db
+                    .create_table("nodes", batch_reader(batch))
+                    .execute()
+                    .await
+                    .map_err(|e| Error::Storage(format!("create nodes table: {}", e)))?;
+                Ok(table)
+            }
+            Err(e) => Err(Error::Storage(format!("open nodes table: {}", e))),
         }
-
-        Ok(self.nodes.as_ref().unwrap())
     }
 
-    /// Get or create the edges table
-    pub async fn edges(&mut self) -> Result<&Dataset> {
-        if self.edges.is_none() {
-            let table_path = format!("{}/edges.lance", self.path);
-
-            self.edges = Some(if Path::new(&table_path).exists() {
-                Dataset::open(&table_path).await?
-            } else {
+    /// Get or create the edges table.
+    async fn edges_table(&self) -> Result<lancedb::Table> {
+        match self.db.open_table("edges").execute().await {
+            Ok(table) => Ok(table),
+            Err(lancedb::Error::TableNotFound { .. }) => {
                 let schema = Arc::new(edges_schema());
-                let batch = RecordBatch::new_empty(schema);
-                Dataset::write(batch_reader(batch), &table_path, None).await?
-            });
+                let batch = RecordBatch::new_empty(schema.clone());
+                let table = self
+                    .db
+                    .create_table("edges", batch_reader(batch))
+                    .execute()
+                    .await
+                    .map_err(|e| Error::Storage(format!("create edges table: {}", e)))?;
+                Ok(table)
+            }
+            Err(e) => Err(Error::Storage(format!("open edges table: {}", e))),
         }
-
-        Ok(self.edges.as_ref().unwrap())
     }
 
-    /// Get or create the sessions table
-    pub async fn sessions(&mut self) -> Result<&Dataset> {
-        if self.sessions.is_none() {
-            let table_path = format!("{}/sessions.lance", self.path);
-
-            self.sessions = Some(if Path::new(&table_path).exists() {
-                Dataset::open(&table_path).await?
-            } else {
+    /// Get or create the sessions table.
+    async fn sessions_table(&self) -> Result<lancedb::Table> {
+        match self.db.open_table("sessions").execute().await {
+            Ok(table) => Ok(table),
+            Err(lancedb::Error::TableNotFound { .. }) => {
                 let schema = Arc::new(sessions_schema());
-                let batch = RecordBatch::new_empty(schema);
-                Dataset::write(batch_reader(batch), &table_path, None).await?
-            });
+                let batch = RecordBatch::new_empty(schema.clone());
+                let table = self
+                    .db
+                    .create_table("sessions", batch_reader(batch))
+                    .execute()
+                    .await
+                    .map_err(|e| Error::Storage(format!("create sessions table: {}", e)))?;
+                Ok(table)
+            }
+            Err(e) => Err(Error::Storage(format!("open sessions table: {}", e))),
         }
-
-        Ok(self.sessions.as_ref().unwrap())
     }
 
     // -------------------------------------------------------------------------
     // NODE OPERATIONS
     // -------------------------------------------------------------------------
 
-    /// Insert a node
-    pub async fn insert_node(&mut self, node: &NodeRecord) -> Result<()> {
-        let table_path = format!("{}/nodes.lance", self.path);
+    /// Insert a node. Creates a new version automatically.
+    pub async fn insert_node(&self, node: &NodeRecord) -> Result<()> {
+        let table = self.nodes_table().await?;
         let batch = node.to_record_batch()?;
-
-        if self.nodes.is_some() {
-            // Append to existing
-            let params = WriteParams { mode: WriteMode::Append, ..Default::default() };
-            Dataset::write(batch_reader(batch), &table_path, Some(params)).await?;
-            // Invalidate cache to reload
-            self.nodes = None;
-        } else {
-            Dataset::write(batch_reader(batch), &table_path, None).await?;
-        }
-
+        table
+            .add(batch_reader(batch))
+            .mode(AddDataMode::Append)
+            .execute()
+            .await
+            .map_err(|e| Error::Storage(format!("insert_node: {}", e)))?;
         Ok(())
     }
 
-    /// Insert multiple nodes
-    pub async fn insert_nodes(&mut self, nodes: &[NodeRecord]) -> Result<()> {
+    /// Insert multiple nodes. Creates a new version automatically.
+    pub async fn insert_nodes(&self, nodes: &[NodeRecord]) -> Result<()> {
         if nodes.is_empty() {
             return Ok(());
         }
-
-        let table_path = format!("{}/nodes.lance", self.path);
+        let table = self.nodes_table().await?;
         let batch = NodeRecord::batch_to_record_batch(nodes)?;
-
-        let params = WriteParams { mode: WriteMode::Append, ..Default::default() };
-        Dataset::write(batch_reader(batch), &table_path, Some(params)).await?;
-        self.nodes = None;
-
+        table
+            .add(batch_reader(batch))
+            .mode(AddDataMode::Append)
+            .execute()
+            .await
+            .map_err(|e| Error::Storage(format!("insert_nodes: {}", e)))?;
         Ok(())
     }
 
-    /// Get a node by ID
-    pub async fn get_node(&mut self, id: &str) -> Result<Option<NodeRecord>> {
-        let dataset = self.nodes().await?;
+    /// Get a node by ID.
+    pub async fn get_node(&self, id: &str) -> Result<Option<NodeRecord>> {
+        let table = self.nodes_table().await?;
 
-        // Scan with filter
-        let scanner = dataset
-            .scan()
-            .filter(format!("id = '{}'", id).as_str())?
-            .try_into_stream()
-            .await?;
+        let results = table
+            .query()
+            .only_if(format!("id = '{}'", id))
+            .execute()
+            .await
+            .map_err(|e| Error::Storage(format!("get_node query: {}", e)))?;
 
         use futures::StreamExt;
-        let mut batches = Vec::new();
-        let mut stream = scanner;
+        let mut stream = results;
         while let Some(batch) = stream.next().await {
-            batches.push(batch?);
+            let batch = batch.map_err(|e| Error::Storage(format!("get_node batch: {}", e)))?;
+            if batch.num_rows() > 0 {
+                return Ok(Some(NodeRecord::from_record_batch(&batch, 0)?));
+            }
         }
 
-        if batches.is_empty() || batches[0].num_rows() == 0 {
-            return Ok(None);
-        }
-
-        Ok(Some(NodeRecord::from_record_batch(&batches[0], 0)?))
+        Ok(None)
     }
 
     // -------------------------------------------------------------------------
     // EDGE OPERATIONS
     // -------------------------------------------------------------------------
 
-    /// Insert an edge
-    pub async fn insert_edge(&mut self, edge: &EdgeRecord) -> Result<()> {
-        let table_path = format!("{}/edges.lance", self.path);
+    /// Insert an edge. Creates a new version automatically.
+    pub async fn insert_edge(&self, edge: &EdgeRecord) -> Result<()> {
+        let table = self.edges_table().await?;
         let batch = edge.to_record_batch()?;
-
-        let params = WriteParams { mode: WriteMode::Append, ..Default::default() };
-        Dataset::write(batch_reader(batch), &table_path, Some(params)).await?;
-        self.edges = None;
-
+        table
+            .add(batch_reader(batch))
+            .mode(AddDataMode::Append)
+            .execute()
+            .await
+            .map_err(|e| Error::Storage(format!("insert_edge: {}", e)))?;
         Ok(())
     }
 
-    /// Get edges from a node
-    pub async fn get_edges_from(&mut self, from_id: &str) -> Result<Vec<EdgeRecord>> {
-        let dataset = self.edges().await?;
+    /// Get edges from a node.
+    pub async fn get_edges_from(&self, from_id: &str) -> Result<Vec<EdgeRecord>> {
+        let table = self.edges_table().await?;
 
-        let scanner = dataset
-            .scan()
-            .filter(format!("from_id = '{}'", from_id).as_str())?
-            .try_into_stream()
-            .await?;
+        let results = table
+            .query()
+            .only_if(format!("from_id = '{}'", from_id))
+            .execute()
+            .await
+            .map_err(|e| Error::Storage(format!("get_edges_from query: {}", e)))?;
 
         use futures::StreamExt;
-        let mut results = Vec::new();
-        let mut stream = scanner;
+        let mut records = Vec::new();
+        let mut stream = results;
         while let Some(batch) = stream.next().await {
-            let batch = batch?;
+            let batch =
+                batch.map_err(|e| Error::Storage(format!("get_edges_from batch: {}", e)))?;
             for i in 0..batch.num_rows() {
-                results.push(EdgeRecord::from_record_batch(&batch, i)?);
+                records.push(EdgeRecord::from_record_batch(&batch, i)?);
             }
         }
 
-        Ok(results)
+        Ok(records)
     }
 
-    /// Get edges to a node
-    pub async fn get_edges_to(&mut self, to_id: &str) -> Result<Vec<EdgeRecord>> {
-        let dataset = self.edges().await?;
+    /// Get edges to a node.
+    pub async fn get_edges_to(&self, to_id: &str) -> Result<Vec<EdgeRecord>> {
+        let table = self.edges_table().await?;
 
-        let scanner = dataset
-            .scan()
-            .filter(format!("to_id = '{}'", to_id).as_str())?
-            .try_into_stream()
-            .await?;
+        let results = table
+            .query()
+            .only_if(format!("to_id = '{}'", to_id))
+            .execute()
+            .await
+            .map_err(|e| Error::Storage(format!("get_edges_to query: {}", e)))?;
 
         use futures::StreamExt;
-        let mut results = Vec::new();
-        let mut stream = scanner;
+        let mut records = Vec::new();
+        let mut stream = results;
         while let Some(batch) = stream.next().await {
-            let batch = batch?;
+            let batch =
+                batch.map_err(|e| Error::Storage(format!("get_edges_to batch: {}", e)))?;
             for i in 0..batch.num_rows() {
-                results.push(EdgeRecord::from_record_batch(&batch, i)?);
+                records.push(EdgeRecord::from_record_batch(&batch, i)?);
             }
         }
 
-        Ok(results)
+        Ok(records)
     }
 
     // -------------------------------------------------------------------------
     // VECTOR SEARCH
     // -------------------------------------------------------------------------
 
-    /// Vector similarity search using Lance native ANN
+    /// Vector similarity search using LanceDB native ANN.
     ///
-    /// In Lance 2.1, vector search is done via the Scanner API:
-    /// scan → nearest_to → filter → execute
+    /// LanceDB automatically manages IVF-PQ indices.
     pub async fn vector_search(
-        &mut self,
+        &self,
         embedding: &[f32],
         k: usize,
         filter: Option<&str>,
     ) -> Result<Vec<(NodeRecord, f32)>> {
-        let dataset = self.nodes().await?;
+        let table = self.nodes_table().await?;
 
-        let query_array: Float32Array = embedding.iter().copied().collect();
-        let mut scan = dataset.scan();
-        let mut scanner = scan.nearest("embedding", &query_array, k)?;
+        let mut query = table
+            .vector_search(embedding)
+            .map_err(|e| Error::Storage(format!("vector_search setup: {}", e)))?
+            .limit(k);
 
         if let Some(f) = filter {
-            scanner = scanner.filter(f)?;
+            query = query.only_if(f);
         }
 
-        let results = scanner.try_into_stream().await?;
+        let results = query
+            .execute()
+            .await
+            .map_err(|e| Error::Storage(format!("vector_search execute: {}", e)))?;
 
         use futures::StreamExt;
         let mut nodes = Vec::new();
         let mut stream = results;
         while let Some(batch) = stream.next().await {
-            let batch = batch?;
-            // Distance is in "_distance" column
+            let batch =
+                batch.map_err(|e| Error::Storage(format!("vector_search batch: {}", e)))?;
             let distances = batch
                 .column_by_name("_distance")
                 .and_then(|c| c.as_any().downcast_ref::<Float32Array>());
@@ -419,41 +424,39 @@ impl LanceStore {
     // HAMMING SEARCH (Fingerprint similarity)
     // -------------------------------------------------------------------------
 
-    /// Fingerprint similarity search using Hamming distance
-    ///
-    /// This loads fingerprints and uses SIMD for comparison.
-    /// For very large datasets, consider building a custom index.
+    /// Fingerprint similarity search using Hamming distance.
     pub async fn hamming_search(
-        &mut self,
+        &self,
         query_fp: &Fingerprint,
         k: usize,
         threshold: Option<f32>,
     ) -> Result<Vec<(NodeRecord, u32, f32)>> {
-        let dataset = self.nodes().await?;
+        let table = self.nodes_table().await?;
 
-        // Load all fingerprints (for now - TODO: index)
-        let scanner = dataset
-            .scan()
-            .project(&[
-                "id",
-                "label",
-                "fingerprint",
-                "qidx",
-                "content",
-                "properties",
-                "created_at",
-                "version",
-            ])?
-            .filter("fingerprint IS NOT NULL")?
-            .try_into_stream()
-            .await?;
+        let results = table
+            .query()
+            .select(lancedb::query::Select::Columns(vec![
+                "id".into(),
+                "label".into(),
+                "fingerprint".into(),
+                "qidx".into(),
+                "content".into(),
+                "properties".into(),
+                "created_at".into(),
+                "version".into(),
+            ]))
+            .only_if("fingerprint IS NOT NULL")
+            .execute()
+            .await
+            .map_err(|e| Error::Storage(format!("hamming_search query: {}", e)))?;
 
         use futures::StreamExt;
         let mut candidates: Vec<(NodeRecord, u32)> = Vec::new();
-        let mut stream = scanner;
+        let mut stream = results;
 
         while let Some(batch) = stream.next().await {
-            let batch = batch?;
+            let batch =
+                batch.map_err(|e| Error::Storage(format!("hamming_search batch: {}", e)))?;
             let fp_col = batch
                 .column_by_name("fingerprint")
                 .unwrap()
@@ -479,7 +482,8 @@ impl LanceStore {
         candidates.sort_by_key(|(_, d)| *d);
 
         // Apply threshold and limit
-        let max_distance = threshold.map(|t| ((1.0 - t) * crate::FINGERPRINT_BITS as f32) as u32);
+        let max_distance =
+            threshold.map(|t| ((1.0 - t) * crate::FINGERPRINT_BITS as f32) as u32);
 
         let results: Vec<(NodeRecord, u32, f32)> = candidates
             .into_iter()
@@ -495,11 +499,24 @@ impl LanceStore {
     }
 
     // -------------------------------------------------------------------------
+    // VERSIONING (lancedb gives us this for free)
+    // -------------------------------------------------------------------------
+
+    /// Get the current version of the nodes table.
+    pub async fn nodes_version(&self) -> Result<u64> {
+        let table = self.nodes_table().await?;
+        table
+            .version()
+            .await
+            .map_err(|e| Error::Storage(format!("nodes_version: {}", e)))
+    }
+
+    // -------------------------------------------------------------------------
     // SQL
     // -------------------------------------------------------------------------
 
-    /// Execute raw SQL via DataFusion (delegated to query module)
-    pub async fn sql(&mut self, _query: &str) -> Result<RecordBatch> {
+    /// Execute raw SQL via DataFusion (delegated to query module).
+    pub async fn sql(&self, _query: &str) -> Result<RecordBatch> {
         todo!("Delegate to DataFusion execution engine")
     }
 }
@@ -777,7 +794,8 @@ impl EdgeRecord {
         let weights: Float32Array = [Some(self.weight)].into_iter().collect();
         let amplifications: Float32Array = [Some(self.amplification)].into_iter().collect();
         let properties: StringArray = [self.properties.as_deref()].into_iter().collect();
-        let created_ats: TimestampMicrosecondArray = [Some(self.created_at)].into_iter().collect();
+        let created_ats: TimestampMicrosecondArray =
+            [Some(self.created_at)].into_iter().collect();
 
         Ok(RecordBatch::try_new(
             schema,

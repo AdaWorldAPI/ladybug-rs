@@ -181,7 +181,7 @@ pub fn slice_dot_i8(a: &[u64], b: &[u64]) -> i64 {
 }
 
 // ────────────────────────────────────────────────────────────────
-// Fingerprint-level convenience functions (formerly core::simd)
+// Fingerprint-level convenience functions
 // ────────────────────────────────────────────────────────────────
 
 /// Compute Hamming distance between two fingerprints.

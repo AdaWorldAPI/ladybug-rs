@@ -31,7 +31,7 @@ simd = []                        # AVX-512 SIMD for Hamming operations
 parallel = ["rayon"]             # Parallel processing
 
 # Storage backends
-lancedb = ["lance"]              # LanceDB vector storage
+lancedb = ["dep:lancedb"]        # LanceDB vector storage (SDK wrapping Lance)
 lance-zero-copy = []             # Zero-copy integration (uses Arrow buffers)
 neo4j = ["neo4rs"]               # Neo4j graph database
 redis = ["dep:redis"]            # Redis caching
@@ -75,7 +75,7 @@ ladybug-contract = { path = "crates/ladybug-contract" }
 # Lance 2.0.0 released on crates.io (Feb 5, 2026).
 # Arrow 57.x aligns with DataFusion 52 / Lance 2.x.
 # -----------------------------------------------------------------------------
-lance = { version = "2.0", optional = true, default-features = false }
+lancedb = { version = "0.26", optional = true }
 arrow = { version = "57", features = ["ffi"] }
 arrow-array = "57"
 arrow-schema = "57"
@@ -306,28 +306,6 @@ opt-level = 3
 # =============================================================================
 
 # [patch.crates-io]
-# Lance vendor patches — UNCOMMENT when lancedb feature is ready and
-# submodules are checked out (git submodule update --init --recursive).
-# These are NOT needed for production builds (simd,parallel,flight).
-# Cargo validates ALL patch paths at resolution time regardless of features,
-# so keeping these active breaks builds where submodules aren't cloned
-# (Railway, GitHub Actions without actions/checkout submodules: true).
-#
-# lance = { path = "vendor/lance/rust/lance", default-features = false }
-# lance-core = { path = "vendor/lance/rust/lance-core" }
-# lance-io = { path = "vendor/lance/rust/lance-io", default-features = false }
-# lance-file = { path = "vendor/lance/rust/lance-file" }
-# lance-encoding = { path = "vendor/lance/rust/lance-encoding" }
-# lance-table = { path = "vendor/lance/rust/lance-table" }
-# lance-index = { path = "vendor/lance/rust/lance-index" }
-# lance-arrow = { path = "vendor/lance/rust/lance-arrow" }
-# lance-linalg = { path = "vendor/lance/rust/lance-linalg" }
-# lance-datafusion = { path = "vendor/lance/rust/lance-datafusion" }
-# lance-namespace = { path = "vendor/lance/rust/lance-namespace" }
-# lance-geo = { path = "vendor/lance/rust/lance-geo" }
-# lance-bitpacking = { path = "vendor/lance/rust/compression/bitpacking" }
-# fsst = { path = "vendor/lance/rust/compression/fsst" }
-# datafusion = { git = "https://github.com/AdaWorldAPI/datafusion", branch = "liblzma-fix" }
 #
 # n8n-rs vendor overrides — use local clones instead of git fetch:
 #   git clone https://github.com/AdaWorldAPI/n8n-rs vendor/n8n-rs

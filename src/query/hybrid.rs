@@ -17,7 +17,8 @@
 
 use std::time::{Duration, Instant};
 
-use crate::query::cypher::{CypherParser, CypherQuery, PatternElement};
+use crate::query::lance_parser::ast::{CypherQuery, GraphPattern, ReadingClause};
+use crate::query::lance_parser::parser::parse_cypher_query;
 use crate::storage::{Addr, BindSpace, FINGERPRINT_WORDS, Substrate, SubstrateConfig};
 
 // =============================================================================
@@ -142,7 +143,7 @@ pub struct GraphConstraint {
 
 impl GraphConstraint {
     pub fn new(pattern: &str) -> Self {
-        let parsed = CypherParser::parse(pattern).ok();
+        let parsed = parse_cypher_query(pattern).ok();
         Self {
             pattern: pattern.to_string(),
             parsed,
@@ -432,23 +433,24 @@ impl HybridEngine {
         }
     }
 
-    /// Check if a node matches a Cypher pattern
+    /// Check if a node matches a Cypher pattern (using P3 AST)
     fn matches_pattern(&self, addr: Addr, query: &CypherQuery) -> bool {
         if let Some(node) = self.bind_space.read(addr) {
-            // Check label matches if specified in pattern
-            if let Some(ref match_clause) = query.match_clause {
-                for pattern in &match_clause.patterns {
-                    for element in &pattern.elements {
-                        if let PatternElement::Node(node_pat) = element {
-                            for label in &node_pat.labels {
-                                // Check if node has matching label
-                                if let Some(ref node_label) = node.label {
-                                    if !node_label.to_lowercase().contains(&label.to_lowercase()) {
-                                        return false;
-                                    }
-                                } else {
+            // Check label matches from reading_clauses → MatchClause → patterns
+            for clause in &query.reading_clauses {
+                if let ReadingClause::Match(match_clause) = clause {
+                    for pattern in &match_clause.patterns {
+                        let labels = match pattern {
+                            GraphPattern::Node(node_pat) => &node_pat.labels,
+                            GraphPattern::Path(path_pat) => &path_pat.start_node.labels,
+                        };
+                        for label in labels {
+                            if let Some(ref node_label) = node.label {
+                                if !node_label.to_lowercase().contains(&label.to_lowercase()) {
                                     return false;
                                 }
+                            } else {
+                                return false;
                             }
                         }
                     }

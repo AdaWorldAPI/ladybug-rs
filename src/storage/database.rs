@@ -10,7 +10,8 @@
 use crate::cognitive::Thought;
 use crate::core::{Fingerprint, HammingEngine};
 use crate::graph::Traversal;
-use crate::query::{QueryBuilder, SqlEngine, cypher_to_sql};
+use crate::query::{QueryBuilder, SqlEngine, parse_cypher_query};
+use crate::query::cte_builder::build_recursive_cte;
 use crate::storage::{EdgeRecord, LanceStore, NodeRecord};
 use crate::Result;
 
@@ -63,14 +64,15 @@ impl Database {
     }
 
     /// Connect to in-memory database
-    pub fn memory() -> Self {
-        Self {
+    pub async fn memory() -> Result<Self> {
+        let lance = LanceStore::memory().await?;
+        Ok(Self {
             path: ":memory:".to_string(),
-            lance: Arc::new(tokio::sync::RwLock::new(LanceStore::memory())),
+            lance: Arc::new(tokio::sync::RwLock::new(lance)),
             sql_engine: Arc::new(tokio::sync::RwLock::new(SqlEngine::default())),
             hamming: Arc::new(RwLock::new(HammingEngine::new())),
             version: 0,
-        }
+        })
     }
 
     // =========================================================================
@@ -102,12 +104,29 @@ impl Database {
     // CYPHER OPERATIONS
     // =========================================================================
 
-    /// Execute Cypher query (transpiled to SQL)
+    /// Execute Cypher query via lance_parser → CTE builder → SQL.
+    ///
+    /// Parses the Cypher string with lance_parser, then generates a
+    /// recursive CTE for graph traversal patterns and executes via SQL.
     pub async fn cypher(&self, query: &str) -> Result<Vec<RecordBatch>> {
-        // Transpile Cypher to SQL
-        let sql = cypher_to_sql(query)?;
+        let ast = parse_cypher_query(query)
+            .map_err(|e| crate::Error::Query(format!("Cypher parse error: {}", e)))?;
 
-        // Execute via SQL engine
+        // Extract labels and relationship types for CTE generation
+        let labels = ast.get_node_labels();
+        let rel_types = ast.get_relationship_types();
+        let start_label = labels.first().map(|s| s.as_str());
+
+        let sql = build_recursive_cte(
+            start_label,
+            &rel_types,
+            1,
+            5,
+            None,
+            None,
+            ast.limit,
+        );
+
         self.sql(&sql).await
     }
 
@@ -206,7 +225,15 @@ impl Database {
             max_depth, source_id
         );
 
-        let mut sql = cypher_to_sql(&cypher)?;
+        let mut sql = build_recursive_cte(
+            None, // source is filtered by WHERE, not label
+            &["CAUSES".to_string(), "AMPLIFIES".to_string()],
+            1,
+            max_depth as u32,
+            None,
+            Some(&format!("source.id = '{}'", source_id)),
+            None,
+        );
         sql.push_str(&format!("\n  AND t.amplification > {}", threshold));
 
         self.sql(&sql).await
@@ -354,15 +381,15 @@ pub fn open<P: AsRef<Path>>(path: P) -> Result<Database> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_open_memory() {
-        let db = Database::memory();
+    #[tokio::test]
+    async fn test_open_memory() {
+        let db = Database::memory().await.unwrap();
         assert_eq!(db.path(), ":memory:");
     }
 
-    #[test]
-    fn test_resonate() {
-        let db = Database::memory();
+    #[tokio::test]
+    async fn test_resonate() {
+        let db = Database::memory().await.unwrap();
 
         // Index some fingerprints
         let fps: Vec<Fingerprint> = (0..100)
@@ -379,20 +406,21 @@ mod tests {
         assert!(results[0].1 > 0.99);
     }
 
-    #[test]
-    fn test_fork() {
-        let db = Database::memory();
+    #[tokio::test]
+    async fn test_fork() {
+        let db = Database::memory().await.unwrap();
         let forked = db.fork();
 
         assert_eq!(forked.version(), db.version() + 1);
     }
 
     #[tokio::test]
-    async fn test_cypher_transpile() {
+    async fn test_cypher_parse() {
         let cypher = "MATCH (a:Thought)-[:CAUSES]->(b:Thought) RETURN b";
-        let sql = cypher_to_sql(cypher).unwrap();
-
-        assert!(sql.contains("SELECT"));
-        assert!(sql.contains("JOIN edges"));
+        let ast = parse_cypher_query(cypher).unwrap();
+        let labels = ast.get_node_labels();
+        assert!(labels.contains(&"Thought".to_string()));
+        let rel_types = ast.get_relationship_types();
+        assert!(rel_types.contains(&"CAUSES".to_string()));
     }
 }

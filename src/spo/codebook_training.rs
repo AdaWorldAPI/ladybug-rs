@@ -657,7 +657,7 @@ fn weighted_bundle(fps: &[(Fingerprint, f32)]) -> Fingerprint {
         return Fingerprint::zero();
     }
 
-    let mut counts = [0.0f32; 16384];
+    let mut counts = vec![0.0f32; 16384];
     let mut total_weight = 0.0f32;
 
     for (fp, weight) in fps {
