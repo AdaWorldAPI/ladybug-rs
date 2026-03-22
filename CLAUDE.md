@@ -15,7 +15,8 @@ ladybug-rs CANNOT compile alone. It depends on sibling repos via relative paths:
 ```
 REQUIRED (clone alongside ladybug-rs):
   ../rustynum/          rustynum-rs, rustynum-core, rustynum-bnn, rustynum-arrow,
-                        rustynum-holo, rustynum-clam
+                        rustynum-holo, rustynum-clam  [MIGRATING → ndarray]
+  ../ndarray/           AdaWorldAPI/ndarray fork — HPC compute (Plateau 2 migration target)
   ../crewai-rust/       crewai-vendor (feature-gated behind "crewai")
   ../n8n-rs/            n8n-core, n8n-workflow, n8n-arrow, n8n-grpc, n8n-hamming
 ```
@@ -109,7 +110,7 @@ There is no `fn cold_to_hot()`. Their absence IS the architecture.
 
 ```
 ladybug-rs role: "The Brain" in the four-repo architecture.
-  rustynum     = The Muscle (SIMD substrate)
+  rustynum     = The Muscle (SIMD substrate) [MIGRATING → ndarray, see INTEGRATION_PLAN.md]
   ladybug-rs   = The Brain (BindSpace, SPO, server)  ← THIS REPO
   staunen      = The Bet (6 instructions, no GPU)
   lance-graph  = The Face (Cypher/SQL query surface)
@@ -149,6 +150,36 @@ cargo test --features "spo_jina"
 # Build server:
 cargo build --bin ladybug-server
 ```
+
+---
+
+## 8. Migration: rustynum → ndarray (Plateau 2)
+
+ladybug-rs currently depends on 6 rustynum crates for SIMD compute. These are being
+superseded by `AdaWorldAPI/ndarray` (fork with 55 HPC modules, 880 tests).
+
+**What changes:**
+- `rustynum::Fingerprint` → `ndarray::hpc::fingerprint::Fingerprint<256>`
+- `rustynum::hamming_distance` → `ndarray::hpc::bitwise::hamming_distance_raw`
+- `rustynum::TruthValue` → `ndarray::hpc::bf16_truth::BF16Truth`
+- `rustynum::Cascade` → `ndarray::hpc::cascade::Cascade`
+- BLAS L1-3: `rustyblas::*` → `ndarray::hpc::blas_level{1,2,3}::*`
+
+**What also changes:**
+- lance-graph becomes the Cypher/graph query surface (replacing P1/P3 dead code)
+- lance-graph semiring algebra replaces ad-hoc graph ops in src/graph/spo/
+- rs-graph-llm becomes the orchestration layer (replacing direct crewAI integration)
+
+**Migration order** (from INTEGRATION_PLAN.md Plateau 2):
+1. Add ndarray as path dep (alongside rustynum, not replacing)
+2. Create compat bridge (src/compat/ndarray_bridge.rs)
+3. Migrate src/spo/ to ndarray types — CHECKPOINT: cargo check
+4. Migrate src/nars/ to ndarray types
+5. Migrate src/storage/ BindSpace — CHECKPOINT: cargo test
+6. Remove rustynum deps — only after all tests pass
+
+**DO NOT** start this migration before ndarray builds clean (Plateau 0).
+**DO NOT** migrate BindSpace and SPO simultaneously — SPO first, then BindSpace.
 
 ---
 
