@@ -4,7 +4,7 @@
 
 use std::fmt;
 
-use rustynum_bnn::causal_trajectory::NarsTruth;
+use ndarray::hpc::bnn_causal_trajectory::NarsTruth;
 
 /// NARS truth value: <frequency, confidence>
 ///

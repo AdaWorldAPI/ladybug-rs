@@ -48,8 +48,8 @@ bench = []                       # Benchmark suite (comparison vs Qdrant/Milvus)
 flight = ["arrow-flight", "tonic", "prost"]  # Arrow Flight MCP server
 crewai = ["flight"]                          # crewAI orchestration (A2A, agent cards, thinking templates)
 json_fallback = []                           # Legacy JSON MCP types (backwards compat)
-# rustynum is OBLIGATORY — always included. Feature kept for test isolation only.
-rustynum = []
+# ndarray replaces rustynum (2026-03-22). Feature kept for test isolation only.
+ndarray-hpc = []
 
 # vendor-n8n and vendor-crewai are OBLIGATORY — always included.
 # Feature flags kept as no-ops for backwards compatibility only.
@@ -201,24 +201,22 @@ n8n-hamming  = { path = "../n8n-rs/n8n-rust/crates/n8n-hamming" }
 crewai-vendor = { package = "crewai", path = "../crewai-rust" }
 
 # -----------------------------------------------------------------------------
-# Vendor: rustynum-rs (SIMD numerical library with AVX-512 VPOPCNTDQ + VNNI)
-# Source: https://github.com/AdaWorldAPI/rustynum
+# Vendor: ndarray (AdaWorldAPI fork with 55 HPC modules, replaces rustynum)
+# Source: https://github.com/AdaWorldAPI/ndarray
 # Provides runtime-dispatched kernels:
-#   - VPOPCNTDQ popcount/hamming (8× speedup over scalar POPCNT)
-#   - VNNI VPDPBUSD int8 dot product (64× speedup for embeddings)
-#   - Optimized bundle (ripple-carry > per-bit counting)
-#   - GEMM for batch operations
+#   - VPOPCNTDQ popcount/hamming via hpc::bitwise
+#   - VNNI int8 dot product via simd_avx2::dot_i8
+#   - Majority-vote bundle via hpc::hdc::HdcOps
+#   - BNN causal trajectory, cross-plane, shift detection
+#   - SigmaGate, CollapseGate, SignificanceLevel
 #   - Zero-copy Container bridge: view_u64_as_bytes()
-# Requires: stable Rust 1.93+ (AVX-512 intrinsics stabilized in 1.89)
+# Requires: stable Rust 1.93+
 # OBLIGATORY — always included, not behind a feature gate.
 # Uses sibling directory locally, vendor/ in Docker.
 # -----------------------------------------------------------------------------
-rustynum-rs = { path = "../rustynum/rustynum-rs" }
-rustynum-core = { path = "../rustynum/rustynum-core", features = ["avx512"] }
-rustynum-bnn = { path = "../rustynum/rustynum-bnn", features = ["avx512"] }
-rustynum-arrow = { path = "../rustynum/rustynum-arrow", default-features = false, features = ["arrow"] }
-rustynum-holo = { path = "../rustynum/rustynum-holo", features = ["avx512"] }
-rustynum-clam = { path = "../rustynum/rustynum-clam", features = ["avx512"] }
+ndarray = { path = "../ndarray" }
+
+# All rustynum dependencies removed (2026-03-22). ndarray replaces everything.
 
 # =============================================================================
 # DEV DEPENDENCIES

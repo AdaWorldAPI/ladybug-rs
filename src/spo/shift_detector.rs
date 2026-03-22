@@ -19,10 +19,11 @@
 //! Stable              → no bias    (use existing gate logic)
 //! ```
 
-use rustynum_bnn::causal_trajectory::{
+use ndarray::hpc::bnn_causal_trajectory::{
     ShiftDetector as BnnShiftDetector, ShiftDirection, ShiftSignal, StripeHistogram,
 };
-use rustynum_core::{CollapseGate, SigmaGate};
+use ndarray::hpc::bnn_cross_plane::CollapseGate;
+use ndarray::hpc::kernels::SigmaGate;
 
 use super::spo_harvest::SpoDistanceResult;
 

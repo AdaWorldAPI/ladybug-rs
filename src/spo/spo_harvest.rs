@@ -24,13 +24,13 @@
 //! | Bits of information | ~23 | ~169 |
 //! | Information per cycle | 0.0074 bits/cycle | 13.0 bits/cycle |
 
-use rustynum_bnn::{
-    CrossPlaneVote, HaloDistribution, HaloType, InferenceMode, NarsTruth,
+use ndarray::hpc::bnn_cross_plane::{
+    CrossPlaneVote, HaloDistribution, HaloType, InferenceMode,
 };
-use rustynum_bnn::causal_trajectory::{
-    CausalRelation, SigmaEdge, SigmaNode,
+use ndarray::hpc::bnn_causal_trajectory::{
+    CausalRelation, NarsTruth, SigmaEdge, SigmaNode,
 };
-use rustynum_core::{SigmaGate, SignificanceLevel};
+use ndarray::hpc::kernels::{SigmaGate, SignificanceLevel};
 
 use crate::nars::TruthValue;
 
@@ -107,14 +107,14 @@ impl SpoDistanceResult {
     }
 
     /// Suggested mutation operator based on weakest plane.
-    pub fn suggested_mutation(&self) -> rustynum_bnn::MutationOp {
+    pub fn suggested_mutation(&self) -> ndarray::hpc::bnn_cross_plane::MutationOp {
         match self.weakest_plane() {
             // S⊕P weakest → S or P needs revision. Conservative: mutate S.
-            Plane::X => rustynum_bnn::MutationOp::MutateS,
+            Plane::X => ndarray::hpc::bnn_cross_plane::MutationOp::MutateS,
             // P⊕O weakest → P or O needs revision. Conservative: mutate P.
-            Plane::Y => rustynum_bnn::MutationOp::MutateP,
+            Plane::Y => ndarray::hpc::bnn_cross_plane::MutationOp::MutateP,
             // S⊕O weakest → S or O needs revision. Conservative: mutate O.
-            Plane::Z => rustynum_bnn::MutationOp::MutateO,
+            Plane::Z => ndarray::hpc::bnn_cross_plane::MutationOp::MutateO,
         }
     }
 }
@@ -623,14 +623,14 @@ impl AccumulatedHarvest {
     }
 
     /// Suggested growth path based on accumulated weakest plane.
-    pub fn suggested_growth_path(&self) -> Option<rustynum_bnn::GrowthPath> {
+    pub fn suggested_growth_path(&self) -> Option<ndarray::hpc::bnn_cross_plane::GrowthPath> {
         match self.weakest_plane? {
             // S⊕P weakest → approach from the other two (S+O → SO → SPO)
-            Plane::X => Some(rustynum_bnn::GrowthPath::SubjectObject),
+            Plane::X => Some(ndarray::hpc::bnn_cross_plane::GrowthPath::SubjectObject),
             // P⊕O weakest → approach via S first (S → SP → SPO)
-            Plane::Y => Some(rustynum_bnn::GrowthPath::SubjectFirst),
+            Plane::Y => Some(ndarray::hpc::bnn_cross_plane::GrowthPath::SubjectFirst),
             // S⊕O weakest → approach via action (P → PO → SPO)
-            Plane::Z => Some(rustynum_bnn::GrowthPath::ActionObject),
+            Plane::Z => Some(ndarray::hpc::bnn_cross_plane::GrowthPath::ActionObject),
         }
     }
 }
@@ -968,6 +968,6 @@ mod tests {
         );
 
         assert_eq!(result.weakest_plane(), Plane::X);
-        assert_eq!(result.suggested_mutation(), rustynum_bnn::MutationOp::MutateS);
+        assert_eq!(result.suggested_mutation(), ndarray::hpc::bnn_cross_plane::MutationOp::MutateS);
     }
 }

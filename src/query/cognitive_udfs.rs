@@ -45,7 +45,7 @@ pub const FP_BYTES: usize = crate::FINGERPRINT_BYTES;
 /// when available (64 bytes/iteration), falling back to scalar POPCNT.
 #[inline]
 pub fn hamming_bytes(a: &[u8], b: &[u8]) -> u32 {
-    rustynum_core::simd::hamming_distance(a, b) as u32
+    ndarray::hpc::bitwise::hamming_distance_raw(a, b) as u32
 }
 
 /// Compute similarity from Hamming distance

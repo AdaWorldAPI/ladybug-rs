@@ -33,13 +33,13 @@
 //! full causal trajectory recording, NARS truth grounded in convergence dynamics,
 //! DN mutation guidance, and warm-start capability.
 
-use rustynum_bnn::causal_trajectory::{
+use ndarray::hpc::bnn_causal_trajectory::{
     CausalArrow, CausalChain, CausalDirection, CausalLink, CausalRelation, CausalSaliency,
     CausalTrajectory, DominantPlane,
     NarsCausalStatement, NarsTruth, ResonatorSnapshot, SigmaEdge,
 };
-use rustynum_bnn::{GrowthPath, InferenceMode, MutationOp};
-use rustynum_core::{CollapseGate, SigmaGate, SignificanceLevel};
+use ndarray::hpc::bnn_cross_plane::{CollapseGate, GrowthPath, InferenceMode, MutationOp};
+use ndarray::hpc::kernels::{SigmaGate, SignificanceLevel};
 
 use crate::nars::TruthValue;
 use super::gestalt::GestaltState;
