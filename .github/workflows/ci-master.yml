@@ -29,12 +29,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Init vendor submodules
-        run: git submodule update --init vendor/rustynum
-
       - name: Clone sibling repos (OBLIGATORY deps)
         run: |
-          git clone --depth 1 https://github.com/AdaWorldAPI/rustynum.git ../rustynum
+          git clone --depth 1 https://github.com/AdaWorldAPI/ndarray.git ../ndarray
           git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust.git ../crewai-rust
           git clone --depth 1 https://github.com/AdaWorldAPI/n8n-rs.git ../n8n-rs
 
@@ -61,12 +58,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Init vendor submodules
-        run: git submodule update --init vendor/rustynum
-
       - name: Clone sibling repos (OBLIGATORY deps)
         run: |
-          git clone --depth 1 https://github.com/AdaWorldAPI/rustynum.git ../rustynum
+          git clone --depth 1 https://github.com/AdaWorldAPI/ndarray.git ../ndarray
           git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust.git ../crewai-rust
           git clone --depth 1 https://github.com/AdaWorldAPI/n8n-rs.git ../n8n-rs
 
@@ -98,12 +92,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Init vendor submodules
-        run: git submodule update --init vendor/rustynum
-
       - name: Clone sibling repos (OBLIGATORY deps)
         run: |
-          git clone --depth 1 https://github.com/AdaWorldAPI/rustynum.git ../rustynum
+          git clone --depth 1 https://github.com/AdaWorldAPI/ndarray.git ../ndarray
           git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust.git ../crewai-rust
           git clone --depth 1 https://github.com/AdaWorldAPI/n8n-rs.git ../n8n-rs
 
@@ -131,12 +122,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Init vendor submodules
-        run: git submodule update --init vendor/rustynum
-
       - name: Clone sibling repos (OBLIGATORY deps)
         run: |
-          git clone --depth 1 https://github.com/AdaWorldAPI/rustynum.git ../rustynum
+          git clone --depth 1 https://github.com/AdaWorldAPI/ndarray.git ../ndarray
           git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust.git ../crewai-rust
           git clone --depth 1 https://github.com/AdaWorldAPI/n8n-rs.git ../n8n-rs
 
