@@ -208,7 +208,7 @@ impl MexicanHat {
     ///
     /// This replaces hardcoded DEFAULT_EXCITE/DEFAULT_INHIBIT with thresholds
     /// derived from the actual data distribution (μ, σ of the fingerprint space).
-    pub fn from_sigma_gate(gate: &rustynum_core::SigmaGate) -> Self {
+    pub fn from_sigma_gate(gate: &ndarray::hpc::kernels::SigmaGate) -> Self {
         Self {
             excite: gate.discovery,
             inhibit: gate.hint,
@@ -661,7 +661,7 @@ impl AlienSearch {
     ///
     /// Uses `SigmaGate::sku_16k()` for 16K-bit fingerprints:
     ///   excite = Discovery (3σ below noise), inhibit = Hint (1.5σ below noise).
-    pub fn with_sigma_gate(gate: &rustynum_core::SigmaGate) -> Self {
+    pub fn with_sigma_gate(gate: &ndarray::hpc::kernels::SigmaGate) -> Self {
         Self {
             index: HdrIndex::new(),
             hat: MexicanHat::from_sigma_gate(gate),
@@ -675,7 +675,7 @@ impl AlienSearch {
     }
 
     /// Recalibrate Mexican hat from a SigmaGate.
-    pub fn calibrate_from_sigma(&mut self, gate: &rustynum_core::SigmaGate) {
+    pub fn calibrate_from_sigma(&mut self, gate: &ndarray::hpc::kernels::SigmaGate) {
         self.hat = MexicanHat::from_sigma_gate(gate);
     }
 
@@ -1372,29 +1372,29 @@ pub fn classify_signal(mean: u8, sd: u8, distance: u32) -> SignalClass {
 /// This is the statistically grounded replacement for the hardcoded `classify_signal`.
 pub fn classify_sigma(
     distance: u32,
-    gate: &rustynum_core::SigmaGate,
-) -> rustynum_core::SignificanceLevel {
+    gate: &ndarray::hpc::kernels::SigmaGate,
+) -> ndarray::hpc::kernels::SignificanceLevel {
     if distance < gate.discovery {
-        rustynum_core::SignificanceLevel::Discovery
+        ndarray::hpc::kernels::SignificanceLevel::Discovery
     } else if distance < gate.strong {
-        rustynum_core::SignificanceLevel::Strong
+        ndarray::hpc::kernels::SignificanceLevel::Strong
     } else if distance < gate.evidence {
-        rustynum_core::SignificanceLevel::Evidence
+        ndarray::hpc::kernels::SignificanceLevel::Evidence
     } else if distance < gate.hint {
-        rustynum_core::SignificanceLevel::Hint
+        ndarray::hpc::kernels::SignificanceLevel::Hint
     } else {
-        rustynum_core::SignificanceLevel::Noise
+        ndarray::hpc::kernels::SignificanceLevel::Noise
     }
 }
 
 /// Bridge: convert `SignificanceLevel` to `SignalClass` for backwards compatibility.
-pub fn significance_to_signal(level: rustynum_core::SignificanceLevel) -> SignalClass {
+pub fn significance_to_signal(level: ndarray::hpc::kernels::SignificanceLevel) -> SignalClass {
     match level {
-        rustynum_core::SignificanceLevel::Discovery
-        | rustynum_core::SignificanceLevel::Strong => SignalClass::Strong,
-        rustynum_core::SignificanceLevel::Evidence => SignalClass::Moderate,
-        rustynum_core::SignificanceLevel::Hint => SignalClass::WeakButStackable,
-        rustynum_core::SignificanceLevel::Noise => SignalClass::Noise,
+        ndarray::hpc::kernels::SignificanceLevel::Discovery
+        | ndarray::hpc::kernels::SignificanceLevel::Strong => SignalClass::Strong,
+        ndarray::hpc::kernels::SignificanceLevel::Evidence => SignalClass::Moderate,
+        ndarray::hpc::kernels::SignificanceLevel::Hint => SignalClass::WeakButStackable,
+        ndarray::hpc::kernels::SignificanceLevel::Noise => SignalClass::Noise,
     }
 }
 

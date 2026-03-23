@@ -48,6 +48,7 @@ use std::collections::HashMap;
 use crate::container::adjacency::PackedDn;
 use crate::container::{CONTAINER_WORDS, Container, MetaView, MetaViewMut};
 use crate::spo::clam_path::{ClamPath, MerkleRoot};
+use ndarray::hpc::hdc::HdcOps;
 
 // =============================================================================
 // ADDRESS CONSTANTS (8-bit prefix : 8-bit slot)
@@ -1777,8 +1778,7 @@ impl BindSpace {
         let slices: Vec<&[u8]> = nodes.iter()
             .map(|n| crate::core::rustynum_accel::view_u64_as_bytes(&n.fingerprint))
             .collect();
-        let result_bytes = rustynum_rs::NumArrayU8::try_bundle_byte_slices(&slices)
-            .expect("bundle_byte_slices: all slices same length");
+        let result_bytes = ndarray::Array::<u8, ndarray::Ix1>::hdc_bundle_byte_slices(&slices);
         let mut fp = [0u64; FINGERPRINT_WORDS];
         for (i, chunk) in result_bytes.chunks_exact(8).enumerate() {
             fp[i] = u64::from_ne_bytes(chunk.try_into().unwrap());
@@ -1856,13 +1856,13 @@ impl BindSpace {
                     let node_bytes = crate::core::rustynum_accel::view_u64_as_bytes(&node.fingerprint);
 
                     // Stage 1: quick reject on 1/16 sample
-                    let est_16 = rustynum_core::simd::hamming_distance(sample_16, &node_bytes[..128]) as u32 * scale_16;
+                    let est_16 = ndarray::hpc::bitwise::hamming_distance_raw(sample_16, &node_bytes[..128]) as u32 * scale_16;
                     if est_16 > threshold + margin_16 {
                         continue;
                     }
 
                     // Stage 2: refine on 1/4 sample
-                    let est_4 = rustynum_core::simd::hamming_distance(sample_4, &node_bytes[..512]) as u32 * scale_4;
+                    let est_4 = ndarray::hpc::bitwise::hamming_distance_raw(sample_4, &node_bytes[..512]) as u32 * scale_4;
                     if est_4 > threshold + margin_4 {
                         continue;
                     }
@@ -2236,14 +2236,14 @@ impl BindSpace {
     pub fn phase_bind(&self, a: Addr, b: Addr) -> Option<Vec<u8>> {
         let ab = self.fp_bytes(a)?;
         let bb = self.fp_bytes(b)?;
-        Some(rustynum_holo::phase_bind_i8(ab, bb))
+        Some(ndarray::hpc::holo::phase_bind_i8(ab, bb))
     }
 
     /// Phase unbind (SUB mod 256): recover `a` from `bound` and `key`.
     pub fn phase_unbind(&self, bound: Addr, key: Addr) -> Option<Vec<u8>> {
         let bb = self.fp_bytes(bound)?;
         let kb = self.fp_bytes(key)?;
-        Some(rustynum_holo::phase_unbind_i8(bb, kb))
+        Some(ndarray::hpc::holo::phase_unbind_i8(bb, kb))
     }
 
     /// Wasserstein (Earth Mover's) distance on sorted phase vectors.
@@ -2251,20 +2251,20 @@ impl BindSpace {
     pub fn wasserstein(&self, a: Addr, b: Addr) -> Option<u64> {
         let ab = self.fp_bytes(a)?;
         let bb = self.fp_bytes(b)?;
-        Some(rustynum_holo::wasserstein_sorted_i8(ab, bb))
+        Some(ndarray::hpc::holo::wasserstein_sorted_i8(ab, bb))
     }
 
     /// Circular distance for unsorted phase vectors (EMBED channel).
     pub fn circular_distance(&self, a: Addr, b: Addr) -> Option<u64> {
         let ab = self.fp_bytes(a)?;
         let bb = self.fp_bytes(b)?;
-        Some(rustynum_holo::circular_distance_i8(ab, bb))
+        Some(ndarray::hpc::holo::circular_distance_i8(ab, bb))
     }
 
     /// 16-bin spatial histogram of a node's phase vector.
     pub fn phase_histogram(&self, addr: Addr) -> Option<[u16; 16]> {
         let b = self.fp_bytes(addr)?;
-        Some(rustynum_holo::phase_histogram_16(b))
+        Some(ndarray::hpc::holo::phase_histogram_16(b))
     }
 
     /// Circular-mean bundle of multiple nodes' phase vectors into output buffer.
@@ -2274,21 +2274,21 @@ impl BindSpace {
             .collect();
         if vecs.is_empty() { return; }
         let refs: Vec<&[u8]> = vecs.iter().map(|v| v.as_slice()).collect();
-        rustynum_holo::phase_bundle_circular(&refs, out);
+        ndarray::hpc::holo::phase_bundle_circular(&refs, out);
     }
 
     /// Sort a node's phase vector (write-time preparation for Wasserstein).
     /// Returns (sorted_bytes, permutation).
     pub fn sort_phase(&self, addr: Addr) -> Option<(Vec<u8>, Vec<u16>)> {
         let b = self.fp_bytes(addr)?;
-        Some(rustynum_holo::sort_phase_vector(b))
+        Some(ndarray::hpc::holo::sort_phase_vector(b))
     }
 
     /// L1 distance between two phase histograms (for coarse filtering).
     pub fn histogram_distance(&self, a: Addr, b: Addr) -> Option<u32> {
         let ha = self.phase_histogram(a)?;
         let hb = self.phase_histogram(b)?;
-        Some(rustynum_holo::histogram_l1_distance(&ha, &hb))
+        Some(ndarray::hpc::holo::histogram_l1_distance(&ha, &hb))
     }
 
     // =========================================================================
@@ -2307,27 +2307,27 @@ impl BindSpace {
     pub fn carrier_distance(&self, a: Addr, b: Addr) -> Option<u64> {
         let ab = self.fp_bytes(a)?;
         let bb = self.fp_bytes(b)?;
-        Some(rustynum_holo::carrier_distance_l1(Self::as_i8(ab), Self::as_i8(bb)))
+        Some(ndarray::hpc::holo::carrier_distance_l1(Self::as_i8(ab), Self::as_i8(bb)))
     }
 
     /// Carrier cosine correlation between two nodes (i8 domain).
     pub fn carrier_correlation(&self, a: Addr, b: Addr) -> Option<f64> {
         let ab = self.fp_bytes(a)?;
         let bb = self.fp_bytes(b)?;
-        Some(rustynum_holo::carrier_correlation(Self::as_i8(ab), Self::as_i8(bb)))
+        Some(ndarray::hpc::holo::carrier_correlation(Self::as_i8(ab), Self::as_i8(bb)))
     }
 
     /// Frequency spectrum of a node's fingerprint (16 frequency bins).
-    pub fn carrier_spectrum(&self, addr: Addr, basis: &rustynum_holo::CarrierBasis) -> Option<[f32; 16]> {
+    pub fn carrier_spectrum(&self, addr: Addr, basis: &ndarray::hpc::holo::CarrierBasis) -> Option<[f32; 16]> {
         let b = self.fp_bytes(addr)?;
-        Some(rustynum_holo::carrier_spectrum(Self::as_i8(b), basis))
+        Some(ndarray::hpc::holo::carrier_spectrum(Self::as_i8(b), basis))
     }
 
     /// Spectral distance (L2) between two nodes' frequency spectra.
-    pub fn spectral_distance(&self, a: Addr, b: Addr, basis: &rustynum_holo::CarrierBasis) -> Option<f32> {
+    pub fn spectral_distance(&self, a: Addr, b: Addr, basis: &ndarray::hpc::holo::CarrierBasis) -> Option<f32> {
         let sa = self.carrier_spectrum(a, basis)?;
         let sb = self.carrier_spectrum(b, basis)?;
-        Some(rustynum_holo::spectral_distance(&sa, &sb))
+        Some(ndarray::hpc::holo::spectral_distance(&sa, &sb))
     }
 
     // =========================================================================
@@ -2338,7 +2338,7 @@ impl BindSpace {
     pub fn focus_xor(&mut self, addr: Addr, mask_x: u8, mask_y: u8, mask_z: u32, value: &[u8]) {
         if let Some(node) = self.read_mut(addr) {
             let mut buf = crate::core::rustynum_accel::view_u64_as_bytes(&node.fingerprint).to_vec();
-            rustynum_holo::focus_xor(&mut buf, mask_x, mask_y, mask_z, value);
+            ndarray::hpc::holo::focus_xor(&mut buf, mask_x, mask_y, mask_z, value);
             for (i, chunk) in buf.chunks_exact(8).enumerate() {
                 node.fingerprint[i] = u64::from_ne_bytes(chunk.try_into().unwrap());
             }
@@ -2349,7 +2349,7 @@ impl BindSpace {
     /// Read bytes from focused region of a node's fingerprint.
     pub fn focus_read(&self, addr: Addr, mask_x: u8, mask_y: u8, mask_z: u32) -> Option<Vec<u8>> {
         let b = self.fp_bytes(addr)?;
-        Some(rustynum_holo::focus_read(b, mask_x, mask_y, mask_z))
+        Some(ndarray::hpc::holo::focus_read(b, mask_x, mask_y, mask_z))
     }
 
     /// Hamming distance within focused region of two nodes.
@@ -2357,7 +2357,7 @@ impl BindSpace {
     pub fn focus_hamming(&self, a: Addr, b: Addr, mask_x: u8, mask_y: u8, mask_z: u32) -> Option<(u64, u32)> {
         let ab = self.fp_bytes(a)?;
         let bb = self.fp_bytes(b)?;
-        Some(rustynum_holo::focus_hamming(ab, bb, mask_x, mask_y, mask_z))
+        Some(ndarray::hpc::holo::focus_hamming(ab, bb, mask_x, mask_y, mask_z))
     }
 
     /// L1 distance within focused region of two nodes.
@@ -2365,14 +2365,14 @@ impl BindSpace {
     pub fn focus_l1(&self, a: Addr, b: Addr, mask_x: u8, mask_y: u8, mask_z: u32) -> Option<(u64, u32)> {
         let ab = self.fp_bytes(a)?;
         let bb = self.fp_bytes(b)?;
-        Some(rustynum_holo::focus_l1(ab, bb, mask_x, mask_y, mask_z))
+        Some(ndarray::hpc::holo::focus_l1(ab, bb, mask_x, mask_y, mask_z))
     }
 
     /// Phase bind (ADD) concept_vec into focused region of a node's fingerprint.
     pub fn focus_bind_phase(&mut self, addr: Addr, mask_x: u8, mask_y: u8, mask_z: u32, concept_vec: &[u8]) {
         if let Some(node) = self.read_mut(addr) {
             let mut buf = crate::core::rustynum_accel::view_u64_as_bytes(&node.fingerprint).to_vec();
-            rustynum_holo::focus_bind_phase(&mut buf, mask_x, mask_y, mask_z, concept_vec);
+            ndarray::hpc::holo::focus_bind_phase(&mut buf, mask_x, mask_y, mask_z, concept_vec);
             for (i, chunk) in buf.chunks_exact(8).enumerate() {
                 node.fingerprint[i] = u64::from_ne_bytes(chunk.try_into().unwrap());
             }
@@ -2384,7 +2384,7 @@ impl BindSpace {
     pub fn focus_unbind_phase(&mut self, addr: Addr, mask_x: u8, mask_y: u8, mask_z: u32, concept_vec: &[u8]) {
         if let Some(node) = self.read_mut(addr) {
             let mut buf = crate::core::rustynum_accel::view_u64_as_bytes(&node.fingerprint).to_vec();
-            rustynum_holo::focus_unbind_phase(&mut buf, mask_x, mask_y, mask_z, concept_vec);
+            ndarray::hpc::holo::focus_unbind_phase(&mut buf, mask_x, mask_y, mask_z, concept_vec);
             for (i, chunk) in buf.chunks_exact(8).enumerate() {
                 node.fingerprint[i] = u64::from_ne_bytes(chunk.try_into().unwrap());
             }
@@ -2396,7 +2396,7 @@ impl BindSpace {
     pub fn focus_xor_auto(&mut self, addr: Addr, mask_x: u8, mask_y: u8, mask_z: u32, value: &[u8]) {
         if let Some(node) = self.read_mut(addr) {
             let mut buf = crate::core::rustynum_accel::view_u64_as_bytes(&node.fingerprint).to_vec();
-            rustynum_holo::focus_xor_auto(&mut buf, mask_x, mask_y, mask_z, value);
+            ndarray::hpc::holo::focus_xor_auto(&mut buf, mask_x, mask_y, mask_z, value);
             for (i, chunk) in buf.chunks_exact(8).enumerate() {
                 node.fingerprint[i] = u64::from_ne_bytes(chunk.try_into().unwrap());
             }
@@ -2423,7 +2423,7 @@ impl BindSpace {
                 let addr = Addr::new(prefix, slot);
                 if let Some(node) = self.read(addr) {
                     let node_bytes = crate::core::rustynum_accel::view_u64_as_bytes(&node.fingerprint);
-                    let dist = rustynum_core::simd::hamming_distance(query_bytes, node_bytes);
+                    let dist = ndarray::hpc::bitwise::hamming_distance_raw(query_bytes, node_bytes);
                     results.push((addr, dist));
                 }
             }

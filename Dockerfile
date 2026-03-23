@@ -20,9 +20,9 @@
 
 # =============================================================================
 # STAGE 1: Builder — compile three binaries
-# Rust 1.93 stable (edition 2024 support, full rmp-serde/time compat)
+# Rust 1.94 stable (edition 2024 support, full rmp-serde/time compat)
 # =============================================================================
-FROM rust:1.93-slim-bookworm AS builder
+FROM rust:1.94-slim-bookworm AS builder
 
 RUN apt-get update && apt-get install -y \
     pkg-config libssl-dev cmake protobuf-compiler git \

@@ -1,12 +1,12 @@
-//! RustyNum-accelerated operations for Fingerprint and Container.
+//! ndarray-accelerated operations for Fingerprint and Container.
 //!
-//! Provides runtime-dispatched AVX-512 kernels when the `rustynum` feature
-//! is enabled. Key advantages over ladybug's built-in SIMD:
+//! Provides runtime-dispatched AVX-512 kernels via ndarray's HPC modules
+//! (replacing rustynum as of 2026-03-22). Key capabilities:
 //!
 //! - **Runtime dispatch** (`is_x86_feature_detected!`) — same binary works
 //!   on any x86_64 CPU vs compile-time `#[cfg(target_feature)]`
-//! - **VNNI int8 dot product** — new capability for embedding containers
-//! - **Optimized bundle** — ripple-carry > per-bit counting for large n
+//! - **VNNI int8 dot product** — for embedding similarity
+//! - **Majority-vote bundle** — via ndarray::hpc::hdc::HdcOps
 //! - **Zero-copy bridge** — `view_u64_as_bytes` reinterprets `[u64; N]` as `&[u8]`
 //!   without allocation
 //!
@@ -24,6 +24,10 @@ use crate::core::Fingerprint;
 use crate::FINGERPRINT_U64;
 use ladybug_contract::Container;
 use ladybug_contract::container::CONTAINER_WORDS;
+
+// ndarray HPC imports (replacing rustynum-core::simd and rustynum-rs)
+use ndarray::hpc::bitwise::{hamming_distance_raw, popcount_raw};
+use ndarray::hpc::hdc::HdcOps;
 
 // ────────────────────────────────────────────────────────────────
 // Zero-copy reinterpretation: [u64] → [u8]
@@ -51,7 +55,7 @@ pub fn view_u64_as_bytes(words: &[u64]) -> &[u8] {
 /// On AVX-512 VPOPCNTDQ hardware: 32 instructions (vs 256 scalar POPCNT).
 #[inline]
 pub fn fingerprint_popcount(fp: &Fingerprint) -> u32 {
-    rustynum_core::simd::popcount(view_u64_as_bytes(fp.as_raw())) as u32
+    popcount_raw(view_u64_as_bytes(fp.as_raw())) as u32
 }
 
 /// Hamming distance between two Fingerprints using runtime-dispatched VPOPCNTDQ.
@@ -59,7 +63,7 @@ pub fn fingerprint_popcount(fp: &Fingerprint) -> u32 {
 /// On AVX-512 VPOPCNTDQ hardware: 32 XOR + 32 VPOPCNTDQ = 64 instructions.
 #[inline]
 pub fn fingerprint_hamming(a: &Fingerprint, b: &Fingerprint) -> u32 {
-    rustynum_core::simd::hamming_distance(
+    hamming_distance_raw(
         view_u64_as_bytes(a.as_raw()),
         view_u64_as_bytes(b.as_raw()),
     ) as u32
@@ -77,7 +81,7 @@ pub fn fingerprint_similarity(a: &Fingerprint, b: &Fingerprint) -> f32 {
 /// Useful for embedding similarity in CogRecord Container 3.
 #[inline]
 pub fn fingerprint_dot_i8(a: &Fingerprint, b: &Fingerprint) -> i64 {
-    rustynum_core::simd::dot_i8(
+    ndarray::simd_avx2::dot_i8(
         view_u64_as_bytes(a.as_raw()),
         view_u64_as_bytes(b.as_raw()),
     )
@@ -92,13 +96,13 @@ pub fn fingerprint_dot_i8(a: &Fingerprint, b: &Fingerprint) -> i64 {
 /// On AVX-512 VPOPCNTDQ hardware: 16 instructions (vs 128 scalar POPCNT).
 #[inline]
 pub fn container_popcount(c: &Container) -> u32 {
-    rustynum_core::simd::popcount(view_u64_as_bytes(&c.words)) as u32
+    popcount_raw(view_u64_as_bytes(&c.words)) as u32
 }
 
 /// Hamming distance between two Containers using runtime-dispatched VPOPCNTDQ.
 #[inline]
 pub fn container_hamming(a: &Container, b: &Container) -> u32 {
-    rustynum_core::simd::hamming_distance(
+    hamming_distance_raw(
         view_u64_as_bytes(&a.words),
         view_u64_as_bytes(&b.words),
     ) as u32
@@ -116,17 +120,16 @@ pub fn container_similarity(a: &Container, b: &Container) -> f32 {
 /// For embedding containers (CogRecord Container 3).
 #[inline]
 pub fn container_dot_i8(a: &Container, b: &Container) -> i64 {
-    rustynum_core::simd::dot_i8(
+    ndarray::simd_avx2::dot_i8(
         view_u64_as_bytes(&a.words),
         view_u64_as_bytes(&b.words),
     )
 }
 
-/// Bundle multiple Containers using rustynum's optimized majority-vote algorithm.
+/// Bundle multiple Containers using ndarray's majority-vote algorithm.
 ///
 /// Zero-copy input: uses `view_u64_as_bytes` to reinterpret Container words
-/// as byte slices without allocation. The `bundle_byte_slices` function
-/// processes the slices directly — no intermediate NumArrayU8 wrapping.
+/// as byte slices without allocation.
 pub fn container_bundle(items: &[&Container]) -> Container {
     if items.is_empty() {
         return Container::zero();
@@ -141,8 +144,7 @@ pub fn container_bundle(items: &[&Container]) -> Container {
         .map(|c| view_u64_as_bytes(&c.words))
         .collect();
 
-    let result_bytes = rustynum_rs::NumArrayU8::try_bundle_byte_slices(&slices)
-        .expect("bundle_byte_slices: all slices same length");
+    let result_bytes = ndarray::Array::<u8, ndarray::Ix1>::hdc_bundle_byte_slices(&slices);
 
     // Convert back to Container
     let mut container = Container::zero();
@@ -163,21 +165,21 @@ pub fn container_bundle(items: &[&Container]) -> Container {
 /// Popcount on any `&[u64]` slice (zero-copy). Works for any container size.
 #[inline]
 pub fn slice_popcount(data: &[u64]) -> u64 {
-    rustynum_core::simd::popcount(view_u64_as_bytes(data))
+    popcount_raw(view_u64_as_bytes(data))
 }
 
 /// Hamming distance on any two `&[u64]` slices (zero-copy).
 #[inline]
 pub fn slice_hamming(a: &[u64], b: &[u64]) -> u64 {
     debug_assert_eq!(a.len(), b.len());
-    rustynum_core::simd::hamming_distance(view_u64_as_bytes(a), view_u64_as_bytes(b))
+    hamming_distance_raw(view_u64_as_bytes(a), view_u64_as_bytes(b))
 }
 
 /// Signed i8 × i8 dot product on any two `&[u64]` slices.
 #[inline]
 pub fn slice_dot_i8(a: &[u64], b: &[u64]) -> i64 {
     debug_assert_eq!(a.len(), b.len());
-    rustynum_core::simd::dot_i8(view_u64_as_bytes(a), view_u64_as_bytes(b))
+    ndarray::simd_avx2::dot_i8(view_u64_as_bytes(a), view_u64_as_bytes(b))
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -186,7 +188,7 @@ pub fn slice_dot_i8(a: &[u64], b: &[u64]) -> i64 {
 
 /// Compute Hamming distance between two fingerprints.
 ///
-/// Delegates to rustynum's runtime-dispatched SIMD (AVX-512 → AVX2 → scalar).
+/// Delegates to ndarray's runtime-dispatched SIMD (AVX-512 → AVX2 → scalar).
 #[inline]
 pub fn hamming_distance(a: &Fingerprint, b: &Fingerprint) -> u32 {
     fingerprint_hamming(a, b)
@@ -287,7 +289,7 @@ impl Default for HammingEngine {
 
 /// Detect SIMD capability at runtime
 pub fn simd_level() -> &'static str {
-    "rustynum-runtime-dispatch"
+    "ndarray-runtime-dispatch"
 }
 
 // ────────────────────────────────────────────────────────────────

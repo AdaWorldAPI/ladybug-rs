@@ -12,7 +12,7 @@
 #
 # Total: 39 proofs verifying cognitive substrate invariants.
 #
-# Rust version: pinned to 1.93.0 to match Dockerfile build environment.
+# Rust version: pinned to 1.94.0 to match Dockerfile build environment.
 # RUSTFLAGS: -D warnings with targeted -A for noise lints in evolving codebase.
 # =============================================================================
 
@@ -56,18 +56,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Init vendor submodules
-        run: git submodule update --init vendor/rustynum
 
       - name: Clone sibling repos (OBLIGATORY deps)
         run: |
-          git clone --depth 1 https://github.com/AdaWorldAPI/rustynum.git ../rustynum
+          git clone --depth 1 https://github.com/AdaWorldAPI/ndarray.git ../ndarray
           git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust.git ../crewai-rust
           git clone --depth 1 https://github.com/AdaWorldAPI/n8n-rs.git ../n8n-rs
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.93.0"
+          toolchain: "1.94.0"
       - uses: Swatinem/rust-cache@v2
       - name: cargo check
         run: cargo check --lib --tests
@@ -82,18 +80,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Init vendor submodules
-        run: git submodule update --init vendor/rustynum
 
       - name: Clone sibling repos (OBLIGATORY deps)
         run: |
-          git clone --depth 1 https://github.com/AdaWorldAPI/rustynum.git ../rustynum
+          git clone --depth 1 https://github.com/AdaWorldAPI/ndarray.git ../ndarray
           git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust.git ../crewai-rust
           git clone --depth 1 https://github.com/AdaWorldAPI/n8n-rs.git ../n8n-rs
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.93.0"
+          toolchain: "1.94.0"
       - uses: Swatinem/rust-cache@v2
       - name: Run foundation proofs
         run: cargo test --test proof_foundation -- --test-threads=1 --show-output
@@ -108,18 +104,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Init vendor submodules
-        run: git submodule update --init vendor/rustynum
 
       - name: Clone sibling repos (OBLIGATORY deps)
         run: |
-          git clone --depth 1 https://github.com/AdaWorldAPI/rustynum.git ../rustynum
+          git clone --depth 1 https://github.com/AdaWorldAPI/ndarray.git ../ndarray
           git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust.git ../crewai-rust
           git clone --depth 1 https://github.com/AdaWorldAPI/n8n-rs.git ../n8n-rs
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.93.0"
+          toolchain: "1.94.0"
       - uses: Swatinem/rust-cache@v2
       - name: Run reasoning ladder proofs
         run: cargo test --test proof_reasoning_ladder -- --test-threads=1 --show-output
@@ -134,18 +128,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Init vendor submodules
-        run: git submodule update --init vendor/rustynum
 
       - name: Clone sibling repos (OBLIGATORY deps)
         run: |
-          git clone --depth 1 https://github.com/AdaWorldAPI/rustynum.git ../rustynum
+          git clone --depth 1 https://github.com/AdaWorldAPI/ndarray.git ../ndarray
           git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust.git ../crewai-rust
           git clone --depth 1 https://github.com/AdaWorldAPI/n8n-rs.git ../n8n-rs
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.93.0"
+          toolchain: "1.94.0"
       - uses: Swatinem/rust-cache@v2
       - name: Run tactics proofs
         run: cargo test --test proof_tactics -- --test-threads=1 --show-output
@@ -160,18 +152,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Init vendor submodules
-        run: git submodule update --init vendor/rustynum
 
       - name: Clone sibling repos (OBLIGATORY deps)
         run: |
-          git clone --depth 1 https://github.com/AdaWorldAPI/rustynum.git ../rustynum
+          git clone --depth 1 https://github.com/AdaWorldAPI/ndarray.git ../ndarray
           git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust.git ../crewai-rust
           git clone --depth 1 https://github.com/AdaWorldAPI/n8n-rs.git ../n8n-rs
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.93.0"
+          toolchain: "1.94.0"
       - uses: Swatinem/rust-cache@v2
       - name: Run level A gap proofs
         run: cargo test --test proof_level_a_gaps -- --test-threads=1
@@ -186,18 +176,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Init vendor submodules
-        run: git submodule update --init vendor/rustynum
 
       - name: Clone sibling repos (OBLIGATORY deps)
         run: |
-          git clone --depth 1 https://github.com/AdaWorldAPI/rustynum.git ../rustynum
+          git clone --depth 1 https://github.com/AdaWorldAPI/ndarray.git ../ndarray
           git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust.git ../crewai-rust
           git clone --depth 1 https://github.com/AdaWorldAPI/n8n-rs.git ../n8n-rs
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.93.0"
+          toolchain: "1.94.0"
       - uses: Swatinem/rust-cache@v2
       - name: Run all unit tests
         run: cargo test --lib -- --test-threads=4

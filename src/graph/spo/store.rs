@@ -804,9 +804,9 @@ impl SpoStore {
 /// - Gate 3: No SparseContainer::from_dense() in query path. Query operates on
 ///   raw bytes via ClamTree SIMD Hamming. Y-axis check uses `hamming_dense_vs_sparse()`.
 /// - Gate 4: O(⌈d⌉·log 𝒩) via DFS pruning vs O(n) linear scan.
-/// - Gate 7: Uses rustynum_clam::search::rho_nn (existing primitive).
+/// - Gate 7: Uses ndarray::hpc::clam::rho_nn (existing primitive).
 pub struct ClamSpoIndex {
-    tree: rustynum_clam::tree::ClamTree,
+    tree: ndarray::hpc::clam::ClamTree,
     /// Flat byte buffer: X-axis dense fingerprints concatenated.
     /// Layout: [record_0: CONTAINER_BYTES] [record_1: CONTAINER_BYTES] ...
     data: Vec<u8>,
@@ -900,13 +900,13 @@ impl ClamSpoIndex {
         }
 
         let count = dn_map.len();
-        let config = rustynum_clam::tree::BuildConfig::default();
+        let config = ndarray::hpc::clam::BuildConfig::default();
         let tree = if count > 0 {
-            rustynum_clam::tree::ClamTree::build(&data, vec_len, count, &config)
+            ndarray::hpc::clam::ClamTree::build_with_config(&data, vec_len, count, &config)
         } else {
             // Empty tree for empty store — build with 1 zero vector
             let zero = vec![0u8; vec_len];
-            rustynum_clam::tree::ClamTree::build(&zero, vec_len, 1, &config)
+            ndarray::hpc::clam::ClamTree::build_with_config(&zero, vec_len, 1, &config)
         };
 
         Self { tree, data, dn_map }
@@ -941,7 +941,7 @@ impl ClamSpoIndex {
         // Use 2× radius for X-axis alone since combined is (dx+dy)/2 ≤ radius
         // → dx can be up to 2×radius if dy=0. This ensures no false negatives.
         let x_rho = (radius as u64).saturating_mul(2);
-        let rho_result = rustynum_clam::search::rho_nn(
+        let rho_result = ndarray::hpc::clam::rho_nn(
             &self.tree,
             &self.data,
             SPARSE_VEC_LEN,
@@ -1004,7 +1004,7 @@ impl ClamSpoIndex {
             query_bytes[start..start + 8].copy_from_slice(&src_fp.words[i].to_ne_bytes());
         }
         let x_rho = (radius as u64).saturating_mul(2);
-        let result = rustynum_clam::search::rho_nn(
+        let result = ndarray::hpc::clam::rho_nn(
             &self.tree,
             &self.data,
             SPARSE_VEC_LEN,

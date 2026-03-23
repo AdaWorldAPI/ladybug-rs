@@ -169,13 +169,13 @@ pub struct BundlingProposal {
     pub nars_confidence: f32,
 
     /// σ-significance level of the cross-plane evidence.
-    pub significance: rustynum_core::SignificanceLevel,
+    pub significance: ndarray::hpc::kernels::SignificanceLevel,
 
     /// Number of cross-matches supporting the bundling.
     pub evidence_count: u32,
 
     /// Current collapse gate state (tentative lifecycle).
-    pub gate: rustynum_core::CollapseGate,
+    pub gate: ndarray::hpc::bnn_cross_plane::CollapseGate,
 
     /// Timestamp of proposal creation (Unix millis).
     pub proposed_at_ms: u64,
@@ -192,7 +192,7 @@ pub struct BundlingReview {
     /// When the decision was made (Unix millis).
     pub reviewed_at_ms: u64,
     /// The decision: Flow (approve), Block (reject).
-    pub decision: rustynum_core::CollapseGate,
+    pub decision: ndarray::hpc::bnn_cross_plane::CollapseGate,
     /// Reason text from the reviewer.
     pub reason: String,
     /// Machine confidence at time of review (may have changed since proposal).
@@ -210,7 +210,7 @@ impl BundlingProposal {
         o_distance: u32,
         nars_frequency: f32,
         nars_confidence: f32,
-        significance: rustynum_core::SignificanceLevel,
+        significance: ndarray::hpc::kernels::SignificanceLevel,
         evidence_count: u32,
     ) -> Self {
         let now = std::time::SystemTime::now()
@@ -229,7 +229,7 @@ impl BundlingProposal {
             nars_confidence,
             significance,
             evidence_count,
-            gate: rustynum_core::CollapseGate::Hold,
+            gate: ndarray::hpc::bnn_cross_plane::CollapseGate::Hold,
             proposed_at_ms: now,
             review: None,
         }
@@ -237,17 +237,17 @@ impl BundlingProposal {
 
     /// Whether this proposal is still tentative (pending review).
     pub fn is_tentative(&self) -> bool {
-        matches!(self.gate, rustynum_core::CollapseGate::Hold)
+        matches!(self.gate, ndarray::hpc::bnn_cross_plane::CollapseGate::Hold)
     }
 
     /// Whether this proposal was committed (approved).
     pub fn is_committed(&self) -> bool {
-        matches!(self.gate, rustynum_core::CollapseGate::Flow)
+        matches!(self.gate, ndarray::hpc::bnn_cross_plane::CollapseGate::Flow)
     }
 
     /// Whether this proposal was rejected.
     pub fn is_rejected(&self) -> bool {
-        matches!(self.gate, rustynum_core::CollapseGate::Block)
+        matches!(self.gate, ndarray::hpc::bnn_cross_plane::CollapseGate::Block)
     }
 
     /// Approve the bundling proposal (Flow).
@@ -257,11 +257,11 @@ impl BundlingProposal {
             .unwrap_or_default()
             .as_millis() as u64;
 
-        self.gate = rustynum_core::CollapseGate::Flow;
+        self.gate = ndarray::hpc::bnn_cross_plane::CollapseGate::Flow;
         self.review = Some(BundlingReview {
             reviewer,
             reviewed_at_ms: now,
-            decision: rustynum_core::CollapseGate::Flow,
+            decision: ndarray::hpc::bnn_cross_plane::CollapseGate::Flow,
             reason,
             auto_confidence_at_review: self.nars_confidence,
         });
@@ -274,11 +274,11 @@ impl BundlingProposal {
             .unwrap_or_default()
             .as_millis() as u64;
 
-        self.gate = rustynum_core::CollapseGate::Block;
+        self.gate = ndarray::hpc::bnn_cross_plane::CollapseGate::Block;
         self.review = Some(BundlingReview {
             reviewer,
             reviewed_at_ms: now,
-            decision: rustynum_core::CollapseGate::Block,
+            decision: ndarray::hpc::bnn_cross_plane::CollapseGate::Block,
             reason,
             auto_confidence_at_review: self.nars_confidence,
         });
@@ -316,7 +316,7 @@ pub fn detect_bundling(
     center_b_s: &[u64],
     center_b_p: &[u64],
     center_b_o: &[u64],
-    gate: &rustynum_core::SigmaGate,
+    gate: &ndarray::hpc::kernels::SigmaGate,
 ) -> Option<(BundlingType, u32, u32, u32)> {
     // Per-plane Hamming distance
     let s_dist = crate::core::rustynum_accel::slice_hamming(center_a_s, center_b_s) as u32;
@@ -419,16 +419,16 @@ impl TiltReport {
 #[derive(Debug, Clone)]
 pub struct PlaneCalibration {
     /// S-plane σ thresholds (calibrated to S⊕P distribution).
-    pub s_gate: rustynum_core::SigmaGate,
+    pub s_gate: ndarray::hpc::kernels::SigmaGate,
     /// P-plane σ thresholds (calibrated to P⊕O distribution).
-    pub p_gate: rustynum_core::SigmaGate,
+    pub p_gate: ndarray::hpc::kernels::SigmaGate,
     /// O-plane σ thresholds (calibrated to S⊕O distribution).
-    pub o_gate: rustynum_core::SigmaGate,
+    pub o_gate: ndarray::hpc::kernels::SigmaGate,
 }
 
 impl PlaneCalibration {
     /// Create from a single shared gate (no tilt correction).
-    pub fn uniform(gate: rustynum_core::SigmaGate) -> Self {
+    pub fn uniform(gate: ndarray::hpc::kernels::SigmaGate) -> Self {
         Self {
             s_gate: gate,
             p_gate: gate,
@@ -442,9 +442,9 @@ impl PlaneCalibration {
     /// standard deviation (σ) rather than the global 16K-bit assumption.
     pub fn from_plane_stats(s_mu: u32, s_sigma: u32, p_mu: u32, p_sigma: u32, o_mu: u32, o_sigma: u32) -> Self {
         Self {
-            s_gate: rustynum_core::SigmaGate::custom(s_mu, s_sigma),
-            p_gate: rustynum_core::SigmaGate::custom(p_mu, p_sigma),
-            o_gate: rustynum_core::SigmaGate::custom(o_mu, o_sigma),
+            s_gate: ndarray::hpc::kernels::SigmaGate::custom(s_mu, s_sigma),
+            p_gate: ndarray::hpc::kernels::SigmaGate::custom(p_mu, p_sigma),
+            o_gate: ndarray::hpc::kernels::SigmaGate::custom(o_mu, o_sigma),
         }
     }
 
@@ -462,7 +462,7 @@ impl PlaneCalibration {
         &self,
         plane: ContestedPlane,
         distance: u32,
-    ) -> rustynum_core::SignificanceLevel {
+    ) -> ndarray::hpc::kernels::SignificanceLevel {
         let gate = match plane {
             ContestedPlane::Subject => &self.s_gate,
             ContestedPlane::Predicate => &self.p_gate,
@@ -487,7 +487,7 @@ pub struct EvidenceEvent {
     pub nars_frequency: f32,
     pub nars_confidence: f32,
     /// σ-significance at this moment.
-    pub significance: rustynum_core::SignificanceLevel,
+    pub significance: ndarray::hpc::kernels::SignificanceLevel,
     /// Evidence count at this moment.
     pub evidence_count: u32,
     /// Per-plane gestalt state at this moment.
@@ -637,15 +637,15 @@ impl CollapseMode {
     }
 
     /// Decide the CollapseGate for a given confidence level.
-    pub fn decide(&self, confidence: f32) -> rustynum_core::CollapseGate {
+    pub fn decide(&self, confidence: f32) -> ndarray::hpc::bnn_cross_plane::CollapseGate {
         if confidence >= self.auto_threshold() {
-            rustynum_core::CollapseGate::Flow // auto-approve
+            ndarray::hpc::bnn_cross_plane::CollapseGate::Flow // auto-approve
         } else if confidence >= self.proposal_threshold() {
-            rustynum_core::CollapseGate::Hold // tentative, awaiting review
+            ndarray::hpc::bnn_cross_plane::CollapseGate::Hold // tentative, awaiting review
         } else {
             match self {
-                CollapseMode::Regulated => rustynum_core::CollapseGate::Hold,
-                _ => rustynum_core::CollapseGate::Block, // below proposal threshold
+                CollapseMode::Regulated => ndarray::hpc::bnn_cross_plane::CollapseGate::Hold,
+                _ => ndarray::hpc::bnn_cross_plane::CollapseGate::Block, // below proposal threshold
             }
         }
     }
@@ -663,9 +663,9 @@ impl CollapseMode {
 #[derive(Debug, Clone, Copy)]
 pub struct AntialiasedSigma {
     /// Primary significance band.
-    pub primary: rustynum_core::SignificanceLevel,
+    pub primary: ndarray::hpc::kernels::SignificanceLevel,
     /// Adjacent significance band (for boundary items).
-    pub secondary: rustynum_core::SignificanceLevel,
+    pub secondary: ndarray::hpc::kernels::SignificanceLevel,
     /// Weight of primary band (0.0..1.0).
     pub primary_weight: f32,
     /// Weight of secondary band (0.0..1.0, = 1 - primary_weight).
@@ -679,7 +679,7 @@ impl AntialiasedSigma {
     ///
     /// The continuous sigma position is interpolated between band boundaries,
     /// and weights reflect how close the distance is to each boundary.
-    pub fn from_distance(distance: u32, gate: &rustynum_core::SigmaGate) -> Self {
+    pub fn from_distance(distance: u32, gate: &ndarray::hpc::kernels::SigmaGate) -> Self {
         // Continuous sigma: how many σ below the noise floor
         let dist_f = distance as f32;
         let mu_f = gate.mu as f32;
@@ -695,8 +695,8 @@ impl AntialiasedSigma {
         let (primary, secondary, primary_weight) = if distance < gate.discovery {
             // Deep in Discovery zone
             (
-                rustynum_core::SignificanceLevel::Discovery,
-                rustynum_core::SignificanceLevel::Strong,
+                ndarray::hpc::kernels::SignificanceLevel::Discovery,
+                ndarray::hpc::kernels::SignificanceLevel::Strong,
                 1.0_f32,
             )
         } else if distance < gate.strong {
@@ -705,8 +705,8 @@ impl AntialiasedSigma {
             let pos = (distance - gate.discovery) as f32;
             let w = 1.0 - (pos / range);
             (
-                rustynum_core::SignificanceLevel::Discovery,
-                rustynum_core::SignificanceLevel::Strong,
+                ndarray::hpc::kernels::SignificanceLevel::Discovery,
+                ndarray::hpc::kernels::SignificanceLevel::Strong,
                 w,
             )
         } else if distance < gate.evidence {
@@ -714,8 +714,8 @@ impl AntialiasedSigma {
             let pos = (distance - gate.strong) as f32;
             let w = 1.0 - (pos / range);
             (
-                rustynum_core::SignificanceLevel::Strong,
-                rustynum_core::SignificanceLevel::Evidence,
+                ndarray::hpc::kernels::SignificanceLevel::Strong,
+                ndarray::hpc::kernels::SignificanceLevel::Evidence,
                 w,
             )
         } else if distance < gate.hint {
@@ -723,14 +723,14 @@ impl AntialiasedSigma {
             let pos = (distance - gate.evidence) as f32;
             let w = 1.0 - (pos / range);
             (
-                rustynum_core::SignificanceLevel::Evidence,
-                rustynum_core::SignificanceLevel::Hint,
+                ndarray::hpc::kernels::SignificanceLevel::Evidence,
+                ndarray::hpc::kernels::SignificanceLevel::Hint,
                 w,
             )
         } else {
             (
-                rustynum_core::SignificanceLevel::Noise,
-                rustynum_core::SignificanceLevel::Noise,
+                ndarray::hpc::kernels::SignificanceLevel::Noise,
+                ndarray::hpc::kernels::SignificanceLevel::Noise,
                 1.0,
             )
         };
@@ -1033,21 +1033,21 @@ impl GestaltEngine {
 
         // Determine bundling type from dominant halo
         let bundling_type = match harvest.dominant_inference() {
-            rustynum_bnn::HaloType::SO => BundlingType::PredicateInversion,
-            rustynum_bnn::HaloType::PO => BundlingType::AgentConvergence,
-            rustynum_bnn::HaloType::SP => BundlingType::TargetDivergence,
+            ndarray::hpc::bnn_cross_plane::HaloType::SO => BundlingType::PredicateInversion,
+            ndarray::hpc::bnn_cross_plane::HaloType::PO => BundlingType::AgentConvergence,
+            ndarray::hpc::bnn_cross_plane::HaloType::SP => BundlingType::TargetDivergence,
             _ => return None, // Core/S/P/O/Noise don't trigger bundling
         };
 
         // Derive σ-significance from accumulated confidence
         let significance = if confidence > 0.95 {
-            rustynum_core::SignificanceLevel::Discovery
+            ndarray::hpc::kernels::SignificanceLevel::Discovery
         } else if confidence > 0.85 {
-            rustynum_core::SignificanceLevel::Strong
+            ndarray::hpc::kernels::SignificanceLevel::Strong
         } else if confidence > 0.70 {
-            rustynum_core::SignificanceLevel::Evidence
+            ndarray::hpc::kernels::SignificanceLevel::Evidence
         } else {
-            rustynum_core::SignificanceLevel::Hint
+            ndarray::hpc::kernels::SignificanceLevel::Hint
         };
 
         // CollapseGate decision from mode
@@ -1065,7 +1065,7 @@ impl GestaltEngine {
         );
 
         // If Research mode auto-approved, mark it
-        if matches!(gate, rustynum_core::CollapseGate::Flow) {
+        if matches!(gate, ndarray::hpc::bnn_cross_plane::CollapseGate::Flow) {
             proposal.approve("auto".to_string(), "Research mode auto-approval".to_string());
         }
 
@@ -1090,13 +1090,13 @@ impl GestaltEngine {
 
             let confidence = harvest.accumulated_truth.confidence;
             let significance = if confidence > 0.95 {
-                rustynum_core::SignificanceLevel::Discovery
+                ndarray::hpc::kernels::SignificanceLevel::Discovery
             } else if confidence > 0.85 {
-                rustynum_core::SignificanceLevel::Strong
+                ndarray::hpc::kernels::SignificanceLevel::Strong
             } else if confidence > 0.70 {
-                rustynum_core::SignificanceLevel::Evidence
+                ndarray::hpc::kernels::SignificanceLevel::Evidence
             } else {
-                rustynum_core::SignificanceLevel::Hint
+                ndarray::hpc::kernels::SignificanceLevel::Hint
             };
 
             trajectory.record_event(EvidenceEvent {
@@ -1222,7 +1222,7 @@ mod tests {
             300,  // o_dist: close
             0.78,
             0.87,
-            rustynum_core::SignificanceLevel::Strong,
+            ndarray::hpc::kernels::SignificanceLevel::Strong,
             500,
         );
 
@@ -1264,47 +1264,47 @@ mod tests {
         // Research mode: auto-approve above 0.95
         assert_eq!(
             CollapseMode::Research.decide(0.97),
-            rustynum_core::CollapseGate::Flow
+            ndarray::hpc::bnn_cross_plane::CollapseGate::Flow
         );
         assert_eq!(
             CollapseMode::Research.decide(0.85),
-            rustynum_core::CollapseGate::Hold
+            ndarray::hpc::bnn_cross_plane::CollapseGate::Hold
         );
         assert_eq!(
             CollapseMode::Research.decide(0.50),
-            rustynum_core::CollapseGate::Block
+            ndarray::hpc::bnn_cross_plane::CollapseGate::Block
         );
 
         // Production mode: never auto-approve, propose above 0.80
         assert_eq!(
             CollapseMode::Production.decide(0.99),
-            rustynum_core::CollapseGate::Hold
+            ndarray::hpc::bnn_cross_plane::CollapseGate::Hold
         );
         assert_eq!(
             CollapseMode::Production.decide(0.50),
-            rustynum_core::CollapseGate::Block
+            ndarray::hpc::bnn_cross_plane::CollapseGate::Block
         );
 
         // Regulated mode: always Hold (propose at any confidence)
         assert_eq!(
             CollapseMode::Regulated.decide(0.10),
-            rustynum_core::CollapseGate::Hold
+            ndarray::hpc::bnn_cross_plane::CollapseGate::Hold
         );
     }
 
     #[test]
     fn test_antialiased_sigma() {
-        let gate = rustynum_core::SigmaGate::sku_16k();
+        let gate = ndarray::hpc::kernels::SigmaGate::sku_16k();
 
         // Deep discovery: should be firmly in Discovery band
         let aa = AntialiasedSigma::from_distance(100, &gate);
-        assert_eq!(aa.primary, rustynum_core::SignificanceLevel::Discovery);
+        assert_eq!(aa.primary, ndarray::hpc::kernels::SignificanceLevel::Discovery);
         assert!(aa.primary_weight > 0.9);
         assert!(aa.continuous_sigma > 3.0);
 
         // Deep noise: should be firmly Noise
         let aa = AntialiasedSigma::from_distance(gate.mu + 100, &gate);
-        assert_eq!(aa.primary, rustynum_core::SignificanceLevel::Noise);
+        assert_eq!(aa.primary, ndarray::hpc::kernels::SignificanceLevel::Noise);
 
         // NARS confidence from sigma
         let high_sigma = AntialiasedSigma::from_distance(100, &gate);
@@ -1323,7 +1323,7 @@ mod tests {
             300,
             0.78,
             0.87,
-            rustynum_core::SignificanceLevel::Strong,
+            ndarray::hpc::kernels::SignificanceLevel::Strong,
             500,
         );
 
@@ -1337,7 +1337,7 @@ mod tests {
             event_type: EvidenceEventType::MatchesAdded(112),
             nars_frequency: 0.83,
             nars_confidence: 0.91,
-            significance: rustynum_core::SignificanceLevel::Strong,
+            significance: ndarray::hpc::kernels::SignificanceLevel::Strong,
             evidence_count: 612,
             gestalt: GestaltState::Crystallizing,
         });
@@ -1355,7 +1355,7 @@ mod tests {
             event_type: EvidenceEventType::CounterEvidence(3),
             nars_frequency: 0.79,
             nars_confidence: 0.84,
-            significance: rustynum_core::SignificanceLevel::Evidence,
+            significance: ndarray::hpc::kernels::SignificanceLevel::Evidence,
             evidence_count: 615,
             gestalt: GestaltState::Contested,
         });
@@ -1371,7 +1371,7 @@ mod tests {
 
     #[test]
     fn test_engine_below_threshold() {
-        let gate = rustynum_core::SigmaGate::sku_16k();
+        let gate = ndarray::hpc::kernels::SigmaGate::sku_16k();
         let calibration = PlaneCalibration::uniform(gate);
         let mut engine = GestaltEngine::new(CollapseMode::Production, calibration);
 
@@ -1388,7 +1388,7 @@ mod tests {
 
     #[test]
     fn test_engine_creates_proposal() {
-        let gate = rustynum_core::SigmaGate::sku_16k();
+        let gate = ndarray::hpc::kernels::SigmaGate::sku_16k();
         let calibration = PlaneCalibration::uniform(gate);
         let mut engine = GestaltEngine::new(CollapseMode::Production, calibration);
 
@@ -1410,7 +1410,7 @@ mod tests {
 
     #[test]
     fn test_engine_research_auto_approves() {
-        let gate = rustynum_core::SigmaGate::sku_16k();
+        let gate = ndarray::hpc::kernels::SigmaGate::sku_16k();
         let calibration = PlaneCalibration::uniform(gate);
         let mut engine = GestaltEngine::new(CollapseMode::Research, calibration);
 
@@ -1428,7 +1428,7 @@ mod tests {
 
     #[test]
     fn test_engine_feed_evidence_and_auto_approve() {
-        let gate = rustynum_core::SigmaGate::sku_16k();
+        let gate = ndarray::hpc::kernels::SigmaGate::sku_16k();
         let calibration = PlaneCalibration::uniform(gate);
         let mut engine = GestaltEngine::new(CollapseMode::Research, calibration);
         engine.bundling_evidence_threshold = 5;
@@ -1492,7 +1492,7 @@ mod tests {
             "a".to_string(), "b".to_string(),
             BundlingType::PredicateInversion,
             200, 7500, 300, 0.5, 0.5,
-            rustynum_core::SignificanceLevel::Evidence, 10,
+            ndarray::hpc::kernels::SignificanceLevel::Evidence, 10,
         );
         let mut trajectory = TruthTrajectory::new(proposal);
 
@@ -1503,7 +1503,7 @@ mod tests {
                 event_type: EvidenceEventType::MatchesAdded(10),
                 nars_frequency: 0.5 + i as f32 * 0.08,
                 nars_confidence: 0.5 + i as f32 * 0.08,
-                significance: rustynum_core::SignificanceLevel::Evidence,
+                significance: ndarray::hpc::kernels::SignificanceLevel::Evidence,
                 evidence_count: i as u32 * 10,
                 gestalt: GestaltState::Crystallizing,
             });
@@ -1525,7 +1525,7 @@ mod tests {
             "a".to_string(), "b".to_string(),
             BundlingType::PredicateInversion,
             200, 7500, 300, 0.95, 0.95,
-            rustynum_core::SignificanceLevel::Discovery, 3,
+            ndarray::hpc::kernels::SignificanceLevel::Discovery, 3,
         );
         let mut trajectory = TruthTrajectory::new(proposal);
 
@@ -1535,7 +1535,7 @@ mod tests {
             event_type: EvidenceEventType::MatchesAdded(10),
             nars_frequency: 0.96,
             nars_confidence: 0.96,
-            significance: rustynum_core::SignificanceLevel::Discovery,
+            significance: ndarray::hpc::kernels::SignificanceLevel::Discovery,
             evidence_count: 13,
             gestalt: GestaltState::Crystallizing,
         });
@@ -1551,7 +1551,7 @@ mod tests {
             "a".to_string(), "b".to_string(),
             BundlingType::PredicateInversion,
             200, 7500, 300, 0.4, 0.4,
-            rustynum_core::SignificanceLevel::Hint, 5,
+            ndarray::hpc::kernels::SignificanceLevel::Hint, 5,
         );
         let mut trajectory = TruthTrajectory::new(proposal);
 
@@ -1562,7 +1562,7 @@ mod tests {
                 event_type: EvidenceEventType::MatchesAdded(10),
                 nars_frequency: 0.4 + i as f32 * 0.06,
                 nars_confidence: 0.4 + i as f32 * 0.06,
-                significance: rustynum_core::SignificanceLevel::Evidence,
+                significance: ndarray::hpc::kernels::SignificanceLevel::Evidence,
                 evidence_count: (5 + i * 10) as u32,
                 gestalt: GestaltState::Crystallizing,
             });
@@ -1579,7 +1579,7 @@ mod tests {
 
     #[test]
     fn test_engine_gestalt_summary() {
-        let gate = rustynum_core::SigmaGate::sku_16k();
+        let gate = ndarray::hpc::kernels::SigmaGate::sku_16k();
         let calibration = PlaneCalibration::uniform(gate);
         let mut engine = GestaltEngine::new(CollapseMode::Research, calibration);
         engine.bundling_evidence_threshold = 5;
