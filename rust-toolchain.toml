@@ -1,2 +1,19 @@
 [toolchain]
-channel = "1.94.0"
+channel = "1.97.1"
+# The pinned version is the `channel` line ABOVE — deliberately not restated in
+# this comment, so a future bump cannot leave stale prose behind.
+#
+# Bump log (append one line per bump):
+#   → 1.94.0   (original pin, no recorded rationale)
+#   → 1.97.1   2026-08-10. Ecosystem realignment — lance-graph, OGAR, woa-rs,
+#              MedCare-rs and ndarray are on 1.97.1. This is a COMPILER-only
+#              bump: ladybug-rs takes its lance/arrow/datafusion from crates.io
+#              independently (lance 2.0 / arrow 57 / datafusion 51) and has no
+#              lance-graph Cargo dependency by design ("don't import lance-graph
+#              as a Cargo dep — rewrite natively", CLAUDE.md). Those dependency
+#              versions are a SEPARATE question from this pin and are NOT
+#              changed here.
+#
+# Never auto-track `stable` — bump explicitly when a future version is reviewed
+# and clippy passes clean.
+components = ["clippy", "rustfmt"]
