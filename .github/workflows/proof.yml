@@ -12,7 +12,7 @@
 #
 # Total: 39 proofs verifying cognitive substrate invariants.
 #
-# Rust version: pinned to 1.94.0 to match Dockerfile build environment.
+# Rust version: pinned to 1.98.1 to match the Dockerfile build environment (rust:1.98).
 # RUSTFLAGS: -D warnings with targeted -A for noise lints in evolving codebase.
 # =============================================================================
 
