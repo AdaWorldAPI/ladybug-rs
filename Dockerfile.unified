@@ -30,7 +30,7 @@
 # =============================================================================
 # STAGE 1: Build ladybug-rs
 # =============================================================================
-FROM rust:1.83-slim-bookworm AS builder-ladybug
+FROM rust:1.98.1-slim-bookworm AS builder-ladybug
 
 RUN apt-get update && apt-get install -y \
     pkg-config libssl-dev cmake git \
@@ -55,7 +55,7 @@ RUN RUSTFLAGS="-C link-arg=-s" \
 # =============================================================================
 # STAGE 2: Build crewai-rust
 # =============================================================================
-FROM rust:1.83-slim-bookworm AS builder-crewai
+FROM rust:1.98.1-slim-bookworm AS builder-crewai
 
 RUN apt-get update && apt-get install -y \
     pkg-config libssl-dev cmake git \
@@ -71,7 +71,7 @@ RUN RUSTFLAGS="-C link-arg=-s" \
 # =============================================================================
 # STAGE 3: Build n8n-rs
 # =============================================================================
-FROM rust:1.83-slim-bookworm AS builder-n8n
+FROM rust:1.98.1-slim-bookworm AS builder-n8n
 
 RUN apt-get update && apt-get install -y \
     pkg-config libssl-dev cmake protobuf-compiler git \
