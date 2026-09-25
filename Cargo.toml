@@ -6,7 +6,7 @@ exclude = ["vendor"]
 name = "ladybug"
 version = "0.3.0"
 edition = "2024"
-rust-version = "1.94"
+rust-version = "1.98.1"
 license = "Apache-2.0"
 description = "Crystal Lake: Unified Cognitive Database with 4096 CAM Operations, Quantum-Inspired Operators, and 144 Verb Graph Substrate"
 repository = "https://github.com/AdaWorldAPI/ladybug-rs"
@@ -73,6 +73,9 @@ ladybug-contract = { path = "crates/ladybug-contract" }
 # -----------------------------------------------------------------------------
 # Storage: LanceDB + Arrow ecosystem
 # Lance 2.0.0 released on crates.io (Feb 5, 2026).
+# NOT bumped to 12 in the 2026-09-25 sweep: lance 12 requires arrow ^58 /
+# datafusion ^54, and this crate is on arrow 57 / datafusion 51. The lance
+# bump lands together with that migration, never alone.
 # Arrow 57.x aligns with DataFusion 52 / Lance 2.x.
 # -----------------------------------------------------------------------------
 lance = { version = "2.0", optional = true, default-features = false }
