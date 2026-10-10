@@ -224,8 +224,8 @@ impl Container {
     /// Construct from byte slice (little-endian).
     pub fn from_bytes(bytes: &[u8; CONTAINER_BYTES]) -> Self {
         let mut words = [0u64; CONTAINER_WORDS];
-        for (i, chunk) in bytes.chunks_exact(8).enumerate() {
-            words[i] = u64::from_le_bytes(chunk.try_into().unwrap());
+        for (i, chunk) in bytes.as_chunks::<8>().0.iter().enumerate() {
+            words[i] = u64::from_le_bytes(*chunk);
         }
         Self { words }
     }

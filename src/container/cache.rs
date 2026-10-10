@@ -207,9 +207,7 @@ impl ContainerCache {
 
     /// Clear all dirty bits.
     pub fn clear_all_dirty(&mut self) {
-        for w in &mut self.dirty {
-            *w = 0;
-        }
+        self.dirty.fill(0);
     }
 
     /// Append a new container, growing the cache by one slot.

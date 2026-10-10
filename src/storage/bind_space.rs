@@ -1780,8 +1780,8 @@ impl BindSpace {
             .collect();
         let result_bytes = ndarray::Array::<u8, ndarray::Ix1>::hdc_bundle_byte_slices(&slices);
         let mut fp = [0u64; FINGERPRINT_WORDS];
-        for (i, chunk) in result_bytes.chunks_exact(8).enumerate() {
-            fp[i] = u64::from_ne_bytes(chunk.try_into().unwrap());
+        for (i, chunk) in result_bytes.as_chunks::<8>().0.iter().enumerate() {
+            fp[i] = u64::from_ne_bytes(*chunk);
         }
         Some(fp)
     }
@@ -2339,8 +2339,8 @@ impl BindSpace {
         if let Some(node) = self.read_mut(addr) {
             let mut buf = crate::core::rustynum_accel::view_u64_as_bytes(&node.fingerprint).to_vec();
             ndarray::hpc::holo::focus_xor(&mut buf, mask_x, mask_y, mask_z, value);
-            for (i, chunk) in buf.chunks_exact(8).enumerate() {
-                node.fingerprint[i] = u64::from_ne_bytes(chunk.try_into().unwrap());
+            for (i, chunk) in buf.as_chunks::<8>().0.iter().enumerate() {
+                node.fingerprint[i] = u64::from_ne_bytes(*chunk);
             }
             self.dirty.set(addr.0);
         }
@@ -2373,8 +2373,8 @@ impl BindSpace {
         if let Some(node) = self.read_mut(addr) {
             let mut buf = crate::core::rustynum_accel::view_u64_as_bytes(&node.fingerprint).to_vec();
             ndarray::hpc::holo::focus_bind_phase(&mut buf, mask_x, mask_y, mask_z, concept_vec);
-            for (i, chunk) in buf.chunks_exact(8).enumerate() {
-                node.fingerprint[i] = u64::from_ne_bytes(chunk.try_into().unwrap());
+            for (i, chunk) in buf.as_chunks::<8>().0.iter().enumerate() {
+                node.fingerprint[i] = u64::from_ne_bytes(*chunk);
             }
             self.dirty.set(addr.0);
         }
@@ -2385,8 +2385,8 @@ impl BindSpace {
         if let Some(node) = self.read_mut(addr) {
             let mut buf = crate::core::rustynum_accel::view_u64_as_bytes(&node.fingerprint).to_vec();
             ndarray::hpc::holo::focus_unbind_phase(&mut buf, mask_x, mask_y, mask_z, concept_vec);
-            for (i, chunk) in buf.chunks_exact(8).enumerate() {
-                node.fingerprint[i] = u64::from_ne_bytes(chunk.try_into().unwrap());
+            for (i, chunk) in buf.as_chunks::<8>().0.iter().enumerate() {
+                node.fingerprint[i] = u64::from_ne_bytes(*chunk);
             }
             self.dirty.set(addr.0);
         }
@@ -2397,8 +2397,8 @@ impl BindSpace {
         if let Some(node) = self.read_mut(addr) {
             let mut buf = crate::core::rustynum_accel::view_u64_as_bytes(&node.fingerprint).to_vec();
             ndarray::hpc::holo::focus_xor_auto(&mut buf, mask_x, mask_y, mask_z, value);
-            for (i, chunk) in buf.chunks_exact(8).enumerate() {
-                node.fingerprint[i] = u64::from_ne_bytes(chunk.try_into().unwrap());
+            for (i, chunk) in buf.as_chunks::<8>().0.iter().enumerate() {
+                node.fingerprint[i] = u64::from_ne_bytes(*chunk);
             }
             self.dirty.set(addr.0);
         }

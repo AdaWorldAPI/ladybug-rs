@@ -135,8 +135,8 @@ fn fp_to_le_bytes(fp: &[u64; FINGERPRINT_WORDS]) -> Vec<u8> {
 /// Convert little-endian bytes back to [u64; FINGERPRINT_WORDS].
 fn fp_from_le_bytes(bytes: &[u8]) -> [u64; FINGERPRINT_WORDS] {
     let mut fp = [0u64; FINGERPRINT_WORDS];
-    for (i, chunk) in bytes.chunks_exact(8).enumerate() {
-        fp[i] = u64::from_le_bytes(chunk.try_into().unwrap());
+    for (i, chunk) in bytes.as_chunks::<8>().0.iter().enumerate() {
+        fp[i] = u64::from_le_bytes(*chunk);
     }
     fp
 }

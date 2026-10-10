@@ -189,9 +189,7 @@ pub fn cog_record_from_bytes(data: &[u8]) -> Option<CogRecord> {
     let meta = parse_container(&data[..super::CONTAINER_BYTES])?;
 
     // Parse content
-    let content = parse_container(
-        &data[super::CONTAINER_BYTES..2 * super::CONTAINER_BYTES],
-    )?;
+    let content = parse_container(&data[super::CONTAINER_BYTES..2 * super::CONTAINER_BYTES])?;
 
     Some(CogRecord { meta, content })
 }
@@ -221,11 +219,13 @@ fn parse_container(data: &[u8]) -> Option<Container> {
     }
     let mut words = [0u64; super::CONTAINER_WORDS];
     for (i, chunk) in data
-        .chunks_exact(8)
+        .as_chunks::<8>()
+        .0
+        .iter()
         .enumerate()
         .take(super::CONTAINER_WORDS)
     {
-        words[i] = u64::from_le_bytes(chunk.try_into().ok()?);
+        words[i] = u64::from_le_bytes(*chunk);
     }
     Some(Container { words })
 }

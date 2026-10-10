@@ -538,7 +538,6 @@ impl HammingDistanceUdf {
 }
 
 impl ScalarUDFImpl for HammingDistanceUdf {
-
     fn name(&self) -> &str {
         "hamming_distance"
     }
@@ -648,7 +647,6 @@ impl SimilarityUdf {
 }
 
 impl ScalarUDFImpl for SimilarityUdf {
-
     fn name(&self) -> &str {
         "similarity"
     }

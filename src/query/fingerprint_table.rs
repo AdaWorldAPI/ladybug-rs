@@ -110,7 +110,6 @@ impl std::fmt::Debug for FingerprintTableProvider {
 
 #[async_trait]
 impl TableProvider for FingerprintTableProvider {
-
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
     }

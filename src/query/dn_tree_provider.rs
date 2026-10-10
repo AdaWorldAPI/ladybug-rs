@@ -97,7 +97,6 @@ impl DnTreeTableProvider {
 
 #[async_trait]
 impl TableProvider for DnTreeTableProvider {
-
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
     }

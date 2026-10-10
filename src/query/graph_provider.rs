@@ -141,7 +141,6 @@ impl fmt::Debug for EdgeTableProvider {
 
 #[async_trait]
 impl TableProvider for EdgeTableProvider {
-
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
     }

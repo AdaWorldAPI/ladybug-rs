@@ -151,8 +151,8 @@ pub fn container_bundle(items: &[&Container]) -> Container {
     debug_assert_eq!(result_bytes.len(), CONTAINER_WORDS * 8);
 
     // Write bytes back into container words
-    for (i, chunk) in result_bytes.chunks_exact(8).enumerate() {
-        container.words[i] = u64::from_ne_bytes(chunk.try_into().unwrap());
+    for (i, chunk) in result_bytes.as_chunks::<8>().0.iter().enumerate() {
+        container.words[i] = u64::from_ne_bytes(*chunk);
     }
 
     container

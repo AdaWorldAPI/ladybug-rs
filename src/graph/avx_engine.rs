@@ -330,11 +330,9 @@ pub fn batched_query(
     let mut matches = Vec::new();
 
     // Process 8 edges at a time
-    let chunks = graph.edges.chunks_exact(8);
-    let remainder = chunks.remainder();
+    let (chunks, remainder) = graph.edges.as_chunks::<8>();
 
-    for (chunk_idx, chunk) in chunks.enumerate() {
-        let edges: &[[u64; WORDS]; 8] = chunk.try_into().unwrap();
+    for (chunk_idx, edges) in chunks.iter().enumerate() {
         let distances = batch_hamming_8(&pattern_words, edges);
 
         for (i, &dist) in distances.iter().enumerate() {

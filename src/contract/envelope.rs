@@ -65,8 +65,14 @@ pub fn deserialize_fingerprint(bytes: &[u8]) -> Option<[u64; FINGERPRINT_WORDS]>
         return None;
     }
     let mut fp = [0u64; FINGERPRINT_WORDS];
-    for (i, chunk) in bytes.chunks_exact(8).take(FINGERPRINT_WORDS).enumerate() {
-        fp[i] = u64::from_le_bytes(chunk.try_into().ok()?);
+    for (i, chunk) in bytes
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .take(FINGERPRINT_WORDS)
+        .enumerate()
+    {
+        fp[i] = u64::from_le_bytes(*chunk);
     }
     Some(fp)
 }

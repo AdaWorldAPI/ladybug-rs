@@ -422,7 +422,7 @@ mod tests {
     #[test]
     fn test_nars_revision_single() {
         let tv = TruthValue::new(0.8, 0.7);
-        let merged = SocraticSieve::nars_revision(&[tv.clone()]);
+        let merged = SocraticSieve::nars_revision(&[tv]);
         assert!((merged.frequency - tv.frequency).abs() < 0.01);
     }
 

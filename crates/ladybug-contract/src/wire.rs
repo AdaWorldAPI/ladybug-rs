@@ -35,7 +35,7 @@
 //! ```
 
 use crate::codebook::OpCategory;
-use crate::container::{Container, CONTAINER_BYTES, CONTAINER_WORDS};
+use crate::container::{CONTAINER_BYTES, CONTAINER_WORDS, Container};
 use crate::nars::TruthValue;
 
 /// Magic bytes identifying a CogPacket.
@@ -129,12 +129,7 @@ impl CogPacket {
     // =========================================================================
 
     /// Create a request packet with a single container payload.
-    pub fn request(
-        opcode: u16,
-        source_addr: u16,
-        target_addr: u16,
-        payload: Container,
-    ) -> Self {
+    pub fn request(opcode: u16, source_addr: u16, target_addr: u16, payload: Container) -> Self {
         let mut pkt = Self {
             header: [0u64; HEADER_WORDS],
             payload: vec![payload],
@@ -149,12 +144,7 @@ impl CogPacket {
     }
 
     /// Create a response packet.
-    pub fn response(
-        opcode: u16,
-        source_addr: u16,
-        target_addr: u16,
-        payload: Container,
-    ) -> Self {
+    pub fn response(opcode: u16, source_addr: u16, target_addr: u16, payload: Container) -> Self {
         let mut pkt = Self::request(opcode, source_addr, target_addr, payload);
         pkt.set_flags(pkt.flags() | FLAG_RESPONSE);
         pkt.update_checksum();
@@ -273,8 +263,7 @@ impl CogPacket {
     }
 
     pub fn set_target_addr(&mut self, addr: u16) {
-        self.header[1] = (self.header[1] & 0xFFFF_0000_FFFF_FFFF)
-            | ((addr as u64) << 32);
+        self.header[1] = (self.header[1] & 0xFFFF_0000_FFFF_FFFF) | ((addr as u64) << 32);
     }
 
     /// Target prefix.
@@ -330,8 +319,7 @@ impl CogPacket {
     }
 
     pub fn set_truth_value(&mut self, tv: &TruthValue) {
-        self.header[3] = ((tv.frequency.to_bits() as u64) << 32)
-            | (tv.confidence.to_bits() as u64);
+        self.header[3] = ((tv.frequency.to_bits() as u64) << 32) | (tv.confidence.to_bits() as u64);
     }
 
     // =========================================================================
@@ -381,8 +369,7 @@ impl CogPacket {
 
     pub fn set_resonance_threshold(&mut self, threshold: f32) {
         let quantized = ((threshold.clamp(0.0, 1.0) * 65535.0) as u64) & 0xFFFF;
-        self.header[5] = (self.header[5] & 0x0000_FFFF_FFFF_FFFF)
-            | (quantized << 48);
+        self.header[5] = (self.header[5] & 0x0000_FFFF_FFFF_FFFF) | (quantized << 48);
     }
 
     /// Fan-out degree (0-255).
@@ -557,8 +544,8 @@ impl CogPacket {
 
         // Decode header
         let mut header = [0u64; HEADER_WORDS];
-        for (i, chunk) in data[..HEADER_BYTES].chunks_exact(8).enumerate() {
-            header[i] = u64::from_le_bytes(chunk.try_into().unwrap());
+        for (i, chunk) in data[..HEADER_BYTES].as_chunks::<8>().0.iter().enumerate() {
+            header[i] = u64::from_le_bytes(*chunk);
         }
 
         // Verify magic
@@ -594,10 +581,12 @@ impl CogPacket {
             let offset = HEADER_BYTES + c_idx * CONTAINER_BYTES;
             let mut words = [0u64; CONTAINER_WORDS];
             for (i, chunk) in data[offset..offset + CONTAINER_BYTES]
-                .chunks_exact(8)
+                .as_chunks::<8>()
+                .0
+                .iter()
                 .enumerate()
             {
-                words[i] = u64::from_le_bytes(chunk.try_into().unwrap());
+                words[i] = u64::from_le_bytes(*chunk);
             }
             payload.push(Container { words });
         }

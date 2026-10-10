@@ -161,8 +161,7 @@ impl SpoBuilder {
 
         // W1: type info with geometry=Spo(6)
         meta.words[W_TYPE] = (GEOMETRY_SPO as u64) << 16
-            | 1u64 << 8  // container count = 1 content
-            | 0u64;      // node_kind = 0 (generic)
+            | 1u64 << 8; // container count = 1 content; node_kind = 0 (generic)
 
         // W4-W7: NARS truth
         meta.words[W_NARS_BASE] = nars.frequency.to_bits() as u64;

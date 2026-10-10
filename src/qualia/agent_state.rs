@@ -842,6 +842,7 @@ fn rung_description(rung: RungLevel) -> &'static str {
 // ─────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
     use crate::container::Container;
