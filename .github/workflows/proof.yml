@@ -63,6 +63,8 @@ jobs:
           git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust.git ../crewai-rust
           git clone --depth 1 https://github.com/AdaWorldAPI/n8n-rs.git ../n8n-rs
 
+      - name: Install protoc (lance-encoding 13 build script)
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.99.0"
@@ -87,6 +89,8 @@ jobs:
           git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust.git ../crewai-rust
           git clone --depth 1 https://github.com/AdaWorldAPI/n8n-rs.git ../n8n-rs
 
+      - name: Install protoc (lance-encoding 13 build script)
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.99.0"
@@ -111,6 +115,8 @@ jobs:
           git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust.git ../crewai-rust
           git clone --depth 1 https://github.com/AdaWorldAPI/n8n-rs.git ../n8n-rs
 
+      - name: Install protoc (lance-encoding 13 build script)
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.99.0"
@@ -135,6 +141,8 @@ jobs:
           git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust.git ../crewai-rust
           git clone --depth 1 https://github.com/AdaWorldAPI/n8n-rs.git ../n8n-rs
 
+      - name: Install protoc (lance-encoding 13 build script)
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.99.0"
@@ -159,6 +167,8 @@ jobs:
           git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust.git ../crewai-rust
           git clone --depth 1 https://github.com/AdaWorldAPI/n8n-rs.git ../n8n-rs
 
+      - name: Install protoc (lance-encoding 13 build script)
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.99.0"
@@ -183,6 +193,8 @@ jobs:
           git clone --depth 1 https://github.com/AdaWorldAPI/crewai-rust.git ../crewai-rust
           git clone --depth 1 https://github.com/AdaWorldAPI/n8n-rs.git ../n8n-rs
 
+      - name: Install protoc (lance-encoding 13 build script)
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.99.0"
