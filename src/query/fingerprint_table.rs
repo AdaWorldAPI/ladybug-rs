@@ -18,7 +18,6 @@
 //! - access_count: UINT32
 //! - zone: UTF8 ('surface', 'fluid', 'node')
 
-use std::any::Any;
 use std::sync::Arc;
 
 use arrow::array::*;
@@ -111,9 +110,6 @@ impl std::fmt::Debug for FingerprintTableProvider {
 
 #[async_trait]
 impl TableProvider for FingerprintTableProvider {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
@@ -148,7 +144,7 @@ pub struct BindSpaceScan {
     projected_schema: SchemaRef,
     bind_space: Arc<RwLock<BindSpace>>,
     projection: Option<Vec<usize>>,
-    properties: PlanProperties,
+    properties: Arc<PlanProperties>,
 }
 
 impl std::fmt::Debug for BindSpaceScan {
@@ -187,7 +183,7 @@ impl BindSpaceScan {
             projected_schema,
             bind_space,
             projection,
-            properties,
+            properties: Arc::new(properties),
         }
     }
 }
@@ -203,15 +199,11 @@ impl ExecutionPlan for BindSpaceScan {
         "BindSpaceScan"
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
     fn schema(&self) -> SchemaRef {
         self.projected_schema.clone()
     }
 
-    fn properties(&self) -> &PlanProperties {
+    fn properties(&self) -> &Arc<PlanProperties> {
         &self.properties
     }
 

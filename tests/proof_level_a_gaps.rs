@@ -20,13 +20,26 @@ use ladybug::cognitive::{
 use ladybug::container::search::cascade_search;
 use ladybug::container::{CONTAINER_BITS, Container};
 use ladybug::core::Fingerprint;
-use ladybug::core::simd::{hamming_distance, hamming_scalar};
+use ladybug::core::hamming_distance;
 use ladybug::nars::TruthValue;
 use ladybug::storage::{FINGERPRINT_WORDS, WalEntry};
 
 // =============================================================================
 // A.1.4: SIMD–Scalar Equivalence
 // =============================================================================
+
+/// Scalar reference (test oracle): popcount of the word-wise XOR.
+///
+/// `core::simd::hamming_scalar` was removed with `core::simd` (ced28ba); the
+/// oracle lives here so the SIMD-dispatched path is still checked against an
+/// independent scalar computation.
+fn hamming_scalar(a: &Fingerprint, b: &Fingerprint) -> u32 {
+    a.as_raw()
+        .iter()
+        .zip(b.as_raw().iter())
+        .map(|(x, y)| (x ^ y).count_ones())
+        .sum()
+}
 
 /// PROOF A.1.4: hamming_distance() == hamming_scalar() for all inputs
 ///

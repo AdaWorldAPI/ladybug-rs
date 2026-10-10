@@ -16,7 +16,6 @@
 //! - `nars_abduction(f1, c1, f2, c2)` -> Abduction truth function
 //! - `nars_revision(f1, c1, f2, c2)` -> Revision truth function
 
-use std::any::Any;
 use std::sync::Arc;
 
 use arrow::array::*;
@@ -196,9 +195,6 @@ impl Default for HammingUdf {
 }
 
 impl ScalarUDFImpl for HammingUdf {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 
     fn name(&self) -> &str {
         "hamming"
@@ -310,9 +306,6 @@ impl Default for SimilarityUdf {
 }
 
 impl ScalarUDFImpl for SimilarityUdf {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 
     fn name(&self) -> &str {
         "similarity"
@@ -425,9 +418,6 @@ impl Default for PopcountUdf {
 }
 
 impl ScalarUDFImpl for PopcountUdf {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 
     fn name(&self) -> &str {
         "popcount"
@@ -542,9 +532,6 @@ impl Default for XorBindUdf {
 }
 
 impl ScalarUDFImpl for XorBindUdf {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 
     fn name(&self) -> &str {
         "xor_bind"
@@ -613,9 +600,6 @@ impl Default for ExtractScentUdf {
 }
 
 impl ScalarUDFImpl for ExtractScentUdf {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 
     fn name(&self) -> &str {
         "extract_scent"
@@ -705,9 +689,6 @@ impl Default for ScentDistanceUdf {
 }
 
 impl ScalarUDFImpl for ScentDistanceUdf {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 
     fn name(&self) -> &str {
         "scent_distance"
@@ -809,9 +790,6 @@ impl Default for NarsDeductionUdf {
 }
 
 impl ScalarUDFImpl for NarsDeductionUdf {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 
     fn name(&self) -> &str {
         "nars_deduction"
@@ -876,9 +854,6 @@ impl Default for NarsInductionUdf {
 }
 
 impl ScalarUDFImpl for NarsInductionUdf {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 
     fn name(&self) -> &str {
         "nars_induction"
@@ -943,9 +918,6 @@ impl Default for NarsAbductionUdf {
 }
 
 impl ScalarUDFImpl for NarsAbductionUdf {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 
     fn name(&self) -> &str {
         "nars_abduction"
@@ -1016,9 +988,6 @@ impl Default for NarsRevisionUdf {
 }
 
 impl ScalarUDFImpl for NarsRevisionUdf {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 
     fn name(&self) -> &str {
         "nars_revision"
@@ -1138,9 +1107,6 @@ impl Default for MembraneEncodeUdf {
 }
 
 impl ScalarUDFImpl for MembraneEncodeUdf {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 
     fn name(&self) -> &str {
         "membrane_encode"
@@ -1225,9 +1191,6 @@ impl Default for MembraneDecodeUdf {
 }
 
 impl ScalarUDFImpl for MembraneDecodeUdf {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 
     fn name(&self) -> &str {
         "membrane_decode"

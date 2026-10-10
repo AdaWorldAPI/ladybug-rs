@@ -12,7 +12,6 @@
 //! After BindSpace Unification, this provider reads directly from BindSpace
 //! via the DnIndex — no separate DnSpineCache needed.
 
-use std::any::Any;
 use std::sync::Arc;
 
 use arrow::array::*;
@@ -98,9 +97,6 @@ impl DnTreeTableProvider {
 
 #[async_trait]
 impl TableProvider for DnTreeTableProvider {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
@@ -140,7 +136,7 @@ impl TableProvider for DnTreeTableProvider {
             projected_schema,
             bind_space: self.bind_space.clone(),
             projection: projection.cloned(),
-            properties,
+            properties: Arc::new(properties),
         }))
     }
 }
@@ -154,7 +150,7 @@ struct DnTreeScan {
     projected_schema: SchemaRef,
     bind_space: Arc<RwLock<BindSpace>>,
     projection: Option<Vec<usize>>,
-    properties: PlanProperties,
+    properties: Arc<PlanProperties>,
 }
 
 impl std::fmt::Debug for DnTreeScan {
@@ -178,15 +174,11 @@ impl ExecutionPlan for DnTreeScan {
         "DnTreeScan"
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
     fn schema(&self) -> SchemaRef {
         self.projected_schema.clone()
     }
 
-    fn properties(&self) -> &PlanProperties {
+    fn properties(&self) -> &Arc<PlanProperties> {
         &self.properties
     }
 

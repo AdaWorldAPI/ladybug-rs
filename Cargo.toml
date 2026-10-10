@@ -73,22 +73,22 @@ ladybug-contract = { path = "crates/ladybug-contract" }
 # -----------------------------------------------------------------------------
 # Storage: LanceDB + Arrow ecosystem
 # Lance 2.0.0 released on crates.io (Feb 5, 2026).
-# NOT bumped to 12 in the 2026-09-25 sweep: lance 12 requires arrow ^58 /
-# datafusion ^54, and this crate is on arrow 57 / datafusion 51. The lance
-# bump lands together with that migration, never alone.
-# Arrow 57.x aligns with DataFusion 52 / Lance 2.x.
+# 2026-10-10: lance 13 lands together with arrow 58 / datafusion 54, as the
+# 2026-09-25 note required (lance 12+ needs arrow ^58 / datafusion ^54). The
+# n8n vendor crates stay on their own arrow line: no arrow type crosses the
+# n8n boundary (only n8n_grpc's string/bytes handlers), so cargo carries both.
 # -----------------------------------------------------------------------------
-lance = { version = "2.0", optional = true, default-features = false }
-arrow = { version = "57", features = ["ffi"] }
-arrow-array = "57"
-arrow-schema = "57"
-arrow-buffer = "57"
-arrow-data = "57"
-arrow-cast = "57"
-arrow-select = "57"
-parquet = { version = "57", features = ["snap", "lz4", "zstd"] }
-arrow-flight = { version = "57", features = ["flight-sql-experimental"], optional = true }
-arrow-ipc = "57"
+lance = { version = "13.*", optional = true, default-features = false }
+arrow = { version = "58", features = ["ffi"] }
+arrow-array = "58"
+arrow-schema = "58"
+arrow-buffer = "58"
+arrow-data = "58"
+arrow-cast = "58"
+arrow-select = "58"
+parquet = { version = "58", features = ["snap", "lz4", "zstd"] }
+arrow-flight = { version = "58", features = ["flight-sql-experimental"], optional = true }
+arrow-ipc = "58"
 # tonic/prost must match arrow-flight's versions (0.14.1)
 tonic = { version = "0.14", optional = true }
 prost = { version = "0.14", optional = true }
@@ -96,11 +96,17 @@ bytes = "1.11"
 
 # -----------------------------------------------------------------------------
 # Query: DataFusion SQL engine
-# DataFusion 51.x - upgrade to 52 when liblzma conflict fixed
-# To use DF 52: uncomment patch below and set datafusion = "52"
+# DataFusion 54 (lance 13 requires ^54).
 # -----------------------------------------------------------------------------
-datafusion = "51"
-sqlparser = "0.60"
+# Default features minus `compression`: that feature links `lzma` via
+# liblzma, and the n8n vendor crates (datafusion 51) link it via xz2 -- cargo
+# allows one `links = "lzma"` per graph. lance 13 itself does not use it.
+datafusion = { version = "54", default-features = false, features = [
+    "nested_expressions", "crypto_expressions", "datetime_expressions",
+    "encoding_expressions", "regex_expressions", "string_expressions",
+    "unicode_expressions", "parquet", "recursive_protection", "sql",
+] }
+sqlparser = "0.62"
 
 # -----------------------------------------------------------------------------
 # Graph: Neo4j driver
