@@ -31,8 +31,8 @@ impl Fingerprint {
         }
 
         let mut data = [0u64; FINGERPRINT_U64];
-        for (i, chunk) in bytes.chunks_exact(8).enumerate() {
-            data[i] = u64::from_le_bytes(chunk.try_into().unwrap());
+        for (i, chunk) in bytes.as_chunks::<8>().0.iter().enumerate() {
+            data[i] = u64::from_le_bytes(*chunk);
         }
         Ok(Self { data })
     }

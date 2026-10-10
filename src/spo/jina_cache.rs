@@ -213,7 +213,7 @@ impl JinaCache {
             let texts_to_fetch: Vec<&str> = to_fetch.iter().map(|(_, t)| *t).collect();
             let embeddings = self.call_jina_api_batch(&texts_to_fetch)?;
 
-            for ((i, text), embedding) in to_fetch.into_iter().zip(embeddings.into_iter()) {
+            for ((i, text), embedding) in to_fetch.into_iter().zip(embeddings) {
                 self.stats.api_calls += 1;
                 let fingerprint = fingerprint_from_jina_embedding(&embedding);
 

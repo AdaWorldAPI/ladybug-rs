@@ -660,10 +660,8 @@ impl CogRedis {
                 return None;
             }
             (v, Tier::Fluid)
-        } else if let Some(v) = self.nodes.get_mut(&addr) {
-            (v, Tier::Node)
         } else {
-            return None;
+            (self.nodes.get_mut(&addr)?, Tier::Node)
         };
 
         // Touch and maybe promote

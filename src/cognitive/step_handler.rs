@@ -457,8 +457,8 @@ fn extract_fingerprint(input: &Value) -> Result<Fingerprint, StepError> {
         }
 
         let mut data = [0u64; crate::FINGERPRINT_U64];
-        for (i, chunk) in bytes.chunks_exact(8).take(crate::FINGERPRINT_U64).enumerate() {
-            data[i] = u64::from_le_bytes(chunk.try_into().unwrap());
+        for (i, chunk) in bytes.as_chunks::<8>().0.iter().take(crate::FINGERPRINT_U64).enumerate() {
+            data[i] = u64::from_le_bytes(*chunk);
         }
         return Ok(Fingerprint::from_raw(data));
     }

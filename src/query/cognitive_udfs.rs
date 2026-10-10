@@ -195,7 +195,6 @@ impl Default for HammingUdf {
 }
 
 impl ScalarUDFImpl for HammingUdf {
-
     fn name(&self) -> &str {
         "hamming"
     }
@@ -306,7 +305,6 @@ impl Default for SimilarityUdf {
 }
 
 impl ScalarUDFImpl for SimilarityUdf {
-
     fn name(&self) -> &str {
         "similarity"
     }
@@ -418,7 +416,6 @@ impl Default for PopcountUdf {
 }
 
 impl ScalarUDFImpl for PopcountUdf {
-
     fn name(&self) -> &str {
         "popcount"
     }
@@ -532,7 +529,6 @@ impl Default for XorBindUdf {
 }
 
 impl ScalarUDFImpl for XorBindUdf {
-
     fn name(&self) -> &str {
         "xor_bind"
     }
@@ -600,7 +596,6 @@ impl Default for ExtractScentUdf {
 }
 
 impl ScalarUDFImpl for ExtractScentUdf {
-
     fn name(&self) -> &str {
         "extract_scent"
     }
@@ -689,7 +684,6 @@ impl Default for ScentDistanceUdf {
 }
 
 impl ScalarUDFImpl for ScentDistanceUdf {
-
     fn name(&self) -> &str {
         "scent_distance"
     }
@@ -790,7 +784,6 @@ impl Default for NarsDeductionUdf {
 }
 
 impl ScalarUDFImpl for NarsDeductionUdf {
-
     fn name(&self) -> &str {
         "nars_deduction"
     }
@@ -854,7 +847,6 @@ impl Default for NarsInductionUdf {
 }
 
 impl ScalarUDFImpl for NarsInductionUdf {
-
     fn name(&self) -> &str {
         "nars_induction"
     }
@@ -918,7 +910,6 @@ impl Default for NarsAbductionUdf {
 }
 
 impl ScalarUDFImpl for NarsAbductionUdf {
-
     fn name(&self) -> &str {
         "nars_abduction"
     }
@@ -988,7 +979,6 @@ impl Default for NarsRevisionUdf {
 }
 
 impl ScalarUDFImpl for NarsRevisionUdf {
-
     fn name(&self) -> &str {
         "nars_revision"
     }
@@ -1107,7 +1097,6 @@ impl Default for MembraneEncodeUdf {
 }
 
 impl ScalarUDFImpl for MembraneEncodeUdf {
-
     fn name(&self) -> &str {
         "membrane_encode"
     }
@@ -1191,7 +1180,6 @@ impl Default for MembraneDecodeUdf {
 }
 
 impl ScalarUDFImpl for MembraneDecodeUdf {
-
     fn name(&self) -> &str {
         "membrane_decode"
     }

@@ -133,7 +133,7 @@ impl FramePacket {
         // Convert bytes to u64 words for frame decode
         let frame_bytes = &data[8..8 + FRAME_BYTES];
         let mut words = [0u64; FRAME_WORDS];
-        for (i, chunk) in frame_bytes.chunks_exact(8).enumerate() {
+        for (i, chunk) in frame_bytes.as_chunks::<8>().0.iter().enumerate() {
             if i < FRAME_WORDS {
                 words[i] = u64::from_le_bytes([
                     chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6], chunk[7],

@@ -39,6 +39,8 @@ pub mod cognitive_codebook;
 pub mod codebook_hydration;
 pub mod crystal_lm;
 pub mod sentence_crystal;
+// spo/spo.rs is the private reference implementation (see CLAUDE.md §2).
+#[allow(clippy::module_inception)]
 mod spo;
 
 pub use jina_api::{JinaClient, jina_embed_curl};

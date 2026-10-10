@@ -851,7 +851,7 @@ mod tests {
     fn test_parse_cypher_literal() {
         assert_eq!(parse_cypher_literal("'hello'"), CypherValue::String("hello".to_string()));
         assert_eq!(parse_cypher_literal("42"), CypherValue::Int(42));
-        assert_eq!(parse_cypher_literal("3.14"), CypherValue::Float(3.14));
+        assert_eq!(parse_cypher_literal("2.5"), CypherValue::Float(2.5));
         assert_eq!(parse_cypher_literal("true"), CypherValue::Bool(true));
         assert_eq!(parse_cypher_literal("null"), CypherValue::Null);
     }

@@ -1848,7 +1848,7 @@ fn addr_label(bs: &BindSpace, addr: Addr) -> Option<String> {
 /// Body: {"source": "0x8000", "max_hops": 3, "verb": "0x0700", "limit": 100}
 fn handle_graph_traverse(body: &str, state: &SharedState, format: ResponseFormat) -> Vec<u8> {
     let source_raw = extract_json_hex_u16(body, "source").unwrap_or(0x8000);
-    let max_hops = extract_json_usize(body, "max_hops").unwrap_or(3) as usize;
+    let max_hops = extract_json_usize(body, "max_hops").unwrap_or(3);
     let verb_raw = extract_json_hex_u16(body, "verb");
     let limit = extract_json_usize(body, "limit").unwrap_or(1000);
 

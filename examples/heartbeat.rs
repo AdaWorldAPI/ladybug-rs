@@ -15,7 +15,7 @@ use std::time::Instant;
 
 use ladybug::cognitive::{GateState, get_gate_state};
 use ladybug::core::Fingerprint;
-use ladybug::core::simd::hamming_distance;
+use ladybug::core::hamming_distance;
 use ladybug::nars::TruthValue;
 use ladybug::storage::{Addr, BindSpace, FINGERPRINT_WORDS};
 
