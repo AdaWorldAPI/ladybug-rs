@@ -35,7 +35,6 @@
 //! - `neighbors`: Function-like traversal (source, hop, target, target_label, via_verb)
 //! - `dict`: Dictionary view with popcount pre-filter
 
-use std::any::Any;
 use std::collections::HashSet;
 use std::fmt;
 use std::sync::Arc;
@@ -142,9 +141,6 @@ impl fmt::Debug for EdgeTableProvider {
 
 #[async_trait]
 impl TableProvider for EdgeTableProvider {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
@@ -179,7 +175,7 @@ struct EdgeScanExec {
     projected_schema: SchemaRef,
     bind_space: Arc<RwLock<BindSpace>>,
     projection: Option<Vec<usize>>,
-    properties: PlanProperties,
+    properties: Arc<PlanProperties>,
 }
 
 impl EdgeScanExec {
@@ -210,7 +206,7 @@ impl EdgeScanExec {
             projected_schema,
             bind_space,
             projection,
-            properties,
+            properties: Arc::new(properties),
         }
     }
 }
@@ -234,15 +230,11 @@ impl ExecutionPlan for EdgeScanExec {
         "EdgeScanExec"
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
     fn schema(&self) -> SchemaRef {
         self.projected_schema.clone()
     }
 
-    fn properties(&self) -> &PlanProperties {
+    fn properties(&self) -> &Arc<PlanProperties> {
         &self.properties
     }
 
@@ -396,7 +388,7 @@ pub struct GraphTraversalExec {
     config: TraversalConfig,
     dict: Option<Arc<RwLock<FingerprintDict>>>,
     projection: Option<Vec<usize>>,
-    properties: PlanProperties,
+    properties: Arc<PlanProperties>,
 }
 
 impl GraphTraversalExec {
@@ -430,7 +422,7 @@ impl GraphTraversalExec {
             config,
             dict: None,
             projection,
-            properties,
+            properties: Arc::new(properties),
         }
     }
 
@@ -468,15 +460,11 @@ impl ExecutionPlan for GraphTraversalExec {
         "GraphTraversalExec"
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
     fn schema(&self) -> SchemaRef {
         self.projected_schema.clone()
     }
 
-    fn properties(&self) -> &PlanProperties {
+    fn properties(&self) -> &Arc<PlanProperties> {
         &self.properties
     }
 

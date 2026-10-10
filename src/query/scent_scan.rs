@@ -34,7 +34,6 @@
 //! RecordBatch (filtered results)
 //! ```
 
-use std::any::Any;
 use std::fmt;
 use std::sync::Arc;
 
@@ -159,7 +158,7 @@ pub struct ScentScanExec {
     /// Pushed-down predicate
     predicate: ScentPredicate,
     /// Plan properties
-    properties: PlanProperties,
+    properties: Arc<PlanProperties>,
 }
 
 impl ScentScanExec {
@@ -195,7 +194,7 @@ impl ScentScanExec {
             bind_space,
             hdr_index: None,
             predicate,
-            properties,
+            properties: Arc::new(properties),
         }
     }
 
@@ -244,15 +243,11 @@ impl ExecutionPlan for ScentScanExec {
         "ScentScanExec"
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
     fn schema(&self) -> SchemaRef {
         self.projected_schema.clone()
     }
 
-    fn properties(&self) -> &PlanProperties {
+    fn properties(&self) -> &Arc<PlanProperties> {
         &self.properties
     }
 
@@ -543,9 +538,6 @@ impl HammingDistanceUdf {
 }
 
 impl ScalarUDFImpl for HammingDistanceUdf {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 
     fn name(&self) -> &str {
         "hamming_distance"
@@ -656,9 +648,6 @@ impl SimilarityUdf {
 }
 
 impl ScalarUDFImpl for SimilarityUdf {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 
     fn name(&self) -> &str {
         "similarity"
